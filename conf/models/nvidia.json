@@ -18,6 +18,13 @@
       ]
     },
     {
+      "name": "baai/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
       "name": "bytedance/seed-oss-36b-instruct",
       "max_tokens": 32768,
       "model_types": [
@@ -297,6 +304,13 @@
       ]
     },
     {
+      "name": "nvidia/llama-3.2-nv-embedqa-1b-v2",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
       "name": "nvidia/llama-3.3-nemotron-super-49b-v1",
       "max_tokens": 131072,
       "model_types": [
@@ -362,6 +376,27 @@
       ]
     },
     {
+      "name": "nvidia/nv-embed-v1",
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "nvidia/nv-embedqa-e5-v5",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "nvidia/nv-embedqa-mistral-7b-v2",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
       "name": "nvidia/nvidia-nemotron-nano-9b-v2",
       "max_tokens": 131072,
       "model_types": [
@@ -424,6 +459,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "snowflake/arctic-embed-l",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
     },
     {
       "name": "z-ai/glm-5",
