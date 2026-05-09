@@ -9,6 +9,24 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.2
+
+Released on May 9, 2026.
+
+### Improvements
+
+- API refactoring and unification: Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
+
+### Data source
+
+- Introduces a lightweight snapshot mechanism for synchronizing deleted files across eight data sources—including Moodle, DingTalk AI Table, and RSS—ensuring a faithful reflection of all remote data sources. [#14362](https://github.com/infiniflow/ragflow/issues/14362)[#14499](https://github.com/infiniflow/ragflow/pull/14499)
+
+### Bug fixes
+
+- Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
+- Duplicate chat output.
+- Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
+
 ## v0.25.1
 
 Released on April 29, 2026.
@@ -21,7 +39,7 @@ Released on April 29, 2026.
 
 ### Data source
 
-Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable.
+Enables synchronizing deleted files in Bitbucket, Gmail, Google Drive, and Airtable. [#14362](https://github.com/infiniflow/ragflow/issues/14362)
 
 ### Model support
 
