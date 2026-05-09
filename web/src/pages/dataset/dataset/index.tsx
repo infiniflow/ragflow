@@ -14,7 +14,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
+import {
+  useRowSelection,
+  useSelectedIds,
+} from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { LucidePlus } from 'lucide-react';
@@ -93,6 +96,11 @@ export default function Dataset() {
     setRowSelection,
   });
 
+  const { selectedIds: selectedRowKeys } = useSelectedIds(
+    rowSelection,
+    documents,
+  );
+
   const handleAddMetadataWithDocuments = () => {
     showManageMetadataModal({
       type: MetadataType.Manage,
@@ -117,7 +125,7 @@ export default function Dataset() {
           </div> */}
         </div>
       ),
-      documentIds: documents.map((doc) => doc.id),
+      documentIds: selectedRowKeys,
     });
   };
 
