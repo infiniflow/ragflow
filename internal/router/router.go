@@ -89,19 +89,27 @@ func (r *Router) Setup(engine *gin.Engine) {
 	engine.GET("/health", r.systemHandler.Health)
 
 	// System endpoints
-	engine.GET("/v1/system/ping", r.systemHandler.Ping)
-	engine.GET("/api/v1/system/config", r.systemHandler.GetConfig)
 	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
-	engine.GET("/api/v1/system/version", r.systemHandler.GetVersion)
-	engine.POST("/v1/user/register", r.userHandler.Register)
-	// User login channels endpoint
-	engine.GET("/api/v1/auth/login/channels", r.userHandler.GetLoginChannels)
-
-	// User login by email endpoint
-	engine.POST("/api/v1/auth/login", r.userHandler.LoginByEmail)
+	//engine.POST("/v1/user/register", r.userHandler.Register)
 
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
+
+	apiNoAuth := engine.Group("/api/v1")
+	{
+		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
+		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
+		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+
+		// User login channels endpoint
+		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
+
+		// User login by email endpoint
+		apiNoAuth.POST("/auth/login", r.userHandler.LoginByEmail)
+
+		// Register
+		apiNoAuth.POST("/users", r.userHandler.Register)
+	}
 
 	// Protected routes
 	authorized := engine.Group("")
@@ -127,7 +135,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			auth := v1.Group("/auth")
 			{
 				// User logout endpoint
-				auth.GET("/logout", r.userHandler.Logout)
+				auth.POST("/logout", r.userHandler.Logout)
 			}
 
 			// Users routes
@@ -167,6 +175,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
+				datasets.POST("/search", r.chunkHandler.RetrievalTest)
 			}
 
 			// Search routes

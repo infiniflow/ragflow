@@ -1292,6 +1292,13 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     res = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
     assert "API key is invalid" in res["message"]
 
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (False, None))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False}))
+    res = _run(inspect.unwrap(module.chatbot_completions)("dialog-unauthorized"))
+    assert res["message"] == "Authentication error: no access to this chatbot!"
+
     stream_calls = []
 
     async def _iframe_stream(dialog_id, **req):
@@ -1301,6 +1308,11 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     monkeypatch.setattr(module, "iframe_completion", _iframe_stream)
     monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
     monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(
+        module.DialogService,
+        "get_by_id",
+        lambda _dialog_id: (True, SimpleNamespace(id="dialog-1", tenant_id="tenant-1", status="1")),
+    )
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": True}))
     resp = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
     assert isinstance(resp, _StubResponse)
@@ -1308,11 +1320,17 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     _run(_collect_stream(resp.body))
     assert stream_calls[-1][0] == "dialog-1"
     assert stream_calls[-1][1]["quote"] is False
+    assert stream_calls[-1][1]["tenant_id"] == "tenant-1"
 
     async def _iframe_nonstream(_dialog_id, **_req):
         yield {"answer": "non-stream"}
 
     monkeypatch.setattr(module, "iframe_completion", _iframe_nonstream)
+    monkeypatch.setattr(
+        module.DialogService,
+        "get_by_id",
+        lambda _dialog_id: (True, SimpleNamespace(id="dialog-1", tenant_id="tenant-1", status="1")),
+    )
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"stream": False, "quote": True}))
     res = _run(inspect.unwrap(module.chatbot_completions)("dialog-1"))
     assert res["data"]["answer"] == "non-stream"
@@ -1329,8 +1347,27 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
     monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (False, None))
+
     res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-404"))
-    assert res["message"] == "Can't find dialog by ID: dialog-404"
+    assert res["message"] == "Authentication error: no access to this chatbot!"
+
+    # Happy path: valid token + owned dialog -> correct payload
+    stub_dialog = SimpleNamespace(
+        name="My Bot",
+        icon="avatar.png",
+        tenant_id="tenant-1",
+        status="1",
+        prompt_config={"prologue": "Hello!", "tavily_api_key": "key123"},
+    )
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
+    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, stub_dialog))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-404"))
+    assert res["code"] == 0
+    assert res["data"]["title"] == "My Bot"
+    assert res["data"]["avatar"] == "avatar.png"
+    assert res["data"]["prologue"] == "Hello!"
+    assert res["data"]["has_tavily_key"] is True
 
 
 @pytest.mark.p2

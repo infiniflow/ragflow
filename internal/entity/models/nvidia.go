@@ -165,15 +165,20 @@ func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	var modelClass *string
-	if chatModelConfig != nil {
-		modelClass = chatModelConfig.ModelClass
+	var reasonContent string
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
 	}
-	thinking, answer := GetThinkingAndAnswer(modelClass, &content)
 
 	chatResponse := &ChatResponse{
-		Answer:        answer,
-		ReasonContent: thinking,
+		Answer:        &content,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil
@@ -185,7 +190,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -332,14 +337,85 @@ func (n NvidiaModel) Rerank(modelName *string, query string, texts []string, api
 	return nil, fmt.Errorf("no such method")
 }
 
+// ListModels calls /v1/models on the configured NVIDIA NIM base URL
+// and returns the list of available model ids. The endpoint is
+// OpenAI-compatible, so the parsing follows the same shape used by
+// the moonshot, xai, and openai drivers.
 func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("no such method")
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := n.BaseURL[region]
+	if baseURL == "" {
+		baseURL = n.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Models)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Nvidia models API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	data, ok := result["data"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	models := make([]string, 0, len(data))
+	for _, item := range data {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, ok := m["id"].(string)
+		if !ok {
+			continue
+		}
+		models = append(models, id)
+	}
+
+	return models, nil
 }
 
 func (n NvidiaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
+// CheckConnection verifies that the configured NVIDIA NIM base URL
+// is reachable and that the API key is accepted, by issuing a
+// lightweight ListModels call. Mirrors the pattern used by the xai,
+// moonshot, deepseek, aliyun, and gitee drivers.
 func (n NvidiaModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	_, err := n.ListModels(apiConfig)
+	return err
 }
