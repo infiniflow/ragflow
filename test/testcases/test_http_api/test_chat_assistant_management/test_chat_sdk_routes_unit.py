@@ -813,7 +813,7 @@ def test_list_chats_returns_old_business_fields(monkeypatch):
     )
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    res = module.list_chats.__wrapped__()
+    res = _run(module.list_chats.__wrapped__())
 
     assert res["code"] == 0
     chat = res["data"]["chats"][0]
@@ -856,7 +856,7 @@ def test_list_chats_keeps_zero_pagination_semantics(monkeypatch):
     monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    res = module.list_chats.__wrapped__()
+    res = _run(module.list_chats.__wrapped__())
 
     assert res["code"] == 0
     assert calls[-1] == (0, 0)
@@ -879,7 +879,7 @@ def test_list_chats_keeps_zero_pagination_semantics(monkeypatch):
         ),
     )
 
-    res = module.list_chats.__wrapped__()
+    res = _run(module.list_chats.__wrapped__())
 
     assert res["code"] == 0
     assert calls[-1] == (0, 2)
@@ -967,7 +967,7 @@ def test_chat_session_list_projection_unit(monkeypatch):
         ],
     )
 
-    res = module.list_sessions.__wrapped__("chat-1")
+    res = _run(module.list_sessions.__wrapped__("chat-1"))
     assert res["data"][0]["chat_id"] == "chat-1"
     assert res["data"][0]["messages"][0]["content"] == "hello"
 
@@ -988,7 +988,7 @@ def test_chat_session_list_projection_unit(monkeypatch):
             )
         ),
     )
-    res = module.list_sessions.__wrapped__("chat-1")
+    res = _run(module.list_sessions.__wrapped__("chat-1"))
     assert res["data"] == []
 
 
