@@ -18,7 +18,7 @@ from datetime import datetime
 from peewee import fn, JOIN
 
 from api.db import TenantPermission
-from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
+from api.db.db_models import DB, Document, Knowledgebase, User, UserCanvas
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
 from api.db.services import duplicate_name
@@ -485,13 +485,21 @@ class KnowledgebaseService(CommonService):
         #     user_id: User ID
         # Returns:
         #     Boolean indicating accessibility
-        docs = cls.model.select(
-            cls.model.id).join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
-                               ).where(cls.model.id == kb_id, UserTenant.user_id == user_id).paginate(0, 1)
-        docs = docs.dicts()
-        if not docs:
+        e, kb = cls.get_by_id(kb_id)
+        if not e:
             return False
-        return True
+
+        if kb.status != StatusEnum.VALID.value:
+            return False
+
+        if kb.tenant_id == user_id:
+            return True
+
+        if kb.permission != TenantPermission.TEAM.value:
+            return False
+
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(user_id)
+        return any(tenant["tenant_id"] == kb.tenant_id for tenant in joined_tenants)
 
     @classmethod
     @DB.connection_context()
@@ -502,10 +510,10 @@ class KnowledgebaseService(CommonService):
         #     user_id: User ID
         # Returns:
         #     List containing dataset information
-        kbs = cls.model.select().join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
-                                      ).where(cls.model.id == kb_id, UserTenant.user_id == user_id).paginate(0, 1)
-        kbs = kbs.dicts()
-        return list(kbs)
+        e, kb = cls.get_by_id(kb_id)
+        if not e or not cls.accessible(kb_id, user_id):
+            return []
+        return [kb.to_dict()]
 
     @classmethod
     @DB.connection_context()
@@ -516,10 +524,11 @@ class KnowledgebaseService(CommonService):
         #     user_id: User ID
         # Returns:
         #     List containing dataset information
-        kbs = cls.model.select().join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
-                                      ).where(cls.model.name == kb_name, UserTenant.user_id == user_id).paginate(0, 1)
-        kbs = kbs.dicts()
-        return list(kbs)
+        kbs = cls.query(name=kb_name, status=StatusEnum.VALID.value)
+        for kb in kbs:
+            if cls.accessible(kb.id, user_id):
+                return [kb.to_dict()]
+        return []
 
     @classmethod
     @DB.connection_context()
