@@ -11,7 +11,7 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.25.2
 
-Released on May 9, 2026.
+Released on May 11, 2026.
 
 ### Improvements
 
