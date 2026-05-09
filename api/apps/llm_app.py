@@ -202,7 +202,9 @@ async def add_llm():
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
         # Assemble bedrock_ak, bedrock_sk, bedrock_region
-        api_key = apikey_json(["auth_mode", "bedrock_ak", "bedrock_sk", "bedrock_region", "aws_role_arn"])
+        # Write into req["api_key"] to prevent the "existing key" override logic from replacing it
+        req["api_key"] = apikey_json(["auth_mode", "bedrock_ak", "bedrock_sk", "bedrock_region", "aws_role_arn"])
+        api_key = req["api_key"]
 
     elif factory == "LocalAI":
         llm_name += "___LocalAI"
