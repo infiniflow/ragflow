@@ -63,6 +63,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOpenRouterModel(baseURL, urlSuffix), nil
 	case "huggingface":
 		return NewHuggingFaceModel(baseURL, urlSuffix), nil
+	case "baidu":
+		return NewBaiduModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

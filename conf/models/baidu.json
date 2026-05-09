@@ -1,0 +1,79 @@
+{
+  "Name": "Baidu",
+  "url": {
+    "default": "https://qianfan.baidubce.com/v2"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank"
+  },
+  "class": "baidu",
+  "models": [
+    {
+      "name": "deepseek-v3.2",
+      "max_tokens": 98304,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-32b",
+      "max_tokens": 30720,
+      "model_types":[
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen3-4b",
+      "max_tokens": 30720,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "ernie-5.0",
+      "max_tokens": 121856,
+      "model_types": [
+        "vision"
+      ]
+    },
+    {
+      "name": "embedding-v1",
+      "max_tokens": 384,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen3-reranker-4b",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}
