@@ -377,7 +377,7 @@ Lihat [Roadmap RAGFlow 2026](https://github.com/infiniflow/ragflow/issues/12241)
 ## 🏄 Komunitas
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
-- [Twitter](https://twitter.com/infiniflowai)
+- [X](https://x.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Kontribusi

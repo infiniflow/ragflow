@@ -377,7 +377,7 @@ docker build --platform linux/amd64 \
 ## 🏄 コミュニティ
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
-- [Twitter](https://twitter.com/infiniflowai)
+- [X](https://x.com/infiniflowai)
 - [GitHub Discussions](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 コントリビュート
