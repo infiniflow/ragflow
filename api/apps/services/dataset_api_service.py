@@ -1162,8 +1162,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
         return out
 
     def _clean(s: str):
-        s = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", s or "")
-        return s if s else "None"
+        return re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", s or "").strip()
 
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
@@ -1179,11 +1178,18 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     if not embd_id:
         return False, "`embd_id` is required."
 
+    logging.info("check_embedding: dataset=%s tenant=%s embd_id=%s", dataset_id, tenant_id, embd_id)
+
+    ok, err = verify_embedding_availability(embd_id, tenant_id)
+    if not ok:
+        return False, err
+
     embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     n = int(req.get("check_num", 5))
     samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=kb.tenant_id, kb_id=dataset_id, n=n)
+    logging.info("check_embedding: dataset=%s sampled=%d chunks", dataset_id, len(samples))
 
     results, eff_sims = [], []
     mode = "content_only"
@@ -1239,8 +1245,13 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     }
 
     data = {"summary": summary, "results": results}
-    if summary["avg_cos_sim"] > 0.9:
+    if not eff_sims:
+        logging.warning("check_embedding: dataset=%s no comparable chunks", dataset_id)
+        return False, "No embedded chunks are available to compare."
+    if summary["avg_cos_sim"] >= 0.9:
+        logging.info("check_embedding: dataset=%s compatible avg_cos_sim=%s valid=%d", dataset_id, summary["avg_cos_sim"], len(eff_sims))
         return True, data
+    logging.warning("check_embedding: dataset=%s not_effective avg_cos_sim=%s valid=%d", dataset_id, summary["avg_cos_sim"], len(eff_sims))
     return "not_effective", {"code": RetCode.NOT_EFFECTIVE, "message": "Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", "data": data}
 
 

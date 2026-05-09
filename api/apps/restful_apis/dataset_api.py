@@ -659,6 +659,8 @@ async def run_embedding(tenant_id, dataset_id):
 async def check_embedding(tenant_id, dataset_id):
     try:
         req = await request.get_json()
+        if not req or not req.get("embd_id"):
+            return get_error_data_result(message="`embd_id` is required.")
         status, result = dataset_api_service.check_embedding(dataset_id, tenant_id, req)
         if status is True:
             return get_result(data=result)
