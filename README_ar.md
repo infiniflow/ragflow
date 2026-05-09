@@ -405,7 +405,7 @@ docker build --platform linux/amd64 \
 ## 🏄 المجتمع
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
-- [Twitter](https://twitter.com/infiniflowai)
+- [X](https://x.com/infiniflowai)
 - [مناقشات جيثب](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 المساهمة

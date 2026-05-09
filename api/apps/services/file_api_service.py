@@ -174,31 +174,45 @@ def list_files(tenant_id: str, args: dict):
 
 
 
-def get_parent_folder(file_id: str):
+def get_parent_folder(file_id: str, user_id: str = None):
     """
-    Get parent folder of a file.
+    Get parent folder of a file with permission check.
 
     :param file_id: file ID
+    :param user_id: user ID for permission validation
     :return: (success, result) or (success, error_message)
     """
+    from api.common.check_team_permission import check_file_team_permission
+
     e, file = FileService.get_by_id(file_id)
     if not e:
         return False, "Folder not found!"
+
+    # Permission check
+    if user_id and not check_file_team_permission(file, user_id):
+        return False, "No authorization."
 
     parent_folder = FileService.get_parent_folder(file_id)
     return True, {"parent_folder": parent_folder.to_json()}
 
 
-def get_all_parent_folders(file_id: str):
+def get_all_parent_folders(file_id: str, user_id: str = None):
     """
-    Get all ancestor folders of a file.
+    Get all ancestor folders of a file with permission check.
 
     :param file_id: file ID
+    :param user_id: user ID for permission validation
     :return: (success, result) or (success, error_message)
     """
+    from api.common.check_team_permission import check_file_team_permission
+
     e, file = FileService.get_by_id(file_id)
     if not e:
         return False, "Folder not found!"
+
+    # Permission check
+    if user_id and not check_file_team_permission(file, user_id):
+        return False, "No authorization."
 
     parent_folders = FileService.get_all_parent_folders(file_id)
     return True, {"parent_folders": [pf.to_json() for pf in parent_folders]}
