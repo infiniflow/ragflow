@@ -17,7 +17,7 @@ import logging
 import re
 
 from quart import request, make_response
-from api.apps import login_required, current_user
+from api.apps import login_required
 from api.db import FileType
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import (
@@ -335,7 +335,7 @@ async def parent_folder(tenant_id: str = None, file_id: str = None):
         description: Parent folder information.
     """
     try:
-        success, result = file_api_service.get_parent_folder(file_id, user_id=current_user.id)
+        success, result = file_api_service.get_parent_folder(file_id, user_id=tenant_id)
         if success:
             return get_result(data=result)
         else:
@@ -366,7 +366,7 @@ async def ancestors(tenant_id: str = None, file_id: str = None):
         description: List of ancestor folders.
     """
     try:
-        success, result = file_api_service.get_all_parent_folders(file_id, user_id=current_user.id)
+        success, result = file_api_service.get_all_parent_folders(file_id, user_id=tenant_id)
         if success:
             return get_result(data=result)
         else:
