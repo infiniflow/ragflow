@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -61,7 +61,7 @@ func (z *ZhipuAIModel) Name() string {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *ZhipuAIModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is nil or empty")
 	}
@@ -71,7 +71,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, apiConfig *APIConfig, 
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
@@ -201,57 +201,70 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, apiConfig *APIConfig, 
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Chat)
 
+	// Convert messages to API format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream":      false,
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      true,
 		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.DoSample != nil {
-		reqBody["do_sample"] = *chatModelConfig.DoSample
-	}
+		if chatModelConfig.DoSample != nil {
+			reqBody["do_sample"] = *chatModelConfig.DoSample
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -284,7 +297,7 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName, message *string, apiCon
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -444,7 +457,7 @@ func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, er
 
 func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -476,7 +489,101 @@ func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and texts
+// zhipuRerankRequest is the request body for the ZhipuAI rerank
+// endpoint. The shape matches the standard OpenAI-compatible rerank
+// API also used by SiliconFlow.
+type zhipuRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+}
+
+// zhipuRerankResponse is the response shape for the ZhipuAI rerank
+// endpoint.
+type zhipuRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+}
+
+// Rerank calculates similarity scores between query and texts using
+// the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
+// score per input text, in the same order the texts were given.
 func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+	if len(texts) == 0 {
+		return []float64{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
+
+	reqBody := zhipuRerankRequest{
+		Model:           *modelName,
+		Query:           query,
+		Documents:       texts,
+		TopN:            len(texts),
+		ReturnDocuments: false,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ZhipuAI rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var rerankResp zhipuRerankResponse
+	if err = json.Unmarshal(body, &rerankResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	scores := make([]float64, len(texts))
+	for _, r := range rerankResp.Results {
+		if r.Index >= 0 && r.Index < len(texts) {
+			scores[r.Index] = r.RelevanceScore
+		}
+	}
+
+	return scores, nil
 }

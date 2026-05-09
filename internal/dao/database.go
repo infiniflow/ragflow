@@ -22,11 +22,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
 	"time"
-
-	"ragflow/internal/logger"
 
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -166,13 +165,13 @@ func InitDB() error {
 		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
-	logger.Info("Database connected and migrated successfully")
+	common.Info("Database connected and migrated successfully")
 
 	modelProviderManager, err = entity.NewProviderManager("conf/models")
 	if err != nil {
 		log.Fatal("Failed to load model providers:", err)
 	}
-	logger.Info("Model providers loaded successfully")
+	common.Info("Model providers loaded successfully")
 	return nil
 }
 
@@ -197,17 +196,17 @@ func autoMigrateSafely(db *gorm.DB, model interface{}) error {
 	// Check if error is MySQL duplicate index error (Error 1061)
 	errStr := err.Error()
 	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-		logger.Info("Index already exists, skipping", zap.String("error", errStr))
+		common.Info("Index already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
-		logger.Info("Column already exists, skipping", zap.String("error", errStr))
+		common.Info("Column already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
-		logger.Info("Table already exists, skipping", zap.String("error", errStr))
+		common.Info("Table already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 

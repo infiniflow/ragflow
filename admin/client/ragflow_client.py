@@ -1215,12 +1215,12 @@ class RAGFlowClient:
         # Prepare payload for completion API
         # Note: stream parameter is not sent, server defaults to stream=True
         payload = {
-            "conversation_id": session_id,
+            "session_id": session_id,
             "messages": [{"role": "user", "content": message}]
         }
 
-        response = self.http_client.request("POST", "/conversation/completion", json_body=payload,
-                                            use_api_base=False, auth_kind="web", stream=True)
+        response = self.http_client.request("POST", "/chat/completions", json_body=payload,
+                                            use_api_base=True, auth_kind="web", stream=True)
 
         if response.status_code != 200:
             print(f"Fail to chat on session, status code: {response.status_code}")

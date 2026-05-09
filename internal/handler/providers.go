@@ -265,15 +265,6 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	// Check if instance name is "default"
-	if req.InstanceName == "default" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": "Instance name cannot be 'default'",
-		})
-		return
-	}
-
 	userID := c.GetString("user_id")
 
 	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID)
@@ -828,24 +819,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 
 	// Check if it's a stream request
 	if req.Stream {
-		// Streaming with multimodal messages not yet supported
-		hasMultimodal := false
-		for _, msg := range req.Messages {
-			if content, ok := msg["content"]; ok {
-				if _, isArray := content.([]interface{}); isArray {
-					hasMultimodal = true
-					break
-				}
-			}
-		}
-		if hasMultimodal {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "Streaming with multimodal messages not yet supported",
-			})
-			return
-		}
-
 		// Set SSE headers
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
@@ -876,8 +849,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return nil
 		}
 
+		// Convert []map[string]interface{} to []models.Message
+		messages := make([]models.Message, len(req.Messages))
+		for i, msg := range req.Messages {
+			role, _ := msg["role"].(string)
+			content := msg["content"]
+			messages[i] = models.Message{Role: role, Content: content}
+		}
+
 		// Stream response using sender function (best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Messages[0]["content"].(string), &apiConfig, &chatConfig, sender)
+		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, messages, &apiConfig, &chatConfig, sender)
 
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())

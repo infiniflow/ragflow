@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from io import BytesIO
 
 from quart import request, send_file
@@ -35,6 +36,18 @@ from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
 
 MAXIMUM_OF_UPLOADING_FILES = 256
+
+
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
+
+def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
+    return resolve_reference_metadata_preferences(req, search_config)
+
+def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=None) -> None:
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
@@ -103,15 +116,30 @@ async def download_doc(document_id):
     if len(token) != 2:
         return get_error_data_result(message="Authorization is not valid!")
     token = token[1]
+    logging.info("Beta API token lookup attempted for document download")
     objs = APIToken.query(beta=token)
     if not objs:
+        logging.warning("Beta API token lookup failed for document download: invalid API key")
         return get_error_data_result(message='Authentication error: API key is invalid!"')
+    if len(objs) > 1:
+        logging.error("Beta API token lookup is ambiguous for document download: matches=%s", len(objs))
+        return get_error_data_result(message="Authentication error: API key configuration is ambiguous.")
+    tenant_id = objs[0].tenant_id
+    logging.info("Beta API token authorized for document download: tenant_id=%s", tenant_id)
 
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    if not KnowledgebaseService.query(id=doc[0].kb_id, tenant_id=tenant_id):
+        logging.warning(
+            "cross-tenant access denied for document download: tenant_id=%s kb_id=%s document_id=%s",
+            tenant_id,
+            doc[0].kb_id,
+            document_id,
+        )
+        return get_error_data_result(message="You do not have access to this document.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
@@ -450,6 +478,7 @@ async def retrieval_test(tenant_id):
             return get_error_data_result("`highlight` should be a boolean")
     else:
         return get_error_data_result("`highlight` should be a boolean")
+    include_metadata, metadata_fields = _resolve_reference_metadata(req)
     try:
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -507,6 +536,15 @@ async def retrieval_test(tenant_id):
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
+
+        if include_metadata:
+            logging.info(
+                "sdk.retrieval reference_metadata enabled dataset_ids=%s fields=%s chunks=%s",
+                kb_ids,
+                sorted(metadata_fields) if metadata_fields else None,
+                len(ranks["chunks"]),
+            )
+            enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         ##rename keys
         renamed_chunks = []

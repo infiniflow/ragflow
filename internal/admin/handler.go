@@ -20,9 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/logger"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
@@ -154,8 +154,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+		})
+		return
+	}
+
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -199,6 +206,15 @@ func (h *Handler) Logout(c *gin.Context) {
 // AuthCheck check admin auth
 func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
+}
+
+// ListTasks handle list tasks
+func (h *Handler) ListTasks(c *gin.Context) {
+	tasks, err := h.service.ListTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, tasks, "Get all tasks")
 }
 
 // ListUsers handle list users
@@ -1220,7 +1236,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
-	level := logger.GetLevel()
+	level := common.GetLevel()
 	success(c, gin.H{"level": level}, "")
 }
 
@@ -1237,7 +1253,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	if err := logger.SetLevel(req.Level); err != nil {
+	if err := common.SetLevel(req.Level); err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
 	}

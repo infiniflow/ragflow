@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -60,13 +60,13 @@ func (z *MoonshotModel) Name() string {
 	return "moonshot"
 }
 
-func (k *MoonshotModel) ChatWithMessages(modelName string, apiConfig *APIConfig, messages []Message, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (k *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -86,7 +86,7 @@ func (k *MoonshotModel) ChatWithMessages(modelName string, apiConfig *APIConfig,
 		"model":       modelName,
 		"messages":    apiMessages,
 		"stream":      false,
-		"temperature": 1,
+		"temperature": 0.6,
 	}
 
 	if chatModelConfig != nil {
@@ -199,22 +199,33 @@ func (k *MoonshotModel) ChatWithMessages(modelName string, apiConfig *APIConfig,
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (k *MoonshotModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (k *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", k.BaseURL[region])
 
+	// Convert messages to API format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream": true,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 
 	if chatModelConfig.Stream != nil {
@@ -281,7 +292,7 @@ func (k *MoonshotModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
