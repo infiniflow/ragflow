@@ -58,7 +58,7 @@ func (z *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (z *AliyunModel) Name() string {
-	return "siliconflow"
+	return "aliyun"
 }
 
 func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
