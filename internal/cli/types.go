@@ -143,6 +143,7 @@ const (
 	TokenTag
 	TokenRegion
 	TokenURL
+	TokenTasks
 	TokenLog
 	TokenLevel
 	TokenDebug

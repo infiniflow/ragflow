@@ -208,6 +208,15 @@ func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
 }
 
+// ListTasks handle list tasks
+func (h *Handler) ListTasks(c *gin.Context) {
+	tasks, err := h.service.ListTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, tasks, "Get all tasks")
+}
+
 // ListUsers handle list users
 func (h *Handler) ListUsers(c *gin.Context) {
 	users, err := h.service.ListUsers()
