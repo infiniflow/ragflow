@@ -19,7 +19,7 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_result, add_tenant_id_to_kwargs
+from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -646,6 +646,26 @@ async def run_embedding(tenant_id, dataset_id):
         success, result = dataset_api_service.run_embedding(dataset_id, tenant_id)
         if success:
             return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/embedding/check", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def check_embedding(tenant_id, dataset_id):
+    try:
+        req = await request.get_json()
+        if not req or not req.get("embd_id"):
+            return get_error_data_result(message="`embd_id` is required.")
+        status, result = dataset_api_service.check_embedding(dataset_id, tenant_id, req)
+        if status is True:
+            return get_result(data=result)
+        elif status == "not_effective":
+            return get_json_result(code=result["code"], message=result["message"], data=result["data"])
         else:
             return get_error_data_result(message=result)
     except Exception as e:

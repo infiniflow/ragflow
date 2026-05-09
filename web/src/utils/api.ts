@@ -58,7 +58,7 @@ export default {
   // knowledge base
 
   checkEmbedding: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/embedding`,
+    `${restAPIv1}/datasets/${datasetId}/embedding/check`,
   kbList: `${restAPIv1}/datasets`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
