@@ -42,12 +42,14 @@ from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
-from common.constants import RetCode, LLMType
+from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @token_required
@@ -152,20 +154,69 @@ async def chatbot_completions(dialog_id):
     objs = APIToken.query(beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
+    tenant_id = objs[0].tenant_id
+    exists, dialog = DialogService.get_by_id(dialog_id)
+    if (not exists
+            or getattr(dialog, "tenant_id", None) != tenant_id
+            or str(getattr(dialog, "status", "")) != StatusEnum.VALID.value):
+        logger.warning(
+            "Denied chatbot access: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+            "no access to this chatbot",
+            tenant_id,
+            dialog_id,
+            req.get("user_id"),
+            req.get("session_id"),
+        )
+        return get_error_data_result(message="Authentication error: no access to this chatbot!")
 
     if "quote" not in req:
         req["quote"] = False
 
+    def _validate_iframe_access():
+        if req.get("session_id"):
+            exists, conv = API4ConversationService.get_by_id(req.get("session_id"))
+            if not exists:
+                raise AssertionError("Session not found!")
+            if conv.dialog_id != dialog_id:
+                raise AssertionError("Session does not belong to this dialog")
+            if tenant_id and conv.user_id and conv.user_id != tenant_id:
+                raise AssertionError("Session does not belong to this tenant")
+
     if req.get("stream", True):
-        resp = Response(iframe_completion(dialog_id, **req), mimetype="text/event-stream")
+        try:
+            _validate_iframe_access()
+        except AssertionError:
+            logger.warning(
+                "Denied chatbot completion stream: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+                "no access to this chatbot",
+                tenant_id,
+                dialog_id,
+                req.get("user_id"),
+                req.get("session_id"),
+            )
+            return get_error_data_result(message="Authentication error: no access to this chatbot!")
+
+        resp = Response(iframe_completion(dialog_id, tenant_id=tenant_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
         resp.headers.add_header("Connection", "keep-alive")
         resp.headers.add_header("X-Accel-Buffering", "no")
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    async for answer in iframe_completion(dialog_id, **req):
-        return get_result(data=answer)
+    try:
+        _validate_iframe_access()
+        async for answer in iframe_completion(dialog_id, tenant_id=tenant_id, **req):
+            return get_result(data=answer)
+    except AssertionError:
+        logger.warning(
+            "Denied chatbot completion: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+            "no access to this chatbot",
+            tenant_id,
+            dialog_id,
+            req.get("user_id"),
+            req.get("session_id"),
+        )
+        return get_error_data_result(message="Authentication error: no access to this chatbot!")
 
     return None
 
@@ -178,11 +229,23 @@ async def chatbots_inputs(dialog_id):
     objs = APIToken.query(beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
-
-    e, dialog = DialogService.get_by_id(dialog_id)
-    if not e:
-        return get_error_data_result(f"Can't find dialog by ID: {dialog_id}")
-
+    tenant_id = objs[0].tenant_id
+    exists, dialog = DialogService.get_by_id(dialog_id)
+    if (not exists
+            or getattr(dialog, "tenant_id", None) != tenant_id
+            or str(getattr(dialog, "status", "")) != StatusEnum.VALID.value):
+        request_args = getattr(request, "args", {}) or {}
+        request_user_id = request_args.get("user_id") if hasattr(request_args, "get") else None
+        request_session_id = request_args.get("session_id") if hasattr(request_args, "get") else None
+        logger.warning(
+            "Denied chatbot access: reason=%s tenant_id=%s dialog_id=%s user_id=%s session_id=%s",
+            "no access to this chatbot",
+            tenant_id,
+            dialog_id,
+            request_user_id,
+            request_session_id,
+        )
+        return get_error_data_result(message="Authentication error: no access to this chatbot!")
     return get_result(
         data={
             "title": dialog.name,

@@ -49,7 +49,7 @@ class RAGFlowAzureSasBlob:
 
     def health(self):
         _bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        return self.conn.upload_blob(name=fnm, data=BytesIO(binary), length=len(binary))
+        return self.conn.upload_blob(name=f"{_bucket}/{fnm}", data=BytesIO(binary), length=len(binary))
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         blob_name = f"{bucket}/{fnm}"
@@ -77,13 +77,14 @@ class RAGFlowAzureSasBlob:
                 logging.exception(f"fail get {blob_name}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
 
     def obj_exist(self, bucket, fnm):
+        blob_name = f"{bucket}/{fnm}"
         try:
-            return self.conn.get_blob_client(f"{bucket}/{fnm}").exists()
+            return self.conn.get_blob_client(f"{blob_name}").exists()
         except Exception:
-            logging.exception(f"Fail put {bucket}/{fnm}")
+            logging.exception(f"Fail put {blob_name}")
         return False
 
     def get_presigned_url(self, bucket, fnm, expires):
@@ -95,4 +96,4 @@ class RAGFlowAzureSasBlob:
                 logging.exception(f"fail get {blob_name}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
