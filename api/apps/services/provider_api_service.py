@@ -437,7 +437,7 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
         if not factory_info:
             return False, f"Provider '{provider_name}' not found"
         llms = factory_info[0].get("llm", [])
-        target_llm = [llm for llm in llms if llm["name"] == model_name]
+        target_llm = [llm for llm in llms if llm["llm_name"] == model_name]
         if not target_llm:
             return False, f"provider {provider_name} model {model_name} not found"
 
