@@ -371,7 +371,7 @@ async def deprecated_update_chunk(dataset_id, document_id, chunk_id):
         dataset_id, document_id, chunk_id,
     )
     # Forward to the new API implementation
-    return await chunk_api.update_chunk(dataset_id, document_id, chunk_id)
+    return await chunk_api.update_chunk(dataset_id=dataset_id, document_id=document_id, chunk_id=chunk_id)
 
 
 # =============================================================================
@@ -402,6 +402,24 @@ async def deprecated_file_upload_info():
 # =============================================================================
 # Document APIs
 # =============================================================================
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])
+@login_required
+async def deprecated_update_document(dataset_id, document_id):
+    """
+    Deprecated: Use PATCH /api/v1/datasets/{dataset_id}/documents/{document_id} instead.
+
+    Old path: PUT /api/v1/datasets/{dataset_id}/documents/{document_id}
+    New path: PATCH /api/v1/datasets/{dataset_id}/documents/{document_id}
+    """
+    logging.warning(
+        "API endpoint PUT /api/v1/datasets/%s/documents/%s is deprecated. "
+        "Please use PATCH instead.",
+        dataset_id, document_id,
+    )
+    # Forward to the new API implementation
+    return await document_api.update_document(dataset_id=dataset_id, document_id=document_id)
+
 
 @manager.route("/document/get/<doc_id>", methods=["GET"])
 @login_required

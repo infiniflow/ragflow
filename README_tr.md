@@ -400,7 +400,7 @@ docker build --platform linux/amd64 \
 ## 🏄 Topluluk
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
-- [Twitter](https://twitter.com/infiniflowai)
+- [X](https://x.com/infiniflowai)
 - [GitHub Tartışmalar](https://github.com/orgs/infiniflow/discussions)
 
 ## 🙌 Katkıda Bulunma

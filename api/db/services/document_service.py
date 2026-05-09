@@ -678,17 +678,10 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def accessible(cls, doc_id, user_id):
-        docs = (
-            cls.model.select(cls.model.id)
-            .join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id))
-            .join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id))
-            .where(cls.model.id == doc_id, UserTenant.user_id == user_id)
-            .paginate(0, 1)
-        )
-        docs = docs.dicts()
-        if not docs:
+        e, doc = cls.get_by_id(doc_id)
+        if not e:
             return False
-        return True
+        return KnowledgebaseService.accessible(doc.kb_id, user_id)
 
     @classmethod
     @DB.connection_context()
