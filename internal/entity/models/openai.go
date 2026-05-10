@@ -403,12 +403,115 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return nil
 }
 
-// Encode encodes a list of texts into embeddings. OpenAI does expose
-// embedding endpoints (text-embedding-3-* and text-embedding-ada-002),
-// but this initial driver intentionally leaves embedding support
-// unimplemented. A follow-up PR can add it.
+// openaiEmbeddingResponse is the response shape returned by
+// /v1/embeddings. The "index" field gives the position of the embedding
+// in the input array, which we use to keep the output order stable
+// even if the API returns items in a different order.
+type openaiEmbeddingResponse struct {
+	Data []struct {
+		Index     int           `json:"index"`
+		Embedding []interface{} `json:"embedding"`
+	} `json:"data"`
+}
+
+// Encode turns a list of texts into embedding vectors using the
+// OpenAI /v1/embeddings endpoint (e.g. text-embedding-3-small,
+// text-embedding-3-large, text-embedding-ada-002). The output has
+// one vector per input, in the same order the inputs were given.
 func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := z.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenAI embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed openaiEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([][]float64, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(texts) {
+			continue
+		}
+		vec := make([]float64, len(item.Embedding))
+		for j, v := range item.Embedding {
+			switch val := v.(type) {
+			case float64:
+				vec[j] = val
+			case float32:
+				vec[j] = float64(val)
+			default:
+				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
+			}
+		}
+		embeddings[item.Index] = vec
+	}
+
+	for i, vec := range embeddings {
+		if vec == nil {
+			return nil, fmt.Errorf("missing embedding for input at index %d", i)
+		}
+	}
+
+	return embeddings, nil
 }
 
 // ListModels returns the list of model ids visible to the API key.
