@@ -361,7 +361,7 @@ func (l *LmStudioModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	return scanner.Err()
 }
 
-func (l *LmStudioModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (l *LmStudioModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

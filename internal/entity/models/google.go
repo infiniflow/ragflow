@@ -212,8 +212,8 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return err
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (z *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

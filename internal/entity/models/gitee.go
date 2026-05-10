@@ -398,8 +398,8 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *GiteeModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (z *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 

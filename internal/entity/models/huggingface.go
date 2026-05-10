@@ -357,59 +357,60 @@ type hfEmbeddingRequest struct {
 
 type hfEmbeddingResponse [][]float64
 
-func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	if len(texts) == 0 {
-		return [][]float64{}, nil
-	}
-
-	if modelName == nil || *modelName == "" {
-		return nil, fmt.Errorf("model name is required")
-	}
-
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-
-	reqBody := map[string]interface{}{
-		"inputs": texts,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", *modelName)
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
-	}
-
-	var result [][]float64
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	//if len(texts) == 0 {
+	//	return [][]float64{}, nil
+	//}
+	//
+	//if modelName == nil || *modelName == "" {
+	//	return nil, fmt.Errorf("model name is required")
+	//}
+	//
+	//if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+	//	return nil, fmt.Errorf("api key is required")
+	//}
+	//
+	//reqBody := map[string]interface{}{
+	//	"inputs": texts,
+	//}
+	//
+	//jsonData, err := json.Marshal(reqBody)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", *modelName)
+	//
+	//req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//req.Header.Set("Content-Type", "application/json")
+	//req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	//
+	//resp, err := h.httpClient.Do(req)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//defer resp.Body.Close()
+	//
+	//body, err := io.ReadAll(resp.Body)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//if resp.StatusCode != http.StatusOK {
+	//	return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
+	//}
+	//
+	//var result [][]float64
+	//if err = json.Unmarshal(body, &result); err != nil {
+	//	return nil, err
+	//}
+	//
+	//return result, nil
+	return nil, fmt.Errorf("no such method")
 }
 
 func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
