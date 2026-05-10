@@ -483,7 +483,7 @@ func (z *GiteeModel) Rerank(modelName *string, query string, documents []string,
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Gitee rerank API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("gitee rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var rerankResponse RerankResponse
