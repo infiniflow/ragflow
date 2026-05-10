@@ -21,6 +21,7 @@ export const extractRaptorConfigExt = (
     max_cluster,
     random_seed,
     scope,
+    tree_builder,
     auto_disable_for_structured_data,
     ext,
     ...raptorExt
@@ -33,6 +34,7 @@ export const extractRaptorConfigExt = (
     max_cluster,
     random_seed,
     scope,
+    tree_builder,
     auto_disable_for_structured_data,
     ext: { ...ext, ...raptorExt },
   };

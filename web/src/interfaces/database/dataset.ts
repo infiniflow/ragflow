@@ -77,7 +77,9 @@ interface Raptor {
   max_token: number;
   prompt: string;
   random_seed: number;
+  scope?: string;
   threshold: number;
+  tree_builder?: 'raptor' | 'psi' | 'ahc';
   use_raptor: boolean;
 }
 

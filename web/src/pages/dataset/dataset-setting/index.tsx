@@ -95,6 +95,7 @@ export default function DatasetSettings() {
           max_cluster: 64,
           random_seed: 0,
           scope: 'file',
+          tree_builder: 'raptor',
           prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {

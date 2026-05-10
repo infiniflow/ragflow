@@ -63,6 +63,7 @@ export interface IParserConfig {
 }
 
 interface Raptor {
+  tree_builder?: 'raptor' | 'psi' | 'ahc';
   use_raptor: boolean;
 }
 

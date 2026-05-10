@@ -18,15 +18,23 @@
 Unit tests for Raptor utility functions.
 """
 
+import logging
+
 import pytest
 from rag.utils.raptor_utils import (
+    CSV_EXTENSIONS,
+    EXCEL_EXTENSIONS,
+    STRUCTURED_EXTENSIONS,
+    collect_raptor_chunk_ids,
+    collect_raptor_methods,
+    get_raptor_tree_builder,
+    get_skip_reason,
     is_structured_file_type,
     is_tabular_pdf,
+    make_raptor_summary_chunk_id,
+    normalize_raptor_tree_builder,
+    raptor_methods_require_cleanup,
     should_skip_raptor,
-    get_skip_reason,
-    EXCEL_EXTENSIONS,
-    CSV_EXTENSIONS,
-    STRUCTURED_EXTENSIONS
 )
 
 
@@ -281,6 +289,114 @@ class TestIntegrationScenarios:
         
         # Should NOT skip when explicitly disabled
         assert should_skip_raptor(file_type, raptor_config=raptor_config) is False
+
+
+class TestRaptorTreeBuilderConfig:
+    """Test RAPTOR tree builder config resolution"""
+
+    def test_defaults_to_original_raptor_builder(self):
+        assert get_raptor_tree_builder({}) == "raptor"
+        assert get_raptor_tree_builder(None) == "raptor"
+
+    def test_reads_top_level_tree_builder(self):
+        assert get_raptor_tree_builder({"tree_builder": "psi"}) == "psi"
+        assert get_raptor_tree_builder({"tree_builder": "ahc"}) == "psi"
+
+    def test_reads_legacy_ext_tree_builder(self):
+        assert get_raptor_tree_builder({"ext": {"tree_builder": "psi"}}) == "psi"
+        assert get_raptor_tree_builder({"ext": {"tree_builder": "ahc"}}) == "psi"
+
+    def test_normalizes_ahc_alias_to_psi(self):
+        assert normalize_raptor_tree_builder("ahc") == "psi"
+
+    def test_rejects_unknown_tree_builder(self):
+        with pytest.raises(ValueError, match="Unsupported RAPTOR tree builder"):
+            get_raptor_tree_builder({"tree_builder": "unknown"})
+
+
+class TestRaptorMethodCollection:
+    """Test RAPTOR summary method extraction from doc-store fields"""
+
+    def test_legacy_summary_without_method_is_original_raptor(self):
+        field_map = {"chunk_1": {"raptor_kwd": "raptor"}}
+
+        assert collect_raptor_methods(field_map) == {"raptor"}
+        assert collect_raptor_chunk_ids(field_map) == {"chunk_1"}
+
+    def test_explicit_method_is_preserved(self):
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
+
+        assert collect_raptor_methods(field_map) == {"psi"}
+        assert collect_raptor_chunk_ids(field_map) == {"chunk_1"}
+
+    def test_stored_ahc_method_is_treated_as_psi(self):
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "ahc"}}}
+
+        assert collect_raptor_methods(field_map) == {"psi"}
+
+    def test_extra_field_supports_oceanbase_rows(self):
+        field_map = {
+            "chunk_1": {
+                "extra": {
+                    "raptor_kwd": "raptor",
+                    "raptor_method": "psi",
+                }
+            },
+            "chunk_2": {
+                "extra": "{\"raptor_kwd\": \"raptor\"}",
+            },
+            "chunk_3": {
+                "extra": {"raptor_kwd": ""},
+            },
+        }
+
+        assert collect_raptor_methods(field_map) == {"psi", "raptor"}
+        assert collect_raptor_chunk_ids(field_map) == {"chunk_1", "chunk_2"}
+
+    def test_legacy_method_column_is_still_read(self):
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "raptor_method_kwd": "psi"}}
+
+        assert collect_raptor_methods(field_map) == {"psi"}
+
+    def test_non_raptor_rows_are_ignored(self):
+        field_map = {
+            "chunk_1": {"raptor_kwd": ""},
+            "chunk_2": {"extra": {"raptor_kwd": "graph"}},
+            "chunk_3": {},
+        }
+
+        assert collect_raptor_methods(field_map) == set()
+        assert collect_raptor_chunk_ids(field_map) == set()
+
+    def test_malformed_extra_payload_is_logged_and_ignored(self, caplog):
+        field_map = {"chunk_1": {"extra": "{bad json"}}
+
+        with caplog.at_level(logging.WARNING):
+            assert collect_raptor_methods(field_map) == set()
+            assert collect_raptor_chunk_ids(field_map) == set()
+
+        assert "Ignoring malformed RAPTOR extra payload" in caplog.text
+
+    def test_chunk_id_collection_can_preserve_current_method(self):
+        field_map = {
+            "legacy": {"raptor_kwd": "raptor"},
+            "old": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}},
+            "current": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}},
+        }
+
+        assert collect_raptor_chunk_ids(field_map, exclude_methods={"psi"}) == {"legacy", "old"}
+        assert collect_raptor_chunk_ids(field_map, exclude_methods={"raptor"}) == {"current"}
+
+    def test_summary_chunk_ids_include_real_document_id(self):
+        content = "same generated summary"
+
+        assert make_raptor_summary_chunk_id(content, "doc-a") != make_raptor_summary_chunk_id(content, "doc-b")
+
+    def test_cleanup_is_required_only_for_non_target_methods(self):
+        assert raptor_methods_require_cleanup({"psi"}, "psi") is False
+        assert raptor_methods_require_cleanup({"raptor", "psi"}, "psi") is True
+        assert raptor_methods_require_cleanup({"raptor"}, "psi") is True
+        assert raptor_methods_require_cleanup(set(), "psi") is False
 
 
 if __name__ == "__main__":

@@ -36,7 +36,15 @@ from api.db.joint_services.memory_message_service import handle_save_to_memory_t
 from common.connection_utils import timeout
 from common.metadata_utils import turn2jsonschema, update_metadata_to
 from rag.utils.base64_image import image2id
-from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
+from rag.utils.raptor_utils import (
+    collect_raptor_chunk_ids,
+    collect_raptor_methods,
+    get_raptor_tree_builder,
+    get_skip_reason,
+    make_raptor_summary_chunk_id,
+    raptor_methods_require_cleanup,
+    should_skip_raptor,
+)
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from rag.graphrag.general.index import run_graphrag_for_kb
@@ -70,7 +78,10 @@ from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
     email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
-from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
+from rag.raptor import (
+    RAPTOR_TREE_BUILDER,
+    RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor,
+)
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.graphrag.utils import chat_limiter
@@ -817,38 +828,83 @@ async def run_dataflow(task: dict):
                                        dsl=str(pipeline))
 
 
-async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str) -> bool:
-    """Return True if RAPTOR chunks already exist for doc_id in the doc store.
+RAPTOR_METHOD_SEARCH_LIMIT = 10000
 
-    Queries directly for raptor_kwd="raptor" rows so a non-RAPTOR leading
-    chunk cannot produce a false-negative result.  Uses thread_pool_exec so
-    the blocking doc-store call does not stall the event loop.
-    """
+
+async def get_raptor_chunk_field_map(doc_id: str, tenant_id: str, kb_id: str) -> dict:
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search as nlp_search
-    try:
-        condition = {"doc_id": doc_id, "raptor_kwd": ["raptor"]}
+
+    async def search_fields(fields: list[str], condition: dict, order_by=None):
         res = await thread_pool_exec(
             settings.docStoreConn.search,
-            ["raptor_kwd"], [], condition, [], OrderByExpr(),
-            0, 1, nlp_search.index_name(tenant_id), [kb_id]
+            fields, [], condition, [], order_by or OrderByExpr(),
+            0, RAPTOR_METHOD_SEARCH_LIMIT, nlp_search.index_name(tenant_id), [kb_id]
         )
-        field_map = settings.docStoreConn.get_fields(res, ["raptor_kwd"])
-        found = bool(field_map)
-        if found:
+        return settings.docStoreConn.get_fields(res, fields)
+
+    primary = await search_fields(["raptor_kwd", "extra"], {"doc_id": doc_id, "raptor_kwd": ["raptor"]})
+    if collect_raptor_chunk_ids(primary):
+        return primary
+
+    try:
+        return await search_fields(
+            ["raptor_kwd", "extra"],
+            {"doc_id": doc_id},
+            OrderByExpr().desc("create_timestamp_flt"),
+        )
+    except Exception:
+        logging.debug("RAPTOR fallback method lookup with extra field failed for doc %s", doc_id, exc_info=True)
+        return primary
+
+
+async def get_raptor_chunk_methods(doc_id: str, tenant_id: str, kb_id: str) -> set[str]:
+    """Return the RAPTOR tree builders already stored for doc_id.
+
+    Queries directly for raptor_kwd="raptor" rows so a non-RAPTOR leading
+    chunk cannot produce a false-negative result. Legacy summary chunks that
+    do not have extra.raptor_method are treated as the original RAPTOR builder.
+    """
+    try:
+        field_map = await get_raptor_chunk_field_map(doc_id, tenant_id, kb_id)
+        methods = collect_raptor_methods(field_map)
+        if methods:
             logging.info(
-                "Checkpoint hit: RAPTOR chunks for doc %s (tenant=%s kb=%s) already exist",
-                doc_id, tenant_id, kb_id,
+                "Checkpoint hit: RAPTOR chunks for doc %s (tenant=%s kb=%s methods=%s) already exist",
+                doc_id, tenant_id, kb_id, sorted(methods),
             )
         else:
             logging.info(
                 "Checkpoint miss: no RAPTOR chunks for doc %s (tenant=%s kb=%s)",
                 doc_id, tenant_id, kb_id,
             )
-        return found
+        return methods
     except Exception:
         logging.exception("Failed to check RAPTOR chunks for doc %s", doc_id)
-        return False
+        return set()
+
+
+async def has_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, tree_builder: str = RAPTOR_TREE_BUILDER) -> bool:
+    methods = await get_raptor_chunk_methods(doc_id, tenant_id, kb_id)
+    return tree_builder in methods
+
+
+async def delete_raptor_chunks(doc_id: str, tenant_id: str, kb_id: str, keep_method: str | None = None):
+    from rag.nlp import search as nlp_search
+
+    field_map = await get_raptor_chunk_field_map(doc_id, tenant_id, kb_id)
+    exclude_methods = {keep_method} if keep_method else None
+    chunk_ids = collect_raptor_chunk_ids(field_map, exclude_methods=exclude_methods)
+    if not chunk_ids:
+        return 0
+
+    await thread_pool_exec(
+        settings.docStoreConn.delete,
+        {"id": list(chunk_ids)},
+        nlp_search.index_name(tenant_id),
+        kb_id,
+    )
+    return len(chunk_ids)
 
 
 @timeout(3600)
@@ -856,19 +912,43 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
     raptor_config = kb_parser_config.get("raptor", {})
+    raptor_ext_config = raptor_config.get("ext") or {}
+    tree_builder = get_raptor_tree_builder(raptor_config)
     vctr_nm = "q_%d_vec" % vector_size
 
     res = []
     tk_count = 0
+    cleanup_raptor_chunks = []
     max_errors = int(os.environ.get("RAPTOR_MAX_ERRORS", 3))
-    doc_name_by_id = {}
+    doc_info_by_id = {}
     for doc_id in set(doc_ids):
         ok, source_doc = DocumentService.get_by_id(doc_id)
         if not ok or not source_doc:
             continue
-        source_name = getattr(source_doc, "name", "")
-        if source_name:
-            doc_name_by_id[doc_id] = source_name
+        doc_info_by_id[doc_id] = {
+            "name": getattr(source_doc, "name", ""),
+            "type": getattr(source_doc, "type", ""),
+            "parser_id": getattr(source_doc, "parser_id", ""),
+            "parser_config": getattr(source_doc, "parser_config", {}) or {},
+        }
+
+    def schedule_raptor_cleanup(doc_id: str, keep_method: str | None = None):
+        cleanup_plan = (doc_id, keep_method)
+        if cleanup_plan not in cleanup_raptor_chunks:
+            cleanup_raptor_chunks.append(cleanup_plan)
+
+    def skip_raptor_doc(doc_id: str) -> bool:
+        doc_info = doc_info_by_id.get(doc_id, {})
+        file_type = doc_info.get("type") or row.get("type", "")
+        parser_id = doc_info.get("parser_id") or row.get("parser_id", "")
+        parser_config = doc_info.get("parser_config") or row.get("parser_config", {})
+        if should_skip_raptor(file_type, parser_id, parser_config, raptor_config):
+            skip_reason = get_skip_reason(file_type, parser_id, parser_config)
+            doc_name = doc_info.get("name") or doc_id
+            logging.info("Skipping Raptor for document %s: %s", doc_name, skip_reason)
+            callback(msg=f"[RAPTOR] doc:{doc_id} skipped: {skip_reason}")
+            return True
+        return False
 
     async def generate(chunks, did):
         nonlocal tk_count, res
@@ -880,16 +960,20 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             raptor_config["max_token"],
             raptor_config["threshold"],
             max_errors=max_errors,
+            tree_builder=tree_builder,
+            psi_exact_max_leaves=raptor_ext_config.get("psi_exact_max_leaves", 4096),
+            psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
         )
         original_length = len(chunks)
         chunks, layers = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
-        effective_doc_name = row["name"] if did == fake_doc_id else doc_name_by_id.get(did, row["name"])
+        effective_doc_name = row["name"] if did == fake_doc_id else doc_info_by_id.get(did, {}).get("name") or row["name"]
         doc = {
             "doc_id": did,
             "kb_id": [str(row["kb_id"])],
             "docnm_kwd": effective_doc_name,
             "title_tks": rag_tokenizer.tokenize(effective_doc_name),
-            "raptor_kwd": "raptor"
+            "raptor_kwd": "raptor",
+            "extra": {"raptor_method": tree_builder},
         }
         if row["pagerank"]:
             doc[PAGERANK_FLD] = int(row["pagerank"])
@@ -906,7 +990,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
         for idx, (content, vctr) in enumerate(chunks[original_length:], start=original_length):
             d = copy.deepcopy(doc)
-            d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
+            d["id"] = make_raptor_summary_chunk_id(content, did)
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             d[vctr_nm] = vctr.tolist()
@@ -918,12 +1002,28 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             tk_count += num_tokens_from_string(content)
 
     if raptor_config.get("scope", "file") == "file":
+        dataset_methods = await get_raptor_chunk_methods(fake_doc_id, row["tenant_id"], row["kb_id"])
+        remove_dataset_summaries = bool(dataset_methods)
+        has_file_level_target = False
+        if dataset_methods:
+            callback(msg="[RAPTOR] will remove dataset-level summaries after file-level summaries are available.")
+
         for x, doc_id in enumerate(doc_ids):
-            # CHECKPOINT: skip docs that already have RAPTOR chunks in the doc store
-            if await has_raptor_chunks(doc_id, row["tenant_id"], row["kb_id"]):
-                callback(msg=f"[RAPTOR] doc:{doc_id} already has RAPTOR chunks, skipping.")
+            if skip_raptor_doc(doc_id):
                 callback(prog=(x + 1.) / len(doc_ids))
                 continue
+            # CHECKPOINT: skip docs that already have RAPTOR chunks in the doc store
+            existing_methods = await get_raptor_chunk_methods(doc_id, row["tenant_id"], row["kb_id"])
+            if tree_builder in existing_methods:
+                has_file_level_target = True
+                if raptor_methods_require_cleanup(existing_methods, tree_builder):
+                    schedule_raptor_cleanup(doc_id, tree_builder)
+                    callback(msg=f"[RAPTOR] doc:{doc_id} will remove old RAPTOR summaries after insert.")
+                callback(msg=f"[RAPTOR] doc:{doc_id} already has {tree_builder} RAPTOR chunks, skipping.")
+                callback(prog=(x + 1.) / len(doc_ids))
+                continue
+            if existing_methods:
+                callback(msg=f"[RAPTOR] doc:{doc_id} will migrate RAPTOR summaries to {tree_builder} after insert.")
 
             chunks = []
             skipped_chunks = 0
@@ -945,12 +1045,52 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                 callback(msg=f"[WARN] No valid chunks with vectors found for doc {doc_id}, skipping")
                 continue
 
+            before_generate = len(res)
             await generate(chunks, doc_id)
+            if len(res) > before_generate:
+                has_file_level_target = True
+                if existing_methods:
+                    schedule_raptor_cleanup(doc_id, tree_builder)
             callback(prog=(x + 1.) / len(doc_ids))
+
+        if remove_dataset_summaries:
+            if has_file_level_target:
+                schedule_raptor_cleanup(fake_doc_id)
+            else:
+                callback(msg="[RAPTOR] kept dataset-level summaries because no file-level summaries were built.")
     else:
+        migrated_file_docs = 0
+        file_cleanup_doc_ids = []
+        skipped_doc_ids = set()
+        for doc_id in set(doc_ids):
+            if skip_raptor_doc(doc_id):
+                skipped_doc_ids.add(doc_id)
+                continue
+            existing_methods = await get_raptor_chunk_methods(doc_id, row["tenant_id"], row["kb_id"])
+            if existing_methods:
+                file_cleanup_doc_ids.append(doc_id)
+                migrated_file_docs += 1
+        if migrated_file_docs:
+            callback(msg=f"[RAPTOR] will remove file-level summaries for {migrated_file_docs} docs after dataset-level build succeeds.")
+
+        existing_methods = await get_raptor_chunk_methods(fake_doc_id, row["tenant_id"], row["kb_id"])
+        if tree_builder in existing_methods:
+            if raptor_methods_require_cleanup(existing_methods, tree_builder):
+                schedule_raptor_cleanup(fake_doc_id, tree_builder)
+                callback(msg="[RAPTOR] will remove old dataset-level RAPTOR summaries after insert.")
+            for doc_id in file_cleanup_doc_ids:
+                schedule_raptor_cleanup(doc_id)
+            callback(msg=f"[RAPTOR] dataset-level {tree_builder} summaries already exist, skipping.")
+            return res, tk_count, cleanup_raptor_chunks
+        migrate_dataset_summaries = bool(existing_methods)
+        if migrate_dataset_summaries:
+            callback(msg=f"[RAPTOR] will migrate dataset-level RAPTOR summaries to {tree_builder} after insert.")
+
         chunks = []
         skipped_chunks = 0
         for doc_id in doc_ids:
+            if doc_id in skipped_doc_ids:
+                continue
             for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
@@ -965,13 +1105,22 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             callback(msg=f"[WARN] Skipped {skipped_chunks} chunks without vector field '{vctr_nm}'. Consider re-parsing documents with the current embedding model.")
 
         if not chunks:
+            if skipped_doc_ids and len(skipped_doc_ids) == len(set(doc_ids)):
+                callback(msg="[RAPTOR] all documents were skipped by RAPTOR auto-disable rules.")
+                return res, tk_count, cleanup_raptor_chunks
             logging.error(f"RAPTOR: No valid chunks with vectors found in any document for kb {row['kb_id']}")
             callback(msg=f"[ERROR] No valid chunks with vectors found. Please ensure documents are parsed with the current embedding model (vector size: {vector_size}).")
-            return res, tk_count
+            return res, tk_count, cleanup_raptor_chunks
 
+        before_generate = len(res)
         await generate(chunks, fake_doc_id)
+        if len(res) > before_generate:
+            for doc_id in file_cleanup_doc_ids:
+                schedule_raptor_cleanup(doc_id)
+            if migrate_dataset_summaries:
+                schedule_raptor_cleanup(fake_doc_id, tree_builder)
 
-    return res, tk_count
+    return res, tk_count, cleanup_raptor_chunks
 
 
 async def delete_image(kb_id, chunk_id):
@@ -1088,6 +1237,7 @@ async def do_handle_task(task):
     task_parser_config = task["parser_config"]
     task_start_ts = timer()
     toc_thread = None
+    raptor_cleanup_chunks = []
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
@@ -1143,23 +1293,12 @@ async def do_handle_task(task):
                 progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
                 return
 
-        # Check if Raptor should be skipped for structured data
-        file_type = task.get("type", "")
-        parser_id = task.get("parser_id", "")
-        raptor_config = kb_parser_config.get("raptor", {})
-
-        if should_skip_raptor(file_type, parser_id, task_parser_config, raptor_config):
-            skip_reason = get_skip_reason(file_type, parser_id, task_parser_config)
-            logging.info(f"Skipping Raptor for document {task_document_name}: {skip_reason}")
-            progress_callback(prog=1.0, msg=f"Raptor skipped: {skip_reason}")
-            return
-
         # bind LLM for raptor
         chat_model_config = get_model_config_by_type_and_name(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
         chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
         # run RAPTOR
         async with kg_limiter:
-            chunks, token_count = await run_raptor_for_kb(
+            chunks, token_count, raptor_cleanup_chunks = await run_raptor_for_kb(
                 row=task,
                 kb_parser_config=kb_parser_config,
                 chat_mdl=chat_model,
@@ -1267,6 +1406,18 @@ async def do_handle_task(task):
         if has_canceled(task_id):
             progress_callback(-1, msg="Task has been canceled.")
             return
+
+        if raptor_cleanup_chunks:
+            cleaned_chunks = 0
+            for cleanup_doc_id, keep_method in raptor_cleanup_chunks:
+                cleaned_chunks += await delete_raptor_chunks(
+                    cleanup_doc_id,
+                    task_tenant_id,
+                    task_dataset_id,
+                    keep_method=keep_method,
+                )
+            if cleaned_chunks:
+                progress_callback(msg=f"Cleaned up {cleaned_chunks} stale RAPTOR chunks.")
 
         logging.info(
             "Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(

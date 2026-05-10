@@ -344,6 +344,7 @@ class RaptorConfig(Base):
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
     scope: Annotated[Literal["file", "dataset"], Field(default="file")]
+    tree_builder: Annotated[Literal["raptor", "psi", "ahc"], Field(default="raptor")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
     ext: Annotated[dict, Field(default={})]
 
