@@ -705,6 +705,8 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class User(DataBaseModel, AuthUser):
+    SENSITIVE_FIELDS = {"password", "access_token"}
+
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
@@ -728,6 +730,9 @@ class User(DataBaseModel, AuthUser):
     def get_id(self):
         jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
+
+    def to_safe_dict(self):
+        return {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
 
     class Meta:
         db_table = "user"

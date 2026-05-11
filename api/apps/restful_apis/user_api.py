@@ -121,7 +121,6 @@ async def login():
             message="This account has been disabled, please contact the administrator!",
         )
     elif user:
-        response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
         user.update_time = current_timestamp()
@@ -129,7 +128,7 @@ async def login():
         user.save()
         msg = "Welcome back!"
 
-        return await construct_response(data=response_data, auth=user.get_id(), message=msg)
+        return await construct_response(data=user.to_safe_dict(), auth=user.get_id(), message=msg)
     else:
         return get_json_result(
             data=False,
@@ -383,7 +382,7 @@ async def user_profile():
               type: string
               description: User email.
     """
-    return get_json_result(data=current_user.to_dict())
+    return get_json_result(data=current_user.to_safe_dict())
 
 
 def rollback_user_registration(user_id):
@@ -528,7 +527,7 @@ async def user_add():
         user = users[0]
         login_user(user)
         return await construct_response(
-            data=user.to_json(),
+            data=user.to_safe_dict(),
             auth=user.get_id(),
             message=f"{nickname}, welcome aboard!",
         )
@@ -837,6 +836,6 @@ async def forget_reset_password():
         pass
 
     msg = "Password reset successful. Logged in."
-    return await construct_response(data=user.to_json(), auth=user.get_id(), message=msg)
+    return await construct_response(data=user.to_safe_dict(), auth=user.get_id(), message=msg)
 
 
