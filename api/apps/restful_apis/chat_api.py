@@ -350,18 +350,38 @@ def list_chats():
         page_number = int(request.args.get("page", 0))
         items_per_page = int(request.args.get("page_size", 0))
 
+        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        authorized_owner_ids = {member["tenant_id"] for member in tenants}
+        authorized_owner_ids.add(current_user.id)
+
         if owner_ids:
+            requested_owner_ids = set(owner_ids)
+            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
+            if unauthorized_owner_ids:
+                return get_json_result(
+                    data=False,
+                    message="Only authorized owner_ids can be queried.",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            effective_owner_ids = list(requested_owner_ids)
+            explicit_owner_filter = True
+        else:
+            effective_owner_ids = list(authorized_owner_ids)
+            explicit_owner_filter = False
+
+        if explicit_owner_filter:
             chats, total = DialogService.get_by_tenant_ids(
-                owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters
+                effective_owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters
             )
-            chats = [chat for chat in chats if chat["tenant_id"] in owner_ids]
+            allowed_tenants = set(effective_owner_ids)
+            chats = [chat for chat in chats if chat["tenant_id"] in allowed_tenants]
             total = len(chats)
             if page_number and items_per_page:
                 start = (page_number - 1) * items_per_page
                 chats = chats[start : start + items_per_page]
         else:
             chats, total = DialogService.get_by_tenant_ids(
-                [], current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters
+                effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters
             )
 
         return get_json_result(

@@ -201,6 +201,7 @@ def _load_chat_module(monkeypatch):
     class _StubRetCode(int, Enum):
         SUCCESS = 0
         DATA_ERROR = 102
+        OPERATING_ERROR = 103
         AUTHENTICATION_ERROR = 109
 
     class _StubStatusEnum(str, Enum):
@@ -370,6 +371,10 @@ def _load_chat_module(monkeypatch):
         @staticmethod
         def get_by_id(_tenant_id):
             return True, SimpleNamespace(llm_id="glm-4")
+
+        @staticmethod
+        def get_joined_tenants_by_user_id(_user_id):
+            return []
 
     class _StubUserTenantService:
         @staticmethod
@@ -879,6 +884,32 @@ def test_list_chats_keeps_zero_pagination_semantics(monkeypatch):
     assert res["code"] == 0
     assert calls[-1] == (0, 2)
     assert len(res["data"]["chats"]) == 1
+
+
+@pytest.mark.p2
+def test_list_chats_rejects_unauthorized_owner_ids(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page": "0",
+                    "page_size": "0",
+                    "orderby": "create_time",
+                    "desc": "true",
+                    "id": None,
+                    "name": None,
+                }.get(key, default),
+                getlist=lambda key: ["foreign-tenant-id"] if key == "owner_ids" else [],
+            )
+        ),
+    )
+    res = module.list_chats.__wrapped__()
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "authorized owner_ids" in res["message"]
 
 
 @pytest.mark.p2

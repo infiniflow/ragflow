@@ -225,6 +225,10 @@ def _load_search_api(monkeypatch):
         def get_by_id(_tenant_id):
             return True, SimpleNamespace(id=_tenant_id)
 
+        @staticmethod
+        def get_joined_tenants_by_user_id(_user_id):
+            return []
+
     class _UserTenantService:
         @staticmethod
         def query(**_kwargs):
@@ -504,6 +508,16 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
     assert res["data"]["total"] == 1
     assert len(res["data"]["search_apps"]) == 1
     assert res["data"]["search_apps"][0]["tenant_id"] == "tenant-1"
+
+    # list: unauthorized owner_ids
+    _set_request_args(
+        monkeypatch,
+        module,
+        {"keywords": "", "page": "0", "page_size": "10", "orderby": "create_time", "desc": "true", "owner_ids": ["other-tenant"]},
+    )
+    res = module.list_searches()
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "authorized owner_ids" in res["message"]
 
     # list: exception
     def _raise_list(*_args, **_kwargs):
