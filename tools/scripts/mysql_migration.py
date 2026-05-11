@@ -478,7 +478,7 @@ class TenantModelInstanceStage(MigrationStage):
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             for tenant_id, llm_factory, api_key, status, provider_id in records[:5]:
-                logger.info(f"  instance_name={llm_factory}, provider_id={provider_id}, api_key=***")
+                logger.info(f"  instance_name=default, provider_id={provider_id}, api_key=***")
             if len(records) > 5:
                 logger.info(f"  ... and {len(records) - 5} more records")
             return len(records), self.target_tables
@@ -490,7 +490,7 @@ class TenantModelInstanceStage(MigrationStage):
             values = []
             for tenant_id, llm_factory, api_key, status, provider_id in batch:
                 record_id = self.generate_uuid()
-                instance_name = llm_factory.replace("'", "''") if llm_factory else ""
+                instance_name = "default"
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
                 status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(f"('{record_id}', '{instance_name}', '{provider_id}', "

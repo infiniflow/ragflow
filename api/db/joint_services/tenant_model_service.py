@@ -17,9 +17,12 @@ import logging
 import os
 import enum
 from common import settings
-from common.constants import LLMType
+from common.constants import LLMType, ActiveStatusEnum
 from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService, TenantService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_service import TenantModelService
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +152,45 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
     if not model_name:
         raise Exception(f"No default {model_type} model is set.")
     return get_model_config_by_type_and_name(tenant_id, model_type, model_name)
+
+
+def get_model_config_from_provider_instance(tenant_id, provider_name: str, instance_name: str, model_name: str, model_type: str|enum.Enum):
+    model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        raise LookupError(f"Provider {provider_name} not found.")
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if not instance_obj:
+        raise LookupError(f"Instance {instance_name} not found.")
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, model_name)
+
+    import json
+    api_key, _, _ = TenantLLMService._decode_api_key_config(instance_obj.api_key)
+    extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
+
+    if model_obj:
+        if model_obj.status == ActiveStatusEnum.INACTIVE.value:
+            raise f"Model {model_name} is disabled."
+
+        return {
+            "llm_factory": provider_obj.provider_name,
+            "api_key": api_key,
+            "llm_name": model_obj.model_name,
+            "api_base": extra_fields.get("base_url", ""),
+            "model_type": model_obj.model_type
+        }
+    else:
+        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
+        if not fac_list:
+            raise LookupError(f"Model provider config not found: {provider_name}")
+        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == model_name]
+        if not llm_list:
+            raise LookupError(f"Model config not found: {model_name}")
+        llm_config = llm_list[0]
+        return {
+            "llm_factory": provider_obj.provider_name,
+            "api_key": api_key,
+            "llm_name": llm_config["llm_name"],
+            "api_base": extra_fields.get("base_url", ""),
+            "model_type": llm_config["model_type"]
+        }

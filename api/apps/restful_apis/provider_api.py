@@ -689,7 +689,7 @@ async def chat_to_model(tenant_id: str = None, provider_name: str = None, instan
 
     try:
         success, result = await provider_api_service.chat_to_model(
-            tenant_id, provider_name, model_name, message, stream, thinking
+            tenant_id, provider_name, instance_name, model_name, message, stream, thinking
         )
         if not success:
             return get_error_data_result(message=result)

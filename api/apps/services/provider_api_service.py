@@ -453,12 +453,13 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
     return True, None
 
 
-async def chat_to_model(tenant_id: str, provider_name: str, model_name: str, message: str, stream: bool = False, thinking: bool = False):
+async def chat_to_model(tenant_id: str, provider_name: str, instance_name: str, model_name: str, message: str, stream: bool = False, thinking: bool = False):
     """
     Chat to a model.
 
     :param tenant_id: tenant ID
     :param provider_name: provider/factory name
+    :param instance_name: instance name
     :param model_name: model name
     :param message: chat message
     :param stream: whether to stream the response
@@ -468,7 +469,7 @@ async def chat_to_model(tenant_id: str, provider_name: str, model_name: str, mes
     from api.db.services.llm_service import LLMBundle
 
     # Get model config
-    composite_name = f"{model_name}@{provider_name}"
+    composite_name = f"{model_name}@{instance_name}@{provider_name}"
     try:
         model_config = TenantLLMService.get_model_config(tenant_id, LLMType.CHAT.value, composite_name)
     except LookupError:
