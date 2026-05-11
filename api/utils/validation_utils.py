@@ -377,6 +377,9 @@ class AutoMetadataConfig(Base):
     built_in_metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
 
 
+TableColumnRole = Literal["indexing", "metadata", "both"]
+
+
 class ParserConfig(Base):
     auto_keywords: Annotated[int, Field(default=0, ge=0, le=32)]
     auto_questions: Annotated[int, Field(default=0, ge=0, le=10)]
@@ -393,6 +396,25 @@ class ParserConfig(Base):
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
     ext: Annotated[dict, Field(default={})]
+    # Table parser: column name -> "indexing" | "metadata" | "both". Absence => all columns "both".
+    # Table parser: "auto" = all columns both (default), "manual" = use table_column_roles. None → treated as "auto".
+    table_column_mode: Annotated[Literal["auto", "manual"] | None, Field(default=None)]
+    # Table parser: column name -> "indexing" | "metadata" | "both". Used only when table_column_mode == "manual".
+    table_column_roles: Annotated[dict[str, TableColumnRole] | None, Field(default=None)]
+    # Table parser: list of column names (set by backend after first parse; used by frontend for role selector).
+    table_column_names: Annotated[list[str] | None, Field(default=None)]
+
+    @field_validator("table_column_roles", mode="before")
+    @classmethod
+    def legacy_vectorize_table_column_role(cls, v: Any) -> Any:
+        """Normalize legacy role value *vectorize* to *indexing* (chunk text + full-text search)."""
+        if v is None or not isinstance(v, dict):
+            return v
+        out: dict[str, Any] = {}
+        for key, val in v.items():
+            k = key if isinstance(key, str) else str(key)
+            out[k] = "indexing" if val == "vectorize" else val
+        return out
 
 
 class UpdateDocumentReq(Base):
