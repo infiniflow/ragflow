@@ -16,7 +16,7 @@
 import logging
 from datetime import datetime
 import os
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from anthropic import BaseModel
 from peewee import SQL, fn
@@ -100,7 +100,7 @@ class ConnectorService(CommonService):
             return 0, []
 
         source_type = f"{conn.source}/{conn.id}"
-        retain_doc_ids = {hash128(file.id) for file in file_list}
+        retain_doc_ids = {hash128(f"{connector_id}:{file.id}") for file in file_list}
         existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
             kb_id,
             source_type,
@@ -276,12 +276,13 @@ class SyncLogsService(CommonService):
             id: str
             filename: str
             blob: bytes
+            fingerprint: Optional[str] = None
 
             def read(self) -> bytes:
                 return self.blob
 
         errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"], fingerprint=d.get("fingerprint")) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)

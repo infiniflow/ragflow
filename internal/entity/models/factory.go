@@ -57,10 +57,16 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewXAIModel(baseURL, urlSuffix), nil
 	case "lmstudio":
 		return NewLmStudioModel(baseURL, urlSuffix), nil
+	case "openai":
+		return NewOpenAIModel(baseURL, urlSuffix), nil
 	case "nvidia":
 		return NewNvidiaModel(baseURL, urlSuffix), nil
 	case "openrouter":
 		return NewOpenRouterModel(baseURL, urlSuffix), nil
+	case "huggingface":
+		return NewHuggingFaceModel(baseURL, urlSuffix), nil
+	case "baidu":
+		return NewBaiduModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
