@@ -1,5 +1,5 @@
 import { RunningStatus } from '@/constants/knowledge';
-import { DataSourceKey } from '@/pages/user-setting/data-source/contant';
+import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
 import { TreeData } from '@antv/g6/lib/types';
 export interface IConnector {
   id: string;
@@ -8,7 +8,7 @@ export interface IConnector {
   source: DataSourceKey;
   auto_parse?: '0' | '1';
 }
-// knowledge base
+// knowledge base detail
 export interface IKnowledge {
   avatar?: any;
   chunk_num: number;
@@ -20,7 +20,7 @@ export interface IKnowledge {
   id: string;
   name: string;
   parser_config: ParserConfig;
-  parser_id: string;
+  chunk_method: string;
   pipeline_id: string;
   pipeline_name: string;
   pipeline_avatar: string;
@@ -32,7 +32,7 @@ export interface IKnowledge {
   update_date: string;
   update_time: number;
   vector_similarity_weight: number;
-  embd_id: string;
+  embedding_model: string;
   nickname: string;
   operator_permission: number;
   size: number;
@@ -43,11 +43,13 @@ export interface IKnowledge {
   graphrag_task_finish_at: string;
   graphrag_task_id: string;
   connectors: IConnector[];
+  embd_id: string;
+  parser_id: string;
 }
 
 export interface IKnowledgeResult {
   kbs: IKnowledge[];
-  total: number;
+  total_datasets: number;
 }
 
 export interface Raptor {
@@ -117,6 +119,13 @@ export interface ITenantInfo {
   speech2text_id: string;
   rerank_id?: string;
   tts_id: string;
+  // Tenant model IDs
+  tenant_asr_id?: string;
+  tenant_embd_id?: string;
+  tenant_img2txt_id?: string;
+  tenant_llm_id?: string;
+  tenant_rerank_id?: string;
+  tenant_tts_id?: string;
 }
 
 export type ChunkDocType = 'image' | 'table' | 'text';

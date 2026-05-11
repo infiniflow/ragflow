@@ -21,9 +21,9 @@ from common import (
     batch_create_chat_assistants,
     batch_create_datasets,
     bulk_upload_documents,
-    delete_chat_assistants,
-    delete_datasets,
-    delete_session_with_chat_assistants,
+    delete_all_chat_assistants,
+    delete_all_datasets,
+    delete_all_sessions_with_chat_assistant,
     list_documents,
     parse_documents,
 )
@@ -89,7 +89,7 @@ def HttpApiAuth(token):
 @pytest.fixture(scope="function")
 def clear_datasets(request, HttpApiAuth):
     def cleanup():
-        delete_datasets(HttpApiAuth, {"ids": None})
+        delete_all_datasets(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
@@ -97,7 +97,7 @@ def clear_datasets(request, HttpApiAuth):
 @pytest.fixture(scope="function")
 def clear_chat_assistants(request, HttpApiAuth):
     def cleanup():
-        delete_chat_assistants(HttpApiAuth)
+        delete_all_chat_assistants(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
@@ -106,7 +106,7 @@ def clear_chat_assistants(request, HttpApiAuth):
 def clear_session_with_chat_assistants(request, HttpApiAuth, add_chat_assistants):
     def cleanup():
         for chat_assistant_id in chat_assistant_ids:
-            delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
+            delete_all_sessions_with_chat_assistant(HttpApiAuth, chat_assistant_id)
 
     request.addfinalizer(cleanup)
 
@@ -116,7 +116,7 @@ def clear_session_with_chat_assistants(request, HttpApiAuth, add_chat_assistants
 @pytest.fixture(scope="class")
 def add_dataset(request, HttpApiAuth):
     def cleanup():
-        delete_datasets(HttpApiAuth, {"ids": None})
+        delete_all_datasets(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
@@ -127,7 +127,7 @@ def add_dataset(request, HttpApiAuth):
 @pytest.fixture(scope="function")
 def add_dataset_func(request, HttpApiAuth):
     def cleanup():
-        delete_datasets(HttpApiAuth, {"ids": None})
+        delete_all_datasets(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
@@ -154,7 +154,7 @@ def add_chunks(HttpApiAuth, add_document):
 @pytest.fixture(scope="class")
 def add_chat_assistants(request, HttpApiAuth, add_document):
     def cleanup():
-        delete_chat_assistants(HttpApiAuth)
+        delete_all_chat_assistants(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 

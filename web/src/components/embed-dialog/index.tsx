@@ -1,6 +1,6 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import HighLightMarkdown from '@/components/highlight-markdown';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -17,27 +17,39 @@ import {
 } from '@/components/ui/form';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Switch } from '@/components/ui/switch';
 import { SharedFrom } from '@/constants/chat';
 import {
   LanguageAbbreviation,
   LanguageAbbreviationMap,
   ThemeEnum,
 } from '@/constants/common';
-import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { Routes } from '@/routes';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { isEmpty, trim } from 'lodash';
+import { ExternalLink } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import {
+  oneDark,
+  oneLight,
+} from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
+import { RAGFlowFormItem } from '../ragflow-form';
+import { SwitchFormField } from '../switch-fom-field';
+import { useIsDarkTheme } from '../theme-provider';
+import { Input } from '../ui/input';
 
 const FormSchema = z.object({
   visibleAvatar: z.boolean(),
+  published: z.boolean(),
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
   theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
+  userId: z.string().optional(),
 });
 
 type IProps = IModalProps<any> & {
@@ -53,13 +65,16 @@ function EmbedDialog({
   from,
   beta = '',
   isAgent,
+  visible,
 }: IProps) {
-  const { t } = useTranslate('chat');
+  const { t } = useTranslation();
+  const isDarkTheme = useIsDarkTheme();
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       visibleAvatar: false,
+      published: false,
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
@@ -77,27 +92,48 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale, embedType, enableStreaming, theme } = values;
+    const {
+      visibleAvatar,
+      published,
+      locale,
+      embedType,
+      enableStreaming,
+      theme,
+      userId,
+    } = values;
     const baseRoute =
       embedType === 'widget'
         ? Routes.ChatWidget
         : from === SharedFrom.Agent
           ? Routes.AgentShare
           : Routes.ChatShare;
-    let src = `${location.origin}${baseRoute}?shared_id=${token}&from=${from}&auth=${beta}`;
+
+    const src = new URL(`${location.origin}${baseRoute}`);
+    src.searchParams.append('shared_id', token);
+    src.searchParams.append('from', from);
+    src.searchParams.append('auth', beta);
+
+    if (published) {
+      src.searchParams.append('release', 'true');
+    }
     if (visibleAvatar) {
-      src += '&visible_avatar=1';
+      src.searchParams.append('visible_avatar', '1');
     }
     if (locale) {
-      src += `&locale=${locale}`;
+      src.searchParams.append('locale', locale);
     }
-    if (enableStreaming) {
-      src += '&streaming=true';
+    if (embedType === 'widget') {
+      src.searchParams.append('mode', 'master');
+      src.searchParams.append('streaming', String(enableStreaming));
     }
     if (theme && embedType === 'fullscreen') {
-      src += `&theme=${theme}`;
+      src.searchParams.append('theme', theme);
     }
-    return src;
+    if (!isEmpty(trim(userId))) {
+      src.searchParams.append('userId', userId!);
+    }
+
+    return src.toString();
   }, [beta, from, token, values]);
 
   const text = useMemo(() => {
@@ -105,55 +141,51 @@ function EmbedDialog({
     const { embedType } = values;
 
     if (embedType === 'widget') {
-      const { enableStreaming } = values;
-      const streamingParam = enableStreaming
-        ? '&streaming=true'
-        : '&streaming=false';
-      return `
-  ~~~ html
-  <iframe src="${iframeSrc}&mode=master${streamingParam}"
-    style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999"
-    frameborder="0" allow="microphone;camera"></iframe>
-  <script>
-  window.addEventListener('message',e=>{
-    if(e.origin!=='${location.origin.replace(/:\d+/, ':9222')}')return;
-    if(e.data.type==='CREATE_CHAT_WINDOW'){
-      if(document.getElementById('chat-win'))return;
-      const i=document.createElement('iframe');
-      i.id='chat-win';i.src=e.data.src;
-      i.style.cssText='position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
-      i.frameBorder='0';i.allow='microphone;camera';
-      document.body.appendChild(i);
-    }else if(e.data.type==='TOGGLE_CHAT'){
-      const w=document.getElementById('chat-win');
-      if(w)w.style.display=e.data.isOpen?'block':'none';
-    }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
-  });
-  </script>
-~~~
-  `;
+      return `<iframe
+  src="${iframeSrc}"
+  style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999"
+  frameborder="0"
+  allow="microphone;camera"
+></iframe>
+<script>
+window.addEventListener('message',e=>{
+  if(e.origin!=='${location.origin.replace(/:\d+/, ':9222')}')return;
+  if(e.data.type==='CREATE_CHAT_WINDOW'){
+    if(document.getElementById('chat-win'))return;
+    const i=document.createElement('iframe');
+    i.id='chat-win';i.src=e.data.src;
+    i.style.cssText='position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
+    i.frameBorder='0';i.allow='microphone;camera';
+    document.body.appendChild(i);
+  }else if(e.data.type==='TOGGLE_CHAT'){
+    const w=document.getElementById('chat-win');
+    if(w)w.style.display=e.data.isOpen?'block':'none';
+  }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+});
+</script>
+`;
     } else {
-      return `
-  ~~~ html
-  <iframe
+      return `<iframe
   src="${iframeSrc}"
   style="width: 100%; height: 100%; min-height: 600px"
   frameborder="0"
->
-</iframe>
-~~~
-  `;
+></iframe>
+`;
     }
   }, [generateIframeSrc, values]);
 
+  const handleOpenInNewTab = useCallback(() => {
+    const iframeSrc = generateIframeSrc();
+    window.open(iframeSrc, '_blank');
+  }, [generateIframeSrc]);
+
   return (
-    <Dialog open onOpenChange={hideModal}>
+    <Dialog open={visible} onOpenChange={hideModal}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {t('embedIntoSite', { keyPrefix: 'common' })}
-          </DialogTitle>
+          <DialogTitle>{t('common.embedIntoSite')}</DialogTitle>
         </DialogHeader>
+
         <section className="w-full overflow-auto space-y-5 text-sm text-text-secondary">
           <Form {...form}>
             <form className="space-y-5">
@@ -162,7 +194,7 @@ function EmbedDialog({
                 name="embedType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Embed Type</FormLabel>
+                    <FormLabel>{t('chat.embedType')}</FormLabel>
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
@@ -172,13 +204,13 @@ function EmbedDialog({
                         <div className="flex items-center space-x-2">
                           <RadioGroupItem value="fullscreen" id="fullscreen" />
                           <Label htmlFor="fullscreen" className="text-sm">
-                            Fullscreen Chat (Traditional iframe)
+                            {t('chat.fullscreenChat')}
                           </Label>
                         </div>
                         <div className="flex items-center space-x-2">
                           <RadioGroupItem value="widget" id="widget" />
                           <Label htmlFor="widget" className="text-sm">
-                            Floating Widget (Intercom-style)
+                            {t('chat.floatingWidget')}
                           </Label>
                         </div>
                       </RadioGroup>
@@ -193,7 +225,7 @@ function EmbedDialog({
                   name="theme"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Theme</FormLabel>
+                      <FormLabel>{t('chat.theme')}</FormLabel>
                       <FormControl>
                         <RadioGroup
                           onValueChange={field.onChange}
@@ -206,13 +238,13 @@ function EmbedDialog({
                               id="light"
                             />
                             <Label htmlFor="light" className="text-sm">
-                              Light
+                              {t('chat.light')}
                             </Label>
                           </div>
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value={ThemeEnum.Dark} id="dark" />
                             <Label htmlFor="dark" className="text-sm">
-                              Dark
+                              {t('chat.dark')}
                             </Label>
                           </div>
                         </RadioGroup>
@@ -222,69 +254,58 @@ function EmbedDialog({
                   )}
                 />
               )}
-              <FormField
-                control={form.control}
+              <SwitchFormField
                 name="visibleAvatar"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('avatarHidden')}</FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {values.embedType === 'widget' && (
-                <FormField
-                  control={form.control}
-                  name="enableStreaming"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Enable Streaming Responses</FormLabel>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        ></Switch>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                label={t('chat.avatarHidden')}
+              ></SwitchFormField>
+              {isAgent && (
+                <SwitchFormField
+                  name="published"
+                  label={t('chat.published')}
+                  tooltip={t('chat.publishedTooltip')}
+                ></SwitchFormField>
               )}
-              <FormField
-                control={form.control}
-                name="locale"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('locale')}</FormLabel>
-                    <FormControl>
-                      <SelectWithSearch
-                        {...field}
-                        options={languageOptions}
-                      ></SelectWithSearch>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {values.embedType === 'widget' && (
+                <SwitchFormField
+                  name="enableStreaming"
+                  label={t('chat.enableStreaming')}
+                ></SwitchFormField>
+              )}
+              <RAGFlowFormItem name="locale" label={t('chat.locale')}>
+                <SelectWithSearch options={languageOptions}></SelectWithSearch>
+              </RAGFlowFormItem>
+              {isAgent && (
+                <RAGFlowFormItem name="userId" label={t('flow.userId')}>
+                  <Input></Input>
+                </RAGFlowFormItem>
+              )}
             </form>
           </Form>
-          <div className="max-h-[350px] overflow-auto">
-            <span>{t('embedCode', { keyPrefix: 'search' })}</span>
-            <div className="max-h-full overflow-y-auto">
-              <HighLightMarkdown>{text}</HighLightMarkdown>
+          <div>
+            <span>{t('search.embedCode')}</span>
+            <div>
+              <SyntaxHighlighter
+                className="max-h-[350px] overflow-auto scrollbar-auto"
+                language="html"
+                style={isDarkTheme ? oneDark : oneLight}
+              >
+                {text}
+              </SyntaxHighlighter>
             </div>
           </div>
+          <Button
+            onClick={handleOpenInNewTab}
+            className="w-full"
+            variant="secondary"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {t('common.openInNewTab')}
+          </Button>
           <div className=" font-medium mt-4 mb-1">
             {t(isAgent ? 'flow' : 'chat', { keyPrefix: 'header' })}
             <span className="ml-1 inline-block">ID</span>
           </div>
-          <div className="bg-bg-card rounded-lg flex justify-between p-2">
+          <div className="bg-bg-card rounded-lg flex items-center justify-between p-2">
             <span>{token} </span>
             <CopyToClipboard text={token}></CopyToClipboard>
           </div>
@@ -298,7 +319,7 @@ function EmbedDialog({
             target="_blank"
             rel="noreferrer"
           >
-            {t('howUseId', { keyPrefix: isAgent ? 'flow' : 'chat' })}
+            {t(`${isAgent ? 'flow' : 'chat'}.howUseId`)}
           </a>
         </section>
       </DialogContent>

@@ -5,7 +5,6 @@ import {
   IMcpServer,
   IMcpServerListResponse,
   IMCPTool,
-  IMCPToolRecord,
 } from '@/interfaces/database/mcp';
 import {
   IImportMcpServersRequestBody,
@@ -17,7 +16,6 @@ import mcpServerService, {
 } from '@/services/mcp-server-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { useState } from 'react';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -33,7 +31,6 @@ export const enum McpApiAction {
   ExportMcpServer = 'exportMcpServer',
   ListMcpServerTools = 'listMcpServerTools',
   TestMcpServerTool = 'testMcpServerTool',
-  CacheMcpServerTool = 'cacheMcpServerTool',
   TestMcpServer = 'testMcpServer',
 }
 
@@ -202,22 +199,6 @@ export const useExportMcpServer = () => {
   return { data, loading, exportMcpServer: mutateAsync };
 };
 
-export const useListMcpServerTools = () => {
-  const [ids, setIds] = useState<string[]>([]);
-  const { data, isFetching: loading } = useQuery<IMCPToolRecord>({
-    queryKey: [McpApiAction.ListMcpServerTools],
-    initialData: {} as IMCPToolRecord,
-    gcTime: 0,
-    enabled: ids.length > 0,
-    queryFn: async () => {
-      const { data } = await mcpServerService.listTools({ mcp_ids: ids });
-      return data?.data ?? {};
-    },
-  });
-
-  return { data, loading, setIds };
-};
-
 export const useTestMcpServer = () => {
   const {
     data,
@@ -233,38 +214,4 @@ export const useTestMcpServer = () => {
   });
 
   return { data, loading, testMcpServer: mutateAsync };
-};
-
-export const useCacheMcpServerTool = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [McpApiAction.CacheMcpServerTool],
-    mutationFn: async (params: Record<string, any>) => {
-      const { data = {} } = await mcpServerService.cacheTool(params);
-
-      return data;
-    },
-  });
-
-  return { data, loading, cacheMcpServerTool: mutateAsync };
-};
-
-export const useTestMcpServerTool = () => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [McpApiAction.TestMcpServerTool],
-    mutationFn: async (params: Record<string, any>) => {
-      const { data = {} } = await mcpServerService.testTool(params);
-
-      return data;
-    },
-  });
-
-  return { data, loading, testMcpServerTool: mutateAsync };
 };

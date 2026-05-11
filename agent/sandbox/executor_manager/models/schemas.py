@@ -14,11 +14,24 @@
 #  limitations under the License.
 #
 import base64
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from models.enums import ResourceLimitType, ResultStatus, RuntimeErrorType, SupportLanguage, UnauthorizedAccessType
+
+
+class ArtifactItem(BaseModel):
+    name: str
+    mime_type: str
+    size: int
+    content_b64: str
+
+
+class ExecutionStructuredResult(BaseModel):
+    present: bool
+    value: Any = None
+    type: str = "json"
 
 
 class CodeExecutionResult(BaseModel):
@@ -36,6 +49,12 @@ class CodeExecutionResult(BaseModel):
     resource_limit_type: Optional[ResourceLimitType] = None
     unauthorized_access_type: Optional[UnauthorizedAccessType] = None
     runtime_error_type: Optional[RuntimeErrorType] = None
+
+    # File artifacts produced by code execution (images, PDFs, CSVs, etc.)
+    artifacts: list[ArtifactItem] = []
+
+    # Structured return value produced by main()
+    result: Optional[ExecutionStructuredResult] = None
 
 
 class CodeExecutionRequest(BaseModel):

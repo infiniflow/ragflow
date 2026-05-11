@@ -654,7 +654,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
                 "type": "string",
                 "required": True,
                 "label": "Account ID",
-                "description": "Aliyun primary account ID (主账号ID), required for API calls"
+                "description": "Aliyun primary account ID, required for API calls"
             },
             "region": {
                 "type": "string",
@@ -1739,8 +1739,9 @@ def execute_code(
 
 1. **Self-managed provider** ([self_managed.py:164](agent/sandbox/providers/self_managed.py:164)):
    - Passes arguments via HTTP API: `"arguments": arguments or {}`
-   - executor_manager receives and passes to code via command line
-   - Runner script: `args = json.loads(sys.argv[1])` then `result = main(**args)`
+   - executor_manager writes `args.json` into the per-task workspace
+   - Runner script loads arguments from `args.json`
+   - Python runner calls `main(**args)` and JavaScript runner calls `main(args)`
 
 2. **Aliyun Code Interpreter** ([aliyun_codeinterpreter.py:260-275](agent/sandbox/providers/aliyun_codeinterpreter.py:260-275)):
    - Wraps user code to call `main(**arguments)` or `main()` if no arguments

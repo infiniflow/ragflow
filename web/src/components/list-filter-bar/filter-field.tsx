@@ -74,7 +74,7 @@ const FilterItem = memo(
           <FormControl>
             <div className="flex space-x-3">
               <Checkbox
-                checked={field.value?.includes(item.id.toString())}
+                checked={field.value?.includes?.(item.id.toString())}
                 onCheckedChange={(checked: boolean) =>
                   handleCheckChange({ checked, field, item })
                 }

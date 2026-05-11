@@ -22,6 +22,7 @@ spec:
         {{- include "ragflow.labels" . | nindent 8 }}
         app.kubernetes.io/component: ragflow
       annotations:
+        checksum/values: {{ .Values | toYaml | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
         checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
     spec:
@@ -40,18 +41,18 @@ spec:
         {{- with .Values.ragflow.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
-        {{- if .Values.ragflow.enableDangerousAdminServer }}
+        {{- if .Values.ragflow.admin.enabled }}
         args:
-          - --enable-adminserver
+          - "--enable-adminserver"
         {{- end }}
         ports:
           - containerPort: 80
             name: http
           - containerPort: 9380
             name: http-api
-          {{- if .Values.ragflow.enableDangerousAdminServer }}
+          {{- if .Values.ragflow.admin.enabled }}
           - containerPort: 9381
-            name: http-admin
+            name: admin
           {{- end }}
         volumeMounts:
           - mountPath: /etc/nginx/conf.d/ragflow.conf
@@ -125,8 +126,9 @@ spec:
       name: http-api
   type: {{ .Values.ragflow.api.service.type }}
 {{- end }}
+
+{{- if .Values.ragflow.admin.enabled }}
 ---
-{{- if .Values.ragflow.enableDangerousAdminServer }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -140,8 +142,8 @@ spec:
     app.kubernetes.io/component: ragflow
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: http-admin
-      name: http-admin
-  type: ClusterIP
+      port: {{ .Values.ragflow.admin.port }}
+      targetPort: admin
+      name: admin
+  type: {{ .Values.ragflow.admin.serviceType }}
 {{- end }}

@@ -28,12 +28,14 @@ class TreeStructuredQueryDecompositionRetrieval:
                  chat_mdl: LLMBundle,
                  prompt_config: dict,
                  kb_retrieve: partial = None,
-                 kg_retrieve: partial = None
+                 kg_retrieve: partial = None,
+                 internet_enabled: bool = False,
                  ):
         self.chat_mdl = chat_mdl
         self.prompt_config = prompt_config
         self._kb_retrieve = kb_retrieve
         self._kg_retrieve = kg_retrieve
+        self.internet_enabled = internet_enabled
         self._lock = asyncio.Lock()
 
     async def _retrieve_information(self, search_query):
@@ -47,7 +49,7 @@ class TreeStructuredQueryDecompositionRetrieval:
 
         # 2. Web retrieval (if Tavily API is configured)
         try:
-            if self.prompt_config.get("tavily_api_key"):
+            if self.internet_enabled and self.prompt_config.get("tavily_api_key"):
                 tav = Tavily(self.prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(search_query)
                 kbinfos["chunks"].extend(tav_res["chunks"])

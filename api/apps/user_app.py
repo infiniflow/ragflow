@@ -45,6 +45,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.crypt import decrypt
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
@@ -221,7 +222,7 @@ async def oauth_callback(channel):
         if not users:
             try:
                 try:
-                    avatar = download_img(user_info.avatar_url)
+                    avatar = await download_img(user_info.avatar_url)
                 except Exception as e:
                     logging.exception(e)
                     avatar = ""
@@ -316,7 +317,7 @@ async def github_callback():
         # User isn't try to register
         try:
             try:
-                avatar = download_img(user_info["avatar_url"])
+                avatar = await download_img(user_info["avatar_url"])
             except Exception as e:
                 logging.exception(e)
                 avatar = ""
@@ -420,7 +421,7 @@ async def feishu_callback():
         # User isn't try to register
         try:
             try:
-                avatar = download_img(user_info["avatar_url"])
+                avatar = await download_img(user_info["avatar_url"])
             except Exception as e:
                 logging.exception(e)
                 avatar = ""
@@ -841,7 +842,8 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
-        TenantService.update_by_id(tid, req)
+        update_dict = ensure_tenant_model_id_for_params(tid, req)
+        TenantService.update_by_id(tid, update_dict)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
@@ -1027,7 +1029,6 @@ async def forget_reset_password():
     new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
     new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
 
-    REDIS_CONN.get(_verified_key(email))
     if not REDIS_CONN.get(_verified_key(email)):
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
 

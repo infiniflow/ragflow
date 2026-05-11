@@ -1,5 +1,5 @@
 ---
-sidebar_position: 10
+sidebar_position: 20
 slug: /faq
 sidebar_custom_props: {
   sidebarIcon: LucideCircleQuestionMark
@@ -68,11 +68,11 @@ These limitations led us to develop [Infinity](https://github.com/infiniflow/inf
 
 ---
 
-### Differences between demo.ragflow.io and a locally deployed open-source RAGFlow service?
+### Differences between cloud.ragflow.io and a locally deployed open-source RAGFlow service?
 
-demo.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, demo.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
+cloud.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, cloud.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
 
-You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on demo.ragflow.io.
+You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on cloud.ragflow.io.
 
 ---
 
@@ -182,6 +182,12 @@ To fix this issue, use https://hf-mirror.com instead:
 
 ---
 
+### `Fail to access model(Ollama/xxxxx)`
+
+Ollama may time out or fail during its first model load due to memory constraints or out-of-memory (OOM). It is best to test your local model in isolation first. If sharing hardware with other services, memory exhaustion is likely. To resolve this, switch to a smaller model or increase RAM.
+
+---
+
 ### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
 This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following:
@@ -192,6 +198,20 @@ This error suggests that you do not have Internet access or are unable to connec
    ```
    - ~/deepdoc:/ragflow/rag/res/deepdoc
    ```
+
+---
+
+### `RuntimeError: Unable to start Tika server.`
+
+This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/infiniflow/ragflow/issues/13194) for detailed instructions.
+
+---
+
+### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
+
+To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows: 
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
 
 ---
 
@@ -349,7 +369,7 @@ Your IP address or port number may be incorrect. If you are using the default co
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
-- If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
+- If you are on cloud.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can communicate with each other.
 
 See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more information.
@@ -445,7 +465,7 @@ See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
 
 ### How to upgrade RAGFlow?
 
-See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for more information.
 
 ---
 
@@ -566,6 +586,24 @@ RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate do
 :::tip NOTE
 When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
 :::
+
+### How to use an external Docling Serve server for document parsing?
+
+RAGFlow supports Docling in two modes:
+
+1. **Local Docling** (existing mode): install Docling in the RAGFlow runtime (`USE_DOCLING=true`) and parse in-process.
+2. **External Docling Serve** (remote mode): point RAGFlow to a Docling Serve endpoint.
+
+To enable remote mode, set:
+
+```bash
+DOCLING_SERVER_URL=http://your-docling-serve-host:5001
+```
+
+Behavior:
+
+- When `DOCLING_SERVER_URL` is set, RAGFlow sends PDFs to Docling Serve using `/v1/convert/source` (and falls back to `/v1alpha/convert/source` for older servers).
+- When `DOCLING_SERVER_URL` is not set, RAGFlow uses local in-process Docling.
 
 ### How to use PaddleOCR for document parsing?
 

@@ -30,6 +30,8 @@ https://api.aliyun.com/api/AgentRun/2025-09-10/CreateSandbox?lang=PYTHON
 import logging
 import os
 import time
+import base64
+import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
@@ -40,6 +42,7 @@ from agentrun.utils.exception import ServerError
 from .base import SandboxProvider, SandboxInstance, ExecutionResult
 
 logger = logging.getLogger(__name__)
+RESULT_MARKER_PREFIX = "__RAGFLOW_RESULT__:"
 
 
 class AliyunCodeInterpreterProvider(SandboxProvider):
@@ -51,9 +54,9 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
     """
 
     def __init__(self):
-        self.access_key_id: Optional[str] = None
-        self.access_key_secret: Optional[str] = None
-        self.account_id: Optional[str] = None
+        self.access_key_id: Optional[str] = ""
+        self.access_key_secret: Optional[str] = ""
+        self.account_id: Optional[str] = ""
         self.region: str = "cn-hangzhou"
         self.template_name: str = ""
         self.timeout: int = 30
@@ -68,7 +71,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             config: Configuration dictionary with keys:
                 - access_key_id: Aliyun AccessKey ID
                 - access_key_secret: Aliyun AccessKey Secret
-                - account_id: Aliyun primary account ID (主账号ID)
+                - account_id: Aliyun primary account ID
                 - region: Region (default: "cn-hangzhou")
                 - template_name: Optional sandbox template name
                 - timeout: Request timeout in seconds (default: 30, max 30)
@@ -97,7 +100,7 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             return False
 
         if not self.account_id:
-            logger.error("Aliyun Code Interpreter: Missing account_id (主账号ID)")
+            logger.error("Aliyun Code Interpreter: Missing account_id (primary account ID)")
             return False
 
         # Create SDK configuration
@@ -146,8 +149,6 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
 
         try:
             # Get or create template
-            from agentrun.sandbox import Sandbox
-
             if self.template_name:
                 # Use existing template
                 template_name = self.template_name
@@ -226,48 +227,17 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             # Connect to existing sandbox instance
             sandbox = Sandbox.connect(sandbox_id=instance_id, config=self._config)
 
-            # Convert language string to CodeLanguage enum
-            code_language = CodeLanguage.PYTHON if normalized_lang == "python" else CodeLanguage.JAVASCRIPT
+            # agentrun-sdk 0.0.26 only exposes CodeLanguage.PYTHON; keep JS as string fallback.
+            code_language = CodeLanguage.PYTHON if normalized_lang == "python" else "javascript"
 
             # Wrap code to call main() function
             # Matches self_managed provider behavior: call main(**arguments)
-            if normalized_lang == "python":
-                # Build arguments string for main() call
-                if arguments:
-                    import json as json_module
-                    args_json = json_module.dumps(arguments)
-                    wrapped_code = f'''{code}
-
-if __name__ == "__main__":
-    import json
-    result = main(**{args_json})
-    print(json.dumps(result) if isinstance(result, dict) else result)
-'''
-                else:
-                    wrapped_code = f'''{code}
-
-if __name__ == "__main__":
-    import json
-    result = main()
-    print(json.dumps(result) if isinstance(result, dict) else result)
-'''
-            else:  # javascript
-                if arguments:
-                    import json as json_module
-                    args_json = json_module.dumps(arguments)
-                    wrapped_code = f'''{code}
-
-// Call main and output result
-const result = main({args_json});
-console.log(typeof result === 'object' ? JSON.stringify(result) : String(result));
-'''
-                else:
-                    wrapped_code = f'''{code}
-
-// Call main and output result
-const result = main();
-console.log(typeof result === 'object' ? JSON.stringify(result) : String(result));
-'''
+            args_json = json.dumps(arguments or {})
+            wrapped_code = (
+                self._build_python_wrapper(code, args_json)
+                if normalized_lang == "python"
+                else self._build_javascript_wrapper(code, args_json)
+            )
             logger.debug(f"Aliyun Code Interpreter: Wrapped code (first 200 chars): {wrapped_code[:200]}")
 
             start_time = time.time()
@@ -314,6 +284,7 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
 
             stdout = "\n".join(stdout_parts)
             stderr = "\n".join(stderr_parts)
+            stdout, structured_result = self._extract_structured_result(stdout)
 
             logger.info(f"Aliyun Code Interpreter: stdout length={len(stdout)}, stderr length={len(stderr)}, exit_code={exit_code}")
             if stdout:
@@ -331,6 +302,9 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
                     "language": normalized_lang,
                     "context_id": result.get("contextId") if isinstance(result, dict) else None,
                     "timeout": timeout,
+                    "result_present": structured_result.get("present", False),
+                    "result_value": structured_result.get("value"),
+                    "result_type": structured_result.get("type"),
                 },
             )
 
@@ -390,6 +364,71 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
             # If we get any response (even an error), the service is reachable
             return "connection" not in str(e).lower()
 
+    @staticmethod
+    def _build_python_wrapper(code: str, args_json: str) -> str:
+        marker = RESULT_MARKER_PREFIX
+        return f'''{code}
+
+if __name__ == "__main__":
+    import base64
+    import json
+
+    result = main(**{args_json})
+    payload = json.dumps({{"present": True, "value": result, "type": "json"}}, ensure_ascii=False, separators=(",", ":"))
+    print("{marker}" + base64.b64encode(payload.encode("utf-8")).decode("ascii"))
+'''
+
+    @staticmethod
+    def _build_javascript_wrapper(code: str, args_json: str) -> str:
+        marker = RESULT_MARKER_PREFIX
+        return f'''{code}
+
+const __ragflowArgs = {args_json};
+
+(async () => {{
+  try {{
+    const output = await Promise.resolve(main(__ragflowArgs));
+    if (typeof output === 'undefined') {{
+      throw new Error('main() must return a value. Use null for an empty result.');
+    }}
+    const payload = JSON.stringify({{ present: true, value: output, type: 'json' }});
+    if (typeof payload === 'undefined') {{
+      throw new Error('main() returned a non-JSON-serializable value.');
+    }}
+    console.log('{marker}' + Buffer.from(payload, 'utf8').toString('base64'));
+  }} catch (err) {{
+    console.error(err instanceof Error ? err.stack || err.message : String(err));
+  }}
+}})();
+'''
+
+    @staticmethod
+    def _extract_structured_result(stdout: str) -> tuple[str, Dict[str, Any]]:
+        if not stdout:
+            return "", {}
+
+        cleaned_lines: list[str] = []
+        structured_result: Dict[str, Any] = {}
+
+        for line in str(stdout).splitlines():
+            if line.startswith(RESULT_MARKER_PREFIX):
+                payload_b64 = line[len(RESULT_MARKER_PREFIX) :].strip()
+                if not payload_b64:
+                    continue
+                try:
+                    payload = base64.b64decode(payload_b64).decode("utf-8")
+                    structured_result = json.loads(payload)
+                except Exception as exc:
+                    logger.warning(f"Aliyun Code Interpreter: failed to decode structured result marker: {exc}")
+                    cleaned_lines.append(line)
+                continue
+            cleaned_lines.append(line)
+
+        cleaned_stdout = "\n".join(cleaned_lines)
+        if stdout.endswith("\n") and cleaned_stdout and not cleaned_stdout.endswith("\n"):
+            cleaned_stdout += "\n"
+        return cleaned_stdout, structured_result
+
     def get_supported_languages(self) -> List[str]:
         """
         Get list of supported programming languages.
@@ -429,7 +468,7 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
                 "required": True,
                 "label": "Account ID",
                 "placeholder": "1234567890...",
-                "description": "Aliyun primary account ID (主账号ID), required for API calls",
+                "description": "Aliyun primary account ID, required for API calls",
             },
             "region": {
                 "type": "string",

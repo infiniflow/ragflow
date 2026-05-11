@@ -320,14 +320,14 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": chunk_method})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_chunk_method_none(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": None})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2

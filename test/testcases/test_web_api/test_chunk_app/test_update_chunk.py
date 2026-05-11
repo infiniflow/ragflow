@@ -13,13 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 from time import sleep
 
 import pytest
-from common import delete_document, list_chunks, update_chunk
+from test_common import delete_document, list_chunks, update_chunk
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -45,10 +46,10 @@ class TestUpdateChunk:
         "payload, expected_code, expected_message",
         [
             ({"content_with_weight": None}, 100, "TypeError('expected string or bytes-like object')"),
-            ({"content_with_weight": ""}, 100, """Exception('Error: 413 - {"error":"Input validation error: `inputs` cannot be empty","error_type":"Validation"}')"""),
+            ({"content_with_weight": ""}, 102, "`content_with_weight` is required"),
             ({"content_with_weight": 1}, 100, "TypeError('expected string or bytes-like object')"),
             ({"content_with_weight": "update chunk"}, 0, ""),
-            ({"content_with_weight": " "}, 0, ""),
+            ({"content_with_weight": " "}, 102, "`content_with_weight` is required"),
             ({"content_with_weight": "\n!?。；！？\"'"}, 0, ""),
         ],
     )
@@ -153,6 +154,32 @@ class TestUpdateChunk:
             for chunk in res["data"]["chunks"]:
                 if chunk["chunk_id"] == chunk_id:
                     assert chunk["available_int"] == payload["available_int"]
+
+    @pytest.mark.p2
+    def test_update_chunk_qa_multiline_content(self, WebApiAuth, add_chunks):
+        _, doc_id, chunk_ids = add_chunks
+        payload = {"doc_id": doc_id, "chunk_id": chunk_ids[0], "content_with_weight": "Question line\nAnswer line"}
+        res = update_chunk(WebApiAuth, payload)
+        assert res["code"] == 0, res
+
+        sleep(1)
+        res = list_chunks(WebApiAuth, {"doc_id": doc_id})
+        assert res["code"] == 0, res
+        chunk = next(chunk for chunk in res["data"]["chunks"] if chunk["chunk_id"] == chunk_ids[0])
+        assert chunk["content_with_weight"] == payload["content_with_weight"], res
+
+    @pytest.mark.p2
+    def test_update_chunk_with_image_payload(self, WebApiAuth, add_chunks):
+        _, doc_id, chunk_ids = add_chunks
+        payload = {
+            "doc_id": doc_id,
+            "chunk_id": chunk_ids[0],
+            "content_with_weight": "content with image",
+            "image_base64": base64.b64encode(b"img").decode("utf-8"),
+            "img_id": "bucket-name",
+        }
+        res = update_chunk(WebApiAuth, payload)
+        assert res["code"] == 0, res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(

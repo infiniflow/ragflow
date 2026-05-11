@@ -1,5 +1,10 @@
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
@@ -13,7 +18,6 @@ import {
   SoundOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { Radio, Tooltip } from 'antd';
 import { Download, NotebookText } from 'lucide-react';
 import { useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +39,7 @@ interface IProps {
     doc_id: string;
     format: string;
   };
+  isShare?: boolean;
 }
 
 export const AssistantGroupButton = ({
@@ -46,6 +51,7 @@ export const AssistantGroupButton = ({
   showLoudspeaker = true,
   showLog = true,
   attachment,
+  isShare,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -80,8 +86,13 @@ export const AssistantGroupButton = ({
         </ToggleGroupItem>
         {showLoudspeaker && (
           <ToggleGroupItem value="b" onClick={handleRead}>
-            <Tooltip title={t('chat.read')}>
-              {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.read')}</TooltipContent>
             </Tooltip>
             <audio src="" ref={ref}></audio>
           </ToggleGroupItem>
@@ -97,16 +108,16 @@ export const AssistantGroupButton = ({
           </>
         )}
         {prompt && (
-          <Radio.Button value="e" onClick={showPromptModal}>
+          <ToggleGroupItem value="e" onClick={showPromptModal}>
             <PromptIcon style={{ fontSize: '16px' }} />
-          </Radio.Button>
+          </ToggleGroupItem>
         )}
         {showLog && (
           <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
             <NotebookText className="size-4" />
           </ToggleGroupItem>
         )}
-        {!!attachment?.doc_id && (
+        {!!attachment?.doc_id && !isShare && (
           <ToggleGroupItem
             value="g"
             onClick={async () => {
@@ -168,28 +179,39 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <Radio.Group size="small">
-      <Radio.Button value="a">
+    <ToggleGroup
+      type="single"
+      size="sm"
+      variant="outline"
+      className="space-x-1"
+    >
+      <ToggleGroupItem value="a">
         <CopyToClipboard text={content}></CopyToClipboard>
-      </Radio.Button>
+      </ToggleGroupItem>
       {regenerateMessage && (
-        <Radio.Button
+        <ToggleGroupItem
           value="b"
           onClick={regenerateMessage}
           disabled={sendLoading}
         >
-          <Tooltip title={t('chat.regenerate')}>
-            <SyncOutlined spin={sendLoading} />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <SyncOutlined spin={sendLoading} />
+            </TooltipTrigger>
+            <TooltipContent>{t('chat.regenerate')}</TooltipContent>
           </Tooltip>
-        </Radio.Button>
+        </ToggleGroupItem>
       )}
       {removeMessageById && (
-        <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-          <Tooltip title={t('common.delete')}>
-            <DeleteOutlined spin={loading} />
+        <ToggleGroupItem value="c" onClick={onRemoveMessage} disabled={loading}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DeleteOutlined spin={loading} />
+            </TooltipTrigger>
+            <TooltipContent>{t('common.delete')}</TooltipContent>
           </Tooltip>
-        </Radio.Button>
+        </ToggleGroupItem>
       )}
-    </Radio.Group>
+    </ToggleGroup>
   );
 };

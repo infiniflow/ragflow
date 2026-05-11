@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   LucideCloud,
+  LucideLink,
   LucideLoader2,
+  LucideSave,
   LucideServer,
   LucideZap,
 } from 'lucide-react';
@@ -39,7 +41,10 @@ import {
   testSandboxConnection,
 } from '@/services/admin-service';
 
+import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Provider icons mapping
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
@@ -74,7 +79,11 @@ function AdminSandboxSettings() {
   });
 
   // Fetch current config
-  const { data: currentConfig, isLoading: configLoading } = useQuery({
+  const {
+    data: currentConfig,
+    isLoading: configLoading,
+    refetch: refetchConfig,
+  } = useQuery({
     queryKey: ['admin/getSandboxConfig'],
     queryFn: async () => (await getSandboxConfig()).data.data,
   });
@@ -95,7 +104,8 @@ function AdminSandboxSettings() {
     }) => (await setSandboxConfig(params)).data,
     onSuccess: () => {
       message.success('Sandbox configuration updated successfully');
-      queryClient.invalidateQueries({ queryKey: ['admin/getSandboxConfig'] });
+      // queryClient.invalidateQueries({ queryKey: ['admin/getSandboxConfig'] });
+      refetchConfig();
     },
     onError: (error: Error) => {
       message.error(`Failed to update configuration: ${error.message}`);
@@ -186,15 +196,15 @@ function AdminSandboxSettings() {
     schema: AdminService.SandboxConfigField,
   ) => {
     const value = configValues[fieldName] ?? schema.default ?? '';
-    const isSecret = schema.secret ?? false;
 
     switch (schema.type) {
       case 'string':
-        if (isSecret) {
+        if (schema.secret) {
           return (
             <Input
               type="password"
               id={fieldName}
+              className="h-10"
               placeholder={schema.placeholder}
               value={value as string}
               onChange={(e) =>
@@ -226,6 +236,7 @@ function AdminSandboxSettings() {
             min={schema.min}
             max={schema.max}
             value={value as number}
+            className="h-10"
             onChange={(e) =>
               handleConfigValueChange(fieldName, parseInt(e.target.value) || 0)
             }
@@ -248,171 +259,233 @@ function AdminSandboxSettings() {
     }
   };
 
-  if (providersLoading || configLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <LucideLoader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   const selectedProviderData = providers.find((p) => p.id === selectedProvider);
   const ProviderIcon = selectedProvider
     ? PROVIDER_ICONS[selectedProvider] || LucideServer
     : LucideServer;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold">Sandbox Settings</h3>
-        <p className="text-sm text-muted-foreground">
-          Configure your code execution sandbox provider. The sandbox is used by
-          the Code component in agents.
-        </p>
-      </div>
+    <>
+      <Card className="!shadow-none relative h-full bg-transparent overflow-hidden">
+        <Spotlight />
 
-      {/* Provider Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider Selection</CardTitle>
-          <CardDescription>
-            Choose a sandbox provider for code execution
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {providers.map((provider) => {
-              const Icon = PROVIDER_ICONS[provider.id] || LucideServer;
-              return (
-                <div
-                  key={provider.id}
-                  className={`relative rounded-lg border p-4 cursor-pointer transition-all hover:bg-accent ${
-                    selectedProvider === provider.id
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border'
-                  }`}
-                  onClick={() => handleProviderChange(provider.id)}
-                >
-                  <div className="flex items-start space-x-3">
-                    <Icon className="w-5 h-5 mt-0.5 text-muted-foreground" />
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold">{provider.name}</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {provider.description}
-                      </p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {provider.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Provider Configuration */}
-      {selectedProvider && selectedProviderData && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <CardTitle className="flex items-center gap-2">
-                  <ProviderIcon className="w-5 h-5" />
-                  {selectedProviderData.name} Configuration
-                </CardTitle>
-                <CardDescription>
-                  Configure the connection settings for{' '}
-                  {selectedProviderData.name}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleSave}
-                  disabled={setConfigMutation.isPending}
-                  size="sm"
-                >
-                  {setConfigMutation.isPending ? (
-                    <>
-                      <LucideLoader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save Configuration'
-                  )}
-                </Button>
-                <Button
-                  onClick={handleTestConnection}
-                  disabled={testConnectionMutation.isPending}
-                  variant="outline"
-                  size="sm"
-                >
-                  {testConnectionMutation.isPending ? (
-                    <>
-                      <LucideLoader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Testing...
-                    </>
-                  ) : (
-                    'Test Connection'
-                  )}
-                </Button>
-              </div>
-            </div>
+        <ScrollArea className="size-full">
+          <CardHeader className="space-y-0">
+            <CardTitle className="leading-10">
+              {t('admin.sandboxSettings')}
+            </CardTitle>
+            <CardDescription className="text-text-secondary">
+              {t('admin.sandboxSettingsPage.description')}
+            </CardDescription>
           </CardHeader>
+
           <CardContent>
-            <div className="space-y-4">
-              {Object.entries(providerSchema).map(([fieldName, schema]) => (
-                <div key={fieldName} className="space-y-2">
-                  <Label htmlFor={fieldName}>
-                    {schema.label || fieldName}
-                    {schema.required && (
-                      <span className="text-destructive ml-1">*</span>
-                    )}
-                  </Label>
-                  {renderConfigField(fieldName, schema)}
-                  {schema.description && (
-                    <p className="text-xs text-muted-foreground">
-                      {schema.description}
-                    </p>
+            {providersLoading || configLoading ? (
+              <div className="flex items-center justify-center h-96"></div>
+            ) : (
+              <>
+                {/* Provider Selection */}
+                <Card className="!shadow-none bg-transparent">
+                  <CardHeader>
+                    <CardTitle className="text-xl leading-none">
+                      {t('admin.sandboxSettingsPage.providerSelection')}
+                    </CardTitle>
+
+                    <CardDescription className="text-text-secondary">
+                      {t(
+                        'admin.sandboxSettingsPage.providerSelectionDescription',
+                      )}
+                    </CardDescription>
+
+                    <RadioGroup
+                      className="!mt-4 max-w-7xl grid grid-cols-1 xl:grid-cols-3 gap-4"
+                      value={selectedProvider}
+                      onValueChange={handleProviderChange}
+                    >
+                      {providers.map((provider) => {
+                        const Icon =
+                          PROVIDER_ICONS[provider.id] || LucideServer;
+
+                        return (
+                          <label
+                            key={provider.id}
+                            tabIndex={0}
+                            className="
+                              group relative rounded-lg border-0.5 border-border-button p-4 cursor-pointer transition-all
+                              hover:bg-bg-card focus-visible:bg-bg-card
+                              has-[[aria-checked=true]]:bg-bg-card
+                              has-[[aria-checked=true]]:ring-1 has-[[aria-checked=true]]:ring-border-default"
+                          >
+                            <RadioGroupItem
+                              key={provider.id}
+                              className="hidden"
+                              value={provider.id}
+                            />
+
+                            <div className="flex items-start gap-2">
+                              <Icon className="size-5 transition-colors text-text-primary group-has-[[aria-checked=true]]:text-accent-primary" />
+
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-medium">
+                                  {provider.name}
+                                </h4>
+
+                                <p className="text-xs text-text-secondary mt-1">
+                                  {provider.description}
+                                </p>
+
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {provider.tags.map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-bg-card text-text-secondary"
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </RadioGroup>
+                  </CardHeader>
+
+                  {/* Provider Configuration */}
+                  {selectedProvider && selectedProviderData && (
+                    <CardContent className="pt-6 border-t-0.5 border-border-button">
+                      <form onSubmit={handleSave}>
+                        <article>
+                          <header className="mb-6 flex items-center gap-4">
+                            <div>
+                              <h3 className="flex items-center gap-2">
+                                <ProviderIcon className="size-[1em]" />
+
+                                {t(
+                                  'admin.sandboxSettingsPage.namedProviderConfiguration',
+                                  { name: selectedProviderData.name },
+                                )}
+                              </h3>
+
+                              <p className="text-sm text-text-secondary">
+                                {t(
+                                  'admin.sandboxSettingsPage.namedProviderConfigurationDescription',
+                                  { name: selectedProviderData.name },
+                                )}
+                              </p>
+                            </div>
+
+                            <div className="ml-auto flex items-center gap-4">
+                              <Button
+                                onClick={handleTestConnection}
+                                disabled={testConnectionMutation.isPending}
+                                variant="outline"
+                              >
+                                {testConnectionMutation.isPending ? (
+                                  <>
+                                    <LucideLoader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    {t('admin.sandboxSettingsPage.testing')}
+                                  </>
+                                ) : (
+                                  <>
+                                    <LucideLink />
+                                    {t(
+                                      'admin.sandboxSettingsPage.testConnection',
+                                    )}
+                                  </>
+                                )}
+                              </Button>
+
+                              <Button
+                                type="submit"
+                                disabled={setConfigMutation.isPending}
+                              >
+                                {setConfigMutation.isPending ? (
+                                  <LucideLoader2 className="animate-spin" />
+                                ) : (
+                                  <LucideSave />
+                                )}
+                                {t('common.save')}
+                              </Button>
+                            </div>
+                          </header>
+
+                          <div className="space-y-4">
+                            {Object.entries(providerSchema).map(
+                              ([fieldName, schema]) => (
+                                <div key={fieldName}>
+                                  <Label
+                                    htmlFor={fieldName}
+                                    className="text-text-primary"
+                                  >
+                                    {schema.required && (
+                                      <span className="text-state-error">
+                                        *
+                                      </span>
+                                    )}
+                                    {schema.label || fieldName}
+
+                                    {schema.description && (
+                                      <p className="text-xs text-text-secondary">
+                                        {schema.description}
+                                      </p>
+                                    )}
+                                  </Label>
+
+                                  <div className="mt-2">
+                                    {renderConfigField(fieldName, schema)}
+                                  </div>
+
+                                  {schema.type === 'integer' &&
+                                    (schema.min !== undefined ||
+                                      schema.max !== undefined) && (
+                                      <p className="text-xs text-text-disabled mt-2">
+                                        {schema.min !== undefined &&
+                                          `Minimum: ${schema.min}`}
+                                        {schema.min !== undefined &&
+                                          schema.max !== undefined &&
+                                          ' • '}
+                                        {schema.max !== undefined &&
+                                          `Maximum: ${schema.max}`}
+                                      </p>
+                                    )}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        </article>
+                      </form>
+                    </CardContent>
                   )}
-                  {schema.type === 'integer' &&
-                    (schema.min !== undefined || schema.max !== undefined) && (
-                      <p className="text-xs text-muted-foreground">
-                        {schema.min !== undefined && `Minimum: ${schema.min}`}
-                        {schema.min !== undefined &&
-                          schema.max !== undefined &&
-                          ' • '}
-                        {schema.max !== undefined && `Maximum: ${schema.max}`}
-                      </p>
-                    )}
-                </div>
-              ))}
-            </div>
+                </Card>
+              </>
+            )}
           </CardContent>
-        </Card>
-      )}
+        </ScrollArea>
+      </Card>
 
       {/* Test Result Modal */}
       <Dialog open={testModalOpen} onOpenChange={setTestModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Connection Test Result</DialogTitle>
-            <DialogDescription>
-              {testResult === null
-                ? 'Testing connection to sandbox provider...'
-                : testResult.success
-                  ? 'Successfully connected to sandbox provider'
-                  : 'Failed to connect to sandbox provider'}
-            </DialogDescription>
+            <DialogTitle>
+              {t('admin.sandboxSettingsPage.testConnectionResultModal.title')}
+            </DialogTitle>
           </DialogHeader>
+
+          <DialogDescription>
+            {testResult === null
+              ? t('admin.sandboxSettingsPage.testConnectionResultModal.testing')
+              : testResult.success
+                ? t(
+                    'admin.sandboxSettingsPage.testConnectionResultModal.success',
+                  )
+                : t(
+                    'admin.sandboxSettingsPage.testConnectionResultModal.failed',
+                  )}
+          </DialogDescription>
+
           {testResult === null ? (
             <div className="flex items-center justify-center py-8">
               <LucideLoader2 className="w-8 h-8 animate-spin text-muted-foreground" />
@@ -438,11 +511,21 @@ function AdminSandboxSettings() {
                   {/* Exit code and execution time */}
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="p-2 bg-muted rounded">
-                      <span className="font-medium">Exit Code:</span>{' '}
+                      <span className="font-medium">
+                        {t(
+                          'admin.sandboxSettingsPage.testConnectionResultModal.exitCode',
+                        )}
+                        :
+                      </span>{' '}
                       {testResult.details.exit_code}
                     </div>
                     <div className="p-2 bg-muted rounded">
-                      <span className="font-medium">Execution Time:</span>{' '}
+                      <span className="font-medium">
+                        {t(
+                          'admin.sandboxSettingsPage.testConnectionResultModal.executionTime',
+                        )}
+                        :
+                      </span>{' '}
                       {testResult.details.execution_time?.toFixed(2)}s
                     </div>
                   </div>
@@ -451,7 +534,10 @@ function AdminSandboxSettings() {
                   {testResult.details.stdout && (
                     <div className="p-3 bg-muted rounded">
                       <p className="text-xs font-medium mb-2 text-muted-foreground">
-                        Standard Output:
+                        {t(
+                          'admin.sandboxSettingsPage.testConnectionResultModal.stdout',
+                        )}
+                        :
                       </p>
                       <pre className="text-xs whitespace-pre-wrap break-words font-mono">
                         {testResult.details.stdout}
@@ -463,7 +549,10 @@ function AdminSandboxSettings() {
                   {testResult.details.stderr && (
                     <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
                       <p className="text-xs font-medium mb-2 text-red-900 dark:text-red-100">
-                        Error Output / Stack Trace:
+                        {t(
+                          'admin.sandboxSettingsPage.testConnectionResultModal.stderr',
+                        )}
+                        :
                       </p>
                       <pre className="text-xs whitespace-pre-wrap break-words font-mono text-red-900 dark:text-red-100">
                         {testResult.details.stderr}
@@ -475,11 +564,13 @@ function AdminSandboxSettings() {
             </div>
           )}
           <DialogFooter>
-            <Button onClick={() => setTestModalOpen(false)}>Close</Button>
+            <Button onClick={() => setTestModalOpen(false)}>
+              {t('admin.close')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 

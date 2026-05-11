@@ -1,5 +1,5 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { IGraph } from '@/interfaces/database/flow';
+import { IGraph } from '@/interfaces/database/agent';
 import { useEffect } from 'react';
 import { useSetGraphInfo } from './use-set-graph';
 

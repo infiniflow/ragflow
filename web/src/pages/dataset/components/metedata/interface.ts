@@ -73,6 +73,11 @@ export type IManageModalProps = {
   builtInMetadata?: IBuiltInMetadataItem[];
   success?: (data: any) => void;
   secondTitle?: ReactNode;
+  testId?: string;
+  okButtonTestId?: string;
+  addButtonTestId?: string;
+  nestedModalTestId?: string;
+  nestedModalOkButtonTestId?: string;
 };
 
 export interface IManageValuesProps {
@@ -97,6 +102,9 @@ export interface IManageValuesProps {
     type?: MetadataValueType,
   ) => void;
   addDeleteValue: (key: string, value: string) => void;
+  testId?: string;
+  okButtonTestId?: string;
+  addValueButtonTestId?: string;
 }
 
 export interface DeleteOperation {

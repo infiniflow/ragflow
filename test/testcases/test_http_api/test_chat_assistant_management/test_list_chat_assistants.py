@@ -16,10 +16,14 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import delete_datasets, list_chat_assistants
+from common import delete_datasets, get_chat_assistant, list_chat_assistants
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import is_sorted
+
+
+def _chat_list(res):
+    return res["data"]["chats"]
 
 
 @pytest.mark.p1
@@ -27,12 +31,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -47,14 +47,15 @@ class TestChatAssistantsList:
     def test_default(self, HttpApiAuth):
         res = list_chat_assistants(HttpApiAuth)
         assert res["code"] == 0
-        assert len(res["data"]) == 5
+        assert len(_chat_list(res)) == 5
+        assert res["data"]["total"] == 5
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_code, expected_page_size, expected_message",
         [
-            ({"page": None, "page_size": 2}, 0, 2, ""),
-            ({"page": 0, "page_size": 2}, 0, 2, ""),
+            ({"page": None, "page_size": 2}, 0, 5, ""),
+            ({"page": 0, "page_size": 2}, 0, 5, ""),
             ({"page": 2, "page_size": 2}, 0, 2, ""),
             ({"page": 3, "page_size": 2}, 0, 1, ""),
             ({"page": "3", "page_size": 2}, 0, 1, ""),
@@ -78,7 +79,7 @@ class TestChatAssistantsList:
         res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            assert len(res["data"]) == expected_page_size
+            assert len(_chat_list(res)) == expected_page_size
         else:
             assert res["message"] == expected_message
 
@@ -87,10 +88,10 @@ class TestChatAssistantsList:
         "params, expected_code, expected_page_size, expected_message",
         [
             ({"page_size": None}, 0, 5, ""),
-            ({"page_size": 0}, 0, 0, ""),
-            ({"page_size": 1}, 0, 1, ""),
+            ({"page_size": 0}, 0, 5, ""),
+            ({"page_size": 1}, 0, 5, ""),
             ({"page_size": 6}, 0, 5, ""),
-            ({"page_size": "1"}, 0, 1, ""),
+            ({"page_size": "1"}, 0, 5, ""),
             pytest.param(
                 {"page_size": -1},
                 100,
@@ -118,7 +119,7 @@ class TestChatAssistantsList:
         res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            assert len(res["data"]) == expected_page_size
+            assert len(_chat_list(res)) == expected_page_size
         else:
             assert res["message"] == expected_message
 
@@ -126,13 +127,13 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"orderby": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"orderby": "create_time"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", True)), ""),
+            ({"orderby": None}, 0, lambda r: is_sorted(_chat_list(r), "create_time", True), ""),
+            ({"orderby": "create_time"}, 0, lambda r: is_sorted(_chat_list(r), "create_time", True), ""),
+            ({"orderby": "update_time"}, 0, lambda r: is_sorted(_chat_list(r), "update_time", True), ""),
             pytest.param(
                 {"orderby": "name", "desc": "False"},
                 0,
-                lambda r: (is_sorted(r["data"], "name", False)),
+                lambda r: is_sorted(_chat_list(r), "name", False),
                 "",
                 marks=pytest.mark.skip(reason="issues/5851"),
             ),
@@ -165,14 +166,14 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_code, assertions, expected_message",
         [
-            ({"desc": None}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "true"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "True"}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": True}, 0, lambda r: (is_sorted(r["data"], "create_time", True)), ""),
-            ({"desc": "false"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": "False"}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": False}, 0, lambda r: (is_sorted(r["data"], "create_time", False)), ""),
-            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: (is_sorted(r["data"], "update_time", False)), ""),
+            ({"desc": None}, 0, lambda r: is_sorted(_chat_list(r), "create_time", True), ""),
+            ({"desc": "true"}, 0, lambda r: is_sorted(_chat_list(r), "create_time", True), ""),
+            ({"desc": "True"}, 0, lambda r: is_sorted(_chat_list(r), "create_time", True), ""),
+            ({"desc": True}, 0, lambda r: is_sorted(_chat_list(r), "create_time", True), ""),
+            ({"desc": "false"}, 0, lambda r: is_sorted(_chat_list(r), "create_time", False), ""),
+            ({"desc": "False"}, 0, lambda r: is_sorted(_chat_list(r), "create_time", False), ""),
+            ({"desc": False}, 0, lambda r: is_sorted(_chat_list(r), "create_time", False), ""),
+            ({"desc": "False", "orderby": "update_time"}, 0, lambda r: is_sorted(_chat_list(r), "update_time", False), ""),
             pytest.param(
                 {"desc": "unknown"},
                 102,
@@ -202,90 +203,81 @@ class TestChatAssistantsList:
     @pytest.mark.parametrize(
         "params, expected_code, expected_num, expected_message",
         [
-            ({"name": None}, 0, 5, ""),
-            ({"name": ""}, 0, 5, ""),
-            ({"name": "test_chat_assistant_1"}, 0, 1, ""),
-            ({"name": "unknown"}, 102, 0, "The chat doesn't exist"),
+            ({"keywords": None}, 0, 5, ""),
+            ({"keywords": ""}, 0, 5, ""),
+            ({"keywords": "test_chat_assistant_1"}, 0, 1, ""),
+            ({"keywords": "unknown"}, 0, 0, ""),
         ],
     )
-    def test_name(self, HttpApiAuth, params, expected_code, expected_num, expected_message):
+    def test_keywords(self, HttpApiAuth, params, expected_code, expected_num, expected_message):
         res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == expected_code
         if expected_code == 0:
-            if params["name"] in [None, ""]:
-                assert len(res["data"]) == expected_num
+            if params["keywords"] in [None, ""]:
+                assert len(_chat_list(res)) == expected_num
             else:
-                assert res["data"][0]["name"] == params["name"]
+                assert len(_chat_list(res)) == expected_num
+                if expected_num:
+                    assert _chat_list(res)[0]["name"] == params["keywords"]
         else:
             assert res["message"] == expected_message
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "chat_assistant_id, expected_code, expected_num, expected_message",
+        "chat_assistant_id, expected_code, expected_message",
         [
-            (None, 0, 5, ""),
-            ("", 0, 5, ""),
-            (lambda r: r[0], 0, 1, ""),
-            ("unknown", 102, 0, "The chat doesn't exist"),
+            (lambda r: r[0], 0, ""),
+            ("unknown", 109, "No authorization."),
         ],
     )
-    def test_id(
+    def test_get_chat_assistant(
         self,
         HttpApiAuth,
         add_chat_assistants,
         chat_assistant_id,
         expected_code,
-        expected_num,
         expected_message,
     ):
         _, _, chat_assistant_ids = add_chat_assistants
-        if callable(chat_assistant_id):
-            params = {"id": chat_assistant_id(chat_assistant_ids)}
-        else:
-            params = {"id": chat_assistant_id}
-
-        res = list_chat_assistants(HttpApiAuth, params=params)
+        chat_id = chat_assistant_id(chat_assistant_ids) if callable(chat_assistant_id) else chat_assistant_id
+        res = get_chat_assistant(HttpApiAuth, chat_id)
         assert res["code"] == expected_code
         if expected_code == 0:
-            if params["id"] in [None, ""]:
-                assert len(res["data"]) == expected_num
-            else:
-                assert res["data"][0]["id"] == params["id"]
+            assert res["data"]["id"] == chat_id
         else:
             assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "chat_assistant_id, name, expected_code, expected_num, expected_message",
+        "chat_assistant_id, keywords, expected_code, expected_num, expected_message",
         [
             (lambda r: r[0], "test_chat_assistant_0", 0, 1, ""),
-            (lambda r: r[0], "test_chat_assistant_1", 102, 0, "The chat doesn't exist"),
-            (lambda r: r[0], "unknown", 102, 0, "The chat doesn't exist"),
-            ("id", "chat_assistant_0", 102, 0, "The chat doesn't exist"),
+            (lambda r: r[0], "test_chat_assistant_1", 0, 1, ""),
+            (lambda r: r[0], "unknown", 0, 0, ""),
         ],
     )
-    def test_name_and_id(
+    def test_get_and_keywords_are_separate_lookups(
         self,
         HttpApiAuth,
         add_chat_assistants,
         chat_assistant_id,
-        name,
+        keywords,
         expected_code,
         expected_num,
         expected_message,
     ):
         _, _, chat_assistant_ids = add_chat_assistants
-        if callable(chat_assistant_id):
-            params = {"id": chat_assistant_id(chat_assistant_ids), "name": name}
-        else:
-            params = {"id": chat_assistant_id, "name": name}
+        chat_id = chat_assistant_id(chat_assistant_ids) if callable(chat_assistant_id) else chat_assistant_id
 
-        res = list_chat_assistants(HttpApiAuth, params=params)
-        assert res["code"] == expected_code
+        get_res = get_chat_assistant(HttpApiAuth, chat_id)
+        list_res = list_chat_assistants(HttpApiAuth, params={"keywords": keywords})
+
+        assert get_res["code"] == expected_code
+        assert list_res["code"] == expected_code
         if expected_code == 0:
-            assert len(res["data"]) == expected_num
+            assert len(_chat_list(list_res)) == expected_num
         else:
-            assert res["message"] == expected_message
+            assert get_res["message"] == expected_message
 
     @pytest.mark.p3
     def test_concurrent_list(self, HttpApiAuth):
@@ -301,7 +293,7 @@ class TestChatAssistantsList:
         params = {"a": "b"}
         res = list_chat_assistants(HttpApiAuth, params=params)
         assert res["code"] == 0
-        assert len(res["data"]) == 5
+        assert len(_chat_list(res)) == 5
 
     @pytest.mark.p2
     def test_list_chats_after_deleting_associated_dataset(self, HttpApiAuth, add_chat_assistants):
@@ -311,4 +303,10 @@ class TestChatAssistantsList:
 
         res = list_chat_assistants(HttpApiAuth)
         assert res["code"] == 0
-        assert len(res["data"]) == 5
+        assert len(_chat_list(res)) == 5
+
+    @pytest.mark.p2
+    def test_desc_false_parse_branch_p2(self, HttpApiAuth):
+        res = list_chat_assistants(HttpApiAuth, params={"desc": "False", "orderby": "create_time"})
+        assert res["code"] == 0
+        assert is_sorted(_chat_list(res), "create_time", False)

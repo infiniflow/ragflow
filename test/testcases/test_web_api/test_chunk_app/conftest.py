@@ -18,7 +18,7 @@
 from time import sleep
 
 import pytest
-from common import batch_add_chunks, delete_chunks, list_chunks, list_documents, parse_documents
+from test_common import batch_add_chunks, delete_chunks, list_chunks, list_documents, parse_documents
 from utils import wait_for
 
 
@@ -26,7 +26,7 @@ from utils import wait_for
 def condition(_auth, _kb_id):
     res = list_documents(_auth, {"kb_id": _kb_id})
     for doc in res["data"]["docs"]:
-        if doc["run"] != "3":
+        if doc["run"] != "DONE":
             return False
     return True
 

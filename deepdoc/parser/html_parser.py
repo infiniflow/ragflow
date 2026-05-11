@@ -33,7 +33,7 @@ BLOCK_TAGS = [
     "table", "pre", "code", "blockquote",
     "figure", "figcaption"
 ]
-TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "#####", "h5": "#####", "h6": "######"}
+TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
 
 
 class RAGFlowHtmlParser:

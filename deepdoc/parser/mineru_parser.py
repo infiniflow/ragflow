@@ -35,6 +35,7 @@ from PIL import Image
 from strenum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+from deepdoc.parser.utils import extract_pdf_outlines
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -73,6 +74,8 @@ LANGUAGE_TO_MINERU_MAP = {
     'Thai': 'th',
     'Greek': 'el',
     'Hindi': 'devanagari',
+    'Bulgarian': 'cyrillic',
+    'Turkish': 'latin',
 }
 
 
@@ -339,6 +342,11 @@ class MinerUParser(RAGFlowPdfParser):
         pn = [bx["page_idx"] + 1]
         positions = bx.get("bbox", (0, 0, 0, 0))
         x0, top, x1, bott = positions
+        # Normalize flipped coordinates (MinerU may report inverted bbox for flipped images)
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if top > bott:
+            top, bott = bott, top
 
         if hasattr(self, "page_images") and self.page_images and len(self.page_images) > bx["page_idx"]:
             page_width, page_height = self.page_images[bx["page_idx"]].size
@@ -428,6 +436,12 @@ class MinerUParser(RAGFlowPdfParser):
 
             img0 = self.page_images[pns[0]]
             x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
+            if x0 > x1:
+                x0, x1 = x1, x0
+            if y0 > y1:
+                y0, y1 = y1, y0
+            if x1 <= x0 or y1 <= y0:
+                continue
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
             if 0 < ii < len(poss) - 1:
@@ -441,6 +455,13 @@ class MinerUParser(RAGFlowPdfParser):
                     continue
                 page = self.page_images[pn]
                 x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
+                if x0 > x1:
+                    x0, x1 = x1, x0
+                if y0 > y1:
+                    y0, y1 = y1, y0
+                if x1 <= x0 or y1 <= y0:
+                    bottom -= page.size[1]
+                    continue
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
@@ -556,7 +577,7 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.DISCARDED:
                     continue  # Skip discarded blocks entirely
 
-            if section and parse_method == "manual":
+            if section and parse_method in {"manual", "pipeline"}:
                 sections.append((section, output["type"], self._line_tag(output)))
             elif section and parse_method == "paper":
                 sections.append((section + self._line_tag(output), output["type"]))
@@ -582,6 +603,7 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> tuple:
         import shutil
 
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
         temp_pdf = None
         created_tmp_dir = False
 

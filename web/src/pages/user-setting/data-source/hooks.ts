@@ -46,7 +46,7 @@ export const useListDataSource = () => {
 
   const updatedDataSourceTemplates = useMemo(() => {
     const categorizedData = categorizeDataBySource(list || []);
-    let sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
+    const sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
       [];
     Object.keys(categorizedData).forEach((key: string) => {
       const k = key as DataSourceKey;

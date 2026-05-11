@@ -99,10 +99,15 @@ class Pdf(PdfParser):
                     title = ""
                     break
                 for j in range(3):
-                    if _begin(self.boxes[i + j]["text"]):
+                    next_idx = i + j
+                    if next_idx >= len(self.boxes):
                         break
-                    authors.append(self.boxes[i + j]["text"])
-                    break
+                    candidate = self.boxes[next_idx]["text"]
+                    if _begin(candidate):
+                        break
+                    if "@" in candidate:
+                        break
+                    authors.append(candidate)
                 break
         # get abstract
         abstr = ""
@@ -252,6 +257,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
     if table_ctx or image_ctx:
         attach_media_context(res, table_ctx, image_ctx)
+    
     return res
 
 

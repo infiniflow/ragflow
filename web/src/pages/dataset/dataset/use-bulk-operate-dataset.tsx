@@ -10,12 +10,12 @@ import {
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import {
-  Ban,
-  CircleCheck,
-  CircleX,
-  Cylinder,
-  Play,
-  Trash2,
+  LucideCircleX,
+  LucideCylinder,
+  LucidePlayCircle,
+  LucideToggleLeft,
+  LucideToggleRight,
+  LucideTrash2,
 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -47,7 +47,7 @@ export function useBulkOperateDataset({
     return documents
       .filter((item) => selectedRowKeys.includes(item.id) && item.id)
       ?.reduce((acc, cur) => {
-        return acc + cur.chunk_num;
+        return acc + cur.chunk_count;
       }, 0);
   }, [documents, selectedRowKeys]);
 
@@ -117,36 +117,36 @@ export function useBulkOperateDataset({
     {
       id: 'enabled',
       label: t('knowledgeDetails.enabled'),
-      icon: <CircleCheck />,
+      icon: <LucideToggleRight />,
       onClick: handleEnableClick,
     },
     {
       id: 'disabled',
       label: t('knowledgeDetails.disabled'),
-      icon: <Ban />,
+      icon: <LucideToggleLeft />,
       onClick: handleDisableClick,
     },
     {
       id: 'run',
       label: t('knowledgeDetails.run'),
-      icon: <Play />,
+      icon: <LucidePlayCircle />,
       onClick: () => showModal(),
     },
     {
       id: 'cancel',
       label: t('knowledgeDetails.cancel'),
-      icon: <CircleX />,
+      icon: <LucideCircleX />,
       onClick: handleCancelClick,
     },
     {
       id: 'batch-metadata',
       label: t('knowledgeDetails.metadata.metadata'),
-      icon: <Cylinder />,
+      icon: <LucideCylinder />,
     },
     {
       id: 'delete',
       label: t('common.delete'),
-      icon: <Trash2 />,
+      icon: <LucideTrash2 />,
       onClick: async () => {
         const code = await handleDelete();
         if (code === 0) {

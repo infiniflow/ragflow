@@ -1,9 +1,10 @@
+import message from '@/components/ui/message';
+import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { PaginationProps, message } from 'antd';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -46,7 +47,7 @@ export const useDeleteChunk = () => {
   } = useMutation({
     mutationKey: ['deleteChunk'],
     mutationFn: async (params: { chunkIds: string[]; doc_id: string }) => {
-      const { data } = await kbService.rm_chunk(params);
+      const { data } = await kbService.rmChunk(params);
       if (data.code === 0) {
         setPaginationParams(1);
         queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
@@ -69,9 +70,9 @@ export const useCreateChunk = () => {
   } = useMutation({
     mutationKey: ['createChunk'],
     mutationFn: async (payload: any) => {
-      let service = kbService.create_chunk;
+      let service = kbService.createChunk;
       if (payload.chunk_id) {
-        service = kbService.set_chunk;
+        service = kbService.setChunk;
       }
       const { data } = await service(payload);
       if (data.code === 0) {
@@ -94,7 +95,7 @@ export const useFetchChunk = (chunkId?: string): ResponseType<any> => {
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const data = await kbService.get_chunk({
+      const data = await kbService.getChunk({
         chunk_id: chunkId,
       });
 
@@ -137,7 +138,7 @@ export const useFetchNextChunkList = (
     gcTime: 0,
     enabled,
     queryFn: async () => {
-      const { data } = await kbService.chunk_list({
+      const { data } = await kbService.chunkList({
         doc_id: documentId,
         page: pagination.current,
         size: pagination.pageSize,
@@ -205,7 +206,7 @@ export const useSwitchChunk = () => {
       available_int?: number;
       doc_id: string;
     }) => {
-      const { data } = await kbService.switch_chunk(params);
+      const { data } = await kbService.switchChunk(params);
       if (data.code === 0) {
         message.success(t('message.modified'));
       }

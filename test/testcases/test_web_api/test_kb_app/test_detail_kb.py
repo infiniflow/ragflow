@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import (
+from test_common import (
     detail_kb,
 )
 from configs import INVALID_API_TOKEN

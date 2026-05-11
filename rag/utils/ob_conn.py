@@ -34,7 +34,8 @@ from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, 
 from common.doc_store.ob_conn_base import (
     OBConnectionBase, get_value_str,
     vector_search_template, vector_column_pattern,
-    fulltext_index_name_template,
+    fulltext_index_name_template, doc_meta_column_names,
+    doc_meta_column_types,
 )
 from common.float_utils import get_float
 from rag.nlp import rag_tokenizer
@@ -126,7 +127,7 @@ FTS_COLUMNS_TKS: list[str] = [
 ]
 
 # Extra columns to add after table creation (for migration)
-EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id]
+EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id, column_chunk_data]
 
 
 class SearchResult(BaseModel):
@@ -135,8 +136,9 @@ class SearchResult(BaseModel):
 
 
 def get_column_value(column_name: str, value: Any) -> Any:
-    if column_name in column_types:
-        column_type = column_types[column_name]
+    # Check chunk table columns first, then doc_meta table columns
+    column_type = column_types.get(column_name) or doc_meta_column_types.get(column_name)
+    if column_type:
         if isinstance(column_type, String):
             return str(value)
         elif isinstance(column_type, Integer):
@@ -658,6 +660,12 @@ class OBConnection(OBConnectionBase):
             return result
 
         output_fields = select_fields.copy()
+        if "*" in output_fields:
+            if index_names[0].startswith("ragflow_doc_meta_"):
+                output_fields = doc_meta_column_names.copy()
+            else:
+                output_fields = column_names.copy()
+
         if "id" not in output_fields:
             output_fields = ["id"] + output_fields
         if "_score" in output_fields:
@@ -986,7 +994,7 @@ class OBConnection(OBConnectionBase):
                     for field, order in order_by.fields:
                         if isinstance(column_types[field], ARRAY):
                             f = field + "_sort"
-                            fields_expr += f", array_to_string({field}, ',') AS {f}"
+                            fields_expr += f", array_avg({field}) AS {f}"
                             field = f
                         order = "ASC" if order == 0 else "DESC"
                         orders.append(f"{field} {order}")
@@ -1203,6 +1211,32 @@ class OBConnection(OBConnectionBase):
             return True
         except Exception as e:
             logger.error(f"OBConnection.update error: {str(e)}")
+        return False
+
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        index_name: str,
+        knowledgebase_id: str,
+        delta: int,
+        min_w: int = 0,
+        max_w: int = 100,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk row (single UPDATE)."""
+        if not self._check_table_exists_cached(index_name):
+            return True
+        d = int(delta)
+        sql = (
+            f"UPDATE {index_name} SET {PAGERANK_FLD} = "
+            f"GREATEST({int(min_w)}, LEAST({int(max_w)}, COALESCE({PAGERANK_FLD}, 0) + ({d}))) "
+            f"WHERE id = {get_value_str(chunk_id)} AND kb_id = {get_value_str(knowledgebase_id)}"
+        )
+        logger.debug("OBConnection.adjust_chunk_pagerank_fea sql: %s", sql)
+        try:
+            self.client.perform_raw_text_sql(sql)
+            return True
+        except Exception as e:
+            logger.error("OBConnection.adjust_chunk_pagerank_fea error: %s", e)
         return False
 
     def _row_to_entity(self, data: Row, fields: list[str]) -> dict:

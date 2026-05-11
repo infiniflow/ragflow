@@ -32,10 +32,11 @@
   .messageTextDark {
     .chunkText();
     .messageTextBase();
+    padding: 0;
     word-break: break-word;
     :global(section.think) {
       color: rgb(166, 166, 166);
-      border-left-color: rgb(78, 78, 86);
+      border-inline-start-color: rgb(78, 78, 86);
     }
   }
 
@@ -56,9 +57,9 @@
 }
 
 .messageItemLeft {
-  text-align: left;
+  text-align: start;
 }
 
 .messageItemRight {
-  text-align: right;
+  text-align: end;
 }

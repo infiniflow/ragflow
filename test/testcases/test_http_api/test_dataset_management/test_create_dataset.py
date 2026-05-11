@@ -23,7 +23,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-from common import create_dataset
+from test_http_api.common import create_dataset, delete_all_datasets
 
 
 @pytest.mark.usefixtures("clear_datasets")
@@ -32,11 +32,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
         ids=["empty_auth", "invalid_api_token"],
@@ -94,8 +94,9 @@ class TestDatasetCreate:
     @pytest.mark.p1
     @given(name=valid_names())
     @example("a" * 128)
-    @settings(max_examples=20)
+    @settings(max_examples=20, deadline=None)
     def test_name(self, HttpApiAuth, name):
+        delete_all_datasets(HttpApiAuth)
         res = create_dataset(HttpApiAuth, {"name": name})
         assert res["code"] == 0, res
         assert res["data"]["name"] == name, res
@@ -250,7 +251,7 @@ class TestDatasetCreate:
     def test_embedding_model_invalid(self, HttpApiAuth, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
         res = create_dataset(HttpApiAuth, payload)
-        assert res["code"] == 101, res
+        assert res["code"] == 102, res
         if "tenant_no_auth" in name:
             assert res["message"] == f"Unauthorized model: <{embedding_model}>", res
         else:
@@ -380,7 +381,7 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, HttpApiAuth):
@@ -394,7 +395,7 @@ class TestDatasetCreate:
         payload = {"name": "chunk_method_none", "chunk_method": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -448,6 +449,10 @@ class TestDatasetCreate:
             ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
             ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
             ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+            ("parent_child_true", {"parent_child": {"use_parent_child": True}}),
+            ("parent_child_false", {"parent_child": {"use_parent_child": False}}),
+            ("parent_child_delimiter", {"parent_child": {"children_delimiter": "\n\n"}}),
+            ("parent_child_delimiter_custom", {"parent_child": {"use_parent_child": True, "children_delimiter": "。"}}),
         ],
         ids=[
             "auto_keywords_min",
@@ -498,6 +503,10 @@ class TestDatasetCreate:
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
             "raptor_random_seed_min",
+            "parent_child_true",
+            "parent_child_false",
+            "parent_child_delimiter",
+            "parent_child_delimiter_custom",
         ],
     )
     def test_parser_config(self, HttpApiAuth, name, parser_config):
@@ -569,6 +578,8 @@ class TestDatasetCreate:
             ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
             ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
             ("parser_config_type_invalid", {"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
+            ("parent_child_type_invalid", {"parent_child": {"use_parent_child": "string"}}, "Input should be a valid boolean"),
+            ("parent_child_delimiter_empty", {"parent_child": {"children_delimiter": ""}}, "String should have at least 1 character"),
         ],
         ids=[
             "auto_keywords_min_limit",
@@ -625,6 +636,8 @@ class TestDatasetCreate:
             "raptor_random_seed_float_not_allowed",
             "raptor_random_seed_type_invalid",
             "parser_config_type_invalid",
+            "parent_child_type_invalid",
+            "parent_child_delimiter_empty",
         ],
     )
     def test_parser_config_invalid(self, HttpApiAuth, name, parser_config, expected_message):

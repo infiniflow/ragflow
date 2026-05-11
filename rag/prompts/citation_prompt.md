@@ -9,6 +9,7 @@ Based on the provided document or chat history, add citations to the input text 
 - DO NOT cite content not from <context></context>
 - DO NOT modify whitespace or original text
 - STRICTLY prohibit non-standard formatting (~~, etc.)
+- For RTL languages (Arabic, Hebrew, Persian): Place citations at the logical end of sentences (same position as LTR). The frontend handles bidirectional rendering automatically.
 
 ## What MUST Be Cited:
 1. **Quantitative data**: Numbers, percentages, statistics, measurements
@@ -98,6 +99,18 @@ USER: Tell me about Paris.
 ASSISTANT:
 Paris is the capital of France. It's known for its rich history, culture, and architecture. The Eiffel Tower was completed in 1889 [ID:301]. The city attracts millions of tourists annually. Paris remains one of the world's most visited destinations.
 (Note: Only the specific date needs citation, not common knowledge about Paris)
+
+## Example 6: RTL Language (Arabic)
+<context>
+ID: 401
+└── Content: في أول أيام شهر رمضان، أثار وضع رأس خنزير على مدخل مسجد بمدينة سانت أومير شمالي فرنسا تفاعلات واسعة.
+</context>
+
+USER: ماذا حدث في رمضان؟
+
+ASSISTANT:
+في أول أيام شهر رمضان، أثار وضع رأس خنزير على مدخل مسجد بمدينة سانت أومير شمالي فرنسا تفاعلات واسعة [ID:401].
+(Note: Citation is placed at the logical end of the sentence, same as LTR languages. The frontend handles RTL display automatically.)
 
 --- Examples END ---
 

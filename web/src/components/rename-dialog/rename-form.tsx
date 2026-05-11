@@ -66,6 +66,7 @@ export function RenameForm({
               <FormLabel>{t('common.name')}</FormLabel>
               <FormControl>
                 <Input
+                  data-testid="rename-name-input"
                   placeholder={t('common.namePlaceholder')}
                   {...field}
                   autoComplete="off"

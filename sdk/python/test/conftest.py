@@ -67,7 +67,7 @@ def get_api_key_fixture():
     except Exception as e:
         print(e)
     auth = login()
-    url = HOST_ADDRESS + "/v1/system/new_token"
+    url = HOST_ADDRESS + "/v1/system/tokens"
     auth = {"Authorization": auth}
     response = requests.post(url=url, headers=auth)
     res = response.json()

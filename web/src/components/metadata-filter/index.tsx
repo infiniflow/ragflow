@@ -52,7 +52,7 @@ export function MetadataFilter({
 
   const kbIds: string[] = useWatch({
     control: form.control,
-    name: prefix + 'kb_ids',
+    name: prefix + 'dataset_ids',
   });
   const metadata = useWatch({
     control: form.control,

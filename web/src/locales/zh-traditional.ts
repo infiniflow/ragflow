@@ -18,6 +18,8 @@ export default {
       portugueseBr: '葡萄牙語 (巴西)',
       chinese: '簡體中文',
       traditionalChinese: '繁體中文',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
       language: '語言',
       languageMessage: '請輸入語言',
       languagePlaceholder: '請選擇語言',
@@ -35,6 +37,7 @@ export default {
       pleaseInput: '請輸入',
       submit: '提交',
       embedIntoSite: '嵌入網站',
+      openInNewTab: '在新標籤頁中聊天',
       previousPage: '上一頁',
       nextPage: '下一頁',
       add: '添加',
@@ -154,7 +157,7 @@ export default {
       changeSpecificCategory: '更改特定類別',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 cloud.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       chunk: '解析塊',
       bulk: '批量',
       cancel: '取消',
@@ -421,6 +424,9 @@ export default {
       delete: '删除',
     },
     chat: {
+      chatSupport: '聊天支援',
+      replyInstantly: '我們通常會即時回覆',
+      typeYourMessage: '輸入您的訊息...',
       newConversation: '新會話',
       createAssistant: '新建助理',
       assistantSetting: '助理設置',
@@ -561,6 +567,7 @@ export default {
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      dingtalkAITableDescription: '連接釘釘AI表格，同步指定表格中的記錄。',
       gitlabDescription:
         '連接 GitLab，同步儲存庫、Issue、合併請求（MR）及相關文件內容。',
       bedrockCredentialsHint:
@@ -624,6 +631,8 @@ export default {
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
       tongyiBaseUrlTip:
         '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        '中國用戶無需填寫或使用 https://api.siliconflow.cn/v1。國際用戶請使用 https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder: '（僅國際用戶，請參閱提示）',
       minimaxBaseUrlTip: '僅國際用戶：使用 https://api.minimax.io/v1。',
       minimaxBaseUrlPlaceholder: '（僅國際用戶填寫 https://api.minimax.io/v1）',
@@ -711,7 +720,7 @@ export default {
       FishAudioModelNameMessage: '請為你的TTS模型起名',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: '請輸入 API KEY',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage: '請輸入引用模型的ID（留空表示使用默認模型）',
       GoogleModelIDMessage: '請輸入 model ID!',
       addGoogleProjectID: 'Project ID',
@@ -756,6 +765,7 @@ export default {
         '以英文逗號分隔的倉庫 slug，例如：repo-one,repo-two',
       bitbucketProjectsTip: '以英文逗號分隔的項目鍵，例如：PROJ1,PROJ2',
       connectorNameTip: '為連接器填寫一個有意義的名稱',
+      syncDeletedFiles: '同步刪除文件',
     },
     message: {
       registered: '註冊成功',
@@ -803,7 +813,7 @@ export default {
       parseOnCreation: '創建時解析',
       uploadTitle: '點擊或拖拽文件至此區域即可上傳',
       uploadDescription:
-        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 demo.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
+        '支持單次或批量上傳。本地部署的單次上傳檔案總大小上限為 1GB，單次批量上傳檔案數不超過 32，單個帳戶不限檔案數量。對於 cloud.ragflow.io，每次上傳的文件總大小限制為 10MB，每個文件不得超過 10MB，且每個帳戶最多可上傳 128 個文件。',
       file: '文件',
       directory: '文件夾',
       local: '本地上傳',
@@ -899,10 +909,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         '此組件透過您提供的 SearXNG 實例 URL 進行搜尋。請設定 Top N 和實例 URL。',
-      pdfGenerator: '文檔生成器',
-      pPDFGenerator: '文檔生成器',
-      pdfGeneratorDescription: `該組件從 markdown 格式的內容生成文檔（PDF、DOCX、TXT），支援自定義樣式、圖片和表格。支援：**粗體**、*斜體*、# 標題、- 列表、使用 | 語法的表格。`,
-      pPDFGeneratorDescription: `該組件從 markdown 格式的內容生成文檔（PDF、DOCX、TXT），支援自定義樣式、圖片和表格。支援：**粗體**、*斜體*、# 標題、- 列表、使用 | 語法的表格。`,
+      docGenerator: '文檔生成器',
+      docGeneratorDescription: `從 Markdown 內容產生檔案。`,
       subtitle: '副標題',
       logoImage: '標誌圖片',
       logoPosition: '標誌位置',
@@ -1256,6 +1264,9 @@ export default {
       categoryName: '分類名稱',
       nextStep: '下一步',
       insertVariableTip: `輸入 / 插入變數`,
+      mergePath: '合併路徑',
+      mergePathTip:
+        '開啟後，緊跟在變數後面的點號後綴會合併為路徑查詢，例如 {node@result.name}。',
       promptMessage: '提示詞是必填項',
       promptTip:
         '系統提示為大型模型提供任務描述、規定回覆方式，以及設定其他各種要求。系統提示通常與 key（變數）合用，透過變數設定大型模型的輸入資料。你可以透過斜線或 (x) 按鈕顯示可用的 key。',
@@ -1274,6 +1285,14 @@ export default {
       file: '文件',
       knowledge: '知識',
       chat: '聊天',
+    },
+    language: {
+      english: '英語',
+      chinese: '簡體中文',
+      russian: '俄語',
+      bulgarian: '保加利亞語',
+      arabic: '阿拉伯語',
+      turkish: '土耳其語',
     },
     modal: {
       okText: '確認',

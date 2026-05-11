@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import (
+from test_common import (
     system_config,
     system_delete_token,
     system_new_token,
