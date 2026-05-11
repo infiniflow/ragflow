@@ -9,7 +9,7 @@ import { LLMFactory } from '@/constants/llm';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -47,7 +47,9 @@ const OllamaModal = ({
   llmFactory,
   editMode = false,
   initialValues,
-}: IModalProps<Partial<IAddLlmRequestBody> & { provider_order?: string }> & {
+}: IModalProps<
+  Partial<IAddProviderInstanceRequestBody> & { provider_order?: string }
+> & {
   llmFactory: string;
   editMode?: boolean;
   onVerify?: (
@@ -118,6 +120,17 @@ const OllamaModal = ({
     const defaultToolCallEnabled = initialValues?.is_tools ?? false;
 
     const baseFields: FormFieldConfig[] = [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: {
+          message: t('instanceNameMessage'),
+        },
+      },
       {
         name: 'model_type',
         label: t('modelType'),
@@ -222,6 +235,7 @@ const OllamaModal = ({
   const defaultValues: FieldValues = useMemo(() => {
     if (editMode && initialValues) {
       return {
+        instance_name: initialValues.instance_name || '',
         llm_name: initialValues.llm_name || '',
         model_type: initialValues.model_type || 'chat',
         api_base: initialValues.api_base || '',
@@ -233,6 +247,7 @@ const OllamaModal = ({
       };
     }
     return {
+      instance_name: '',
       model_type:
         llmFactory === LLMFactory.Ollama || llmFactory === LLMFactory.VLLM
           ? 'chat'
@@ -253,14 +268,16 @@ const OllamaModal = ({
         : values.model_type;
     const supportsToolCall = modelType === 'chat' || modelType === 'image2text';
 
-    const data: IAddLlmRequestBody & { provider_order?: string } = {
-      llm_factory: llmFactory,
-      llm_name: values.llm_name as string,
-      model_type: modelType,
-      api_base: values.api_base as string,
-      api_key: values.api_key as string,
-      max_tokens: values.max_tokens as number,
-    };
+    const data: IAddProviderInstanceRequestBody & { provider_order?: string } =
+      {
+        instance_name: values.instance_name as string,
+        llm_factory: llmFactory,
+        llm_name: values.llm_name as string,
+        model_type: modelType,
+        api_base: values.api_base as string,
+        api_key: values.api_key as string,
+        max_tokens: values.max_tokens as number,
+      };
     if (supportsToolCall) {
       data.is_tools = Boolean(values.is_tools);
     }

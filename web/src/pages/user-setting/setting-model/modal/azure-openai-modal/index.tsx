@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -22,7 +22,7 @@ const AzureOpenAIModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -34,6 +34,17 @@ const AzureOpenAIModal = ({
   const formRef = useRef<DynamicFormRef>(null);
 
   const fields: FormFieldConfig[] = [
+    {
+      name: 'instance_name',
+      label: t('instanceName'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('instanceNameMessage'),
+      tooltip: t('instanceNameTip'),
+      validation: {
+        message: t('instanceNameMessage'),
+      },
+    },
     {
       name: 'model_type',
       label: t('modelType'),
@@ -112,7 +123,8 @@ const AzureOpenAIModal = ({
         ? 'image2text'
         : values.model_type;
 
-    const data: IAddLlmRequestBody & { api_version?: string } = {
+    const data: IAddProviderInstanceRequestBody & { api_version?: string } = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
       model_type: modelType,
@@ -162,6 +174,7 @@ const AzureOpenAIModal = ({
         ref={formRef}
         defaultValues={
           {
+            instance_name: '',
             model_type: 'embedding',
             llm_name: 'gpt-3.5-turbo',
             api_version: '2024-02-01',

@@ -4,16 +4,25 @@ import { LlmModelType } from '@/constants/knowledge';
 import { DefaultOptionType } from '@/interfaces/antd-compat';
 import { ResponseGetType } from '@/interfaces/database/base';
 import {
+  IAvailableProvider,
   IFactory,
+  IInstanceModel,
   IMyLlmValue,
+  IProviderInstance,
   IThirdOAIModelCollection as IThirdAiModelCollection,
   IThirdOAIModel,
   IThirdOAIModelCollection,
 } from '@/interfaces/database/llm';
 import {
   IAddLlmRequestBody,
+  IAddProviderInstanceRequestBody,
+  IAddProviderRequestBody,
   IDeleteLlmRequestBody,
+  IDeleteProviderInstanceRequestBody,
+  IListProvidersRequestParams,
+  IUpdateModelStatusRequestBody,
 } from '@/interfaces/request/llm';
+import llmService from '@/services/llm-service';
 import userService from '@/services/user-service';
 import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -27,12 +36,17 @@ export const enum LLMApiAction {
   MyLlmList = 'myLlmList',
   MyLlmListDetailed = 'myLlmListDetailed',
   FactoryList = 'factoryList',
+  AvailableProviders = 'availableProviders',
+  AddedProviders = 'addedProviders',
   SaveApiKey = 'saveApiKey',
   SaveTenantInfo = 'saveTenantInfo',
   AddLlm = 'addLlm',
+  AddProvider = 'addProvider',
+  AddProviderInstance = 'addProviderInstance',
   DeleteLlm = 'deleteLlm',
   EnableLlm = 'enableLlm',
   DeleteFactory = 'deleteFactory',
+  DeleteProviderInstance = 'deleteProviderInstance',
 }
 
 export const useFetchLlmList = (modelType?: LlmModelType) => {
@@ -77,7 +91,6 @@ function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
           name={getLLMIconName(x.fid, x.llm_name)}
           width={24}
           height={24}
-          size={'small'}
           imgClass="size-6"
         />
         <span>{getRealModelName(x.llm_name)}</span>
@@ -200,6 +213,81 @@ export const useFetchLlmFactoryList = (): ResponseGetType<IFactory[]> => {
   return { data, loading };
 };
 
+export const useFetchAvailableProviders = () => {
+  const { data, isFetching: loading } = useQuery<IAvailableProvider[]>({
+    queryKey: [LLMApiAction.AvailableProviders],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const params: IListProvidersRequestParams = { available: true };
+      const { data } = await llmService.listProviders({ params }, true);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchAddedProviders = () => {
+  const { data, isFetching: loading } = useQuery<IAvailableProvider[]>({
+    queryKey: [LLMApiAction.AddedProviders],
+    initialData: [],
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await llmService.listProviders({ params: {} }, true);
+
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchProviderInstances = (providerName: string) => {
+  const { data, isFetching: loading } = useQuery<IProviderInstance[]>({
+    queryKey: [LLMApiAction.AddedProviders, providerName, 'instances'],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!providerName,
+    queryFn: async () => {
+      const { data } = await llmService.listProviderInstances(
+        { provider_name: providerName },
+        true,
+      );
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
+export const useFetchInstanceModels = (
+  providerName: string,
+  instanceName: string,
+) => {
+  const { data, isFetching: loading } = useQuery<IInstanceModel[]>({
+    queryKey: [
+      LLMApiAction.AddedProviders,
+      providerName,
+      instanceName,
+      'models',
+    ],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!providerName && !!instanceName,
+    queryFn: async () => {
+      const { data } = await llmService.listInstanceModels(
+        { provider_name: providerName, instance_name: instanceName },
+        true,
+      );
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+};
+
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;
 
 export const useFetchMyLlmList = (): ResponseGetType<
@@ -266,6 +354,7 @@ export const useSelectLlmList = () => {
 };
 
 export interface IApiKeySavingParams {
+  instance_name?: string;
   llm_factory: string;
   api_key: string;
   llm_name?: string;
@@ -357,6 +446,66 @@ export const useAddLlm = () => {
   return { data, loading, addLlm: mutateAsync };
 };
 
+export const useAddProvider = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.AddProvider],
+    mutationFn: async (params: IAddProviderRequestBody) => {
+      try {
+        const { data: listRes } = await llmService.listProviders(
+          { params: {} },
+          true,
+        );
+        const isProviderAdded = listRes?.data?.some(
+          (p: IAvailableProvider) => p.name === params.provider_name,
+        );
+        if (isProviderAdded) {
+          return { code: 0, data: null };
+        }
+      } catch {
+        // ignore list failure and proceed to add
+      }
+      const { data } = await llmService.addProvider(params);
+      return data;
+    },
+  });
+
+  return { data, loading, addProvider: mutateAsync };
+};
+
+export const useAddProviderInstance = () => {
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.AddProviderInstance],
+    mutationFn: async (
+      params: IAddProviderInstanceRequestBody & { verify?: boolean },
+    ) => {
+      const { data } = await llmService.addProviderInstance(params);
+      if (data.code === 0 && !params.verify) {
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.MyLlmListDetailed],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.AddedProviders],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.LlmList] });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, addProviderInstance: mutateAsync };
+};
+
 export const useDeleteLlm = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
@@ -439,4 +588,48 @@ export const useDeleteFactory = () => {
   });
 
   return { data, loading, deleteFactory: mutateAsync };
+};
+
+export const useDeleteProviderInstance = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.DeleteProviderInstance],
+    mutationFn: async (params: IDeleteProviderInstanceRequestBody) => {
+      const { data } = await llmService.deleteProviderInstance(params);
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.AddedProviders],
+        });
+        message.success(t('message.deleted'));
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, deleteProviderInstance: mutateAsync };
+};
+
+export const useUpdateModelStatus = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.AddedProviders, 'updateModelStatus'],
+    mutationFn: async (params: IUpdateModelStatusRequestBody) => {
+      const { data } = await llmService.updateModelStatus(params);
+      if (data.code === 0) {
+        message.success(t('message.modified'));
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.AddedProviders],
+        });
+      }
+      return data;
+    },
+  });
+
+  return { loading, updateModelStatus: mutateAsync };
 };

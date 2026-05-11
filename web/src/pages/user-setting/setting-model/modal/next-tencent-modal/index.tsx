@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -21,7 +21,7 @@ const TencentCloudModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<Omit<IAddLlmRequestBody, 'max_tokens'>> & {
+}: IModalProps<Omit<IAddProviderInstanceRequestBody, 'max_tokens'>> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -32,6 +32,15 @@ const TencentCloudModal = ({
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const fields: FormFieldConfig[] = [
+    {
+      name: 'instance_name',
+      label: t('instanceName'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('instanceNameMessage'),
+      tooltip: t('instanceNameTip'),
+      validation: { message: t('instanceNameMessage') },
+    },
     {
       name: 'model_type',
       label: t('modelType'),
@@ -105,12 +114,13 @@ const TencentCloudModal = ({
     const modelType = values.model_type;
 
     const data = {
+      instance_name: values.instance_name as string,
       model_type: modelType,
       llm_name: values.llm_name as string,
       TencentCloud_sid: values.TencentCloud_sid as string,
       TencentCloud_sk: values.TencentCloud_sk as string,
       llm_factory: llmFactory,
-    } as Omit<IAddLlmRequestBody, 'max_tokens'>;
+    } as Omit<IAddProviderInstanceRequestBody, 'max_tokens'>;
 
     await onOk?.(data);
   };
@@ -143,6 +153,7 @@ const TencentCloudModal = ({
         onSubmit={() => {}}
         defaultValues={
           {
+            instance_name: '',
             model_type: 'speech2text',
             llm_name: '16k_zh',
           } as FieldValues

@@ -8,7 +8,7 @@ import { Segmented } from '@/components/ui/segmented';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useCallback, useMemo } from 'react';
@@ -18,7 +18,7 @@ import { LLMHeader } from '../../components/llm-header';
 import { BedrockRegionList } from '../../constant';
 import VerifyButton from '../../modal/verify-button';
 
-type FieldType = IAddLlmRequestBody & {
+type FieldType = IAddProviderInstanceRequestBody & {
   auth_mode?: 'access_key_secret' | 'iam_role' | 'assume_role';
   bedrock_ak: string;
   bedrock_sk: string;
@@ -33,7 +33,7 @@ const BedrockModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -45,6 +45,7 @@ const BedrockModal = ({
 
   const FormSchema = z
     .object({
+      instance_name: z.string().min(1, { message: t('instanceNameMessage') }),
       model_type: z.enum(['chat', 'embedding'], {
         required_error: t('modelTypeMessage'),
       }),
@@ -95,6 +96,7 @@ const BedrockModal = ({
   const form = useForm<FieldType>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
+      instance_name: '',
       model_type: 'chat',
       auth_mode: 'access_key_secret',
     },
@@ -135,7 +137,7 @@ const BedrockModal = ({
       max_tokens: values.max_tokens,
     };
 
-    onOk?.(data as unknown as IAddLlmRequestBody);
+    onOk?.(data as unknown as IAddProviderInstanceRequestBody);
   };
 
   const verifyParamsFunc = useCallback(() => {
@@ -199,6 +201,15 @@ const BedrockModal = ({
           className="space-y-6"
           id="bedrock-form"
         >
+          <RAGFlowFormItem
+            name="instance_name"
+            label={t('instanceName')}
+            tooltip={t('instanceNameTip')}
+            required
+          >
+            <Input placeholder={t('instanceNameMessage')} />
+          </RAGFlowFormItem>
+
           <RAGFlowFormItem name="model_type" label={t('modelType')} required>
             {(field) => (
               <SelectWithSearch

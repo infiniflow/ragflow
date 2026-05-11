@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -21,7 +21,7 @@ const FishAudioModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -32,6 +32,15 @@ const FishAudioModal = ({
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const fields: FormFieldConfig[] = [
+    {
+      name: 'instance_name',
+      label: t('instanceName'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('instanceNameMessage'),
+      tooltip: t('instanceNameTip'),
+      validation: { message: t('instanceNameMessage') },
+    },
     {
       name: 'model_type',
       label: t('modelType'),
@@ -81,7 +90,11 @@ const FishAudioModal = ({
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
-    const data: Record<string, any> = {
+    const data: IAddProviderInstanceRequestBody & {
+      fish_audio_ak: string;
+      fish_audio_refid: string;
+    } = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
       model_type: values.model_type,
@@ -90,8 +103,7 @@ const FishAudioModal = ({
       max_tokens: values.max_tokens as number,
     };
 
-    console.info(data);
-    await onOk?.(data as IAddLlmRequestBody);
+    await onOk?.(data);
   };
 
   const handleVerify = useCallback(
@@ -114,7 +126,7 @@ const FishAudioModal = ({
       <DynamicForm.Root
         fields={fields}
         onSubmit={(data) => console.log(data)}
-        defaultValues={{ model_type: 'tts' }}
+        defaultValues={{ instance_name: '', model_type: 'tts' }}
         labelClassName="font-normal"
       >
         {onVerify && (

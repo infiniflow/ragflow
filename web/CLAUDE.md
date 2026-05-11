@@ -41,6 +41,18 @@ When refactoring or extracting components, **verify layout behavior after each s
 For React Query / cache invalidation bugs, **carefully compare query keys across all consuming components and mutation hooks**. Mismatched keys (e.g., with/without `refreshCount`) are a common root cause of stale data or duplicate requests.
 - Systematically: (1) list every component/hook that calls `useQuery` for this data, (2) compare their query keys character-for-character, (3) check every mutation's `onSuccess` for cache invalidation, and (4) verify no parent re-renders are remounting the observer.
 
+### Network Request Layering
+HTTP requests are organized in three layers. **Never import `@/utils/request`, `@/utils/next-request`, or `@/utils/api` directly inside a hook**:
+1. `src/hooks/use-xx-request.ts(x)` — React Query hooks; only call the service layer.
+2. `src/services/xx-service.ts` — Register endpoints via `registerNextServer`, all going through `@/utils/next-request`.
+3. `src/utils/next-request.ts` — The single axios instance; handles token, 401 redirects, and error notifications.
+
+Interface types are split between two folders:
+- Response/data shape → `src/interfaces/database/xx.ts`
+- Request params/body → `src/interfaces/request/xx.ts`
+
+Model-related endpoints (LLM provider / factory / my LLM, etc.) are consolidated in `src/services/llm-service.ts` rather than scattered across hooks. For GET endpoints, register with `method: 'get'` in the service, and on the call site pass `true` as the second argument to use the native axios config (e.g., `service.listProviders({ params: { available: true } }, true)`).
+
 ### Shared UI Component Lock
 The folder `src/components/ui/` is the project's **shared UI library** — it contains both official shadcn/ui primitives and project-authored common components built on top of shadcn. Both kinds are intended to be reused across the app and **must not be modified casually**.
 
@@ -55,3 +67,10 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - Extract complex logic into hooks or utils; keep components lean.
 - Use `PascalCase` for constants and component names.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
+
+### Utility Libraries and Reuse
+- **Time/date handling**: Use `dayjs` for all date/time formatting, parsing, and manipulation.
+- **Utility hooks**: Prefer `ahooks` for common reusable hooks (e.g., `useDebounce`, `useSetState`).
+- **General utilities**: Lodash is available for utility functions when needed.
+- **Project utilities first**: Before reaching for a third-party library, check if the project already has an existing utility or hook that covers the need.
+- **Extract and share**: If repeated logic cannot be satisfied by an existing project utility or a third-party library, extract it into an appropriate shared hook (`src/hooks/`) or utility file (`src/utils/`).

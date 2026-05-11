@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -21,7 +21,7 @@ const GoogleModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -32,6 +32,15 @@ const GoogleModal = ({
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const fields: FormFieldConfig[] = [
+    {
+      name: 'instance_name',
+      label: t('instanceName'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('instanceNameMessage'),
+      tooltip: t('instanceNameTip'),
+      validation: { message: t('instanceNameMessage') },
+    },
     {
       name: 'model_type',
       label: t('modelType'),
@@ -109,6 +118,7 @@ const GoogleModal = ({
     if (!values) return;
 
     const data = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       model_type: values.model_type,
       llm_name: values.llm_name,
@@ -116,7 +126,7 @@ const GoogleModal = ({
       google_region: values.google_region,
       google_service_account_key: values.google_service_account_key,
       max_tokens: values.max_tokens,
-    } as IAddLlmRequestBody;
+    } as IAddProviderInstanceRequestBody;
 
     await onOk?.(data);
   };
@@ -150,6 +160,7 @@ const GoogleModal = ({
         }}
         defaultValues={
           {
+            instance_name: '',
             model_type: 'chat',
           } as FieldValues
         }

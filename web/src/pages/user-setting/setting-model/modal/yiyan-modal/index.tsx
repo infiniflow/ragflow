@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -22,7 +22,7 @@ const YiyanModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -35,6 +35,15 @@ const YiyanModal = ({
 
   const fields = useMemo<FormFieldConfig[]>(
     () => [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: { message: t('instanceNameMessage') },
+      },
       {
         name: 'model_type',
         label: t('modelType'),
@@ -86,7 +95,8 @@ const YiyanModal = ({
         ? 'image2text'
         : values.model_type;
 
-    const data: IAddLlmRequestBody = {
+    const data: IAddProviderInstanceRequestBody = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
       model_type: modelType,
@@ -96,8 +106,6 @@ const YiyanModal = ({
       },
       max_tokens: values.max_tokens as number,
     };
-
-    console.info(data);
 
     await onOk?.(data);
   };
@@ -148,6 +156,7 @@ const YiyanModal = ({
         }}
         defaultValues={
           {
+            instance_name: '',
             model_type: 'chat',
             vision: false,
           } as FieldValues

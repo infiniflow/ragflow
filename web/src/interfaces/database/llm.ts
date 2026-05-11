@@ -40,3 +40,22 @@ export interface Llm {
   status: '0' | '1';
   used_token: number;
 }
+
+export interface IAvailableProvider {
+  name: string;
+  model_types: string[];
+  url: { default?: string; [key: string]: string | undefined };
+}
+
+export interface IProviderInstance {
+  id: string;
+  instance_name: string;
+  provider_name: string;
+}
+
+export interface IInstanceModel {
+  max_tokens: number;
+  model_type: string;
+  name: string;
+  status: string;
+}

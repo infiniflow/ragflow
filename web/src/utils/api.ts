@@ -33,6 +33,32 @@ export default {
   deleteLlm: `${webAPI}/llm/delete_llm`,
   enableLlm: `${webAPI}/llm/enable_llm`,
   deleteFactory: `${webAPI}/llm/delete_factory`,
+  listProviders: `${restAPIv1}/providers`,
+  addProvider: `${restAPIv1}/providers/`,
+  addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
+    `${restAPIv1}/providers/${llm_factory}/instances`,
+  listProviderInstances: ({ provider_name }: { provider_name: string }) =>
+    `${restAPIv1}/providers/${provider_name}/instances`,
+  listInstanceModels: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+  deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
+    `${restAPIv1}/providers/${provider_name}/instances`,
+  updateModelStatus: ({
+    provider_name,
+    instance_name,
+    model_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+    model_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
 
   // data source
   dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,

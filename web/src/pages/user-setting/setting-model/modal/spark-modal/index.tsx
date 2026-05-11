@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import omit from 'lodash/omit';
 import { memo, useCallback, useRef } from 'react';
@@ -23,7 +23,7 @@ const SparkModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -34,6 +34,15 @@ const SparkModal = ({
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const formRef = useRef<DynamicFormRef>(null);
   const fields: FormFieldConfig[] = [
+    {
+      name: 'instance_name',
+      label: t('instanceName'),
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: t('instanceNameMessage'),
+      tooltip: t('instanceNameTip'),
+      validation: { message: t('instanceNameMessage') },
+    },
     {
       name: 'model_type',
       label: t('modelType'),
@@ -130,12 +139,13 @@ const SparkModal = ({
 
     const data = {
       ...omit(values, ['vision']),
+      instance_name: values.instance_name as string,
       model_type: modelType,
       llm_factory: llmFactory,
       max_tokens: values.max_tokens,
     };
 
-    await onOk?.(data as IAddLlmRequestBody);
+    await onOk?.(data as IAddProviderInstanceRequestBody);
   };
 
   const verifyParamsFunc = useCallback(() => {
@@ -175,6 +185,7 @@ const SparkModal = ({
         ref={formRef}
         defaultValues={
           {
+            instance_name: '',
             model_type: 'chat',
             vision: false,
           } as FieldValues

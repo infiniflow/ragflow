@@ -1,6 +1,6 @@
 import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
-import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
+// import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
 import { useCallback, useMemo } from 'react';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
@@ -39,7 +39,7 @@ import YiyanModal from './modal/yiyan-modal';
 const ModelProviders = () => {
   const { saveSystemModelSettingLoading, onSystemSettingSavingOk } =
     useSubmitSystemModelSetting();
-  const { data: detailedLlmList } = useFetchMyLlmListDetailed();
+  // const { data: detailedLlmList } = useFetchMyLlmListDetailed();
   const {
     saveApiKeyLoading,
     initialApiKey,
@@ -192,31 +192,31 @@ const ModelProviders = () => {
     [showApiKeyModal, showLlmAddingModal, ModalMap],
   );
 
-  const handleEditModel = useCallback(
-    (model: any, factory: LlmItem) => {
-      if (factory) {
-        const detailedFactory = detailedLlmList[factory.name];
-        const detailedModel = detailedFactory?.llm?.find(
-          (m: any) => m.name === model.name,
-        );
+  // const handleEditModel = useCallback(
+  //   (model: any, factory: LlmItem) => {
+  //     if (factory) {
+  //       const detailedFactory = detailedLlmList[factory.name];
+  //       const detailedModel = detailedFactory?.llm?.find(
+  //         (m: any) => m.name === model.name,
+  //       );
 
-        const editData = {
-          llm_factory: factory.name,
-          llm_name: model.name,
-          model_type: model.type,
-        };
+  //       const editData = {
+  //         llm_factory: factory.name,
+  //         llm_name: model.name,
+  //         model_type: model.type,
+  //       };
 
-        if (isLocalLlmFactory(factory.name)) {
-          showLlmAddingModal(factory.name, true, editData, detailedModel);
-        } else if (factory.name in ModalMap) {
-          ModalMap[factory.name as keyof typeof ModalMap]();
-        } else {
-          showApiKeyModal(editData, true);
-        }
-      }
-    },
-    [showApiKeyModal, showLlmAddingModal, ModalMap, detailedLlmList],
-  );
+  //       if (isLocalLlmFactory(factory.name)) {
+  //         showLlmAddingModal(factory.name, true, editData, detailedModel);
+  //       } else if (factory.name in ModalMap) {
+  //         ModalMap[factory.name as keyof typeof ModalMap]();
+  //       } else {
+  //         showApiKeyModal(editData, true);
+  //       }
+  //     }
+  //   },
+  //   [showApiKeyModal, showLlmAddingModal, ModalMap, detailedLlmList],
+  // );
 
   const handleOk = useMemo(() => {
     if (apiKeyVisible) {
@@ -300,10 +300,7 @@ const ModelProviders = () => {
           onOk={onSystemSettingSavingOk}
           loading={saveSystemModelSettingLoading}
         />
-        <UsedModel
-          handleAddModel={handleAddModel}
-          handleEditModel={handleEditModel}
-        />
+        <UsedModel handleAddModel={handleAddModel} />
       </section>
       <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">
         <AvailableModels handleAddModel={handleAddModel} />
