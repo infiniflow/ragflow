@@ -732,7 +732,10 @@ class User(DataBaseModel, AuthUser):
         return jwt.dumps(str(self.access_token))
 
     def to_safe_dict(self):
-        return {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
+        """Return a dict with sensitive fields stripped for API responses."""
+        result = {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
+        logging.debug("User %s serialized safely, filtered fields: %s", self.id, self.SENSITIVE_FIELDS)
+        return result
 
     class Meta:
         db_table = "user"

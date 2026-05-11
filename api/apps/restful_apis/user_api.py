@@ -94,12 +94,14 @@ async def login():
     """
     json_body = await get_request_json()
     if not json_body:
+        logging.warning("Login failed: invalid or empty JSON body")
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
     email = json_body.get("email", "")
 
     users = UserService.query(email=email)
     if not users:
+        logging.warning("Login failed: unregistered email '%s'", email)
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
@@ -110,11 +112,13 @@ async def login():
     try:
         password = decrypt(password)
     except BaseException:
+        logging.warning("Login failed: password decryption error for email '%s'", email)
         return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
 
     if user and hasattr(user, 'is_active') and user.is_active == "0":
+        logging.warning("Login failed: disabled account for email '%s'", email)
         return get_json_result(
             data=False,
             code=RetCode.FORBIDDEN,
@@ -126,10 +130,12 @@ async def login():
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
         user.save()
+        logging.info("Login successful: user_id=%s, email='%s'", user.id, email)
         msg = "Welcome back!"
 
         return await construct_response(data=user.to_safe_dict(), auth=user.get_id(), message=msg)
     else:
+        logging.warning("Login failed: wrong credentials for email '%s'", email)
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
@@ -168,6 +174,7 @@ async def oauth_login(channel):
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
+    logging.info("OAuth login initiated: channel='%s', state='%s'", channel, state)
     return redirect(auth_url)
 
 
@@ -282,9 +289,11 @@ async def log_out():
         schema:
           type: object
     """
+    user_id = current_user.id
     current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
     logout_user()
+    logging.info("Logout: user_id=%s, access_token invalidated", user_id)
     return get_json_result(data=True)
 
 
