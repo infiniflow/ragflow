@@ -140,7 +140,7 @@ def test_select_business_output_ignores_system_outputs():
         "actual_type": {"value": "", "type": "string"},
         "_ERROR": {"value": "", "type": "string"},
         "_ARTIFACTS": {"value": [], "type": "Array<Object>"},
-        "_ATTACHMENT_CONTENT": {"value": "", "type": "string"},
+        "attachments": {"value": [], "type": "Array<String>"},
         "raw_result": {"value": None, "type": "Any"},
         "_created_time": {"value": 1.0, "type": "Number"},
         "_elapsed_time": {"value": 2.0, "type": "Number"},
@@ -297,7 +297,7 @@ def test_legacy_multi_output_schema_is_rejected():
         )
 
 
-@pytest.mark.parametrize("name", ["content", "actual_type", "_ERROR", "_ARTIFACTS", "_ATTACHMENT_CONTENT", "raw_result"])
+@pytest.mark.parametrize("name", ["content", "actual_type", "attachments", "_ERROR", "_ARTIFACTS", "raw_result"])
 def test_reserved_business_output_names_are_rejected(name):
     module = _load_module()
     with pytest.raises(module.ContractError, match="reserved output name"):
@@ -387,7 +387,6 @@ def test_process_execution_result_returns_early_for_stderr_only_without_artifact
 def test_process_execution_result_appends_artifact_content_to_canonical_content():
     tool = _build_code_exec("Object")
     tool._upload_artifacts = lambda _artifacts: [{"name": "chart.png", "url": "/artifact/chart.png", "mime_type": "image/png", "size": 12}]
-    tool._build_attachment_content = lambda _artifacts, _artifact_urls: "attachment_count: 1\n\nattachment1 (image): chart.png\nparsed artifact"
 
     result = tool._process_execution_result(
         '{"foo": "bar"}',
@@ -400,8 +399,7 @@ def test_process_execution_result_appends_artifact_content_to_canonical_content(
     assert result["content"] == '{\n  "foo": "bar"\n}\n\nattachment_count: 1\n\nattachment1 (image): chart.png\nparsed artifact'
     assert result["_ARTIFACTS"] == [{"name": "chart.png", "url": "/artifact/chart.png", "mime_type": "image/png", "size": 12}]
     assert result["_ARTIFACTS"][0]["mime_type"] == "image/png"
-    assert result["_ATTACHMENT_CONTENT"] == "attachment_count: 1\n\nattachment1 (image): chart.png\nparsed artifact"
-    assert "attachment1 (image): chart.png" in result["_ATTACHMENT_CONTENT"]
+    assert result["attachments"] == ["![chart.png](/artifact/chart.png)"]
 
 
 def test_process_execution_result_without_artifacts_clears_stale_artifacts_output():
