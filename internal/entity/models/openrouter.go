@@ -373,6 +373,9 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -384,6 +387,10 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 	reqBody := map[string]interface{}{
 		"model": *modelName,
 		"input": texts,
+	}
+
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
 	jsonData, err := json.Marshal(reqBody)
