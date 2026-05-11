@@ -11,23 +11,34 @@ import (
 
 func newNvidiaRerankServer(t *testing.T, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
 	t.Helper()
+	// Use t.Errorf + return inside the handler goroutine; t.Fatalf would
+	// only Goexit the handler goroutine and the test would silently pass.
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
+			return
+		}
+		if r.URL.Path != "/ranking" {
+			t.Errorf("expected path=/ranking, got %s", r.URL.Path)
+			return
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 			t.Errorf("expected Authorization=Bearer test-key, got %q", got)
+			return
 		}
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("expected Content-Type=application/json, got %q", got)
+			return
 		}
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("failed to read body: %v", err)
+			t.Errorf("failed to read body: %v", err)
+			return
 		}
 		var body map[string]interface{}
 		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("invalid JSON body: %v\n%s", err, string(raw))
+			t.Errorf("invalid JSON body: %v\n%s", err, string(raw))
+			return
 		}
 		handler(t, body, w)
 	}))
@@ -51,7 +62,8 @@ func TestNvidiaRerankHappyPath(t *testing.T) {
 		}
 		passages, ok := body["passages"].([]interface{})
 		if !ok || len(passages) != 3 {
-			t.Fatalf("expected 3 passages, got %v", body["passages"])
+			t.Errorf("expected 3 passages, got %v", body["passages"])
+			return
 		}
 		if body["truncate"] != "END" {
 			t.Errorf("expected truncate=END, got %v", body["truncate"])

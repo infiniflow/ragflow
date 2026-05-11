@@ -467,10 +467,14 @@ type nvidiaRerankResponse struct {
 }
 
 // Rerank scores documents against the query using an NVIDIA NIM
-// reranking model. Mirrors the behavior of the Python NvidiaRerank
-// class in rag/llm/rerank_model.py: same passages/logit payload shape,
-// top_n set to len(documents) so every input gets a score returned in
-// the original order.
+// reranking model. Mirrors the Python NvidiaRerank class in
+// rag/llm/rerank_model.py for payload shape (passages/query/logit).
+// Defaults top_n to len(documents) so the API returns a score per
+// input; callers may shrink it via RerankConfig.TopN, in which case
+// only the top RerankConfig.TopN entries come back. Returned
+// RerankResult entries are in the API's ranking order; callers that
+// need original-input order should sort by Index. Same return-shape
+// contract as the Aliyun and ZhipuAI Rerank drivers.
 func (n NvidiaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
