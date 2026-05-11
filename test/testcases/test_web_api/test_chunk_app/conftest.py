@@ -34,16 +34,16 @@ def condition(_auth, _kb_id):
 @pytest.fixture(scope="function")
 def add_chunks_func(request, WebApiAuth, add_document):
     def cleanup():
-        res = list_chunks(WebApiAuth, {"doc_id": document_id})
-        chunk_ids = [chunk["chunk_id"] for chunk in res["data"]["chunks"]]
-        delete_chunks(WebApiAuth, {"doc_id": document_id, "chunk_ids": chunk_ids})
+        res = list_chunks(WebApiAuth, dataset_id, document_id)
+        chunk_ids = [chunk["id"] for chunk in res["data"]["chunks"]]
+        delete_chunks(WebApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids})
 
     request.addfinalizer(cleanup)
 
-    kb_id, document_id = add_document
+    dataset_id, document_id = add_document
     parse_documents(WebApiAuth, {"doc_ids": [document_id], "run": "1"})
-    condition(WebApiAuth, kb_id)
-    chunk_ids = batch_add_chunks(WebApiAuth, document_id, 4)
+    condition(WebApiAuth, dataset_id)
+    chunk_ids = batch_add_chunks(WebApiAuth, dataset_id, document_id, 4)
     # issues/6487
     sleep(1)
-    return kb_id, document_id, chunk_ids
+    return dataset_id, document_id, chunk_ids

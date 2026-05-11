@@ -122,6 +122,8 @@ async def retrieval(tenant_id):
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
+    if top <= 0:
+        return build_error_result(message="`top_k` must be greater than 0", code=RetCode.DATA_ERROR)
     metadata_condition = req.get("metadata_condition", {}) or {}
     metas = DocMetadataService.get_flatted_meta_by_kbs([kb_id])
 

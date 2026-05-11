@@ -22,15 +22,17 @@ import string
 
 def test_dataset(get_auth):
     # create dataset
-    res = create_dataset(get_auth, "test_create_dataset")
+    res = create_dataset(get_auth, {"name": "test_create_dataset"})
     assert res.get("code") == 0, f"{res.get('message')}"
 
     # list dataset
     page_number = 1
     dataset_list = []
     while True:
-        res = list_dataset(get_auth, page_number)
-        data = res.get("data").get("kbs")
+        res = list_dataset(get_auth, {"page": page_number, "page_size": 150})
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("kbs", [])
         for item in data:
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
@@ -40,8 +42,8 @@ def test_dataset(get_auth):
 
     print(f"found {len(dataset_list)} datasets")
     # delete dataset
-    for dataset_id in dataset_list:
-        res = rm_dataset(get_auth, dataset_id)
+    if dataset_list:
+        res = rm_dataset(get_auth, dataset_list)
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
@@ -49,15 +51,17 @@ def test_dataset(get_auth):
 def test_dataset_1k_dataset(get_auth):
     # create dataset
     for i in range(1000):
-        res = create_dataset(get_auth, f"test_create_dataset_{i}")
+        res = create_dataset(get_auth, {"name": f"test_create_dataset_{i}"})
         assert res.get("code") == 0, f"{res.get('message')}"
 
     # list dataset
     page_number = 1
     dataset_list = []
     while True:
-        res = list_dataset(get_auth, page_number)
-        data = res.get("data").get("kbs")
+        res = list_dataset(get_auth, {"page": page_number, "page_size": 150})
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("kbs", [])
         for item in data:
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
@@ -67,8 +71,8 @@ def test_dataset_1k_dataset(get_auth):
 
     print(f"found {len(dataset_list)} datasets")
     # delete dataset
-    for dataset_id in dataset_list:
-        res = rm_dataset(get_auth, dataset_id)
+    if dataset_list:
+        res = rm_dataset(get_auth, dataset_list)
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
@@ -76,12 +80,14 @@ def test_dataset_1k_dataset(get_auth):
 def test_duplicated_name_dataset(get_auth):
     # create dataset
     for i in range(20):
-        res = create_dataset(get_auth, "test_create_dataset")
+        res = create_dataset(get_auth, {"name": "test_create_dataset"})
         assert res.get("code") == 0, f"{res.get('message')}"
 
     # list dataset
-    res = list_dataset(get_auth, 1)
-    data = res.get("data").get("kbs")
+    res = list_dataset(get_auth, {"page": 1})
+    data = res.get("data")
+    if isinstance(data, dict):
+        data = data.get("kbs", [])
     dataset_list = []
     pattern = r'^test_create_dataset.*'
     for item in data:
@@ -91,19 +97,18 @@ def test_duplicated_name_dataset(get_auth):
         match = re.match(pattern, dataset_name)
         assert match is not None
 
-    for dataset_id in dataset_list:
-        res = rm_dataset(get_auth, dataset_id)
+    if dataset_list:
+        res = rm_dataset(get_auth, dataset_list)
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
 
 def test_invalid_name_dataset(get_auth):
     # create dataset
-    # with pytest.raises(Exception) as e:
-    res = create_dataset(get_auth, 0)
+    res = create_dataset(get_auth, {"name": 0})
     assert res['code'] != 0
 
-    res = create_dataset(get_auth, "")
+    res = create_dataset(get_auth, {"name": ""})
     assert res['code'] != 0
 
     long_string = ""
@@ -111,22 +116,24 @@ def test_invalid_name_dataset(get_auth):
     while len(long_string.encode("utf-8")) <= DATASET_NAME_LIMIT:
         long_string += random.choice(string.ascii_letters + string.digits)
 
-    res = create_dataset(get_auth, long_string)
+    res = create_dataset(get_auth, {"name": long_string})
     assert res['code'] != 0
     print(res)
 
 
 def test_update_different_params_dataset_success(get_auth):
     # create dataset
-    res = create_dataset(get_auth, "test_create_dataset")
+    res = create_dataset(get_auth, {"name": "test_create_dataset"})
     assert res.get("code") == 0, f"{res.get('message')}"
 
     # list dataset
     page_number = 1
     dataset_list = []
     while True:
-        res = list_dataset(get_auth, page_number)
-        data = res.get("data").get("kbs")
+        res = list_dataset(get_auth, {"page": page_number, "page_size": 150})
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("kbs", [])
         for item in data:
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
@@ -137,15 +144,18 @@ def test_update_different_params_dataset_success(get_auth):
     print(f"found {len(dataset_list)} datasets")
     dataset_id = dataset_list[0]
 
-    json_req = {"kb_id": dataset_id, "name": "test_update_dataset", "description": "test", "permission": "me",
-                "parser_id": "presentation",
-                "language": "spanish"}
-    res = update_dataset(get_auth, json_req)
+    res = update_dataset(get_auth, dataset_id, {
+        "name": "test_update_dataset",
+        "description": "test",
+        "permission": "me",
+        "chunk_method": "presentation",
+        "language": "spanish",
+    })
     assert res.get("code") == 0, f"{res.get('message')}"
 
     # delete dataset
-    for dataset_id in dataset_list:
-        res = rm_dataset(get_auth, dataset_id)
+    if dataset_list:
+        res = rm_dataset(get_auth, dataset_list)
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")
 
@@ -153,15 +163,17 @@ def test_update_different_params_dataset_success(get_auth):
 # update dataset with different parameters
 def test_update_different_params_dataset_fail(get_auth):
     # create dataset
-    res = create_dataset(get_auth, "test_create_dataset")
+    res = create_dataset(get_auth, {"name": "test_create_dataset"})
     assert res.get("code") == 0, f"{res.get('message')}"
 
     # list dataset
     page_number = 1
     dataset_list = []
     while True:
-        res = list_dataset(get_auth, page_number)
-        data = res.get("data").get("kbs")
+        res = list_dataset(get_auth, {"page": page_number, "page_size": 150})
+        data = res.get("data")
+        if isinstance(data, dict):
+            data = data.get("kbs", [])
         for item in data:
             dataset_id = item.get("id")
             dataset_list.append(dataset_id)
@@ -172,12 +184,11 @@ def test_update_different_params_dataset_fail(get_auth):
     print(f"found {len(dataset_list)} datasets")
     dataset_id = dataset_list[0]
 
-    json_req = {"kb_id": dataset_id, "id": "xxx"}
-    res = update_dataset(get_auth, json_req)
+    res = update_dataset(get_auth, dataset_id, {"id": "xxx"})
     assert res.get("code") == 101
 
     # delete dataset
-    for dataset_id in dataset_list:
-        res = rm_dataset(get_auth, dataset_id)
+    if dataset_list:
+        res = rm_dataset(get_auth, dataset_list)
         assert res.get("code") == 0, f"{res.get('message')}"
     print(f"{len(dataset_list)} datasets are deleted")

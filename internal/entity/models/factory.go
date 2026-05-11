@@ -38,7 +38,31 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 	case "deepseek":
 		return NewDeepSeekModel(baseURL, urlSuffix), nil
 	case "moonshot":
-		return NewMooshotModel(baseURL, urlSuffix), nil
+		return NewMoonshotModel(baseURL, urlSuffix), nil
+	case "minimax":
+		return NewMinimaxModel(baseURL, urlSuffix), nil
+	case "gitee":
+		return NewGiteeModel(baseURL, urlSuffix), nil
+	case "siliconflow":
+		return NewSiliconflowModel(baseURL, urlSuffix), nil
+	case "google":
+		return NewGoogleModel(baseURL, urlSuffix), nil
+	case "aliyun":
+		return NewAliyunModel(baseURL, urlSuffix), nil
+	case "volcengine":
+		return NewVolcEngine(baseURL, urlSuffix), nil
+	case "vllm":
+		return NewVllmModel(baseURL, urlSuffix), nil
+	case "xai":
+		return NewXAIModel(baseURL, urlSuffix), nil
+	case "lmstudio":
+		return NewLmStudioModel(baseURL, urlSuffix), nil
+	case "nvidia":
+		return NewNvidiaModel(baseURL, urlSuffix), nil
+	case "openrouter":
+		return NewOpenRouterModel(baseURL, urlSuffix), nil
+	case "huggingface":
+		return NewHuggingFaceModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

@@ -30,8 +30,6 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
-    "@ant-design/pro-components": "^2.6.46",
-    "@ant-design/pro-layout": "^7.17.16",
     "@antv/g2": "^5.2.10",
     "@antv/g6": "^5.1.0",
     "@floating-ui/react": "^0.27.19",
