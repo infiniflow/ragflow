@@ -783,7 +783,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
 
     res = _call({"llm_factory": "FRKey", "llm_name": "m", "model_type": module.LLMType.RERANK.value, "verify": True})
     assert res["code"] == 0
-    assert "dose not support this model(FRKey/m)" in res["data"]["message"]
+    assert "does not support this model(FRKey/m)" in res["data"]["message"]
 
     res = _call({"llm_factory": "FRFail", "llm_name": "m", "model_type": module.LLMType.RERANK.value, "verify": True})
     assert res["code"] == 0
