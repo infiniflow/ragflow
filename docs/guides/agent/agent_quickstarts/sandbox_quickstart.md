@@ -43,7 +43,7 @@ RAGFlow supports two sandbox provider types:
 The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use.
 :::
 
-## Prepare Docker images
+## Build Docker base images
 
 The sandbox uses isolated base images for secure containerized execution environments.
 
