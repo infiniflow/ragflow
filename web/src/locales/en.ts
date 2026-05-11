@@ -713,6 +713,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      tableColumnMode: 'Column mode',
+      tableColumnModeAuto: 'Auto',
+      tableColumnModeManual: 'Manual',
+      tableColumnModeAutoDescription:
+        'All columns are included in chunk text and stored as metadata (RAGFlow default).',
+      tableColumnRoles: 'Column roles',
+      tableColumnRolesTip:
+        'Choose which columns to include in chunk text (indexed for vector and full-text search), in metadata only (filterable), or both. Changes apply to new parses; re-parse existing documents for roles to take effect.',
+      tableColumnRoleIndexing: 'Indexing',
+      tableColumnRoleMetadata: 'Metadata',
+      tableColumnRoleBoth: 'Both',
+      tableColumnRolesEmpty:
+        'Upload and parse a CSV or Excel file to begin configuring column roles.',
+      tableColumnRolesReparseTip:
+        'Re-parse existing documents for the new column roles to take effect.',
       parserLabel: {
         naive: 'General',
         qa: 'Q&A',
@@ -881,7 +896,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships.</br>
+      NER: Use spaCy NER and rule-based keyword extraction to extract entities and relationships. No LLM is required for extraction itself, making it fast and resource-efficient.`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',
@@ -1126,6 +1142,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       Verify: 'Verify',
       keyValid: 'Your API key is valid.',
       keyInvalid: 'Your API key is invalid.',
+      enableToolCall: 'Enable tool call',
+      enableToolCallTip:
+        'Allow this model to call tools when the selected model type supports tool calling.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',

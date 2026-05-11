@@ -21,6 +21,7 @@ import {
   currentReg,
   parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
 } from '@/utils/chat';
@@ -169,7 +170,7 @@ function MarkdownContent({
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
     let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section'],
+      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
     // let text = content;
@@ -177,7 +178,7 @@ function MarkdownContent({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
 
   useEffect(() => {

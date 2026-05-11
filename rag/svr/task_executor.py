@@ -22,7 +22,6 @@ start_ts = time.time()
 
 import asyncio
 import socket
-import concurrent
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
@@ -79,8 +78,14 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from rag.utils.table_es_metadata import (
+    aggregate_table_manual_doc_metadata,
+    merge_table_parser_config_from_kb,
+    table_parser_strip_doc_metadata_keys,
+)
 
 BATCH_SIZE = 64
+
 
 FACTORY = {
     "general": naive,
@@ -268,6 +273,16 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Table parser column roles / mode are stored on the dataset (KB) parser_config;
+    # chunk tasks carry document-level parser_config only — merge KB keys so manual roles apply.
+    parser_config_for_chunk = merge_table_parser_config_from_kb(task)
+    if task.get("parser_id", "").lower() == "table" and task.get("kb_parser_config"):
+        logging.debug(
+            "[TASK_EXECUTOR_DEBUG] table parser: merged KB keys into parser_config for chunk; "
+            f"mode={parser_config_for_chunk.get('table_column_mode')}, "
+            f"roles_keys={list((parser_config_for_chunk.get('table_column_roles') or {}).keys())}"
+        )
+
     try:
         async with chunk_limiter:
             cks = await thread_pool_exec(
@@ -279,7 +294,7 @@ async def build_chunks(task, progress_callback):
                 lang=task["language"],
                 callback=progress_callback,
                 kb_id=task["kb_id"],
-                parser_config=task["parser_config"],
+                parser_config=parser_config_for_chunk,
                 tenant_id=task["tenant_id"],
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
@@ -369,7 +384,7 @@ async def build_chunks(task, progress_callback):
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = cached.split(",")
+                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 
@@ -759,7 +774,7 @@ async def run_dataflow(task: dict):
             del ck["questions"]
         if "keywords" in ck:
             if "important_tks" not in ck:
-                ck["important_kwd"] = ck["keywords"].split(",")
+                ck["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", ck["keywords"]) if k.strip()]
                 ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
             del ck["keywords"]
         if "summary" in ck:
@@ -1073,7 +1088,6 @@ async def do_handle_task(task):
     task_parser_config = task["parser_config"]
     task_start_ts = timer()
     toc_thread = None
-    executor = concurrent.futures.ThreadPoolExecutor()
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
@@ -1235,7 +1249,7 @@ async def do_handle_task(task):
         logging.info(progress_message)
         progress_callback(msg=progress_message)
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
-            toc_thread = executor.submit(build_TOC, task, chunks, progress_callback)
+            toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
@@ -1262,10 +1276,47 @@ async def do_handle_task(task):
 
         DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
 
+        # Table parser (manual): push metadata/both column values to document-level metadata for UI / chat filters
+        if task.get("parser_id", "").lower() == "table":
+            eff_pc = merge_table_parser_config_from_kb(task)
+            logging.debug(
+                f"[TABLE_META_DEBUG] table post-index: table_column_mode={eff_pc.get('table_column_mode')!r}"
+            )
+            if eff_pc.get("table_column_mode") == "manual":
+                try:
+                    agg = aggregate_table_manual_doc_metadata(chunks, task)
+                    logging.debug(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
+                    strip_keys = table_parser_strip_doc_metadata_keys(eff_pc)
+                    existing = DocMetadataService.get_document_metadata(task_doc_id)
+                    existing = existing if isinstance(existing, dict) else {}
+                    preserved = {k: v for k, v in existing.items() if k not in strip_keys}
+                    merged = update_metadata_to(dict(preserved), agg)
+                    logging.debug(
+                        f"[TABLE_META_DEBUG] calling update_document_metadata for doc_id={task_doc_id}, "
+                        f"meta_fields keys={list(merged.keys())}, "
+                        f"table_strip_key_count={len(strip_keys)}, agg_keys={list(agg.keys())}"
+                    )
+                    try:
+                        DocMetadataService.update_document_metadata(task_doc_id, merged)
+                        logging.debug("[TABLE_META_DEBUG] update_document_metadata succeeded")
+                    except Exception as ue:
+                        logging.error(
+                            "update_document_metadata failed (table parser, doc_id=%s): %s",
+                            task_doc_id,
+                            ue,
+                            exc_info=True,
+                        )
+                except Exception as e:
+                    logging.exception(
+                        "Table parser document metadata aggregation failed (doc_id=%s): %s",
+                        task_doc_id,
+                        e,
+                    )
+
         progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
         if toc_thread:
-            d = toc_thread.result()
+            d = await toc_thread
             if d:
                 if not await _maybe_insert_chunks([d]):
                     return
@@ -1284,7 +1335,8 @@ async def do_handle_task(task):
         )
 
     finally:
-        executor.shutdown(wait=False)
+        if toc_thread is not None and not toc_thread.done():
+            toc_thread.cancel()
         if has_canceled(task_id):
             try:
                 exists = await thread_pool_exec(

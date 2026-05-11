@@ -10,6 +10,7 @@ import {
   currentReg,
   parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
@@ -65,7 +66,7 @@ const FloatingChatWidgetMarkdown = ({
   const contentWithCursor = useMemo(() => {
     const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
 
   useEffect(() => {
