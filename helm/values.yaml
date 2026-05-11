@@ -120,9 +120,6 @@ ragflow:
     service:
       enabled: true
       type: ClusterIP
-  # Be careful in enabling the admin server, as it gives access to sensitive
-  # administrative privileges and has default credentials to access the admin API.
-  enableDangerousAdminServer: false
 
 infinity:
   image:
