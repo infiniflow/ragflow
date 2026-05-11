@@ -95,22 +95,12 @@ def list_searches():
                     code=RetCode.OPERATING_ERROR,
                 )
             effective_owner_ids = list(requested_owner_ids)
-            explicit_owner_filter = True
         else:
             effective_owner_ids = list(authorized_owner_ids)
-            explicit_owner_filter = False
 
-        if explicit_owner_filter:
-            search_apps, total = SearchService.get_by_tenant_ids(
-                effective_owner_ids, current_user.id, 0, 0, orderby, desc, keywords
-            )
-            total = len(search_apps)
-            if page_number and items_per_page:
-                search_apps = search_apps[(page_number - 1) * items_per_page : page_number * items_per_page]
-        else:
-            search_apps, total = SearchService.get_by_tenant_ids(
-                effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords
-            )
+        search_apps, total = SearchService.get_by_tenant_ids(
+            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords
+        )
         return get_json_result(data={"search_apps": search_apps, "total": total})
     except Exception as e:
         return server_error_response(e)

@@ -372,25 +372,13 @@ async def list_chats():
                     code=RetCode.OPERATING_ERROR,
                 )
             effective_owner_ids = list(requested_owner_ids)
-            explicit_owner_filter = True
         else:
             effective_owner_ids = list(authorized_owner_ids)
-            explicit_owner_filter = False
 
-        if explicit_owner_filter:
-            chats, total = await thread_pool_exec(
-                DialogService.get_by_tenant_ids,
-                effective_owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
-            )
-            total = len(chats)
-            if page_number and items_per_page:
-                start = (page_number - 1) * items_per_page
-                chats = chats[start : start + items_per_page]
-        else:
-            chats, total = await thread_pool_exec(
-                DialogService.get_by_tenant_ids,
-                effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
-            )
+        chats, total = await thread_pool_exec(
+            DialogService.get_by_tenant_ids,
+            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
+        )
 
         return get_json_result(
             data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}

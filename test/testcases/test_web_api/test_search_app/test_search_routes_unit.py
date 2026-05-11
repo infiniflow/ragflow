@@ -496,10 +496,13 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
         {"keywords": "k", "page": "1", "page_size": "1", "orderby": "create_time", "desc": "true", "owner_ids": ["tenant-1"]},
     )
 
-    def _get_by_tenant_ids_filtered(tenants, _uid, _page, _size, _orderby, _desc, _keywords):
+    def _get_by_tenant_ids_filtered(tenants, _uid, page, size, _orderby, _desc, _keywords):
         all_items = [{"id": "x", "tenant_id": "tenant-1"}, {"id": "y", "tenant_id": "tenant-1"}]
         filtered = [item for item in all_items if item["tenant_id"] in set(tenants)]
-        return filtered, len(filtered)
+        total = len(filtered)
+        if page and size:
+            filtered = filtered[(page - 1) * size : page * size]
+        return filtered, total
 
     monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids_filtered)
     res = module.list_searches()
