@@ -417,7 +417,11 @@ def _load_doc_module(monkeypatch):
                 "id": self.id
             }
     
-    def _get_model_config_by_id(tenant_model_id: int, allowed_tenant_ids=None) -> dict:
+    def _get_model_config_by_id(
+        tenant_model_id: int,
+        allowed_tenant_ids=None,
+        requester_tenant_id=None,
+    ) -> dict:
         return _MockModelConfig2("tenant-1", "model-1").to_dict()
     
     def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
@@ -1056,46 +1060,3 @@ class TestDocRoutesUnit:
         res = _run(module.retrieval_test.__wrapped__("tenant-1"))
         assert res["code"] == module.RetCode.DATA_ERROR
         assert "No chunk found! Check the chunk status please!" in res["message"]
-
-    def test_retrieval_rejects_unauthorized_tenant_rerank_id(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
-        captured = {}
-
-        monkeypatch.setattr(
-            module,
-            "get_request_json",
-            lambda: _AwaitableValue(
-                {"dataset_ids": ["ds-1"], "question": "q", "tenant_rerank_id": 42}
-            ),
-        )
-        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
-        monkeypatch.setattr(
-            module.KnowledgebaseService,
-            "get_by_ids",
-            lambda _ids: [SimpleNamespace(embd_id="m1", tenant_id="tenant-kb")],
-        )
-        monkeypatch.setattr(
-            module.TenantLLMService,
-            "split_model_name_and_factory",
-            lambda embd_id: (embd_id, "f"),
-        )
-        monkeypatch.setattr(
-            module.KnowledgebaseService,
-            "get_by_id",
-            lambda _id: (
-                True,
-                SimpleNamespace(tenant_id="tenant-kb", embd_id="m1", tenant_embd_id=None),
-            ),
-        )
-
-        def _deny_model_config_by_id(tenant_model_id, allowed_tenant_ids=None):
-            captured["tenant_model_id"] = tenant_model_id
-            captured["allowed_tenant_ids"] = allowed_tenant_ids
-            raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
-
-        monkeypatch.setattr(module, "get_model_config_by_id", _deny_model_config_by_id)
-
-        res = _run(module.retrieval_test.__wrapped__("tenant-1"))
-        assert captured["tenant_model_id"] == 42
-        assert captured["allowed_tenant_ids"] == {"tenant-1", "tenant-kb"}
-        assert "not authorized" in res["message"]

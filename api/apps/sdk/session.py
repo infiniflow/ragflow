@@ -469,7 +469,10 @@ async def retrieval_test_embedded():
         if tenant_rerank_id:
             allowed_rerank_tenant_ids = {tenant_id, *tenant_ids}
             rerank_model_config = await thread_pool_exec(
-                get_model_config_by_id, tenant_rerank_id, allowed_rerank_tenant_ids
+                get_model_config_by_id,
+                tenant_rerank_id,
+                allowed_rerank_tenant_ids,
+                tenant_id,
             )
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
         elif rerank_id:

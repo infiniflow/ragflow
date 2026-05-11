@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 def get_model_config_by_id(
     tenant_model_id: int,
     allowed_tenant_ids: str | list[str] | set[str] | tuple[str, ...] | None = None,
+    requester_tenant_id: str | None = None,
 ) -> dict:
     found, model_config = TenantLLMService.get_by_id(tenant_model_id)
     if not found:
@@ -37,6 +38,14 @@ def get_model_config_by_id(
         else:
             allowed_tenant_ids = {str(tenant_id) for tenant_id in allowed_tenant_ids if tenant_id}
         if str(model_config.tenant_id) not in allowed_tenant_ids:
+            logger.warning(
+                "Denied tenant model access: tenant_model_id=%s model_tenant_id=%s "
+                "allowed_tenant_ids=%s requester_tenant_id=%s",
+                tenant_model_id,
+                model_config.tenant_id,
+                sorted(allowed_tenant_ids),
+                requester_tenant_id,
+            )
             raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
     config_dict = model_config.to_dict()
     api_key, is_tools, api_key_payload = TenantLLMService._decode_api_key_config(config_dict.get("api_key", ""))

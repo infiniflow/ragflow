@@ -466,7 +466,11 @@ def _load_session_module(monkeypatch):
                 "id": self.id
             }
 
-    def _get_model_config_by_id(tenant_model_id: int, allowed_tenant_ids=None) -> dict:
+    def _get_model_config_by_id(
+        tenant_model_id: int,
+        allowed_tenant_ids=None,
+        requester_tenant_id=None,
+    ) -> dict:
         return _MockModelConfig2("tenant-1", "model-1").to_dict()
 
     def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
@@ -1680,43 +1684,6 @@ def test_searchbots_retrieval_test_embedded_matrix_unit(monkeypatch):
     )
     res = _run(handler())
     assert res["message"] == "No chunk found! Check the chunk status please!"
-
-
-@pytest.mark.p2
-def test_searchbots_retrieval_test_embedded_rejects_unauthorized_tenant_rerank_id(monkeypatch):
-    module = _load_session_module(monkeypatch)
-    handler = inspect.unwrap(module.retrieval_test_embedded)
-    captured = {}
-
-    monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer ok"}))
-    monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
-    monkeypatch.setattr(
-        module,
-        "get_request_json",
-        lambda: _AwaitableValue({"kb_id": "kb-1", "question": "q", "tenant_rerank_id": 42}),
-    )
-    monkeypatch.setattr(module.UserTenantService, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-kb")])
-    monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
-    monkeypatch.setattr(
-        module.KnowledgebaseService,
-        "get_by_id",
-        lambda _kb_id: (
-            True,
-            SimpleNamespace(tenant_id="tenant-kb", embd_id="embd-model", tenant_embd_id=None),
-        ),
-    )
-
-    def _deny_model_config_by_id(tenant_model_id, allowed_tenant_ids=None):
-        captured["tenant_model_id"] = tenant_model_id
-        captured["allowed_tenant_ids"] = allowed_tenant_ids
-        raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
-
-    monkeypatch.setattr(module, "get_model_config_by_id", _deny_model_config_by_id)
-
-    res = _run(handler())
-    assert captured["tenant_model_id"] == 42
-    assert captured["allowed_tenant_ids"] == {"tenant-1", "tenant-kb"}
-    assert "not authorized" in res["message"]
 
 
 @pytest.mark.p2

@@ -223,7 +223,11 @@ def _load_dify_retrieval_module(monkeypatch):
                 "id": self.id
             }
     
-    def _get_model_config_by_id(tenant_model_id: int) -> dict:
+    def _get_model_config_by_id(
+        tenant_model_id: int,
+        allowed_tenant_ids=None,
+        requester_tenant_id=None,
+    ) -> dict:
         return _MockModelConfig2("tenant-1", "model-1").to_dict()
     
     def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
