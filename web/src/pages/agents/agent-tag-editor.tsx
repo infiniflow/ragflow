@@ -68,8 +68,13 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
       pending && !tags.includes(pending) ? [...tags, pending] : tags;
     setTags(finalTags);
     setDraft('');
-    await updateAgentTags({ agentId: agent.id, tags: finalTags });
-    onOpenChange(false);
+    const success = await updateAgentTags({
+      agentId: agent.id,
+      tags: finalTags,
+    });
+    if (success) {
+      onOpenChange(false);
+    }
   };
 
   return (

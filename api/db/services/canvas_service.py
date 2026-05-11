@@ -226,6 +226,12 @@ class UserCanvasService(CommonService):
                 t = t.strip()
                 if t:
                     counts[t] = counts.get(t, 0) + 1
+        logging.info(
+            "UserCanvasService.list_tags user=%s canvas_category=%s tags_count=%d",
+            user_id,
+            canvas_category,
+            len(counts),
+        )
         return counts
 
     # Tag storage is a single comma-separated CharField(max_length=512);
@@ -258,7 +264,14 @@ class UserCanvasService(CommonService):
             normalized.append(t)
             used += extra
         value = ",".join(normalized)
-        return cls.model.update(tags=value).where(cls.model.id == canvas_id).execute()
+        rows_affected = cls.model.update(tags=value).where(cls.model.id == canvas_id).execute()
+        logging.info(
+            "UserCanvasService.update_tags canvas_id=%s tags_count=%d rows=%d",
+            canvas_id,
+            len(normalized),
+            rows_affected,
+        )
+        return rows_affected
 
     @classmethod
     @DB.connection_context()

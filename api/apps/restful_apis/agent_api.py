@@ -363,6 +363,12 @@ def list_agent_tags(tenant_id):
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
     joined_ids = list({member["tenant_id"] for member in tenants} | {tenant_id})
     counts = UserCanvasService.list_tags(joined_ids, tenant_id, canvas_category)
+    logging.info(
+        "list_agent_tags tenant=%s canvas_category=%s tags_count=%d",
+        tenant_id,
+        canvas_category,
+        len(counts),
+    )
     return get_json_result(data=[{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))])
 
 
@@ -371,6 +377,11 @@ def list_agent_tags(tenant_id):
 @add_tenant_id_to_kwargs
 async def update_agent_tags(tenant_id, canvas_id):
     if not UserCanvasService.accessible(canvas_id, tenant_id):
+        logging.info(
+            "update_agent_tags denied tenant=%s canvas_id=%s reason=no_permission",
+            tenant_id,
+            canvas_id,
+        )
         return get_json_result(
             data=False,
             message="Agent not found or no permission.",
@@ -378,7 +389,27 @@ async def update_agent_tags(tenant_id, canvas_id):
         )
     req = await get_request_json()
     tags = req.get("tags", "")
-    UserCanvasService.update_tags(canvas_id, tags)
+    incoming = tags if isinstance(tags, (list, tuple)) else [t for t in str(tags).split(",") if t.strip()]
+    rows_affected = UserCanvasService.update_tags(canvas_id, tags)
+    if rows_affected == 0:
+        logging.info(
+            "update_agent_tags miss tenant=%s canvas_id=%s incoming_count=%d rows=0",
+            tenant_id,
+            canvas_id,
+            len(incoming),
+        )
+        return get_json_result(
+            data=False,
+            message="Agent not found or no permission.",
+            code=RetCode.OPERATING_ERROR,
+        )
+    logging.info(
+        "update_agent_tags ok tenant=%s canvas_id=%s incoming_count=%d rows=%d",
+        tenant_id,
+        canvas_id,
+        len(incoming),
+        rows_affected,
+    )
     return get_json_result(data=True)
 
 
