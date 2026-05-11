@@ -123,7 +123,7 @@ const GraphRagItems = ({
   });
 
   const methodOptions = useMemo(() => {
-    return [MethodValue.Light, MethodValue.General, MethodValue.NER].map(
+    return [MethodValue.Light, MethodValue.General /*, MethodValue.NER*/].map(
       (x) => ({
         value: x,
         label: x === MethodValue.NER ? 'NER' : upperFirst(x),
