@@ -6,7 +6,8 @@
   "url_suffix": {
     "chat": "chat/completions",
     "models": "models",
-    "embedding": "embeddings"
+    "embedding": "embeddings",
+    "rerank": "ranking"
   },
   "class": "nvidia",
   "models": [
@@ -394,6 +395,20 @@
       "max_tokens": 512,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "nvidia/nv-rerankqa-mistral-4b-v3",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "nvidia/llama-3.2-nv-rerankqa-1b-v2",
+      "max_tokens": 4096,
+      "model_types": [
+        "rerank"
       ]
     },
     {
