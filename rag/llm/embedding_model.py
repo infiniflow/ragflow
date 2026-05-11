@@ -33,6 +33,23 @@ import logging
 import base64
 
 
+def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
+    """
+    Map Model Studio / UI base URLs to the HTTP API root expected by dashscope.TextEmbedding.
+    The OpenAI-compatible URL (.../compatible-mode/v1) is not used by the DashScope SDK.
+    """
+    if not base_url:
+        return None
+    u = base_url.strip().rstrip("/")
+    if u.endswith("/api/v1"):
+        return u
+    if "dashscope-intl.aliyuncs.com" in u:
+        return "https://dashscope-intl.aliyuncs.com/api/v1"
+    if "dashscope.aliyuncs.com" in u:
+        return "https://dashscope.aliyuncs.com/api/v1"
+    return None
+
+
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
         """
@@ -199,15 +216,21 @@ class BaiChuanEmbed(OpenAIEmbed):
 class QWenEmbed(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="text_embedding_v2", **kwargs):
+    def __init__(self, key, model_name="text_embedding_v2", base_url=None, **kwargs):
         self.key = key
         self.model_name = model_name
+        self._dashscope_http_api_url = _dashscope_native_http_api_url(base_url)
+
+    def _apply_dashscope_http_endpoint(self):
+        if self._dashscope_http_api_url:
+            dashscope.base_http_api_url = self._dashscope_http_api_url
 
     def encode(self, texts: list):
         import time
 
         import dashscope
 
+        self._apply_dashscope_http_endpoint()
         batch_size = 4
         res = []
         token_count = 0
@@ -237,6 +260,7 @@ class QWenEmbed(Base):
         return np.array(res), token_count
 
     def encode_queries(self, text):
+        self._apply_dashscope_http_endpoint()
         resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
         try:
             return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
