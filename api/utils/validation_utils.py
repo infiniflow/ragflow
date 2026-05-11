@@ -896,7 +896,7 @@ class SearchDatasetsReq(BaseModel):
     keyword: Annotated[bool, Field(default=False)]
     search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
-    tenant_rerank_id: Annotated[str | None, Field(default=None)]
+    tenant_rerank_id: Annotated[int | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
 
 
