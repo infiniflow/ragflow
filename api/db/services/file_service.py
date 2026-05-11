@@ -705,7 +705,7 @@ class FileService(CommonService):
 
             # Pre-resolve the full redirect chain so that AsyncWebCrawler never
             # follows a server-sent redirect to an unvalidated (potentially
-            # internal) host.  Each hop is SSRF-checked before being followed;
+            # internal) host. Each hop is SSRF-checked before being followed;
             # the validated (hostname, ip) pairs are pinned via Chromium's
             # --host-resolver-rules so the browser cannot re-resolve any of them
             # through a fresh DNS query.
@@ -741,7 +741,7 @@ class FileService(CommonService):
                 )
 
             # Build a single MAP rule string covering every validated hostname
-            # in the redirect chain.  Chromium uses the pinned IP for each,
+            # in the redirect chain. Chromium uses the pinned IP for each,
             # skipping DNS entirely and eliminating the rebinding window.
             _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
 

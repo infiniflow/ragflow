@@ -326,7 +326,7 @@ async def add_llm():
                 if len(arr) == 0:
                     raise Exception("Not known.")
             except KeyError:
-                msg += f"{factory} dose not support this model({factory}/{mdl_nm})"
+                msg += f"{factory} does not support this model({factory}/{mdl_nm})"
             except Exception as e:
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
