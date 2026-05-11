@@ -496,7 +496,60 @@ func (z *VolcEngine) Rerank(modelName *string, query string, documents []string,
 }
 
 func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("VolcEngine models API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var modelList DSModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	models := make([]string, 0, len(modelList.Models))
+	for _, model := range modelList.Models {
+		modelName := model.ID
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
+		}
+		models = append(models, modelName)
+	}
+
+	return models, nil
 }
 
 func (z *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
