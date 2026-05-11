@@ -288,7 +288,8 @@ export default {
         'Construit un graphe basé sur les segments de cette base pour répondre à des questions complexes. Voir documentation.',
       graphRagMethod: 'Méthode',
       graphRagMethodTip: `Light : (Par défaut) utilise les prompts de github.com/HKUDS/LightRAG. Moins de consommation.
-    General : utilise ceux de github.com/microsoft/graphrag.`,
+    General : utilise ceux de github.com/microsoft/graphrag.
+    NER : utilise spaCy NER et l'extraction de mots-clés basée sur des règles pour extraire les entités et les relations. Aucun LLM n'est requis pour l'extraction, ce qui la rend rapide et économe en ressources.`,
       resolution: 'Résolution d’entités',
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l’année 2025".',
@@ -337,6 +338,9 @@ export default {
       delete: 'Supprimer',
     },
     chat: {
+      chatSupport: 'Support par chat',
+      replyInstantly: 'Nous répondons généralement instantanément',
+      typeYourMessage: 'Tapez votre message...',
       newConversation: 'Nouvelle conversation',
       createAssistant: 'Créer un assistant',
       assistantSetting: 'Paramètres de l’assistant',
@@ -831,10 +835,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         "Un composant qui effectue des recherches via la URL de l'instance de SearXNG que vous fournissez. Spécifiez TopN et l'URL de l'instance.",
-      pdfGenerator: 'Générateur de Documents',
-      pDFGenerator: 'Générateur de Documents',
-      pdfGeneratorDescription: `Un composant qui génère des documents (PDF, DOCX, TXT) à partir de contenu formaté en markdown avec un style personnalisable, des images et des tableaux. Prend en charge : **gras**, *italique*, # titres, - listes, tableaux avec syntaxe |.`,
-      pDFGeneratorDescription: `Un composant qui génère des documents (PDF, DOCX, TXT) à partir de contenu formaté en markdown avec un style personnalisable, des images et des tableaux. Prend en charge : **gras**, *italique*, # titres, - listes, tableaux avec syntaxe |.`,
+      docGenerator: 'Générateur de Documents',
+      docGeneratorDescription: `Génère un fichier à partir de contenu Markdown.`,
       subtitle: 'Sous-titre',
       logoImage: 'Image Logo',
       logoPosition: 'Position Logo',

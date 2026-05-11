@@ -27,12 +27,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -246,5 +242,5 @@ class TestSessionsWithChatAssistantList:
         assert res["code"] == 0
 
         res = list_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
-        assert res["code"] == 102
-        assert "You don't own the assistant" in res["message"]
+        assert res["code"] == 109
+        assert res["message"] == "No authorization."

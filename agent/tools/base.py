@@ -67,6 +67,19 @@ class LLMToolPluginCallSession(ToolCallSession):
         else:
             resp = await thread_pool_exec(tool_obj.invoke, **arguments)
 
+        if resp is None and hasattr(tool_obj, "output") and callable(tool_obj.output):
+            try:
+                fallback_output = tool_obj.output()
+                if isinstance(fallback_output, dict) and fallback_output.get("content") not in (None, ""):
+                    resp = fallback_output["content"]
+                elif fallback_output not in (None, ""):
+                    resp = fallback_output
+                else:
+                    resp = fallback_output
+                logging.warning(f"[ToolCall] resp is None, fallback to output name={name} output_keys={list(fallback_output.keys()) if isinstance(fallback_output, dict) else type(fallback_output).__name__}")
+            except Exception as e:
+                logging.warning(f"[ToolCall] resp is None and output fallback failed name={name} err={e}")
+
         elapsed = timer() - st
         logging.info(f"[ToolCall] done name={name} elapsed={elapsed:.2f}s result={str(resp)[:200]}")
         self.callback(name, arguments, resp, elapsed_time=elapsed)

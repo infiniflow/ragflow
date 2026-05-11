@@ -255,6 +255,10 @@ class ExeSQL(ToolBase, ABC):
                 if not single_sql:
                     continue
                 single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+                if re.match(r"^(insert|update|delete)\b", single_sql, flags=re.IGNORECASE):
+                    sql_res.append({"content": "For security reasons, INSERT, UPDATE, and DELETE statements are not supported."})
+                    formalized_content.append("For security reasons, INSERT, UPDATE, and DELETE statements are not supported.")
+                    continue
                 cursor.execute(single_sql)
                 if cursor.rowcount == 0:
                     sql_res.append({"content": "No record in the database!"})

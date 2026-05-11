@@ -118,7 +118,7 @@ class TestDatasetUpdate:
     def test_dataset_id_wrong_uuid(self, HttpApiAuth):
         payload = {"name": "wrong uuid"}
         res = update_dataset(HttpApiAuth, "d94a8dc02c9711f0930f7fbc369eab6d", payload)
-        assert res["code"] == 108, res
+        assert res["code"] == 102, res
         assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p1
@@ -291,7 +291,7 @@ class TestDatasetUpdate:
 
     @pytest.mark.p1
     def test_embedding_model_with_existing_chunks(self, HttpApiAuth, add_chunks):
-        """Guard: embedding_model cannot change when dataset has chunks (chunk_count > 0)."""
+        """Embedding model can be changed even when dataset has chunks (chunk_count > 0)."""
         dataset_id, _, _ = add_chunks
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
@@ -306,12 +306,7 @@ class TestDatasetUpdate:
 
         payload = {"embedding_model": new_embedding}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 102, res
-        expected_message = (
-            f"When chunk_num ({dataset['chunk_count']}) > 0, "
-            f"embedding_model must remain {current_embedding}"
-        )
-        assert res["message"] == expected_message, res
+        assert res["code"] == 0, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -460,7 +455,7 @@ class TestDatasetUpdate:
         payload = {"chunk_method": chunk_method}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.p3
     def test_chunk_method_none(self, HttpApiAuth, add_dataset_func):
@@ -468,7 +463,7 @@ class TestDatasetUpdate:
         payload = {"chunk_method": None}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in res["message"], res
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
@@ -691,8 +686,8 @@ class TestDatasetUpdate:
             ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ({"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ({"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),

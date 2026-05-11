@@ -11,7 +11,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
     // Manually triggered form updates are synchronized to the canvas
     if (id) {
       values = form?.getValues();
-      let nextValues: any = {
+      const nextValues: any = {
         ...values,
         include_domains: convertToStringArray(values.include_domains),
         exclude_domains: convertToStringArray(values.exclude_domains),

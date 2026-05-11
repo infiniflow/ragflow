@@ -28,6 +28,7 @@ class Chunk(Base):
         self.id = ""
         self.content = ""
         self.important_keywords = []
+        self.tag_kwd = []
         self.questions = []
         self.create_time = ""
         self.create_timestamp = 0.0
@@ -53,7 +54,7 @@ class Chunk(Base):
 
 
     def update(self, update_message: dict):
-        res = self.put(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
+        res = self.patch(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise ChunkUpdateError(

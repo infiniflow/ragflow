@@ -72,7 +72,9 @@ class MsgTextQuery(QueryBase):
             syns = []
             for tk, w in tks_w[:256]:
                 syn = self.syn.lookup(tk)
-                syn = rag_tokenizer.tokenize(" ".join(syn)).split()
+                # Strip single quotes to avoid Infinity lexer TokenError
+                # (e.g. WordNet returns "cat-o'-nine-tails" for "cat")
+                syn = re.sub(r"'", "", rag_tokenizer.tokenize(" ".join(syn))).split()
                 keywords.extend(syn)
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s.strip()]
                 syns.append(" ".join(syn))

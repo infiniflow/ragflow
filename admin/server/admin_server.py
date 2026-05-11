@@ -21,7 +21,6 @@ import os
 import signal
 import logging
 import threading
-import traceback
 import faulthandler
 
 from flask import Flask
@@ -58,7 +57,7 @@ if __name__ == '__main__':
         os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
     )
     Session(app)
-    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f'RAGFlow admin version: {get_ragflow_version()}')
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
@@ -75,10 +74,10 @@ if __name__ == '__main__':
             application=app,
             threaded=True,
             use_reloader=False,
-            use_debugger=True,
+            use_debugger=False,
         )
-    except Exception:
-        traceback.print_exc()
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         time.sleep(1)
         os.kill(os.getpid(), signal.SIGKILL)

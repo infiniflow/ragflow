@@ -14,8 +14,11 @@
 #  limitations under the License.
 #
 import asyncio
-import nest_asyncio
-nest_asyncio.apply()
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except Exception:
+    pass
 import inspect
 import json
 import os
@@ -51,6 +54,9 @@ class MessageParam(ComponentParamBase):
         self.outputs = {
             "content": {
                 "type": "str"
+            },
+            "downloads": {
+                "type": "list"
             }
         }
 
@@ -63,10 +69,94 @@ class MessageParam(ComponentParamBase):
 class Message(ComponentBase):
     component_name = "Message"
 
+    @staticmethod
+    def _is_download_info(value: Any) -> bool:
+        return isinstance(value, dict) and all(
+            key in value for key in ("doc_id", "filename", "mime_type")
+        )
+
+    @staticmethod
+    def _download_info_includes_content(value: Any) -> bool:
+        return isinstance(value, dict) and bool(value.get("include_download_info_in_content"))
+
+    @staticmethod
+    def _normalize_download_info(value: Any) -> Any:
+        if isinstance(value, list):
+            return [Message._normalize_download_info(item) for item in value]
+
+        if not isinstance(value, dict):
+            return value
+
+        normalized = value.copy()
+        normalized.pop("include_download_info_in_content", None)
+        return normalized
+
+    def _extract_downloads(self, value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                return []
+
+        if self._is_download_info(value):
+            return [value]
+
+        if isinstance(value, list) and all(self._is_download_info(item) for item in value):
+            return value
+
+        return []
+
+    def _stringify_message_value(
+        self,
+        value: Any,
+        delimiter: str = None,
+        downloads: list[dict[str, Any]] | None = None,
+        fallback_to_str: bool = False,
+    ) -> str:
+        extracted_downloads = self._extract_downloads(value)
+        if extracted_downloads:
+            if downloads is not None:
+                downloads.extend(self._normalize_download_info(item) for item in extracted_downloads)
+            if any(self._download_info_includes_content(item) for item in extracted_downloads):
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except Exception:
+                        return value
+                try:
+                    return json.dumps(self._normalize_download_info(value), ensure_ascii=False)
+                except Exception:
+                    if fallback_to_str:
+                        return str(value)
+                    return ""
+            return ""
+
+        if value is None:
+            return ""
+
+        if isinstance(value, list) and delimiter:
+            return delimiter.join([str(vv) for vv in value])
+
+        if isinstance(value, str):
+            return value
+
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            if fallback_to_str:
+                return str(value)
+            return ""
+
     def get_input_elements(self) -> dict[str, Any]:
         return self.get_input_elements_from_text("".join(self._param.content))
 
-    def get_kwargs(self, script:str, kwargs:dict = {}, delimiter:str=None) -> tuple[str, dict[str, str | list | Any]]:
+    def get_kwargs(
+        self,
+        script: str,
+        kwargs: dict = {},
+        delimiter: str = None,
+        downloads: list[dict[str, Any]] | None = None,
+    ) -> tuple[str, dict[str, str | list | Any]]:
         for k,v in self.get_input_elements_from_text(script).items():
             if k in kwargs:
                 continue
@@ -81,15 +171,8 @@ class Message(ComponentBase):
                 else:
                     for t in iter_obj:
                         ans += t
-            elif isinstance(v, list) and delimiter:
-                ans = delimiter.join([str(vv) for vv in v])
-            elif not isinstance(v, str):
-                try:
-                    ans = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    pass
             else:
-                ans = v
+                ans = self._stringify_message_value(v, delimiter, downloads)
             if not ans:
                 ans = ""
             kwargs[k] = ans
@@ -112,6 +195,7 @@ class Message(ComponentBase):
         s = 0
         all_content = ""
         cache = {}
+        downloads = []
         for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
             if self.check_if_canceled("Message streaming"):
                 return
@@ -151,11 +235,9 @@ class Message(ComponentBase):
                 continue
             elif inspect.isawaitable(v):
                 v = await v
-            elif not isinstance(v, str):
-                try:
-                    v = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    v = str(v)
+            v = self._stringify_message_value(
+                v, downloads=downloads, fallback_to_str=True
+            )
             yield v
             self.set_input_value(exp, v)
             all_content += v
@@ -168,6 +250,7 @@ class Message(ComponentBase):
             all_content += rand_cnt[s: ]
             yield rand_cnt[s: ]
 
+        self.set_output("downloads", downloads)
         self.set_output("content", all_content)
         self._convert_content(all_content)
         await self._save_to_memory(all_content)
@@ -188,12 +271,14 @@ class Message(ComponentBase):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
 
-        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs)
+        downloads = []
+        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs, downloads=downloads)
         template = _jinja2_sandbox.from_string(rand_cnt)
         try:
             content = template.render(kwargs)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Jinja2 template rendering failed: {e}")
+            content = rand_cnt  # fallback to unrendered content
 
         if self.check_if_canceled("Message processing"):
             return
@@ -201,6 +286,7 @@ class Message(ComponentBase):
         for n, v in kwargs.items():
             content = re.sub(n, v, content)
 
+        self.set_output("downloads", downloads)
         self.set_output("content", content)
         self._convert_content(content)
         self._save_to_memory(content)
@@ -226,6 +312,38 @@ class Message(ComponentBase):
         
         rows = []
         headers = None
+
+        def _coerce_excel_cell_type(cell: str):
+            # Convert markdown cell text to native numeric types when safe,so Excel writes numeric cells instead of text.
+            if not isinstance(cell, str):
+                return cell
+
+            value = cell.strip()
+            if value == "":
+                return ""
+
+            # Keep values like "00123" as text to avoid losing leading zeros.
+            if re.match(r"^[+-]?0\d+$", value):
+                return cell
+
+            # Support thousand separators like 1,234 or 1,234.56
+            numeric_candidate = value
+            if re.match(r"^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$", value):
+                numeric_candidate = value.replace(",", "")
+
+            if re.match(r"^[+-]?\d+$", numeric_candidate):
+                try:
+                    return int(numeric_candidate)
+                except ValueError:
+                    return cell
+
+            if re.match(r"^[+-]?(\d+\.\d+|\d+\.|\.\d+)([eE][+-]?\d+)?$", numeric_candidate) or re.match(r"^[+-]?\d+[eE][+-]?\d+$", numeric_candidate):
+                try:
+                    return float(numeric_candidate)
+                except ValueError:
+                    return cell
+
+            return cell
         
         for line in table_lines:
             # Split by | and clean up
@@ -236,6 +354,7 @@ class Message(ComponentBase):
             if headers is None:
                 headers = cells
             else:
+                cells = [_coerce_excel_cell_type(c) for c in cells]
                 rows.append(cells)
         
         if headers and rows:

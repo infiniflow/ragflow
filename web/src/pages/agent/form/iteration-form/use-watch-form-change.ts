@@ -19,7 +19,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
     if (id && form?.formState.isDirty) {
       values = form?.getValues();
       console.log('🚀 ~ useEffect ~ values:', values);
-      let nextValues: any = {
+      const nextValues: any = {
         ...values,
         outputs: transferToObject(values.outputs),
       };

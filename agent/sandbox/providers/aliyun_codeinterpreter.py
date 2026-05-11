@@ -30,6 +30,7 @@ https://api.aliyun.com/api/AgentRun/2025-09-10/CreateSandbox?lang=PYTHON
 import logging
 import os
 import time
+import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
@@ -37,6 +38,7 @@ from agentrun.sandbox import TemplateType, CodeLanguage, Template, TemplateInput
 from agentrun.utils.config import Config
 from agentrun.utils.exception import ServerError
 
+from agent.sandbox.result_protocol import build_javascript_wrapper, build_python_wrapper, extract_structured_result
 from .base import SandboxProvider, SandboxInstance, ExecutionResult
 
 logger = logging.getLogger(__name__)
@@ -51,9 +53,9 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
     """
 
     def __init__(self):
-        self.access_key_id: Optional[str] = None
-        self.access_key_secret: Optional[str] = None
-        self.account_id: Optional[str] = None
+        self.access_key_id: Optional[str] = ""
+        self.access_key_secret: Optional[str] = ""
+        self.account_id: Optional[str] = ""
         self.region: str = "cn-hangzhou"
         self.template_name: str = ""
         self.timeout: int = 30
@@ -146,8 +148,6 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
 
         try:
             # Get or create template
-            from agentrun.sandbox import Sandbox
-
             if self.template_name:
                 # Use existing template
                 template_name = self.template_name
@@ -226,48 +226,17 @@ class AliyunCodeInterpreterProvider(SandboxProvider):
             # Connect to existing sandbox instance
             sandbox = Sandbox.connect(sandbox_id=instance_id, config=self._config)
 
-            # Convert language string to CodeLanguage enum
-            code_language = CodeLanguage.PYTHON if normalized_lang == "python" else CodeLanguage.JAVASCRIPT
+            # agentrun-sdk 0.0.26 only exposes CodeLanguage.PYTHON; keep JS as string fallback.
+            code_language = CodeLanguage.PYTHON if normalized_lang == "python" else "javascript"
 
             # Wrap code to call main() function
             # Matches self_managed provider behavior: call main(**arguments)
-            if normalized_lang == "python":
-                # Build arguments string for main() call
-                if arguments:
-                    import json as json_module
-                    args_json = json_module.dumps(arguments)
-                    wrapped_code = f'''{code}
-
-if __name__ == "__main__":
-    import json
-    result = main(**{args_json})
-    print(json.dumps(result) if isinstance(result, dict) else result)
-'''
-                else:
-                    wrapped_code = f'''{code}
-
-if __name__ == "__main__":
-    import json
-    result = main()
-    print(json.dumps(result) if isinstance(result, dict) else result)
-'''
-            else:  # javascript
-                if arguments:
-                    import json as json_module
-                    args_json = json_module.dumps(arguments)
-                    wrapped_code = f'''{code}
-
-// Call main and output result
-const result = main({args_json});
-console.log(typeof result === 'object' ? JSON.stringify(result) : String(result));
-'''
-                else:
-                    wrapped_code = f'''{code}
-
-// Call main and output result
-const result = main();
-console.log(typeof result === 'object' ? JSON.stringify(result) : String(result));
-'''
+            args_json = json.dumps(arguments or {})
+            wrapped_code = (
+                build_python_wrapper(code, args_json)
+                if normalized_lang == "python"
+                else build_javascript_wrapper(code, args_json)
+            )
             logger.debug(f"Aliyun Code Interpreter: Wrapped code (first 200 chars): {wrapped_code[:200]}")
 
             start_time = time.time()
@@ -314,6 +283,7 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
 
             stdout = "\n".join(stdout_parts)
             stderr = "\n".join(stderr_parts)
+            stdout, structured_result = extract_structured_result(stdout)
 
             logger.info(f"Aliyun Code Interpreter: stdout length={len(stdout)}, stderr length={len(stderr)}, exit_code={exit_code}")
             if stdout:
@@ -331,6 +301,9 @@ console.log(typeof result === 'object' ? JSON.stringify(result) : String(result)
                     "language": normalized_lang,
                     "context_id": result.get("contextId") if isinstance(result, dict) else None,
                     "timeout": timeout,
+                    "result_present": structured_result.get("present", False),
+                    "result_value": structured_result.get("value"),
+                    "result_type": structured_result.get("type"),
                 },
             )
 

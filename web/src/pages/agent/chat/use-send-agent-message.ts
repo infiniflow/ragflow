@@ -86,6 +86,7 @@ export function findMessageFromList(eventList: IEventList) {
     content: nextContent,
     audio_binary: audioBinary,
     attachment: workflowFinished?.data?.outputs?.attachment || {},
+    downloads: workflowFinished?.data?.outputs?.downloads || [],
   };
 }
 
@@ -239,7 +240,7 @@ export const useSendAgentMessage = ({
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
-    useSendMessageBySSE(url || api.runCanvas);
+    useSendMessageBySSE(url || api.agentChatCompletion);
   const firstAnswer = answerList[0];
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
@@ -297,13 +298,12 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = {
-        id: agentId,
-      };
+      const params: Record<string, unknown> = { agent_id: agentId };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
+      params['openai-compatible'] = false;
       if (typeof message.content === 'string') {
         const query = inputs;
 
@@ -315,7 +315,10 @@ export const useSendAgentMessage = ({
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId || exploreSessionId;
+        // Prefer the session selected by the outer page state.
+        // The hook keeps its own session cache for streamed replies, but that cache
+        // can lag behind when the user switches sessions in Explore.
+        params.session_id = exploreSessionId || sessionId;
         if (releaseMode) {
           params.release = releaseMode;
         }
@@ -360,7 +363,7 @@ export const useSendAgentMessage = ({
   );
 
   const sendFormMessage = useCallback(
-    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
+    async (body: { agent_id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([, val]) => `${val.name}: ${val.value}`)
@@ -441,7 +444,7 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id, attachment, audio_binary } =
+    const { content, id, attachment, audio_binary, downloads } =
       findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
@@ -451,6 +454,7 @@ export const useSendAgentMessage = ({
         answer: answer ?? '',
         audio_binary: audio_binary,
         attachment: attachment as IAttachment,
+        downloads,
         id: id,
         ...inputAnswer,
       });

@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import create_chat_assistant, list_chat_assistants, update_chat_assistant
+from common import create_chat_assistant, get_chat_assistant, patch_chat_assistant, update_chat_assistant
 from configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import encode_avatar
@@ -26,12 +26,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -48,18 +44,18 @@ class TestChatAssistantUpdate:
             pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": ""}, 102, "`name` cannot be empty.", marks=pytest.mark.p3),
-            pytest.param({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.p3),
-            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name in updating chat.", marks=pytest.mark.p3),
+            pytest.param({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name.", marks=pytest.mark.p3),
+            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name.", marks=pytest.mark.p3),
         ],
     )
     def test_name(self, HttpApiAuth, add_chat_assistants_func, payload, expected_code, expected_message):
         _, _, chat_assistant_ids = add_chat_assistants_func
 
-        res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
+        res = patch_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
-            assert res["data"][0]["name"] == payload.get("name")
+            res = get_chat_assistant(HttpApiAuth, chat_assistant_ids[0])
+            assert res["data"]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
@@ -69,7 +65,7 @@ class TestChatAssistantUpdate:
             pytest.param([], 0, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param(lambda r: [r], 0, "", marks=pytest.mark.p1),
             pytest.param(["invalid_dataset_id"], 102, "You don't own the dataset invalid_dataset_id", marks=pytest.mark.p3),
-            pytest.param("invalid_dataset_id", 102, "You don't own the dataset i", marks=pytest.mark.p3),
+            pytest.param("invalid_dataset_id", 102, "`dataset_ids` should be a list.", marks=pytest.mark.p3),
         ],
     )
     def test_dataset_ids(self, HttpApiAuth, add_chat_assistants_func, dataset_ids, expected_code, expected_message):
@@ -83,8 +79,8 @@ class TestChatAssistantUpdate:
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
-            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
-            assert res["data"][0]["name"] == payload.get("name")
+            res = get_chat_assistant(HttpApiAuth, chat_assistant_ids[0])
+            assert res["data"]["name"] == payload.get("name")
         else:
             assert res["message"] == expected_message
 
@@ -92,7 +88,7 @@ class TestChatAssistantUpdate:
     def test_avatar(self, HttpApiAuth, add_chat_assistants_func, tmp_path):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {"name": "avatar_test", "avatar": encode_avatar(fn), "dataset_ids": [dataset_id]}
+        payload = {"name": "avatar_test", "icon": encode_avatar(fn), "dataset_ids": [dataset_id]}
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == 0
 
@@ -101,8 +97,8 @@ class TestChatAssistantUpdate:
         "llm, expected_code, expected_message",
         [
             ({}, 0, ""),
-            ({"model_name": "glm-4"}, 0, ""),
-            ({"model_name": "unknown"}, 102, "`model_name` unknown doesn't exist"),
+            ({"llm_id": "glm-4"}, 0, ""),
+            ({"llm_id": "unknown"}, 102, "`llm_id` unknown doesn't exist"),
             ({"temperature": 0}, 0, ""),
             ({"temperature": 1}, 0, ""),
             pytest.param({"temperature": -1}, 0, "", marks=pytest.mark.skip),
@@ -133,23 +129,23 @@ class TestChatAssistantUpdate:
     )
     def test_llm(self, HttpApiAuth, add_chat_assistants_func, chat_assistant_llm_model_type, llm, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
-        llm_payload = dict(llm)
-        llm_payload.setdefault("model_type", chat_assistant_llm_model_type)
-        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm_payload}
+        llm_setting = {k: v for k, v in llm.items() if k != "llm_id"}
+        llm_setting.setdefault("model_type", chat_assistant_llm_model_type)
+
+        payload = {"name": "llm_test", "dataset_ids": [dataset_id]}
+        if "llm_id" in llm:
+            payload["llm_id"] = llm["llm_id"]
+        payload["llm_setting"] = llm_setting
+
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
-            if llm:
-                for k, v in llm.items():
-                    assert res["data"][0]["llm"][k] == v
-            else:
-                assert res["data"][0]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"
-                assert res["data"][0]["llm"]["temperature"] == 0.1
-                assert res["data"][0]["llm"]["top_p"] == 0.3
-                assert res["data"][0]["llm"]["presence_penalty"] == 0.4
-                assert res["data"][0]["llm"]["frequency_penalty"] == 0.7
-                assert res["data"][0]["llm"]["max_tokens"] == 512
+            res = get_chat_assistant(HttpApiAuth, chat_assistant_ids[0])
+            for k, v in llm.items():
+                if k == "llm_id":
+                    assert res["data"]["llm_id"] == v
+                else:
+                    assert res["data"]["llm_setting"][k] == v
         else:
             assert expected_message in res["message"]
 
@@ -157,18 +153,18 @@ class TestChatAssistantUpdate:
     @pytest.mark.parametrize(
         "prompt, expected_code, expected_message",
         [
-            ({}, 100, "ValueError"),
+            ({}, 0, ""),
             ({"similarity_threshold": 0}, 0, ""),
             ({"similarity_threshold": 1}, 0, ""),
             pytest.param({"similarity_threshold": -1}, 0, "", marks=pytest.mark.skip),
             pytest.param({"similarity_threshold": 10}, 0, "", marks=pytest.mark.skip),
             pytest.param({"similarity_threshold": "a"}, 0, "", marks=pytest.mark.skip),
-            ({"keywords_similarity_weight": 0}, 0, ""),
-            ({"keywords_similarity_weight": 1}, 0, ""),
-            pytest.param({"keywords_similarity_weight": -1}, 0, "", marks=pytest.mark.skip),
-            pytest.param({"keywords_similarity_weight": 10}, 0, "", marks=pytest.mark.skip),
-            pytest.param({"keywords_similarity_weight": "a"}, 0, "", marks=pytest.mark.skip),
-            ({"variables": []}, 0, ""),
+            ({"vector_similarity_weight": 0}, 0, ""),
+            ({"vector_similarity_weight": 1}, 0, ""),
+            pytest.param({"vector_similarity_weight": -1}, 0, "", marks=pytest.mark.skip),
+            pytest.param({"vector_similarity_weight": 10}, 0, "", marks=pytest.mark.skip),
+            pytest.param({"vector_similarity_weight": "a"}, 0, "", marks=pytest.mark.skip),
+            ({"parameters": []}, 0, ""),
             ({"top_n": 0}, 0, ""),
             ({"top_n": 1}, 0, ""),
             pytest.param({"top_n": -1}, 0, "", marks=pytest.mark.skip),
@@ -181,52 +177,52 @@ class TestChatAssistantUpdate:
             pytest.param({"empty_response": 123}, 0, "", marks=pytest.mark.skip),
             pytest.param({"empty_response": True}, 0, "", marks=pytest.mark.skip),
             pytest.param({"empty_response": " "}, 0, "", marks=pytest.mark.skip),
-            ({"opener": "Hello World"}, 0, ""),
-            ({"opener": ""}, 0, ""),
-            ({"opener": "!@#$%^&*()"}, 0, ""),
-            ({"opener": "中文测试"}, 0, ""),
-            pytest.param({"opener": 123}, 0, "", marks=pytest.mark.skip),
-            pytest.param({"opener": True}, 0, "", marks=pytest.mark.skip),
-            pytest.param({"opener": " "}, 0, "", marks=pytest.mark.skip),
-            ({"show_quote": True}, 0, ""),
-            ({"show_quote": False}, 0, ""),
-            ({"prompt": "Hello World {knowledge}"}, 0, ""),
-            ({"prompt": "{knowledge}"}, 0, ""),
-            ({"prompt": "!@#$%^&*() {knowledge}"}, 0, ""),
-            ({"prompt": "中文测试 {knowledge}"}, 0, ""),
-            ({"prompt": "Hello World"}, 102, "Parameter 'knowledge' is not used"),
-            ({"prompt": "Hello World", "variables": []}, 0, ""),
-            pytest.param({"prompt": 123}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
-            pytest.param({"prompt": True}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
+            ({"prologue": "Hello World"}, 0, ""),
+            ({"prologue": ""}, 0, ""),
+            ({"prologue": "!@#$%^&*()"}, 0, ""),
+            ({"prologue": "中文测试"}, 0, ""),
+            pytest.param({"prologue": 123}, 0, "", marks=pytest.mark.skip),
+            pytest.param({"prologue": True}, 0, "", marks=pytest.mark.skip),
+            pytest.param({"prologue": " "}, 0, "", marks=pytest.mark.skip),
+            ({"quote": True}, 0, ""),
+            ({"quote": False}, 0, ""),
+            ({"system": "Hello World {knowledge}"}, 0, ""),
+            ({"system": "{knowledge}"}, 0, ""),
+            ({"system": "!@#$%^&*() {knowledge}"}, 0, ""),
+            ({"system": "中文测试 {knowledge}"}, 0, ""),
+            ({"system": "Hello World"}, 0, ""),
+            ({"system": "Hello World", "parameters": []}, 0, ""),
+            pytest.param({"system": 123}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
+            pytest.param({"system": True}, 100, """AttributeError("\'int\' object has no attribute \'find\'")""", marks=pytest.mark.skip),
             pytest.param({"unknown": "unknown"}, 0, "", marks=pytest.mark.skip),
         ],
     )
     def test_prompt(self, HttpApiAuth, add_chat_assistants_func, prompt, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
-        payload = {"name": "prompt_test", "dataset_ids": [dataset_id], "prompt": prompt}
+
+        _PROMPT_CONFIG_KEYS = {"prologue", "quote", "system", "parameters", "empty_response"}
+
+        payload = {"name": "prompt_test", "dataset_ids": [dataset_id]}
+        prompt_config = {}
+        for k, v in prompt.items():
+            if k in _PROMPT_CONFIG_KEYS:
+                prompt_config[k] = v
+            else:
+                payload[k] = v
+        if prompt_config:
+            payload["prompt_config"] = prompt_config
+
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
-            res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
-            if prompt:
-                for k, v in prompt.items():
-                    if k == "keywords_similarity_weight":
-                        assert res["data"][0]["prompt"][k] == 1 - v
-                    else:
-                        assert res["data"][0]["prompt"][k] == v
-            else:
-                assert res["data"]["prompt"][0]["similarity_threshold"] == 0.2
-                assert res["data"]["prompt"][0]["keywords_similarity_weight"] == 0.7
-                assert res["data"]["prompt"][0]["top_n"] == 6
-                assert res["data"]["prompt"][0]["variables"] == [{"key": "knowledge", "optional": False}]
-                assert res["data"]["prompt"][0]["rerank_model"] == ""
-                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
-                assert res["data"]["prompt"][0]["opener"] == "Hi! I'm your assistant. What can I do for you?"
-                assert res["data"]["prompt"][0]["show_quote"] is True
-                assert (
-                    res["data"]["prompt"][0]["prompt"]
-                    == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
-                )
+            if not prompt:
+                return
+            res = get_chat_assistant(HttpApiAuth, chat_assistant_ids[0])
+            for k, v in prompt.items():
+                if k in _PROMPT_CONFIG_KEYS:
+                    assert res["data"]["prompt_config"][k] == v
+                else:
+                    assert res["data"][k] == v
         else:
             assert expected_message in res["message"]
 
@@ -235,50 +231,53 @@ class TestChatAssistantUpdate:
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
         chat_id = chat_assistant_ids[0]
 
-        res = update_chat_assistant(HttpApiAuth, "invalid-chat-id", {"name": "anything"})
-        assert res["code"] == 102
-        assert res["message"] == "You do not own the chat"
+        # Auth: non-owned chat returns 109 "No authorization."
+        res = patch_chat_assistant(HttpApiAuth, "invalid-chat-id", {"name": "anything"})
+        assert res["code"] == 109
+        assert res["message"] == "No authorization."
 
-        res = update_chat_assistant(HttpApiAuth, chat_id, {"show_quotation": False, "dataset_ids": [dataset_id]})
+        # PATCH: toggle quote via prompt_config
+        res = patch_chat_assistant(HttpApiAuth, chat_id, {"prompt_config": {"quote": False}})
         assert res["code"] == 0
 
-        res = update_chat_assistant(
+        # PATCH: invalid llm_id
+        res = patch_chat_assistant(
             HttpApiAuth,
             chat_id,
-            {"llm": {"model_name": "unknown-llm-model", "model_type": chat_assistant_llm_model_type}},
+            {"llm_id": "unknown-llm-model", "llm_setting": {"model_type": chat_assistant_llm_model_type}},
         )
         assert res["code"] == 102
-        assert "`model_name` unknown-llm-model doesn't exist" in res["message"]
+        assert "`llm_id` unknown-llm-model doesn't exist" in res["message"]
 
-        res = update_chat_assistant(
-            HttpApiAuth,
-            chat_id,
-            {"prompt": {"rerank_model": "unknown-rerank-model"}},
-        )
+        # PATCH: invalid rerank_id
+        res = patch_chat_assistant(HttpApiAuth, chat_id, {"rerank_id": "unknown-rerank-model"})
         assert res["code"] == 102
-        assert "`rerank_model` unknown-rerank-model doesn't exist" in res["message"]
+        assert "`rerank_id` unknown-rerank-model doesn't exist" in res["message"]
 
-        res = update_chat_assistant(HttpApiAuth, chat_id, {"name": ""})
+        # PATCH: empty name
+        res = patch_chat_assistant(HttpApiAuth, chat_id, {"name": ""})
         assert res["code"] == 102
         assert res["message"] == "`name` cannot be empty."
 
-        res = update_chat_assistant(HttpApiAuth, chat_id, {"name": "test_chat_assistant_1"})
+        # PATCH: duplicate name
+        res = patch_chat_assistant(HttpApiAuth, chat_id, {"name": "test_chat_assistant_1"})
         assert res["code"] == 102
-        assert res["message"] == "Duplicated chat name in updating chat."
+        assert res["message"] == "Duplicated chat name."
 
-        res = update_chat_assistant(
+        # PATCH: prompt_config without placeholder is allowed
+        res = patch_chat_assistant(
             HttpApiAuth,
             chat_id,
-            {"prompt": {"prompt": "No required placeholder", "variables": [{"key": "knowledge", "optional": False}]}},
+            {"prompt_config": {"system": "No required placeholder", "parameters": [{"key": "knowledge", "optional": False}]}},
         )
-        assert res["code"] == 102
-        assert "Parameter 'knowledge' is not used" in res["message"]
-
-        res = update_chat_assistant(HttpApiAuth, chat_id, {"avatar": "raw-avatar-value"})
         assert res["code"] == 0
-        listed = list_chat_assistants(HttpApiAuth, {"id": chat_id})
+
+        # PATCH: icon (was "avatar" in old SDK)
+        res = patch_chat_assistant(HttpApiAuth, chat_id, {"icon": "raw-avatar-value"})
+        assert res["code"] == 0
+        listed = get_chat_assistant(HttpApiAuth, chat_id)
         assert listed["code"] == 0
-        assert listed["data"][0]["avatar"] == "raw-avatar-value"
+        assert listed["data"]["icon"] == "raw-avatar-value"
 
     @pytest.mark.p2
     def test_update_unparsed_dataset_guard_p2(self, HttpApiAuth, add_dataset_func, clear_chat_assistants):
@@ -287,6 +286,6 @@ class TestChatAssistantUpdate:
         assert create_res["code"] == 0
 
         chat_id = create_res["data"]["id"]
-        res = update_chat_assistant(HttpApiAuth, chat_id, {"dataset_ids": [dataset_id]})
+        res = patch_chat_assistant(HttpApiAuth, chat_id, {"dataset_ids": [dataset_id]})
         assert res["code"] == 102
         assert "doesn't own parsed file" in res["message"]

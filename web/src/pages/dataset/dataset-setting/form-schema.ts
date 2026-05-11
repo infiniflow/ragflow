@@ -1,9 +1,10 @@
+import { ParseType } from '@/constants/knowledge';
 import { t } from 'i18next';
 import { z } from 'zod';
 
 export const formSchema = z
   .object({
-    parseType: z.number(),
+    parse_type: z.nativeEnum(ParseType),
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),
@@ -93,6 +94,18 @@ export const formSchema = z
           .optional(),
         enable_metadata: z.boolean().optional(),
         llm_id: z.string().optional(),
+        // Table parser: "auto" = all columns both, "manual" = use column role selector
+        table_column_mode: z.enum(['auto', 'manual']).optional(),
+        // Table parser: column name -> role (indexing | metadata | both); legacy "vectorize" -> indexing
+        table_column_roles: z
+          .record(
+            z
+              .enum(['indexing', 'metadata', 'both', 'vectorize'])
+              .transform((role) => (role === 'vectorize' ? 'indexing' : role)),
+          )
+          .optional(),
+        // Table parser: column names list (set by backend after first parse)
+        table_column_names: z.array(z.string()).optional(),
       })
       .optional(),
     pagerank: z.number(),
@@ -110,7 +123,7 @@ export const formSchema = z
     // icon: z.array(z.instanceof(File)),
   })
   .superRefine((data, ctx) => {
-    if (data.parseType === 2 && !data.pipeline_id) {
+    if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
       ctx.addIssue({
         path: ['pipeline_id'],
         message: t('common.pleaseSelect'),

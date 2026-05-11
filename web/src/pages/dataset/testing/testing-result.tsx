@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
-import { ITestingChunk } from '@/interfaces/database/knowledge';
+import { ITestingChunk } from '@/interfaces/database/dataset';
 import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';

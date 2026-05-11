@@ -8,6 +8,7 @@ from webdav4.client import Client as WebDAVClient
 
 from common.data_source.utils import (
     get_file_ext,
+    is_accepted_file_ext,
 )
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE, BLOB_STORAGE_SIZE_THRESHOLD
 from common.data_source.exceptions import (
@@ -16,11 +17,11 @@ from common.data_source.exceptions import (
     CredentialExpiredError,
     InsufficientPermissionsError
 )
-from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
+from common.data_source.interfaces import LoadConnector, OnyxExtensionType, PollConnector, SlimConnectorWithPermSync
+from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument
 
 
-class WebDAVConnector(LoadConnector, PollConnector):
+class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """WebDAV connector for syncing files from WebDAV servers"""
 
     def __init__(
@@ -48,6 +49,16 @@ class WebDAVConnector(LoadConnector, PollConnector):
         self.client: Optional[WebDAVClient] = None
         self._allow_images: bool | None = None
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
+
+    def _build_extension_type(self) -> OnyxExtensionType:
+        extension_type = OnyxExtensionType.Plain | OnyxExtensionType.Document
+        if bool(self._allow_images):
+            extension_type |= OnyxExtensionType.Multimedia
+        return extension_type
+
+    def _is_supported_file(self, file_name: str) -> bool:
+        file_ext = get_file_ext(file_name)
+        return is_accepted_file_ext(file_ext, self._build_extension_type())
 
     def set_allow_images(self, allow_images: bool) -> None:
         """Set whether to process images"""
@@ -91,17 +102,20 @@ class WebDAVConnector(LoadConnector, PollConnector):
         return None
 
     def _list_files_recursive(
-        self, 
+        self,
         path: str,
         start: datetime,
         end: datetime,
+        *,
+        filter_by_mtime: bool = True,
     ) -> list[tuple[str, dict]]:
         """Recursively list all files in the given path
         
         Args:
             path: Path to list files from
-            start: Start datetime for filtering
-            end: End datetime for filtering
+            start: Start datetime for filtering (ignored when ``filter_by_mtime`` is False)
+            end: End datetime for filtering (ignored when ``filter_by_mtime`` is False)
+            filter_by_mtime: When False, include every supported extension without mtime window
             
         Returns:
             List of tuples containing (file_path, file_info)
@@ -123,12 +137,24 @@ class WebDAVConnector(LoadConnector, PollConnector):
 
                 if item.get('type') == 'directory':
                     try:
-                        files.extend(self._list_files_recursive(item_path, start, end))
+                        files.extend(
+                            self._list_files_recursive(
+                                item_path,
+                                start,
+                                end,
+                                filter_by_mtime=filter_by_mtime,
+                            )
+                        )
                     except Exception as e:
                         logging.error(f"Error recursing into directory {item_path}: {e}")
                         continue
                 else:
                     try:
+                        file_name = os.path.basename(item_path)
+                        if not self._is_supported_file(file_name):
+                            logging.debug(f"Skipping file {item_path} due to unsupported extension.")
+                            continue
+
                         modified_time = item.get('modified')
                         if modified_time:
                             if isinstance(modified_time, datetime):
@@ -152,10 +178,13 @@ class WebDAVConnector(LoadConnector, PollConnector):
                         
 
                         logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
-                        if start < modified <= end:
-                            files.append((item_path, item))
+                        if filter_by_mtime:
+                            if start < modified <= end:
+                                files.append((item_path, item))
+                            else:
+                                logging.debug(f"File {item_path} filtered out by time range")
                         else:
-                            logging.debug(f"File {item_path} filtered out by time range")
+                            files.append((item_path, item))
                     except Exception as e:
                         logging.error(f"Error processing file {item_path}: {e}")
                         continue
@@ -194,6 +223,10 @@ class WebDAVConnector(LoadConnector, PollConnector):
         batch: list[Document] = []
         for file_path, file_info in files:
             file_name = os.path.basename(file_path)
+
+            if not self._is_supported_file(file_name):
+                logging.debug(f"Skipping file {file_path} due to unsupported extension.")
+                continue
             
             size_bytes = file_info.get('size', 0)
             if (
@@ -302,6 +335,61 @@ class WebDAVConnector(LoadConnector, PollConnector):
 
         for batch in self._yield_webdav_documents(start_datetime, end_datetime):
             yield batch
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """Full-tree snapshot of indexed paths for stale-document reconciliation.
+
+        Uses the same ``webdav:{base_url}:{file_path}`` ids as :meth:`_yield_webdav_documents`,
+        without downloading file contents.
+        """
+        del callback
+        if self.client is None:
+            raise ConnectorMissingCredentialError("WebDAV client not initialized")
+
+        logging.info(
+            "Starting WebDAV slim snapshot: base_url=%s path=%s",
+            self.base_url,
+            self.remote_path,
+        )
+
+        files = self._list_files_recursive(
+            self.remote_path,
+            datetime(1970, 1, 1, tzinfo=timezone.utc),
+            datetime.now(timezone.utc),
+            filter_by_mtime=False,
+        )
+        batch: list[SlimDocument] = []
+        total = 0
+        for file_path, file_info in files:
+            file_name = os.path.basename(file_path)
+            if not self._is_supported_file(file_name):
+                continue
+            size_bytes = file_info.get("size", 0)
+            if (
+                self.size_threshold is not None
+                and isinstance(size_bytes, int)
+                and size_bytes > self.size_threshold
+            ):
+                continue
+            batch.append(
+                SlimDocument(id=f"webdav:{self.base_url}:{file_path}")
+            )
+            total += 1
+            if len(batch) >= self.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
+
+        logging.info(
+            "Completed WebDAV slim snapshot: %d documents (listed_paths=%d)",
+            total,
+            len(files),
+        )
 
     def validate_connector_settings(self) -> None:
         """Validate WebDAV connector settings.
