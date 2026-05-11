@@ -21,6 +21,12 @@ Cargo.lock
 
 .idea/
 .vscode/
+.opencode/
+docs/superpowers/
+eval_ragflow_agent.py
+eval_results.csv
+migrate_es_to_azure_search.py
+scripts/
 
 # Exclude Mac generated files
 .DS_Store

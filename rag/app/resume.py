@@ -2493,6 +2493,7 @@ def chunk(filename, binary, tenant_id, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
 
     try:
         callback(0.1, "Starting resume parsing...")
+        rag_tokenizer.tokenizer.set_language(lang)
 
         # Parse resume
         resume, lines, line_positions = parse_resume(filename, binary, tenant_id , lang)

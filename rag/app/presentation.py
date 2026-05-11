@@ -147,7 +147,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 d["page_num_int"] = [pn + 1]
                 d["top_int"] = [0]
                 d["position_int"] = [(pn + 1, 0, 0, 0, 0)]
-                tokenize(d, txt, eng)
+                tokenize(d, txt, eng, language=lang)
                 res.append(d)
             return res
         except Exception as e:
@@ -182,7 +182,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     d["page_num_int"] = [pn + 1]
                     d["top_int"] = [0]
                     d["position_int"] = [(pn + 1, 0, 0, 0, 0)]
-                    tokenize(d, txt, eng)
+                    tokenize(d, txt, eng, language=lang)
                     res.append(d)
                 
                 if callback:
@@ -237,7 +237,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
             d["position_int"] = [(pn + 1, 0, img.size[0] if img else 0, 0, img.size[1] if img else 0)]
-            tokenize(d, txt, eng)
+            tokenize(d, txt, eng, language=lang)
             res.append(d)
         return res
 

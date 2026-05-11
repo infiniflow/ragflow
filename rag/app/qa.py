@@ -318,6 +318,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         Every pair of Q&A will be treated as a chunk.
     """
     eng = lang.lower() == "english"
+    rag_tokenizer.tokenizer.set_language(lang)
     res = []
     doc = {
         "docnm_kwd": filename,
@@ -451,7 +452,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         docx_parser = Docx()
         qai_list, tbls = docx_parser(filename, binary,
                                      from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
-        res = tokenize_table(tbls, doc, eng)
+        res = tokenize_table(tbls, doc, eng, language=lang)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))
         return res

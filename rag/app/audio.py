@@ -51,7 +51,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
-        tokenize(doc, ans, is_english)
+        tokenize(doc, ans, is_english, language=lang)
         return [doc]
     except Exception as e:
         callback(prog=-1, msg=str(e))
