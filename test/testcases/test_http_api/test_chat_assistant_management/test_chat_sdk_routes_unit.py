@@ -953,6 +953,41 @@ def test_list_chats_authorized_multi_tenant(monkeypatch):
 
 
 @pytest.mark.p2
+def test_list_chats_defaults_to_authorized_owner_ids_when_omitted(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    captured = {}
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page": "1",
+                    "page_size": "10",
+                    "orderby": "create_time",
+                    "desc": "true",
+                    "id": None,
+                    "name": None,
+                }.get(key, default),
+                getlist=lambda _key: [],
+            )
+        ),
+    )
+
+    def _get_by_tenant_ids(owner_ids, *_args, **_kwargs):
+        captured["owner_ids"] = owner_ids
+        return ([], 0)
+
+    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
+    res = module.list_chats.__wrapped__()
+
+    assert res["code"] == 0
+    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
+
+
+@pytest.mark.p2
 def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     module = _load_chat_module(monkeypatch)
 

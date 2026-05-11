@@ -589,3 +589,25 @@ def test_list_searches_authorized_multi_tenant(monkeypatch):
     assert res["code"] == 0
     assert res["data"]["total"] == 2
     assert {s["id"] for s in res["data"]["search_apps"]} == {"s1", "s2"}
+
+
+@pytest.mark.p2
+def test_list_searches_defaults_to_authorized_owner_ids_when_omitted(monkeypatch):
+    module = _load_search_api(monkeypatch)
+    captured = {}
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {"keywords": "", "page": "1", "page_size": "10", "orderby": "create_time", "desc": "true"},
+    )
+
+    def _get_by_tenant_ids(owner_ids, *_args, **_kwargs):
+        captured["owner_ids"] = owner_ids
+        return ([], 0)
+
+    monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids)
+    res = module.list_searches()
+
+    assert res["code"] == 0
+    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
