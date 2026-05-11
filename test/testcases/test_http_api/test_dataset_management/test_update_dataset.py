@@ -583,6 +583,10 @@ class TestDatasetUpdate:
             {"raptor": {"max_cluster": 512}},
             {"raptor": {"max_cluster": 1024}},
             {"raptor": {"random_seed": 0}},
+            {"raptor": {"clustering_method": "gmm"}},
+            {"raptor": {"clustering_method": "ahc"}},
+            {"raptor": {"tree_builder": "raptor"}},
+            {"raptor": {"tree_builder": "psi"}},
         ],
         ids=[
             "auto_keywords_min",
@@ -633,6 +637,10 @@ class TestDatasetUpdate:
             "raptor_max_cluster_mid",
             "raptor_max_cluster_max",
             "raptor_random_seed_min",
+            "raptor_clustering_method_gmm",
+            "raptor_clustering_method_ahc",
+            "raptor_tree_builder_raptor",
+            "raptor_tree_builder_psi",
         ],
     )
     def test_parser_config(self, HttpApiAuth, add_dataset_func, parser_config):
@@ -707,6 +715,10 @@ class TestDatasetUpdate:
             ({"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
             ({"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
             ({"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
+            ({"raptor": {"clustering_method": "unknown"}}, "Input should be 'gmm' or 'ahc'"),
+            ({"raptor": {"clustering_method": None}}, "Input should be 'gmm' or 'ahc'"),
+            ({"raptor": {"tree_builder": "ahc"}}, "Input should be 'raptor' or 'psi'"),
+            ({"raptor": {"tree_builder": None}}, "Input should be 'raptor' or 'psi'"),
             ({"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
         ],
         ids=[
@@ -763,6 +775,10 @@ class TestDatasetUpdate:
             "raptor_random_seed_min_limit",
             "raptor_random_seed_float_not_allowed",
             "raptor_random_seed_type_invalid",
+            "raptor_clustering_method_invalid",
+            "raptor_clustering_method_none_invalid",
+            "raptor_tree_builder_invalid",
+            "raptor_tree_builder_none_invalid",
             "parser_config_type_invalid",
         ],
     )
