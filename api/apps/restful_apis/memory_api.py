@@ -17,7 +17,7 @@ import logging
 import os
 import time
 
-from quart import request
+from quart import request, g
 from common.constants import LLMType, RetCode
 from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required, current_user
@@ -130,7 +130,7 @@ async def delete_memory(memory_id):
 @login_required
 async def list_memory():
     filter_params = {
-        k: request.args.get(k) for k in ["memory_type", "tenant_id", "storage_type"] if k in request.args
+        k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "storage_type"] if k in request.args
     }
     keywords = request.args.get("keywords")
     page = int(request.args.get("page", 1))
@@ -188,8 +188,18 @@ async def add_message():
     req = await get_request_json()
     memory_ids = req["memory_id"]
 
+    # JWT / session users cannot spoof attribution; API-key callers may supply an external subject id.
+    try:
+        trust_client_subject = bool(getattr(g, "auth_via_api_token", False))
+    except RuntimeError:
+        trust_client_subject = False
+    if trust_client_subject:
+        effective_user_id = req.get("user_id", "")
+    else:
+        effective_user_id = current_user.id
+
     message_dict = {
-        "user_id": req.get("user_id"),
+        "user_id": effective_user_id,
         "agent_id": req["agent_id"],
         "session_id": req["session_id"],
         "user_input": req["user_input"],

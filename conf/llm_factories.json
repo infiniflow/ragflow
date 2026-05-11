@@ -422,13 +422,6 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "deepseek-r1-distill-qwen-7b",
-                    "tags": "LLM,CHAT,32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "deepseek-r1-distill-qwen-14b",
                     "tags": "LLM,CHAT,32K",
                     "max_tokens": 32768,
@@ -2949,20 +2942,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "deepseek-ai/DeepSeek-V2.5",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
@@ -4241,13 +4220,6 @@
                 },
                 {
                     "llm_name": "DeepSeek-R1-Distill-Qwen-14B",
-                    "tags": "LLM,CHAT",
-                    "max_tokens": 65792,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "DeepSeek-R1-Distill-Qwen-7B",
                     "tags": "LLM,CHAT",
                     "max_tokens": 65792,
                     "model_type": "chat",

@@ -116,7 +116,7 @@ class Session(Base):
             "openai-compatible": False,
         }
         json_data.update(kwargs)
-        res = self.post("/agents/chat/completion", json_data, stream=stream)
+        res = self.post("/agents/chat/completions", json_data, stream=stream)
         return res
 
     def update(self, update_message):

@@ -68,39 +68,39 @@ func (p *Parser) parseRegisterCommand() (*Command, error) {
 	if err := p.expectPeek(TokenUser); err != nil {
 		return nil, err
 	}
-	p.nextToken()
+	p.nextToken() // consume USER
 
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["user_name"] = userName
+	p.nextToken() // consume Email
 
-	p.nextToken()
 	if p.curToken.Type != TokenAs {
 		return nil, fmt.Errorf("expected AS")
 	}
+	p.nextToken() // consume AS
 
-	p.nextToken()
 	nickname, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["nickname"] = nickname
+	p.nextToken() // consume nickname
 
-	p.nextToken()
 	if p.curToken.Type != TokenPassword {
 		return nil, fmt.Errorf("expected PASSWORD")
 	}
+	p.nextToken() // consume PASSWORD
 
-	p.nextToken()
 	password, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Params["password"] = password
+	p.nextToken() // consume 'password'
 
-	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -113,27 +113,6 @@ func (p *Parser) parseListCommand() (*Command, error) {
 	p.nextToken() // consume LIST
 
 	switch p.curToken.Type {
-	case TokenServices:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_services"), nil
-	case TokenUsers:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_users"), nil
-	case TokenRoles:
-		p.nextToken()
-		// Semicolon is optional for SHOW TOKEN
-		if p.curToken.Type == TokenSemicolon {
-			p.nextToken()
-		}
-		return NewCommand("list_roles"), nil
 	case TokenVars:
 		p.nextToken()
 		// Semicolon is optional for SHOW TOKEN
@@ -335,9 +314,9 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 				p.nextToken()
 			}
 			return NewCommand("show_current_model"), nil
-		} else {
-			return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 		}
+
+		return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:
@@ -1322,10 +1301,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 		return nil, fmt.Errorf("expected instance name: %w", err)
 	}
 
-	// Check if instance_name is "default"
-	if instanceName == "default" {
-		return nil, fmt.Errorf("instance name cannot be 'default'")
-	}
 	p.nextToken()
 
 	if p.curToken.Type != TokenKey {
@@ -2626,6 +2601,126 @@ func (p *Parser) parseStreamCommand() (*Command, error) {
 
 	command.Params["stream"] = true
 	return command, nil
+}
+
+func (p *Parser) parseEmbedCommand() (*Command, error) {
+	p.nextToken() // consume EMBED
+
+	if p.curToken.Type != TokenText {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume TEXT
+
+	var texts []string
+
+textLoop:
+	for {
+		if p.curToken.Type != TokenQuotedString {
+			break textLoop
+		}
+		text, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		text = strings.TrimSpace(text)
+		texts = append(texts, text)
+		p.nextToken()
+	}
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenDimension {
+		return nil, fmt.Errorf("expected DIMENSION")
+	}
+	p.nextToken() // consume WITH
+
+	dimension, err := p.parseNumber()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("embed_user_text")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["texts"] = texts
+	cmd.Params["dimension"] = dimension
+	return cmd, nil
+}
+
+func (p *Parser) parseRerankCommand() (*Command, error) {
+	p.nextToken() // consume RERANK
+
+	if p.curToken.Type != TokenQuery {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume QUERY
+
+	query, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	query = strings.TrimSpace(query)
+	p.nextToken() // consume query
+
+	if p.curToken.Type != TokenDocument {
+		return nil, fmt.Errorf("expected DOCUMENT after query")
+	}
+	p.nextToken() // consume DOCUMENT
+
+	var documents []string
+
+documentLoop:
+	for {
+		if p.curToken.Type != TokenQuotedString {
+			break documentLoop
+		}
+		var document string
+		document, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		document = strings.TrimSpace(document)
+		documents = append(documents, document)
+		p.nextToken()
+	}
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after EMBED")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenTop {
+		return nil, fmt.Errorf("expected TOP after model")
+	}
+	p.nextToken()
+
+	topN, err := p.parseNumber()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("rarank_user_document")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["query"] = query
+	cmd.Params["documents"] = documents
+	cmd.Params["top_n"] = topN
+	return cmd, nil
 }
 
 func (p *Parser) parseCheckCommand() (*Command, error) {

@@ -516,7 +516,11 @@ class TestDocRoutesUnit:
         res = _run(module.download_doc("doc-1"))
         assert "API key is invalid" in res["message"]
 
-        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace()])
+        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1"), SimpleNamespace(tenant_id="tenant-2")])
+        res = _run(module.download_doc("doc-1"))
+        assert "API key configuration is ambiguous" in res["message"]
+
+        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
         res = _run(module.download_doc(""))
         assert res["message"] == "Specify document_id please."
 
@@ -525,6 +529,23 @@ class TestDocRoutesUnit:
         assert "not own the document" in res["message"]
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
+        kb_query_calls = []
+
+        def _deny_kb_query(**kwargs):
+            kb_query_calls.append(kwargs)
+            return []
+
+        monkeypatch.setattr(module.KnowledgebaseService, "query", _deny_kb_query)
+        monkeypatch.setattr(
+            module.File2DocumentService,
+            "get_storage_address",
+            lambda **_kwargs: (_ for _ in ()).throw(AssertionError("storage lookup must not run before tenant authorization")),
+        )
+        res = _run(module.download_doc("doc-1"))
+        assert res["message"] == "You do not have access to this document."
+        assert kb_query_calls == [{"id": "kb-1", "tenant_id": "tenant-1"}]
+
+        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
         monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
         _patch_storage(monkeypatch, module, file_stream=b"")
         res = _run(module.download_doc("doc-1"))
@@ -684,6 +705,36 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["total"] == 1
         assert res["data"]["chunks"][0]["id"] == "chunk-1"
+
+    def test_list_chunks_uses_dataset_owner_index_for_team_dataset(self, monkeypatch):
+        module = _load_restful_chunk_module(monkeypatch)
+        seen = {}
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _dataset_id: (True, SimpleNamespace(tenant_id="owner-tenant")),
+        )
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(kb_id="ds-1")])
+        monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({})))
+
+        def _index_exist(index_name, dataset_id):
+            seen["index_exist"] = (index_name, dataset_id)
+            return True
+
+        class _Retriever:
+            async def search(self, _query, index_name, dataset_ids, *_args, **_kwargs):
+                seen["search"] = (index_name, dataset_ids)
+                return SimpleNamespace(total=0, ids=[], field={}, highlight={})
+
+        _patch_docstore(monkeypatch, module, index_exist=_index_exist)
+        monkeypatch.setattr(module.settings, "retriever", _Retriever())
+
+        res = _run(_route_core(module.list_chunks)("member-tenant", "ds-1", "doc-1"))
+
+        assert res["code"] == 0
+        assert seen["index_exist"] == ("idx-owner-tenant", "ds-1")
+        assert seen["search"] == ("idx-owner-tenant", ["ds-1"])
 
     def test_add_chunk_access_guard(self, monkeypatch):
         module = _load_restful_chunk_module(monkeypatch)

@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
@@ -32,8 +33,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
-
-	"ragflow/internal/logger"
 )
 
 // SkillProvider handles skill operations using /skills API
@@ -56,7 +55,7 @@ import (
 const (
 	MaxSkillTotalSize = 50 * 1024 * 1024 // 50MB
 	MaxSkillFileSize  = 5 * 1024 * 1024  // 5MB per file
-	DefaultSpaceID      = "default"
+	DefaultSpaceID    = "default"
 )
 
 // Text file extensions allowed in skills
@@ -166,7 +165,7 @@ func (p *SkillProvider) List(ctx stdctx.Context, subPath string, opts *ListOptio
 	}
 
 	parts := SplitPath(subPath)
-	
+
 	switch len(parts) {
 	case 1:
 		// skills/{space_id} - list skills in space
@@ -214,14 +213,14 @@ func (p *SkillProvider) Search(ctx stdctx.Context, subPath string, opts *SearchO
 		page = (opts.Offset / pageSize) + 1
 	}
 	payload := map[string]interface{}{
-		"query":      opts.Query,
-		"space_id":    spaceID,
-		"page":       page,
-		"page_size":  pageSize,
+		"query":     opts.Query,
+		"space_id":  spaceID,
+		"page":      page,
+		"page_size": pageSize,
 	}
 
 	// Call skill search API
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/skills/search", "auto", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
@@ -328,7 +327,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 	}
 
 	// Find the version folder
-	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
+	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
 	}
@@ -372,7 +371,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 	// If there's a directory path before the file, navigate through it
 	for i := 0; i < len(pathParts)-1; i++ {
-		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to navigate path: %w", err)
 		}
@@ -416,7 +415,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 	// Step 5: Find the file in the current directory
 	fileName := pathParts[len(pathParts)-1]
-	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list directory: %w", err)
 	}
@@ -457,7 +456,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 	// Step 6: Download the file content
 	// First get file info to get the download URL
-	contentResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files/%s", fileID), true, "auto", nil, nil)
+	contentResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files/%s", fileID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file info: %w", err)
 	}
@@ -469,7 +468,7 @@ func (p *SkillProvider) Cat(ctx stdctx.Context, path string) ([]byte, error) {
 
 // listHubs lists all skills spaces
 func (p *SkillProvider) listSpaces(ctx stdctx.Context, opts *ListOptions) (*Result, error) {
-	resp, err := p.httpClient.Request("GET", "/skills/spaces", true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/skills/spaces", "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list hubs: %w", err)
 	}
@@ -538,9 +537,9 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 		"sort_order": opts.SortOrder,
 	}
 
-	logger.Debug("Listing skills via search API", zap.String("space", spaceName), zap.String("spaceUUID", spaceUUID), zap.Int("limit", limit))
+	common.Debug("Listing skills via search API", zap.String("space", spaceName), zap.String("spaceUUID", spaceUUID), zap.Int("limit", limit))
 
-	resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/skills/search", "auto", nil, payload)
 	if err == nil {
 		var result struct {
 			Code int    `json:"code"`
@@ -560,7 +559,7 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 		}
 
 		if err := json.Unmarshal(resp.Body, &result); err == nil && result.Code == 0 {
-			logger.Debug("Search API response", zap.Int("skills_count", len(result.Data.Skills)), zap.Int64("total", result.Data.Total))
+			common.Debug("Search API response", zap.Int("skills_count", len(result.Data.Skills)), zap.Int64("total", result.Data.Total))
 			// If search returned results, use them
 			if len(result.Data.Skills) > 0 {
 				nodes := make([]*Node, 0, len(result.Data.Skills))
@@ -582,7 +581,7 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 						},
 					})
 				}
-				logger.Info("Listed skills via SEARCH", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
+				common.Info("Listed skills via SEARCH", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int64("total", result.Data.Total))
 				return &Result{
 					Nodes:      nodes,
 					Total:      int(result.Data.Total),
@@ -591,16 +590,16 @@ func (p *SkillProvider) listSkillsInSpace(ctx stdctx.Context, spaceName string, 
 				}, nil
 			}
 			// Search returned empty result, fall through to file system
-			logger.Debug("Search returned empty result, falling back to file system")
+			common.Debug("Search returned empty result, falling back to file system")
 		} else {
-			logger.Debug("Search API error", zap.Error(err), zap.Int("code", result.Code), zap.String("msg", result.Msg))
+			common.Debug("Search API error", zap.Error(err), zap.Int("code", result.Code), zap.String("msg", result.Msg))
 		}
 	} else {
-		logger.Debug("Search request failed", zap.Error(err))
+		common.Debug("Search request failed", zap.Error(err))
 	}
 
 	// Fall back to file system listing (for skills not yet indexed)
-	logger.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("space", spaceName))
+	common.Info("Listing skills via FILE SYSTEM (search unavailable)", zap.String("space", spaceName))
 	return p.listSkillsInSpaceFromFileSystem(ctx, spaceName, opts)
 }
 
@@ -611,17 +610,17 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 	if err != nil {
 		return nil, fmt.Errorf("failed to get skills folder: %w", err)
 	}
-	logger.Debug("Got skills folder ID", zap.String("skillsFolderID", skillsFolderID))
+	common.Debug("Got skills folder ID", zap.String("skillsFolderID", skillsFolderID))
 
 	// Find the space folder
 	spaceFolderID, err := p.findFolderID(ctx, skillsFolderID, spaceName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find space folder: %w", err)
 	}
-	logger.Debug("Got space folder ID", zap.String("spaceName", spaceName), zap.String("spaceFolderID", spaceFolderID))
+	common.Debug("Got space folder ID", zap.String("spaceName", spaceName), zap.String("spaceFolderID", spaceFolderID))
 
 	// List all subfolders in the space folder (each subfolder is a skill)
-	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", spaceFolderID), true, "auto", nil, nil)
+	skillsResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", spaceFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
@@ -646,7 +645,7 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 	if skillsResult.Code != 0 {
 		return nil, fmt.Errorf("failed to list skills: %s", skillsResult.Msg)
 	}
-	logger.Debug("File system list response", zap.Int("files_count", len(skillsResult.Data.Files)))
+	common.Debug("File system list response", zap.Int("files_count", len(skillsResult.Data.Files)))
 
 	// Convert folders to nodes
 	nodes := make([]*Node, 0)
@@ -675,7 +674,7 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 		nodes = nodes[:limit]
 	}
 
-	logger.Info("Listed skills via FILE SYSTEM", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int("total", total))
+	common.Info("Listed skills via FILE SYSTEM", zap.String("space", spaceName), zap.Int("count", len(nodes)), zap.Int("total", total))
 
 	return &Result{
 		Nodes:      nodes,
@@ -687,7 +686,7 @@ func (p *SkillProvider) listSkillsInSpaceFromFileSystem(ctx stdctx.Context, spac
 
 // getSkillsFolderID gets the ID of the 'skills' folder
 func (p *SkillProvider) getSkillsFolderID(ctx stdctx.Context) (string, error) {
-	resp, err := p.httpClient.Request("GET", "/files", true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/files", "auto", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list root folders: %w", err)
 	}
@@ -723,7 +722,7 @@ func (p *SkillProvider) getSkillsFolderID(ctx stdctx.Context) (string, error) {
 
 // findFolderID finds a folder by name under a parent folder
 func (p *SkillProvider) findFolderID(ctx stdctx.Context, parentID, folderName string) (string, error) {
-	resp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", parentID), true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", parentID), "auto", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list folders: %w", err)
 	}
@@ -770,7 +769,7 @@ func (p *SkillProvider) getSkillFolderID(ctx stdctx.Context, spaceID, skillName 
 			"page":      1,
 			"page_size": 10,
 		}
-		resp, err := p.httpClient.Request("POST", "/skills/search", true, "auto", nil, payload)
+		resp, err := p.httpClient.Request("POST", "/skills/search", "auto", nil, payload)
 		if err == nil {
 			var searchResult struct {
 				Code int    `json:"code"`
@@ -813,7 +812,7 @@ func (p *SkillProvider) listSkillVersions(ctx stdctx.Context, spaceID, skillName
 	}
 
 	// List the skill folder to get versions (subdirectories)
-	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
+	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list versions: %w", err)
 	}
@@ -874,7 +873,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 	}
 
 	// List the version folder under the skill folder
-	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), true, "auto", nil, nil)
+	filesResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", skillFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skill versions: %w", err)
 	}
@@ -931,7 +930,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 		isLastPart := (i == len(extraParts)-1)
 
 		// List current folder to find the next part
-		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+		subResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to navigate path: %w", err)
 		}
@@ -1002,7 +1001,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 	}
 
 	// Step 5: List the final folder contents
-	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), true, "auto", nil, nil)
+	finalResp, err := p.httpClient.Request("GET", fmt.Sprintf("/files?parent_id=%s", currentFolderID), "auto", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list folder contents: %w", err)
 	}
@@ -1039,10 +1038,10 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 		}
 
 		nodes = append(nodes, &Node{
-			Name: file.Name,
-			Type: nodeType,
-			Path: currentPath + "/" + file.Name,
-			Size: file.Size,
+			Name:      file.Name,
+			Type:      nodeType,
+			Path:      currentPath + "/" + file.Name,
+			Size:      file.Size,
 			UpdatedAt: time.UnixMilli(file.UpdateTime),
 			Metadata: map[string]interface{}{
 				"id": file.ID,
@@ -1058,7 +1057,7 @@ func (p *SkillProvider) listSkillContent(ctx stdctx.Context, spaceID, skillName,
 
 // getSpaceUUIDByName gets space UUID by its name
 func (p *SkillProvider) getSpaceUUIDByName(ctx stdctx.Context, spaceName string) (string, error) {
-	resp, err := p.httpClient.Request("GET", "/skills/spaces", true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/skills/spaces", "auto", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list hubs: %w", err)
 	}
@@ -1105,7 +1104,7 @@ func (p *SkillProvider) DeleteSkill(ctx stdctx.Context, spaceID, skillName strin
 		fmt.Sprintf("/skills/index?skill_id=%s&space_id=%s",
 			url.QueryEscape(skillName),
 			url.QueryEscape(spaceUUID)),
-		true, "auto", nil, nil)
+		"auto", nil, nil)
 	if err != nil {
 		return fmt.Errorf("delete index request failed: %w", err)
 	}
@@ -1142,13 +1141,13 @@ func (p *SkillProvider) IndexSkill(ctx stdctx.Context, spaceID string, skillInfo
 
 	// Build index request
 	payload := map[string]interface{}{
-		"skills":  []interface{}{skillInfo},
+		"skills":   []interface{}{skillInfo},
 		"space_id": spaceUUID,
-		"embd_id": embdID,
+		"embd_id":  embdID,
 	}
 
 	// Call index API
-	resp, err := p.httpClient.Request("POST", "/skills/index", true, "auto", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/skills/index", "auto", nil, payload)
 	if err != nil {
 		return fmt.Errorf("index request failed: %w", err)
 	}
@@ -1176,7 +1175,7 @@ func (p *SkillProvider) IndexSkill(ctx stdctx.Context, spaceID string, skillInfo
 func (p *SkillProvider) getDefaultEmbdID(ctx stdctx.Context, spaceID string) (string, error) {
 	resp, err := p.httpClient.Request("GET",
 		fmt.Sprintf("/skills/config?embd_id=&space_id=%s", url.QueryEscape(spaceID)),
-		true, "web", nil, nil)
+		"web", nil, nil)
 	if err != nil {
 		return "", nil
 	}
@@ -1358,7 +1357,7 @@ func (p *SkillProvider) createFolder(ctx stdctx.Context, parentID, name string) 
 		payload["parent_id"] = parentID
 	}
 
-	resp, err := p.httpClient.Request("POST", "/files", true, "auto", nil, payload)
+	resp, err := p.httpClient.Request("POST", "/files", "auto", nil, payload)
 	if err != nil {
 		return "", err
 	}
@@ -2064,7 +2063,7 @@ func (u *SkillUploader) createFolder(ctx stdctx.Context, parentID, name string) 
 		payload["parent_id"] = parentID
 	}
 
-	resp, err := u.client.Request("POST", "/files", true, "auto", nil, payload)
+	resp, err := u.client.Request("POST", "/files", "auto", nil, payload)
 	if err != nil {
 		return "", err
 	}

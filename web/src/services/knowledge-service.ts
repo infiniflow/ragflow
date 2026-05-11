@@ -121,6 +121,7 @@ const mapDocumentToLegacy = (doc: Record<string, any>) => ({
   ...doc,
   chunk_num: doc.chunk_num ?? doc.chunk_count,
   kb_id: doc.kb_id || doc.dataset_id,
+  parser_id: doc.parser_id || doc.chunk_method,
 });
 
 const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
@@ -147,14 +148,19 @@ const getAvailableParam = (available?: number) => {
 
 const chunkService = {
   retrievalTest: async (params: Record<string, any>) => {
-    const datasetId = getDatasetId(params);
+    const datasetId = params.dataset_id || params.kb_id || params.knowledge_id;
     if (!datasetId) {
       throw new Error(
         'dataset_id (or kb_id/knowledge_id) is required for retrievalTest',
       );
     }
-    return request.post(api.retrievalTest(datasetId), {
-      data: params,
+    const datasetIds = Array.isArray(datasetId) ? datasetId : [datasetId];
+    const rest = { ...params };
+    delete rest.dataset_id;
+    delete rest.kb_id;
+    delete rest.knowledge_id;
+    return request.post(api.retrievalTest, {
+      data: { ...rest, dataset_ids: datasetIds },
     });
   },
   chunkList: async (params: Record<string, any>) => {
@@ -241,8 +247,21 @@ const kbService = {
   ...chunkService,
 };
 
-export const getKbDetail = (datasetId: string) =>
-  request.get(api.getKbDetail(datasetId));
+export const getKbDetail = async (datasetId: string) => {
+  const response = await request.get(api.getKbDetail(datasetId));
+  // The /api/v1/datasets/<id> endpoint returns chunk_count/document_count,
+  // but legacy consumers (e.g. the GraphRAG/Raptor "magic wand" enable check
+  // in dataset/index.tsx) read chunk_num/doc_num. Normalize both shapes.
+  if (response.data?.code === 0 && response.data.data) {
+    const d = response.data.data;
+    response.data.data = {
+      ...d,
+      chunk_num: d.chunk_num ?? d.chunk_count,
+      doc_num: d.doc_num ?? d.document_count,
+    };
+  }
+  return response;
+};
 
 export const listTag = (knowledgeId: string) =>
   request.get(api.listTag(knowledgeId));
@@ -422,11 +441,13 @@ export const kbUpdateMetaData = (
 export function deletePipelineTask({
   kb_id,
   type,
+  wipe,
 }: {
   kb_id: string;
   type: ProcessingType;
+  wipe?: boolean;
 }) {
-  return request.delete(api.unbindPipelineTask(kb_id, type));
+  return request.delete(api.unbindPipelineTask(kb_id, type, wipe));
 }
 
 export default kbService;
