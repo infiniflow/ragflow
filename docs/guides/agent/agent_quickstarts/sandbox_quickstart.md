@@ -70,7 +70,7 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
 
 ### Option 2: Pull base images from Docker Hub
 
-If you do not need to customize the runtime dependencies, pull the published base images and tag them with the names used by standalone Docker Compose:
+If you do not need to customize runtime dependencies, pull the published base images and tag them with the names used by standalone Docker Compose:
 
 ```bash
 docker pull infiniflow/sandbox-base-python:latest
