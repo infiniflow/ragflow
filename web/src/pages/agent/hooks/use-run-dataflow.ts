@@ -13,7 +13,7 @@ export function useRunDataflow({
 }: {
   showLogSheet: () => void;
 } & Pick<UseFetchLogReturnType, 'setMessageId'>) {
-  const { send } = useSendMessageBySSE(api.runCanvas);
+  const { send } = useSendMessageBySSE(api.agentChatCompletion);
   const { id } = useParams();
   const { saveGraph, loading } = useSaveGraph();
   const [uploadedFileData, setUploadedFileData] =
@@ -27,15 +27,16 @@ export function useRunDataflow({
 
       showLogSheet();
       const res = await send({
-        id,
+        agent_id: id,
         query: '',
+        'openai-compatible': false,
         session_id: null,
         files: [fileResponseData.file],
       });
 
       if (res && res?.response.status === 200 && get(res, 'data.code') === 0) {
         // fetch canvas
-        setUploadedFileData(fileResponseData.file);
+        setUploadedFileData(fileResponseData.file[0]);
         const msgId = get(res, 'data.data.message_id');
         if (msgId) {
           setMessageId(msgId);

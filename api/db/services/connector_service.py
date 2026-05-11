@@ -16,7 +16,7 @@
 import logging
 from datetime import datetime
 import os
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from anthropic import BaseModel
 from peewee import SQL, fn
@@ -29,6 +29,7 @@ from api.db.services.document_service import DocMetadataService
 from api.utils.common import hash128
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
+from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
 
 class ConnectorService(CommonService):
@@ -99,7 +100,7 @@ class ConnectorService(CommonService):
             return 0, []
 
         source_type = f"{conn.source}/{conn.id}"
-        retain_doc_ids = {hash128(file.id) for file in file_list}
+        retain_doc_ids = {hash128(f"{connector_id}:{file.id}") for file in file_list}
         existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
             kb_id,
             source_type,
@@ -179,14 +180,14 @@ class SyncLogsService(CommonService):
         else:
             database_type = os.getenv("DB_TYPE", "mysql")
             if "postgres" in database_type.lower():
-                interval_expr = SQL("make_interval(mins => t2.refresh_freq)")
+                expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.refresh_freq)")
             else:
-                interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
+                expr = SQL("NOW() - INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,
                 cls.model.status == TaskStatus.SCHEDULE,
-                cls.model.update_date < (fn.NOW() - interval_expr)
+                cls.model.update_date < expr
             )
 
         query = query.distinct().order_by(cls.model.update_time.desc())
@@ -275,12 +276,13 @@ class SyncLogsService(CommonService):
             id: str
             filename: str
             blob: bytes
+            fingerprint: Optional[str] = None
 
             def read(self) -> bytes:
                 return self.blob
 
         errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"], fingerprint=d.get("fingerprint")) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)

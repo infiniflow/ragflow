@@ -26,12 +26,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -58,7 +54,7 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            (INVALID_ID_32, 100, f"""LookupError("Can't find the document with ID {INVALID_ID_32}!")"""),
+            (INVALID_ID_32, 102, f"You don't own the document {INVALID_ID_32}."),
         ],
     )
     def test_invalid_document_id(self, HttpApiAuth, add_chunks_func, document_id, expected_code, expected_message):

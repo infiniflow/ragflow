@@ -39,7 +39,22 @@ function resolveMinify(value: string | undefined): MinifyValue {
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  // Load env from .env file (also loads .env.local, .env.[mode], .env.[mode].local)
   const env = loadEnv(mode, process.cwd(), '');
+
+  // Try to load from .env file explicitly if API_PROXY_SCHEME not found
+  let proxyScheme = env.API_PROXY_SCHEME;
+  if (!proxyScheme) {
+    try {
+      const envLocal = loadEnv('', process.cwd(), '');
+      proxyScheme = envLocal.API_PROXY_SCHEME;
+    } catch {
+      // ignore
+    }
+  }
+  proxyScheme = proxyScheme || 'python';
+
+  console.log(`[vite.config] mode: ${mode}, API_PROXY_SCHEME: ${proxyScheme}`);
 
   const proxySchemes = {
     python: {
@@ -77,6 +92,17 @@ export default defineConfig(({ mode }) => {
         changeOrigin: true,
         ws: true,
       },
+      '/api/v1/users/me/models': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '^(/api/v1/users)|^(/api/v1/auth)|^(/api/v1/users/me)|^(/api/v1/system/config)|^(/api/v1/system/version)|^(/api/v1/tenants)|^(/api/v1/chats)|^(/api/v1/searches)|^(/api/v1/files)':
+        {
+          target: 'http://127.0.0.1:9384/',
+          changeOrigin: true,
+          ws: true,
+        },
       '/api': {
         target: 'http://127.0.0.1:9380/',
         changeOrigin: true,
@@ -107,10 +133,15 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  const proxy =
-    proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
+  const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
+    define: {
+      // Expose to client code via import.meta.env
+      'import.meta.env.API_PROXY_SCHEME': JSON.stringify(proxyScheme),
+      // Keep backward compatibility
+      __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
+    },
     plugins: [
       inspectorBabelPlugin(),
       react(),

@@ -485,7 +485,14 @@ class InfinityConnection(InfinityConnectionBase):
                 table_name = index_name
             else:
                 table_name = f"{index_name}_{knowledgebase_id}"
-            table_instance = db_instance.get_table(table_name)
+            try:
+                table_instance = db_instance.get_table(table_name)
+            except InfinityException as e:
+                # src/common/status.cppm, kTableNotExist = 3022
+                if e.error_code == ErrorCode.TABLE_NOT_EXIST:
+                    self.logger.warning(f"Table {table_name} does not exist, skipping update.")
+                    return False
+                raise
             # if "exists" in condition:
             #    del condition["exists"]
 

@@ -161,6 +161,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
+	userID := user.ID
 
 	// Get file_id from query
 	fileID := c.Query("file_id")
@@ -202,6 +203,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
+	userID := user.ID
 
 	// Get file_id from query
 	fileID := c.Query("file_id")
@@ -243,6 +245,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
+	userID := user.ID
 
 	fileID := c.Param("id")
 	if fileID == "" {

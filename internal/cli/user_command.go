@@ -19,11 +19,17 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
+	netUrl "net/url"
 	"os"
-	ce "ragflow/internal/cli/contextengine"
+	ce "ragflow/internal/cli/filesystem"
 	"strings"
+	"time"
 )
 
 // PingServer pings the server to check if it's alive
@@ -37,11 +43,11 @@ func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/ping", "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Server is down")
@@ -69,11 +75,11 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/version", true, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/version", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/version", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/version", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show version: %w", err)
 	}
@@ -104,11 +110,11 @@ func (c *RAGFlowClient) ListConfigs(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/configs", true, "web", nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/system/configs", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/configs", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/configs", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
 	}
@@ -254,7 +260,7 @@ func (c *RAGFlowClient) SetLogLevel(cmd *Command) (ResponseIf, error) {
 			"level": logLevel,
 		}
 
-		resp, err := c.HTTPClient.Request("PUT", "/system/log", true, "admin", nil, payload)
+		resp, err := c.HTTPClient.Request("PUT", "/system/log", "admin", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to change log level: %w", err)
 		}
@@ -299,6 +305,12 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("no password")
 	}
 
+	// Encrypt password using RSA
+	encryptedPassword, err := EncryptPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt password: %w", err)
+	}
+
 	var nickname string
 	nickname, ok = cmd.Params["nickname"].(string)
 	if !ok {
@@ -307,11 +319,11 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 
 	payload := map[string]interface{}{
 		"email":    email,
-		"password": password,
+		"password": encryptedPassword,
 		"nickname": nickname,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/user/register", false, "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/users", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register user: %w", err)
 	}
@@ -362,11 +374,11 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/datasets", true, authKind, nil, nil, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", "/datasets", authKind, nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", "/datasets", true, authKind, nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", authKind, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -390,7 +402,7 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 // getDatasetID gets dataset ID by name
 func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
-	resp, err := c.HTTPClient.Request("GET", "/datasets", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/datasets", "web", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -486,7 +498,7 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 	}
 
 	payload := map[string]interface{}{
-		"kb_id":                    datasetIDs,
+		"dataset_ids":              datasetIDs,
 		"question":                 question,
 		"similarity_threshold":     0.2,
 		"vector_similarity_weight": 0.3,
@@ -494,11 +506,11 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("POST", "/chunk/retrieval_test", false, "web", nil, payload, iterations)
+		return c.HTTPClient.RequestWithIterations("POST", "/datasets/search", "web", nil, payload, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", "/chunk/retrieval_test", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/datasets/search", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search on datasets: %w", err)
 	}
@@ -573,7 +585,7 @@ func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/system/tokens", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", "/system/tokens", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
@@ -604,7 +616,7 @@ func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/system/tokens", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/system/tokens", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -636,7 +648,7 @@ func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("token not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop token: %w", err)
 	}
@@ -677,7 +689,7 @@ func (c *RAGFlowClient) SetToken(cmd *Command) (ResponseIf, error) {
 	c.HTTPClient.useAPIToken = true
 
 	// Validate token by calling list tokens API
-	resp, err := c.HTTPClient.Request("GET", "/tokens", true, "api", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/tokens", "api", nil, nil)
 	if err != nil {
 		// Restore original token on error
 		c.HTTPClient.APIToken = savedToken
@@ -786,7 +798,7 @@ func (c *RAGFlowClient) CreateDataset(cmd *Command) (ResponseIf, error) {
 		"vector_size": vectorSize,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
@@ -843,7 +855,7 @@ func (c *RAGFlowClient) CreateDatasetInDocEngine(cmd *Command) (ResponseIf, erro
 		"vector_size": vectorSize,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
@@ -894,7 +906,7 @@ func (c *RAGFlowClient) DropDatasetInDocEngine(cmd *Command) (ResponseIf, error)
 		"kb_id": datasetID,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/kb/doc_engine_table", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", "/kb/doc_engine_table", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
@@ -930,7 +942,7 @@ func (c *RAGFlowClient) CreateMetadataInDocEngine(cmd *Command) (ResponseIf, err
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_engine_metadata_table", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_engine_metadata_table", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata table: %w", err)
 	}
@@ -966,7 +978,7 @@ func (c *RAGFlowClient) DropMetadataInDocEngine(cmd *Command) (ResponseIf, error
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_engine_metadata_table", false, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_engine_metadata_table", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop metadata table: %w", err)
 	}
@@ -1014,7 +1026,7 @@ func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", "/providers", true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/providers", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
@@ -1043,7 +1055,7 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/providers", true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", "/providers", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -1084,7 +1096,7 @@ func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		"llm_factory": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
@@ -1128,14 +1140,26 @@ func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("API key not provided")
 	}
 
+	baseUrl, ok := cmd.Params["base_url"].(string)
+	if !ok {
+		baseUrl = ""
+	}
+
+	region, ok := cmd.Params["region"].(string)
+	if !ok {
+		region = ""
+	}
+
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
 	payload := map[string]interface{}{
 		"instance_name": instanceName,
 		"api_key":       apiKey,
+		"base_url":      baseUrl,
+		"region":        region,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider instance: %w", err)
 	}
@@ -1171,7 +1195,7 @@ func (c *RAGFlowClient) ListProviderInstances(cmd *Command) (ResponseIf, error) 
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instances: %w", err)
 	}
@@ -1212,7 +1236,7 @@ func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
@@ -1253,7 +1277,7 @@ func (c *RAGFlowClient) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
@@ -1303,7 +1327,7 @@ func (c *RAGFlowClient) AlterProviderInstance(cmd *Command) (ResponseIf, error) 
 		"llm_name": newName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter instance: %w", err)
 	}
@@ -1348,7 +1372,57 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := c.HTTPClient.Request("DELETE", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop instance: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop instance: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop instance failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+// DropInstanceModel deletes a provider instance, only works for local deployed model
+// DROP MODEL <name> FROM <provider_name> <instance_name>
+func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"models": []string{modelName},
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1386,7 +1460,7 @@ func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 	var endPoint string
 	endPoint = fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, true, "web", nil, nil)
+	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instance models: %w", err)
 	}
@@ -1433,7 +1507,7 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 		"status": status,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PATCH", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
@@ -1451,6 +1525,14 @@ func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (Respo
 	return &result, nil
 }
 
+func isValidURL(str string) bool {
+	u, err := netUrl.Parse(str)
+	if err != nil {
+		return false
+	}
+	return u.Scheme != "" && u.Host != ""
+}
+
 func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1460,13 +1542,13 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 
 	// Check if composite_model_name is provided in command
 	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
-		names := strings.Split(compositeModelName, "/")
+		names := strings.Split(compositeModelName, "@")
 		if len(names) != 3 {
-			return nil, fmt.Errorf("model name must be in format 'provider/instance/model'")
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
 		}
-		providerName = names[0]
+		providerName = names[2]
 		instanceName = names[1]
-		modelName = names[2]
+		modelName = names[0]
 	} else if c.CurrentModel != nil {
 		// Use current model if set
 		providerName = c.CurrentModel.Provider
@@ -1476,21 +1558,141 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
 	}
 
-	message := cmd.Params["message"].(string)
+	formattedMessages := []map[string]interface{}{}
+
+	messages, ok := cmd.Params["messages"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("messages not provided")
+	}
+	contents := []map[string]interface{}{}
+	if len(messages) > 0 {
+		for _, message := range messages {
+			contents = append(contents, map[string]interface{}{
+				"type": "text",
+				"text": message,
+			})
+		}
+	}
+
+	images, ok := cmd.Params["images"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+	if len(images) > 0 {
+		for _, image := range images {
+			if isValidURL(image) {
+				contents = append(contents, map[string]interface{}{
+					"type": "image_url",
+					"image_url": map[string]string{
+						"url": image,
+					},
+				})
+			} else {
+				// image is a path, read the file and turn it into base64
+				imageContent, err := os.ReadFile(image)
+				if err != nil {
+					return nil, fmt.Errorf("failed to read image: %w", err)
+				}
+				contents = append(contents, map[string]interface{}{
+					"type": "image_file",
+					"image_file": map[string]interface{}{
+						"content": base64.StdEncoding.EncodeToString(imageContent),
+					},
+				})
+			}
+		}
+	}
+
+	videos, ok := cmd.Params["videos"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+	if len(videos) > 0 {
+		for _, video := range videos {
+			if isValidURL(video) {
+				contents = append(contents, map[string]interface{}{
+					"type": "video_url",
+					"video_url": map[string]interface{}{
+						"url": video,
+					},
+				})
+			} else {
+				return nil, fmt.Errorf("invalid video URL: %s", video)
+			}
+		}
+	}
+
+	//audios, ok := cmd.Params["audios"].([]string)
+	//if !ok {
+	//	return nil, fmt.Errorf("images not provided")
+	//}
+
+	files, ok := cmd.Params["files"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+
+	if len(files) > 0 {
+		for _, file := range files {
+			if isValidURL(file) {
+				contents = append(contents, map[string]interface{}{
+					"type": "file_url",
+					"file_url": map[string]interface{}{
+						"url": file,
+					},
+				})
+			} else {
+				return nil, fmt.Errorf("invalid file URL: %s", file)
+			}
+		}
+	}
+
+	formattedText := map[string]interface{}{
+		"role":    "user",
+		"content": contents,
+	}
+	formattedMessages = append(formattedMessages, formattedText)
+
 	thinking := cmd.Params["thinking"].(bool)
 	stream := cmd.Params["stream"].(bool)
+	effort := cmd.Params["effort"].(string)
+	verbosity := cmd.Params["verbosity"].(string)
 
-	url := fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
+	url := "/chat/completions"
+
+	//message = strings.TrimSpace(message)
+	//var content interface{} = message
+	//if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
+	//	var parts []map[string]interface{}
+	//	if err := json.Unmarshal([]byte(message), &parts); err == nil {
+	//		content = parts
+	//	}
+	//}
+	//formattedMessage := []map[string]interface{}{
+	//	{
+	//		"role":    "user",
+	//		"content": content,
+	//	},
+	//}
 
 	payload := map[string]interface{}{
-		"message":  message,
-		"stream":   stream, // use stream API
-		"thinking": thinking,
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"messages":      formattedMessages,
+		"stream":        stream,
+		"thinking":      thinking,
+	}
+
+	if thinking {
+		payload["effort"] = effort
+		payload["verbosity"] = verbosity
 	}
 
 	if stream {
 		// Call stream http api
-		reader, duration, err := c.HTTPClient.RequestStream("POST", url, true, "web", nil, payload)
+		startTime := time.Now()
+		reader, err := c.HTTPClient.RequestStream("POST", url, "web", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
@@ -1513,6 +1715,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 					if reasoningPrint {
 						fmt.Print("Thinking: ")
 						reasoningPrint = false
+						thinking = true
 					} else {
 						fmt.Print(data)
 					}
@@ -1543,7 +1746,7 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 				return nil, fmt.Errorf("chat error: received error event from server")
 			}
 		}
-
+		duration := time.Since(startTime).Seconds()
 		if err := scanner.Err(); err != nil {
 			return nil, fmt.Errorf("error reading stream: %w", err)
 		}
@@ -1558,9 +1761,9 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return result, nil
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, true, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list instance models: %w", err)
+		return nil, formatRequestError("Chat request", err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -1572,6 +1775,185 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to list instance models: invalid JSON (%w)", err)
 	}
 
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) EmbedUserText(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	texts, ok := cmd.Params["texts"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("texts not provided")
+	}
+
+	dimension, ok := cmd.Params["dimension"].(int)
+	if !ok {
+		dimension = 0
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"texts":         texts,
+		"dimension":     dimension,
+	}
+
+	url := "/embeddings"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed text: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to embed text: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("embed text failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) RerankUserDocument(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	query, ok := cmd.Params["query"].(string)
+	if !ok {
+		return nil, fmt.Errorf("query not provided")
+	}
+
+	documents, ok := cmd.Params["documents"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("documents not provided")
+	}
+
+	topN, ok := cmd.Params["top_n"].(int)
+	if !ok {
+		return nil, fmt.Errorf("top n not provided")
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"query":         query,
+		"documents":     documents,
+		"top_n":         topN,
+	}
+
+	url := "/rerank"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rerank document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to rerank document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("rerank document failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+	}
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)
 	}
@@ -1593,15 +1975,15 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model identifier not provided")
 	}
 
-	names := strings.Split(compositeModelName, "/")
+	names := strings.Split(compositeModelName, "@")
 	if len(names) != 3 {
-		return nil, fmt.Errorf("model identifier must be in format 'provider/instance/model'")
+		return nil, fmt.Errorf("model identifier must be in format 'model@instance@provider'")
 	}
 
 	c.CurrentModel = &CurrentModel{
-		Provider: names[0],
+		Provider: names[2],
 		Instance: names[1],
-		Model:    names[2],
+		Model:    names[0],
 	}
 
 	var result SimpleResponse
@@ -1632,7 +2014,106 @@ func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+
+	instanceName, ok := cmd.Params["instance_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("instance name not provided")
+	}
+
+	modelName, ok := cmd.Params["model_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("model name not provided")
+	}
+
+	// chat, vision, embedding, rerank, tts, asr, ocr
+	modelTypes, ok := cmd.Params["model_types"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("model type not provided")
+	}
+
+	maxTokens, ok := cmd.Params["max_tokens"].(int)
+	if !ok {
+		return nil, fmt.Errorf("max tokens not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"model_types":   modelTypes,
+		"max_tokens":    maxTokens,
+	}
+
+	supportThink, ok := cmd.Params["support_think"].(bool)
+	if ok {
+		payload["thinking"] = supportThink
+	}
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add custom model: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to add custom model: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("add custom model failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+
+}
+
 // Context related commands
+
+// CECat handles the cat command - shows content using Context Engine
+func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	path, ok := cmd.Params["path"].(string)
+	if !ok {
+		return nil, fmt.Errorf("fail to convert 'path' to string")
+	}
+
+	// Execute cat command through Filesystem Engine
+	ctx := context.Background()
+	content, err := c.ContextEngine.Cat(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to response
+	var response ContextCatResponse
+	response.OutputFormat = c.OutputFormat
+	response.Code = 0
+	response.Content = string(content)
+
+	return &response, nil
+}
 
 // CEList handles the ls command - lists nodes using Context Engine
 func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
@@ -1654,7 +2135,7 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 		opts.Offset = offset
 	}
 
-	// Execute list command through Context Engine
+	// Execute list command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.List(ctx, path, opts)
 	if err != nil {
@@ -1693,7 +2174,7 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 		opts.Recursive = recursive
 	}
 
-	// Execute search command through Context Engine
+	// Execute search command through Filesystem Engine
 	ctx := context.Background()
 	result, err := c.ContextEngine.Search(ctx, path, opts)
 	if err != nil {
@@ -1724,7 +2205,7 @@ func (c *RAGFlowClient) InsertDatasetFromFile(cmd *Command) (ResponseIf, error) 
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/insert_from_file", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/insert_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
 	}
@@ -1769,7 +2250,7 @@ func (c *RAGFlowClient) InsertMetadataFromFile(cmd *Command) (ResponseIf, error)
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_metadata_from_file", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_metadata_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert metadata from file: %w", err)
 	}
@@ -1827,7 +2308,7 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Try to get doc_id from the chunk retrieval endpoint
-	getResp, err := c.HTTPClient.Request("GET", "/chunk/get?chunk_id="+chunkID, false, "web", nil, nil)
+	getResp, err := c.HTTPClient.Request("GET", "/chunk/get?chunk_id="+chunkID, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk info: %w", err)
 	}
@@ -1859,7 +2340,7 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 	payload["document_id"] = docID
 	payload["chunk_id"] = chunkID
 
-	resp, err := c.HTTPClient.Request("POST", "/chunk/update", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/chunk/update", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update chunk: %w", err)
 	}
@@ -1910,7 +2391,7 @@ func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
 		"meta":   metaJSON,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/document/set_meta", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/document/set_meta", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set metadata: %w", err)
 	}
@@ -1965,7 +2446,7 @@ func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
 		"tags": tags,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/"+kbID+"/rm_tags", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/kb/"+kbID+"/rm_tags", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove tags: %w", err)
 	}
@@ -2017,7 +2498,7 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 		payload["chunk_ids"] = chunkIDs
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/chunk/rm", false, "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/chunk/rm", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove chunks: %w", err)
 	}
@@ -2054,4 +2535,22 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 	}
 	result.Duration = 0
 	return &result, nil
+}
+
+// formatRequestError Uniformly handle and format network errors in HTTP requests
+func formatRequestError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var netErr net.Error
+
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return fmt.Errorf("%s failed - connection closed (EOF): upstream overloaded or proxy timeout: %w", action, err)
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return fmt.Errorf("%s failed - request timeout: server took too long to respond: %w", action, err)
+	default:
+		return fmt.Errorf("%s failed: %w", action, err)
+	}
 }

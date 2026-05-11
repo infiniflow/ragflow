@@ -33,7 +33,7 @@ const methods = {
   },
   logout: {
     url: logout,
-    method: 'get',
+    method: 'post',
   },
   register: {
     url: register,
@@ -41,7 +41,7 @@ const methods = {
   },
   setting: {
     url: setting,
-    method: 'post',
+    method: 'patch',
   },
   userInfo: {
     url: userInfo,
@@ -53,7 +53,7 @@ const methods = {
   },
   setTenantInfo: {
     url: setTenantInfo,
-    method: 'post',
+    method: 'patch',
   },
   factoriesList: {
     url: factoriesList,
@@ -139,11 +139,14 @@ export const deleteTenantUser = ({
 }: {
   tenantId: string;
   userId: string;
-}) => request.delete(api.deleteTenantUser(tenantId, userId));
+}) =>
+  request.delete(api.deleteTenantUser(tenantId), {
+    data: { userId },
+  });
 
 export const listTenant = () => request.get(api.listTenant);
 
 export const agreeTenant = (tenantId: string) =>
-  request.put(api.agreeTenant(tenantId));
+  request.patch(api.agreeTenant(tenantId));
 
 export default userService;

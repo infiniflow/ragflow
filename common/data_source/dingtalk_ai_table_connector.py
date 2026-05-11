@@ -22,8 +22,8 @@ from alibabacloud_tea_util.client import Client as UtilClient
 
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
-from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
-from common.data_source.models import Document, GenerateDocumentsOutput
+from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
+from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class DingTalkAITableClientNotSetUpError(PermissionError):
         super().__init__("DingTalk Notable client is not set up. Did you forget to call load_credentials()?")
 
 
-class DingTalkAITableConnector(LoadConnector, PollConnector):
+class DingTalkAITableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     """
     DingTalk AI Table (Notable) connector for accessing table records.
 
@@ -74,6 +74,9 @@ class DingTalkAITableConnector(LoadConnector, PollConnector):
         self.batch_size = batch_size
         self._client: NotableClient | None = None
         self._access_token: str | None = None
+
+    def _document_id(self, sheet_id: str, record_id: str) -> str:
+        return f"{_DINGTALK_AI_TABLE_DOC_ID_PREFIX}{self.table_id}:{sheet_id}:{record_id}"
 
     def _create_client(self) -> NotableClient:
         """Create DingTalk Notable API client."""
@@ -280,6 +283,8 @@ class DingTalkAITableConnector(LoadConnector, PollConnector):
         record_id = record.get("id", "unknown")
         fields = record.get("fields", {})
 
+        doc_id = self._document_id(sheet_id, str(record_id))
+
         # Convert fields to JSON string for blob content
         content = json.dumps(fields, ensure_ascii=False, indent=2)
         blob = content.encode("utf-8")
@@ -304,7 +309,7 @@ class DingTalkAITableConnector(LoadConnector, PollConnector):
 
         # Create document
         doc = Document(
-            id=f"{_DINGTALK_AI_TABLE_DOC_ID_PREFIX}{self.table_id}:{sheet_id}:{record_id}",
+            id=doc_id,
             source=DocumentSource.DINGTALK_AI_TABLE,
             semantic_identifier=semantic_identifier,
             extension=".json",
@@ -315,6 +320,44 @@ class DingTalkAITableConnector(LoadConnector, PollConnector):
         )
 
         return doc
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """
+        Enumerate current record IDs for all sheets without building document blobs.
+
+        IDs match :meth:`_convert_record_to_document` / full ingest.
+        """
+        del callback
+        logger.info(
+            "[DingTalk Notable]: slim snapshot table_id=%s operator_id=%s",
+            self.table_id,
+            self.operator_id,
+        )
+        sheets = self._get_all_sheets()
+        batch: list[SlimDocument] = []
+        for sheet in sheets:
+            sheet_id = sheet["id"]
+            next_token: str | None = None
+            while True:
+                records, next_token = self._list_records(
+                    sheet_id=sheet_id,
+                    next_token=next_token,
+                )
+                for record in records:
+                    rid = record.get("id")
+                    if not rid:
+                        continue
+                    batch.append(SlimDocument(id=self._document_id(sheet_id, str(rid))))
+                    if len(batch) >= self.batch_size:
+                        yield batch
+                        batch = []
+                if not next_token:
+                    break
+        if batch:
+            yield batch
 
     def _yield_documents_from_table(
         self,

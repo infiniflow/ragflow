@@ -190,6 +190,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return NewCommand("list_user_chats"), nil
 	case TokenFiles:
 		return p.parseAdminListFiles()
+	case TokenTasks:
+		return p.parseAdminListTasks()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -365,6 +367,12 @@ func (p *Parser) parseAdminListFiles() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminListTasks() (*Command, error) {
+	p.nextToken() // consume TASKS
+	cmd := NewCommand("list_admin_tasks")
 	return cmd, nil
 }
 
@@ -700,8 +708,6 @@ func (p *Parser) parseAdminDropCommand() (*Command, error) {
 		return p.parseDropUser()
 	case TokenRole:
 		return p.parseDropRole()
-	case TokenModel:
-		return p.parseDropModelProvider()
 	case TokenDataset:
 		return p.parseDropDataset()
 	case TokenChat:
