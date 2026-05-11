@@ -891,7 +891,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 }
 
 // EmbedText sends texts to the embedding model
-func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) (*modelModule.EmbeddingResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
 	if apiConfig == nil {
 		apiConfig = &modelModule.APIConfig{}
 	}
@@ -949,24 +949,13 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		var embeddingList [][]float64
-		embeddingList, err = providerInfo.ModelDriver.Encode(&modelName, texts, apiConfig, modelConfig)
+		var response []modelModule.EmbeddingData
+		response, err = providerInfo.ModelDriver.Embed(&modelName, texts, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
-		if embeddingList == nil {
+		if response == nil || len(response) == 0 {
 			return nil, common.CodeServerError, errors.New("empty embed response")
-		}
-
-		response := &modelModule.EmbeddingResponse{
-			Data: make([]modelModule.EmbeddingResult, len(embeddingList)),
-		}
-		for i, embedding := range embeddingList {
-			response.Data[i] = modelModule.EmbeddingResult{
-				Index:     i,
-				Dimension: len(embedding),
-				//Embedding: embedding,
-			}
 		}
 
 		return response, common.CodeSuccess, nil
@@ -994,24 +983,13 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		}
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
-		var embeddingList [][]float64
-		embeddingList, err = newProviderInfo.Encode(&modelName, texts, apiConfig, modelConfig)
+		var response []modelModule.EmbeddingData
+		response, err = newProviderInfo.Embed(&modelName, texts, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
-		if embeddingList == nil {
+		if response == nil || len(response) == 0 {
 			return nil, common.CodeServerError, errors.New("empty embed response")
-		}
-
-		response := &modelModule.EmbeddingResponse{
-			Data: make([]modelModule.EmbeddingResult, len(embeddingList)),
-		}
-		for i, embedding := range embeddingList {
-			response.Data[i] = modelModule.EmbeddingResult{
-				Index:     i,
-				Dimension: len(embedding),
-				//Embedding: embedding,
-			}
 		}
 
 		return response, common.CodeSuccess, nil

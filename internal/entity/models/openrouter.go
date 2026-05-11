@@ -352,15 +352,26 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 }
 
 type openrouterEmbeddingResponse struct {
-	Data []struct {
-		Index     int       `json:"index"`
-		Embedding []float64 `json:"embedding"`
-	} `json:"data"`
+	Data   []openrouterEmbeddingData `json:"data"`
+	Model  string                    `json:"model"`
+	Object string                    `json:"object"`
+	Usage  openrouterUsage           `json:"usage"`
 }
 
-func (o *OpenRouterModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type openrouterEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type openrouterUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -412,26 +423,17 @@ func (o *OpenRouterModel) Encode(modelName *string, texts []string, apiConfig *A
 		return nil, fmt.Errorf("OpenRouter embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var result openrouterEmbeddingResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	var parsed openrouterEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if len(result.Data) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(result.Data))
-	}
-
-	embeddings := make([][]float64, len(texts))
-	seen := make([]bool, len(texts))
-	for _, item := range result.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("embedding index %d out of range", item.Index)
-		}
-		if seen[item.Index] {
-			return nil, fmt.Errorf("duplicate embedding index %d", item.Index)
-		}
-		seen[item.Index] = true
-		embeddings[item.Index] = item.Embedding
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil

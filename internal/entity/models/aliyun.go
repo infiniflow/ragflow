@@ -362,16 +362,28 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 }
 
 type aliyunEmbeddingResponse struct {
-	Data []struct {
-		Index     int           `json:"index"`
-		Embedding []interface{} `json:"embedding"`
-	} `json:"data"`
+	Data   []EmbeddingData `json:"data"`
+	Model  string          `json:"model"`
+	Object string          `json:"object"`
+	Usage  aliyunUsage     `json:"usage"`
+	ID     string          `json:"id"`
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type aliyunEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+	Object    string    `json:"object"`
+}
+
+type aliyunUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// Embed embeds a list of texts into embeddings
+func (z *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -440,29 +452,12 @@ func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([][]float64, len(texts))
-	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("unexpected embedding index %d for %d inputs", item.Index, len(texts))
-		}
-		vec := make([]float64, len(item.Embedding))
-		for j, v := range item.Embedding {
-			switch val := v.(type) {
-			case float64:
-				vec[j] = val
-			case float32:
-				vec[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
-			}
-		}
-		embeddings[item.Index] = vec
-	}
-
-	for i, vec := range embeddings {
-		if vec == nil {
-			return nil, fmt.Errorf("missing embedding for input at index %d", i)
-		}
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil

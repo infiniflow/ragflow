@@ -1838,7 +1838,7 @@ func (c *RAGFlowClient) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to embed text: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result CommonResponse
+	var result EmbeddingsResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("embed text failed: invalid JSON (%w)", err)
 	}
