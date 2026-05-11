@@ -374,7 +374,7 @@ def _load_chat_module(monkeypatch):
 
         @staticmethod
         def get_joined_tenants_by_user_id(_user_id):
-            return []
+            return [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]
 
     class _StubUserTenantService:
         @staticmethod
@@ -910,6 +910,46 @@ def test_list_chats_rejects_unauthorized_owner_ids(monkeypatch):
     res = module.list_chats.__wrapped__()
     assert res["code"] == module.RetCode.OPERATING_ERROR
     assert "authorized owner_ids" in res["message"]
+
+
+@pytest.mark.p2
+def test_list_chats_authorized_multi_tenant(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=SimpleNamespace(
+                get=lambda key, default=None: {
+                    "keywords": "",
+                    "page": "1",
+                    "page_size": "10",
+                    "orderby": "create_time",
+                    "desc": "true",
+                    "id": None,
+                    "name": None,
+                }.get(key, default),
+                getlist=lambda key: ["tenant-1", "team-tenant-2"] if key == "owner_ids" else [],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module.DialogService,
+        "get_by_tenant_ids",
+        lambda *_args, **_kwargs: (
+            [
+                {**_DummyDialogRecord().to_dict(), "tenant_id": "tenant-1", "id": "c1"},
+                {**_DummyDialogRecord().to_dict(), "tenant_id": "team-tenant-2", "id": "c2"},
+            ],
+            2,
+        ),
+    )
+    monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
+
+    res = module.list_chats.__wrapped__()
+    assert res["code"] == 0
+    assert res["data"]["total"] == 2
+    assert {c["id"] for c in res["data"]["chats"]} == {"c1", "c2"}
 
 
 @pytest.mark.p2

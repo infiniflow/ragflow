@@ -358,6 +358,11 @@ def list_chats():
             requested_owner_ids = set(owner_ids)
             unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
             if unauthorized_owner_ids:
+                logging.warning(
+                    "Rejected list_chats request: user=%s attempted unauthorized owner_ids=%s",
+                    current_user.id,
+                    sorted(unauthorized_owner_ids),
+                )
                 return get_json_result(
                     data=False,
                     message="Only authorized owner_ids can be queried.",

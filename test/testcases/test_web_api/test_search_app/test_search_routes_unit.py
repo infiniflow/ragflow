@@ -227,7 +227,7 @@ def _load_search_api(monkeypatch):
 
         @staticmethod
         def get_joined_tenants_by_user_id(_user_id):
-            return []
+            return [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]
 
     class _UserTenantService:
         @staticmethod
@@ -556,3 +556,36 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
     res = module.delete_search(search_id="search-1")
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "rm boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_list_searches_authorized_multi_tenant(monkeypatch):
+    module = _load_search_api(monkeypatch)
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "keywords": "",
+            "page": "1",
+            "page_size": "10",
+            "orderby": "create_time",
+            "desc": "true",
+            "owner_ids": ["tenant-1", "team-tenant-2"],
+        },
+    )
+    monkeypatch.setattr(
+        module.SearchService,
+        "get_by_tenant_ids",
+        lambda _tenants, _uid, _page, _size, _orderby, _desc, _keywords: (
+            [
+                {"id": "s1", "tenant_id": "tenant-1"},
+                {"id": "s2", "tenant_id": "team-tenant-2"},
+            ],
+            2,
+        ),
+    )
+    res = module.list_searches()
+    assert res["code"] == 0
+    assert res["data"]["total"] == 2
+    assert {s["id"] for s in res["data"]["search_apps"]} == {"s1", "s2"}
