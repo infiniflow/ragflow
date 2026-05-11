@@ -561,14 +561,9 @@ class FileService(CommonService):
 
     @staticmethod
     def parse_docs(file_objs, user_id):
-        exe = ThreadPoolExecutor(max_workers=12)
-        threads = []
-        for file in file_objs:
-            threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
-
-        res = []
-        for th in threads:
-            res.append(th.result())
+        with ThreadPoolExecutor(max_workers=12) as exe:
+            threads = [exe.submit(FileService.parse, file.filename, file.read(), False) for file in file_objs]
+            res = [th.result() for th in threads]
 
         return "\n\n".join(res)
 
@@ -793,19 +788,21 @@ class FileService(CommonService):
         def image_to_base64(file):
             return "data:{};base64,{}".format(file["mime_type"],
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
-        exe = ThreadPoolExecutor(max_workers=5)
         threads = []
         imgs = []
-        for file in files:
-            if file["mime_type"].find("image") >=0:
-                if raw:
-                    imgs.append(FileService.get_blob(file["created_by"], file["id"]))
-                else:
-                    threads.append(exe.submit(image_to_base64, file))
-                continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
-    
+        with ThreadPoolExecutor(max_workers=5) as exe:
+            for file in files:
+                if file["mime_type"].find("image") >=0:
+                    if raw:
+                        imgs.append(FileService.get_blob(file["created_by"], file["id"]))
+                    else:
+                        threads.append(exe.submit(image_to_base64, file))
+                    continue
+                threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
+
+            results = [th.result() for th in threads]
+
         if raw:
-            return [th.result() for th in threads], imgs
+            return results, imgs
         else:
-            return [th.result() for th in threads]
+            return results
