@@ -17,6 +17,7 @@ import json
 import os
 import threading
 from abc import ABC
+from contextlib import contextmanager
 from urllib.parse import urljoin
 
 import dashscope
@@ -31,6 +32,13 @@ from common.token_utils import num_tokens_from_string, truncate, total_token_cou
 from common import settings
 import logging
 import base64
+
+logger = logging.getLogger(__name__)
+
+
+def _dashscope_base_url_for_log(base_url: str) -> str:
+    """Log host/path only (no query string) so secrets in URLs are not printed."""
+    return base_url.split("?", 1)[0].strip()[:256]
 
 
 def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
@@ -49,15 +57,51 @@ def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
     if not base_url:
         return None
     u = base_url.strip().rstrip("/")
+    safe = _dashscope_base_url_for_log(u)
     if u.endswith("/api/v1"):
+        logger.debug("DashScope Tongyi-Qianwen embedding: using native API base as configured (%s)", safe)
         return u
     # International (Singapore) DashScope — required for overseas Tongyi-Qianwen accounts.
     if "dashscope-intl.aliyuncs.com" in u:
-        return "https://dashscope-intl.aliyuncs.com/api/v1"
+        resolved = "https://dashscope-intl.aliyuncs.com/api/v1"
+        logger.info(
+            "DashScope Tongyi-Qianwen embedding: mapped configured base_url to intl native API (%s -> %s)",
+            safe,
+            resolved,
+        )
+        return resolved
     # China mainland DashScope default host.
     if "dashscope.aliyuncs.com" in u:
-        return "https://dashscope.aliyuncs.com/api/v1"
+        resolved = "https://dashscope.aliyuncs.com/api/v1"
+        logger.info(
+            "DashScope Tongyi-Qianwen embedding: mapped configured base_url to CN native API (%s -> %s)",
+            safe,
+            resolved,
+        )
+        return resolved
+    logger.warning(
+        "DashScope Tongyi-Qianwen embedding: base_url is set but not recognized as a DashScope host; "
+        "using SDK default endpoint (%s)",
+        safe,
+    )
     return None
+
+
+@contextmanager
+def _dashscope_native_api_url_scope(url: str | None):
+    """
+    Temporarily set ``dashscope.base_http_api_url`` for the duration of a single SDK call,
+    then restore the previous value. Narrows the window where concurrent threads see a mismatch.
+    """
+    if not url:
+        yield
+        return
+    prev = getattr(dashscope, "base_http_api_url", None)
+    dashscope.base_http_api_url = url
+    try:
+        yield
+    finally:
+        dashscope.base_http_api_url = prev
 
 
 class Base(ABC):
@@ -240,28 +284,23 @@ class QWenEmbed(Base):
         # Native API root for the SDK; None if base_url is absent or not a known DashScope host.
         self._dashscope_http_api_url = _dashscope_native_http_api_url(base_url)
 
-    def _apply_dashscope_http_endpoint(self):
-        """Point the global DashScope SDK client at the resolved native API URL before each call."""
-        if self._dashscope_http_api_url:
-            dashscope.base_http_api_url = self._dashscope_http_api_url
-
     def encode(self, texts: list):
         import time
 
         import dashscope
 
-        # ``dashscope.base_http_api_url`` is process-wide; set it per request so embeddings hit the right region.
-        self._apply_dashscope_http_endpoint()
         batch_size = 4
         res = []
         token_count = 0
         texts = [truncate(t, 2048) for t in texts]
         for i in range(0, len(texts), batch_size):
             retry_max = 5
-            resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
+            with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
+                resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
             while (resp["output"] is None or resp["output"].get("embeddings") is None) and retry_max > 0:
                 time.sleep(10)
-                resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
+                with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
+                    resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
                 retry_max -= 1
             if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
                 if resp.get("message"):
@@ -281,9 +320,8 @@ class QWenEmbed(Base):
         return np.array(res), token_count
 
     def encode_queries(self, text):
-        # Same regional endpoint as ``encode``; keep query embeddings on the correct DashScope host.
-        self._apply_dashscope_http_endpoint()
-        resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
+        with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
+            resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
         try:
             return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:
