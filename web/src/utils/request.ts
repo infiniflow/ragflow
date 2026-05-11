@@ -1,3 +1,7 @@
+/**
+ * @deprecated This file will be deprecated. Please use `@web/src/utils/next-request.ts` instead.
+ */
+
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';

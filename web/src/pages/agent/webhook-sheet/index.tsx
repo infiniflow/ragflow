@@ -28,7 +28,7 @@ enum WebhookTraceTabType {
 const WebhookSheet = ({ hideModal }: RunSheetProps) => {
   const { t } = useTranslation();
   const { id } = useParams();
-  const text = `${location.protocol}//${location.host}/api/v1/webhook_test/${id}`;
+  const text = `${location.protocol}//${location.host}/api/v1/agents/${id}/webhook/test`;
 
   const { data } = useFetchWebhookTrace(true);
 

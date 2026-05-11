@@ -43,6 +43,8 @@ class TestRunner:
         self.verbose = False
         self.ignore_syntax_warning = False
         self.markers = ""
+        self.test_path = ""
+        self.keyword = ""
 
         # Python interpreter path
         self.python = sys.executable
@@ -100,13 +102,20 @@ EXAMPLES:
 
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest", str(self.ut_dir)]
-
-        # Add test path
+        cmd = ["pytest"]
+        if self.test_path:
+            test_target = Path(self.test_path)
+            if not test_target.is_absolute():
+                test_target = self.project_root / test_target
+            cmd.append(str(test_target))
+        else:
+            cmd.append(str(self.ut_dir))
 
         # Add markers
         if self.markers:
             cmd.extend(["-m", self.markers])
+        if self.keyword:
+            cmd.extend(["-k", self.keyword])
 
         # Add verbose flag
         if self.verbose:
@@ -161,9 +170,13 @@ EXAMPLES:
         self.print_info(f"Coverage: {self.coverage}")
         self.print_info(f"Parallel: {self.parallel}")
         self.print_info(f"Verbose: {self.verbose}")
+        if self.test_path:
+            self.print_info(f"Test target: {self.test_path}")
 
         if self.markers:
             self.print_info(f"Markers: {self.markers}")
+        if self.keyword:
+            self.print_info(f"Keyword: {self.keyword}")
 
         print(f"\n{Colors.BLUE}[EXECUTING]{Colors.NC} {' '.join(cmd)}\n")
 
@@ -245,6 +258,13 @@ Examples:
         )
 
         parser.add_argument(
+            "-k", "--keyword",
+            type=str,
+            default="",
+            help="Run tests matching keyword expression (pytest -k)"
+        )
+
+        parser.add_argument(
             "-m", "--markers",
             type=str,
             default="",
@@ -260,6 +280,8 @@ Examples:
             self.verbose = args.verbose
             self.markers = args.markers
             self.ignore_syntax_warning = args.ignore
+            self.test_path = args.test
+            self.keyword = args.keyword
 
             return True
 

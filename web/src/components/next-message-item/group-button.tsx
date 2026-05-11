@@ -82,7 +82,10 @@ export const AssistantGroupButton = ({
         className="space-x-1"
       >
         <ToggleGroupItem value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
+          <CopyToClipboard
+            text={content}
+            className="border-none hover:!bg-transparent"
+          ></CopyToClipboard>
         </ToggleGroupItem>
         {showLoudspeaker && (
           <ToggleGroupItem value="b" onClick={handleRead}>

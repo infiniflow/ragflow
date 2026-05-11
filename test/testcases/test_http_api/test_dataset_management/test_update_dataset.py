@@ -291,7 +291,7 @@ class TestDatasetUpdate:
 
     @pytest.mark.p1
     def test_embedding_model_with_existing_chunks(self, HttpApiAuth, add_chunks):
-        """Guard: embedding_model cannot change when dataset has chunks (chunk_count > 0)."""
+        """Embedding model can be changed even when dataset has chunks (chunk_count > 0)."""
         dataset_id, _, _ = add_chunks
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
@@ -306,12 +306,7 @@ class TestDatasetUpdate:
 
         payload = {"embedding_model": new_embedding}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
-        assert res["code"] == 102, res
-        expected_message = (
-            f"When chunk_num ({dataset['chunk_count']}) > 0, "
-            f"embedding_model must remain {current_embedding}"
-        )
-        assert res["message"] == expected_message, res
+        assert res["code"] == 0, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -691,8 +686,8 @@ class TestDatasetUpdate:
             ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ({"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ({"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),

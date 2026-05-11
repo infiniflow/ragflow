@@ -19,13 +19,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -212,11 +213,17 @@ func (s *FileService) fileInfoToResponse(info *FileInfo) map[string]interface{} 
 	return result
 }
 
-// GetParentFolder gets parent folder of a file
-func (s *FileService) GetParentFolder(fileID string) (map[string]interface{}, error) {
-	// Check if file exists
-	if _, err := s.fileDAO.GetByID(fileID); err != nil {
+// GetParentFolder gets parent folder of a file with permission check
+func (s *FileService) GetParentFolder(userID, fileID string) (map[string]interface{}, error) {
+	// Get file
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
 		return nil, err
+	}
+
+	// Permission check
+	if !s.checkFileTeamPermission(file, userID) {
+		return nil, fmt.Errorf("No authorization.")
 	}
 
 	// Get parent folder
@@ -228,11 +235,17 @@ func (s *FileService) GetParentFolder(fileID string) (map[string]interface{}, er
 	return s.toFileResponse(parentFolder), nil
 }
 
-// GetAllParentFolders gets all parent folders in path
-func (s *FileService) GetAllParentFolders(fileID string) ([]map[string]interface{}, error) {
-	// Check if file exists
-	if _, err := s.fileDAO.GetByID(fileID); err != nil {
+// GetAllParentFolders gets all parent folders in path with permission check
+func (s *FileService) GetAllParentFolders(userID, fileID string) ([]map[string]interface{}, error) {
+	// Get file
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
 		return nil, err
+	}
+
+	// Permission check
+	if !s.checkFileTeamPermission(file, userID) {
+		return nil, fmt.Errorf("No authorization.")
 	}
 
 	// Get all parent folders
@@ -343,8 +356,8 @@ func (s *FileService) UploadFile(tenantID, parentID string, files []*multipart.F
 		}
 		defer src.Close()
 
-		data := make([]byte, fileHeader.Size)
-		if _, err := src.Read(data); err != nil {
+		data, err := io.ReadAll(src)
+		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
 		}
 
@@ -578,7 +591,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		storageImpl := storage.GetStorageFactory().GetStorage()
 		if storageImpl != nil {
 			if err := storageImpl.Remove(file.ParentID, *file.Location); err != nil {
-				logger.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
+				common.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
 			}
 		}
 	}
@@ -607,14 +620,14 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 					if tenantID != "" {
 						// Delete from document engine
 						if err := s.deleteDocumentFromEngine(ctx, doc, tenantID); err != nil {
-							logger.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
+							common.Logger.Error(fmt.Sprintf("Fail to delete document from engine: %s, error: %v", doc.ID, err))
 						}
 					}
 				}
 
 				// Delete document record
 				if err := documentDAO.Delete(docID); err != nil {
-					logger.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
+					common.Logger.Error(fmt.Sprintf("Fail to delete document: %s, error: %v", docID, err))
 				}
 			}
 

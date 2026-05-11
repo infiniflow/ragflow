@@ -55,7 +55,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
   --login-password
     Login password (encrypted client-side). Requires pycryptodomex in the test group.
   --allow-register
-    Attempt /user/register before login (best effort).
+    Attempt /users before login (best effort).
   --token-name
     Optional API token name for /system/new_token.
   --bootstrap-llm
@@ -70,7 +70,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
     Optional LLM API base URL.
     Env: RAGFLOW_LLM_API_BASE
   --set-tenant-info
-    Set tenant defaults via /user/set_tenant_info.
+    Set tenant defaults via /users/me/models.
   --tenant-llm-id
     Tenant chat model ID.
     Env: RAGFLOW_TENANT_LLM_ID

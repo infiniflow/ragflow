@@ -671,7 +671,7 @@ func normalizeDatasetUUID1(id string) (string, error) {
 }
 
 func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	modelName, provider, err := parseModelName(embdID)
+	modelName, _, provider, err := parseModelName(embdID)
 	if err != nil {
 		return false, "Embedding model identifier must follow <model_name>@<provider> format"
 	}

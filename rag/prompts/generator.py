@@ -58,6 +58,7 @@ def chunks_format(reference):
             "term_similarity": chunk.get("term_similarity"),
             "row_id": chunk.get("row_id"),
             "doc_type": get_value(chunk, "doc_type_kwd", "doc_type"),
+            "document_metadata": chunk.get("document_metadata"),
         }
         for chunk in raw_chunks
         if isinstance(chunk, dict)
@@ -75,6 +76,10 @@ def message_fit_in(msg, max_length=4000):
             total += m["count"]
         return total
 
+    def trim_content(content, limit):
+        limit = max(0, limit)
+        return encoder.decode(encoder.encode(content)[:limit])
+
     c = count()
     if c < max_length:
         return c, msg
@@ -89,22 +94,37 @@ def message_fit_in(msg, max_length=4000):
 
     ll = num_tokens_from_string(msg_[0]["content"])
     ll2 = num_tokens_from_string(msg_[-1]["content"])
-    if ll / (ll + ll2) > 0.8:
-        m = msg_[0]["content"]
-        m = encoder.decode(encoder.encode(m)[: max_length - ll2])
-        msg[0]["content"] = m
-        return max_length, msg
+    total = ll + ll2
+    if total <= 0:
+        logging.debug(
+            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
+            total,
+            max_length,
+            ll,
+            ll2,
+            [m.get("role") for m in msg],
+        )
+        return 0, msg
 
-    m = msg_[-1]["content"]
-    m = encoder.decode(encoder.encode(m)[: max_length - ll2])
-    msg[-1]["content"] = m
-    return max_length, msg
+    if len(msg) == 1:
+        msg[0]["content"] = trim_content(msg[0]["content"], max_length)
+        return count(), msg
+
+    if ll / total > 0.8:
+        preserved_last = min(ll2, max_length)
+        msg[-1]["content"] = trim_content(msg_[-1]["content"], preserved_last)
+        remaining = max(0, max_length - preserved_last)
+        msg[0]["content"] = trim_content(msg_[0]["content"], remaining)
+        return count(), msg
+
+    preserved_system = min(ll, max_length)
+    msg[0]["content"] = trim_content(msg_[0]["content"], preserved_system)
+    remaining = max(0, max_length - preserved_system)
+    msg[-1]["content"] = trim_content(msg_[-1]["content"], remaining)
+    return count(), msg
 
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
-    from api.db.services.document_service import DocumentService
-    from api.db.services.doc_metadata_service import DocMetadataService
-
     knowledges = [get_value(ck, "content", "content_with_weight") for ck in kbinfos["chunks"]]
     kwlg_len = len(knowledges)
     used_token_count = 0
@@ -119,14 +139,6 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
             logging.warning(f"Not all the retrieval into prompt: {len(knowledges)}/{kwlg_len}")
             break
 
-    docs = DocumentService.get_by_ids([get_value(ck, "doc_id", "document_id") for ck in kbinfos["chunks"][:chunks_num]])
-
-    docs_with_meta = {}
-    for d in docs:
-        meta = DocMetadataService.get_document_metadata(d.id)
-        docs_with_meta[d.id] = meta if meta else {}
-    docs = docs_with_meta
-
     def draw_node(k, line):
         if line is not None and not isinstance(line, str):
             line = str(line)
@@ -138,8 +150,9 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     for i, ck in enumerate(kbinfos["chunks"][:chunks_num]):
         cnt = "\nID: {}".format(i if not hash_id else hash_str2int(get_value(ck, "id", "chunk_id"), 500))
         cnt += draw_node("Title", get_value(ck, "docnm_kwd", "document_name"))
-        cnt += draw_node("URL", ck['url']) if "url" in ck else ""
-        for k, v in docs.get(get_value(ck, "doc_id", "document_id"), {}).items():
+        cnt += draw_node("URL", ck.get('url', ''))
+        meta = ck.get("document_metadata") or {}
+        for k, v in meta.items():
             cnt += draw_node(k, v)
         cnt += "\n└── Content:\n"
         cnt += get_value(ck, "content", "content_with_weight")
