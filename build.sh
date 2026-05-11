@@ -16,6 +16,7 @@ CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
 RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/server_main"
 ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
+RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
@@ -73,7 +74,7 @@ build_cpp() {
 
 # Build Go server
 build_go() {
-    print_section "Building Go server"
+    print_section "Building RAGFlow go"
     
     cd "$PROJECT_ROOT"
     
@@ -91,9 +92,10 @@ build_go() {
         sudo apt -y install libpcre2-dev
     fi
     
-    echo "Building API server binary: $RAGFLOW_SERVER_BINARY and $ADMIN_SERVER_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_SERVER_BINARY" ./cmd/server_main.go
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$ADMIN_SERVER_BINARY" ./cmd/admin_server.go
+    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
 
     if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
@@ -105,8 +107,9 @@ build_go() {
         exit 1
     fi
 
-    echo -e "${GREEN}✓ Go server_main built successfully: $RAGFLOW_SERVER_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
     echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
 }
 
 # Clean build artifacts
