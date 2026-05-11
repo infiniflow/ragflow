@@ -8,7 +8,8 @@
     "chat": "v1/text/chatcompletion_v2",
     "models": "v1/models",
     "tts": "v1/t2a_v2",
-    "files": "v1/files/list"
+    "files": "v1/files/list",
+    "embedding": "v1/embeddings"
   },
   "class": "minimax",
   "models": [
@@ -99,6 +100,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "embo-01",
+      "max_tokens": 4096,
+      "model_types": [
+        "embedding"
+      ]
     }
   ]
 }

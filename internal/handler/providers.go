@@ -243,6 +243,7 @@ type CreateProviderInstanceRequest struct {
 	InstanceName string `json:"instance_name" binding:"required"`
 	APIKey       string `json:"api_key"`
 	BaseURL      string `json:"base_url"`
+	GroupID      string `json:"group_id"`
 	Region       string `json:"region"`
 }
 
@@ -267,7 +268,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID)
+	_, err := h.modelProviderService.CreateProviderInstance(providerName, req.InstanceName, req.APIKey, req.BaseURL, req.GroupID, req.Region, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeServerError,

@@ -213,7 +213,7 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	return driver.ListModels(apiConfig)
 }
 
-func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, region, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName, apiKey, baseURL, groupID, region, userID string) (common.ErrorCode, error) {
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -240,6 +240,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 	extra := make(map[string]string)
 	extra["region"] = region
 	extra["base_url"] = baseURL
+	extra["group_id"] = groupID
 	// convert extra to string
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
@@ -948,9 +949,23 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		if groupID := extra["group_id"]; groupID != "" {
+			apiConfig.GroupID = &groupID
+		}
+
+		driver := providerInfo.ModelDriver
+		if baseURL := extra["base_url"]; baseURL != "" {
+			regionKey := region
+			if regionKey == "" {
+				regionKey = "default"
+			}
+			driver = driver.NewInstance(map[string]string{
+				regionKey: baseURL,
+			})
+		}
 
 		var embeddingList [][]float64
-		embeddingList, err = providerInfo.ModelDriver.Encode(&modelName, texts, apiConfig, modelConfig)
+		embeddingList, err = driver.Encode(&modelName, texts, apiConfig, modelConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -988,9 +1003,16 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		if groupID := extra["group_id"]; groupID != "" {
+			apiConfig.GroupID = &groupID
+		}
 
+		regionKey := region
+		if regionKey == "" {
+			regionKey = "default"
+		}
 		newURL := map[string]string{
-			region: extra["base_url"],
+			regionKey: extra["base_url"],
 		}
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
@@ -1253,6 +1275,10 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 		return nil, "", nil, 0, err
 	}
 	region := extra["region"]
+	regionKey := region
+	if regionKey == "" {
+		regionKey = "default"
+	}
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
@@ -1274,9 +1300,29 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 		}
 
 		apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
-		return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
+		if groupID := extra["group_id"]; groupID != "" {
+			apiConfig.GroupID = &groupID
+		}
+
+		driver := providerInfo.ModelDriver
+		if baseURL := extra["base_url"]; baseURL != "" {
+			driver = driver.NewInstance(map[string]string{
+				regionKey: baseURL,
+			})
+		}
+		return driver, modelName, apiConfig, maxTokens, nil
 	}
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &instance.APIKey, Region: &region}
-	return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
+	if groupID := extra["group_id"]; groupID != "" {
+		apiConfig.GroupID = &groupID
+	}
+
+	driver := providerInfo.ModelDriver
+	if baseURL := extra["base_url"]; baseURL != "" {
+		driver = driver.NewInstance(map[string]string{
+			regionKey: baseURL,
+		})
+	}
+	return driver, modelName, apiConfig, maxTokens, nil
 }

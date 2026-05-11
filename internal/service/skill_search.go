@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/utility"
 	"strings"
 
@@ -679,7 +680,9 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 	}
 	truncatedText := truncate(text, maxLen-10)
 
-	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, &models.EmbeddingConfig{
+		Type: models.EmbeddingTypeQuery,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}

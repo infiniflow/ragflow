@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/storage"
 	"ragflow/internal/tokenizer"
 	"strings"
@@ -932,7 +933,9 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 	}
 	truncatedText := truncate(text, maxLen-10)
 
-	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, nil)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{truncatedText}, embeddingModel.APIConfig, &models.EmbeddingConfig{
+		Type: models.EmbeddingTypeDB,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode text: %w", err)
 	}
@@ -975,7 +978,9 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 
 	common.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
-	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, nil)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, truncatedTexts, embeddingModel.APIConfig, &models.EmbeddingConfig{
+		Type: models.EmbeddingTypeDB,
+	})
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
@@ -1021,7 +1026,9 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"
-	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{testText}, embeddingModel.APIConfig, nil)
+	vectors, err := embeddingModel.ModelDriver.Encode(embeddingModel.ModelName, []string{testText}, embeddingModel.APIConfig, &models.EmbeddingConfig{
+		Type: models.EmbeddingTypeDB,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode test text: %w", err)
 	}

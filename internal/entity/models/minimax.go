@@ -19,14 +19,36 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"ragflow/internal/common"
 	"strings"
 	"time"
 )
+
+const minimaxEmbeddingTimeout = 30 * time.Second
+
+type minimaxEmbeddingRequest struct {
+	Model string   `json:"model"`
+	Type  string   `json:"type"`
+	Texts []string `json:"texts"`
+}
+
+type minimaxBaseResp struct {
+	StatusCode int    `json:"status_code"`
+	StatusMsg  string `json:"status_msg"`
+}
+
+type minimaxEmbeddingResponse struct {
+	Vectors     [][]float64     `json:"vectors"`
+	Model       string          `json:"model"`
+	TotalTokens int             `json:"total_tokens"`
+	BaseResp    minimaxBaseResp `json:"base_resp"`
+}
 
 // MinimaxModel implements ModelDriver for Minimax
 type MinimaxModel struct {
@@ -53,7 +75,7 @@ func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxMod
 }
 
 func (z *MinimaxModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewMinimaxModel(baseURL, z.URLSuffix)
 }
 
 func (z *MinimaxModel) Name() string {
@@ -346,7 +368,103 @@ func (z *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 // Encode encodes a list of texts into embeddings
 func (z *MinimaxModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("minimax: no base URL configured for default region")
+	}
+
+	embeddingType := EmbeddingTypeDB
+	if embeddingConfig != nil && embeddingConfig.Type != "" {
+		embeddingType = embeddingConfig.Type
+	}
+	if embeddingType != EmbeddingTypeDB && embeddingType != EmbeddingTypeQuery {
+		return nil, fmt.Errorf("minimax: unsupported embedding type %q", embeddingType)
+	}
+
+	endpoint := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Embedding)
+	parsedURL, err := neturl.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse embedding URL: %w", err)
+	}
+	if region == "default" && apiConfig.GroupID != nil && *apiConfig.GroupID != "" {
+		query := parsedURL.Query()
+		query.Set("GroupId", *apiConfig.GroupID)
+		parsedURL.RawQuery = query.Encode()
+	}
+
+	reqBody := minimaxEmbeddingRequest{
+		Model: *modelName,
+		Type:  embeddingType,
+		Texts: texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), minimaxEmbeddingTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", parsedURL.String(), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("MiniMax embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed minimaxEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if parsed.BaseResp.StatusCode != 0 {
+		return nil, fmt.Errorf("MiniMax embeddings API error %d: %s", parsed.BaseResp.StatusCode, parsed.BaseResp.StatusMsg)
+	}
+
+	if len(parsed.Vectors) != len(texts) {
+		return nil, fmt.Errorf("MiniMax embeddings response returned %d vectors for %d inputs", len(parsed.Vectors), len(texts))
+	}
+
+	return parsed.Vectors, nil
 }
 
 func (z *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {

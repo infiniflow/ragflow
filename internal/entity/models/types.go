@@ -88,11 +88,18 @@ type ChatConfig struct {
 type APIConfig struct {
 	ApiKey *string
 	Region *string
+	GroupID *string
 }
 
 type EmbeddingConfig struct {
 	Dimension int
+	Type      string
 }
+
+const (
+	EmbeddingTypeDB    = "db"
+	EmbeddingTypeQuery = "query"
+)
 
 type RerankConfig struct {
 	TopN int
