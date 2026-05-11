@@ -455,7 +455,7 @@ class DocumentService(CommonService):
         chunk_index_name = search.index_name(tenant_id)
         chunk_index_exists = settings.docStoreConn.index_exist(chunk_index_name, doc.kb_id)
 
-        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis
+        # Cancel all running tasks first using preset function in task_service.py --- set cancel flag in Redis
         try:
             cancel_all_task_of(doc.id)
             logging.info(f"Cancelled all tasks for document {doc.id}")

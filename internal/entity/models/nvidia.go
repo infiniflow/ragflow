@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -329,12 +330,226 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return scanner.Err()
 }
 
-func (n NvidiaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("no such method")
+type nvidiaEmbeddingResponse struct {
+	Data []struct {
+		Index     int       `json:"index"`
+		Embedding []float64 `json:"embedding"`
+	} `json:"data"`
 }
 
+func (n NvidiaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := n.BaseURL[region]
+	if baseURL == "" {
+		baseURL = n.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model":           *modelName,
+		"input":           texts,
+		"input_type":      "query",
+		"encoding_format": "float",
+		"truncate":        "END",
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Nvidia embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed nvidiaEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
+}
+
+// nvidiaRerankRequest mirrors the NIM /ranking request shape:
+// query is an object with a "text" field, passages is an array of
+// objects each with a "text" field. truncate=END matches the Python
+// NvidiaRerank reference at rag/llm/rerank_model.py.
+type nvidiaRerankRequest struct {
+	Model    string             `json:"model"`
+	Query    nvidiaRerankText   `json:"query"`
+	Passages []nvidiaRerankText `json:"passages"`
+	Truncate string             `json:"truncate,omitempty"`
+	TopN     int                `json:"top_n"`
+}
+
+type nvidiaRerankText struct {
+	Text string `json:"text"`
+}
+
+// nvidiaRerankResponse maps the NIM rankings array. Each entry pairs
+// the original passage index with a logit score; the caller uses the
+// index to restore original input order.
+type nvidiaRerankResponse struct {
+	Rankings []struct {
+		Index int     `json:"index"`
+		Logit float64 `json:"logit"`
+	} `json:"rankings"`
+}
+
+// Rerank scores documents against the query using an NVIDIA NIM
+// reranking model. Mirrors the Python NvidiaRerank class in
+// rag/llm/rerank_model.py for payload shape (passages/query/logit).
+// Defaults top_n to len(documents) so the API returns a score per
+// input; callers may shrink it via RerankConfig.TopN, in which case
+// only the top RerankConfig.TopN entries come back. Returned
+// RerankResult entries are in the API's ranking order; callers that
+// need original-input order should sort by Index. Same return-shape
+// contract as the Aliyun and ZhipuAI Rerank drivers.
 func (n NvidiaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := n.BaseURL[region]
+	if baseURL == "" {
+		baseURL = n.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.URLSuffix.Rerank)
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+
+	passages := make([]nvidiaRerankText, len(documents))
+	for i, doc := range documents {
+		passages[i] = nvidiaRerankText{Text: doc}
+	}
+
+	reqBody := nvidiaRerankRequest{
+		Model:    *modelName,
+		Query:    nvidiaRerankText{Text: query},
+		Passages: passages,
+		Truncate: "END",
+		TopN:     topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Nvidia rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed nvidiaRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Rankings))}
+	for _, r := range parsed.Rankings {
+		if r.Index < 0 || r.Index >= len(documents) {
+			return nil, fmt.Errorf("unexpected rerank index %d for %d inputs", r.Index, len(documents))
+		}
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          r.Index,
+			RelevanceScore: r.Logit,
+		})
+	}
+
+	return &rerankResponse, nil
 }
 
 // ListModels calls /v1/models on the configured NVIDIA NIM base URL

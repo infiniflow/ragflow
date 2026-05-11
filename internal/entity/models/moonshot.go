@@ -357,8 +357,8 @@ func (k *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *MoonshotModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (z *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

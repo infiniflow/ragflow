@@ -17,7 +17,7 @@ import logging
 import os
 import time
 
-from quart import request
+from quart import request, g
 from common.constants import LLMType, RetCode
 from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required, current_user
@@ -188,8 +188,18 @@ async def add_message():
     req = await get_request_json()
     memory_ids = req["memory_id"]
 
+    # JWT / session users cannot spoof attribution; API-key callers may supply an external subject id.
+    try:
+        trust_client_subject = bool(getattr(g, "auth_via_api_token", False))
+    except RuntimeError:
+        trust_client_subject = False
+    if trust_client_subject:
+        effective_user_id = req.get("user_id", "")
+    else:
+        effective_user_id = current_user.id
+
     message_dict = {
-        "user_id": req.get("user_id"),
+        "user_id": effective_user_id,
         "agent_id": req["agent_id"],
         "session_id": req["session_id"],
         "user_input": req["user_input"],
