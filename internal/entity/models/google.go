@@ -259,9 +259,9 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return err
 }
 
-// Encode generates embeddings for a batch of texts using the Gemini embeddings API.
+// Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
-func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -303,13 +303,16 @@ func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Embeddings))
 	}
 
-	result := make([][]float64, len(resp.Embeddings))
+	result := make([]EmbeddingData, len(resp.Embeddings))
 	for i, emb := range resp.Embeddings {
 		vec := make([]float64, len(emb.Values))
 		for j, v := range emb.Values {
 			vec[j] = float64(v)
 		}
-		result[i] = vec
+		result[i] = EmbeddingData{
+			Embedding: vec,
+			Index:     i,
+		}
 	}
 
 	return result, nil

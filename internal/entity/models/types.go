@@ -23,7 +23,7 @@ type ModelDriver interface {
 	// messages accepts []Message which supports multimodal content (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
 	// Encode encodes a list of texts into embeddings
-	Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
+	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
 	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
 	// ListModels List supported models
@@ -39,14 +39,9 @@ type ChatResponse struct {
 	ReasonContent *string `json:"reason_content"`
 }
 
-type EmbeddingResult struct {
-	Index     int `json:"index"`
-	Dimension int `json:"dimension"`
-	//Embedding []float64 `json:"embedding"`
-}
-
-type EmbeddingResponse struct {
-	Data []EmbeddingResult `json:"data"`
+type EmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
 }
 
 type RerankResult struct {

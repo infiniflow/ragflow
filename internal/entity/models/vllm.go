@@ -381,14 +381,15 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 // Encode encodes a list of texts into embeddings
 type vllmEmbeddingResponse struct {
 	Data []struct {
-		Index     int           `json:"index"`
-		Embedding []interface{} `json:"embedding"`
+		Index     int       `json:"index"`
+		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
 }
 
-func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -456,33 +457,12 @@ func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if len(parsed.Data) != len(texts) {
-		return nil, fmt.Errorf("vllm embeddings: expected %d results, got %d", len(texts), len(parsed.Data))
-	}
-
-	embeddings := make([][]float64, len(texts))
-	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("unexpected embedding index %d for %d inputs", item.Index, len(texts))
-		}
-		vec := make([]float64, len(item.Embedding))
-		for j, v := range item.Embedding {
-			switch val := v.(type) {
-			case float64:
-				vec[j] = val
-			case float32:
-				vec[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
-			}
-		}
-		embeddings[item.Index] = vec
-	}
-
-	for i, vec := range embeddings {
-		if vec == nil {
-			return nil, fmt.Errorf("missing embedding for input at index %d", i)
-		}
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil

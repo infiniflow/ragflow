@@ -406,10 +406,35 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type volcengineEmbeddingResponse struct {
+	Created int64                   `json:"created"`
+	Data    volcengineEmbeddingData `json:"data"`
+	ID      string                  `json:"id"`
+	Model   string                  `json:"model"`
+	Object  string                  `json:"object"`
+	Usage   volcengineUsage         `json:"usage"`
+}
+
+type volcengineEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+}
+
+type volcengineUsage struct {
+	PromptTokens        int                            `json:"prompt_tokens"`
+	TotalTokens         int                            `json:"total_tokens"`
+	PromptTokensDetails *volcenginePromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+type volcenginePromptTokensDetails struct {
+	ImageTokens int `json:"image_tokens"`
+	TextTokens  int `json:"text_tokens"`
+}
+
+// Embed embeds a list of texts into embeddings
+func (z *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	var region = "default"
@@ -419,7 +444,7 @@ func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APICon
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Embedding)
 
-	embeddings := make([][]float64, len(texts))
+	var embeddings []EmbeddingData
 
 	for i, text := range texts {
 
@@ -466,25 +491,15 @@ func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APICon
 			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
-		// Volcengine multimodal embedding response
-		type VolcengineEmbeddingResponse struct {
-			Data struct {
-				Embedding []float64 `json:"embedding"`
-				Object    string    `json:"object"`
-			} `json:"data"`
-		}
-
-		var result VolcengineEmbeddingResponse
-
-		if err = json.Unmarshal(body, &result); err != nil {
+		var parsed volcengineEmbeddingResponse
+		if err = json.Unmarshal(body, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		if len(result.Data.Embedding) == 0 {
-			return nil, fmt.Errorf("empty embedding in response")
-		}
-
-		embeddings[i] = result.Data.Embedding
+		var embeddingData EmbeddingData
+		embeddingData.Index = i
+		embeddingData.Embedding = parsed.Data.Embedding
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil

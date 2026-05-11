@@ -385,14 +385,14 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -412,9 +412,29 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-func (b *BaiduModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type baiduEmbeddingResponse struct {
+	ID      string               `json:"id"`
+	Object  string               `json:"object"`
+	Created int64                `json:"created"`
+	Data    []baiduEmbeddingData `json:"data"`
+	Model   string               `json:"model"`
+	Usage   baiduUsage           `json:"usage"`
+}
+
+type baiduEmbeddingData struct {
+	Object    string    `json:"object"`
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+type baiduUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	var region = "default"
@@ -457,52 +477,17 @@ func (b *BaiduModel) Encode(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("Baidu embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	var parsed baiduEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	dataObj, ok := result["data"].([]interface{})
-	if !ok || len(dataObj) == 0 {
-		return nil, fmt.Errorf("Baidu embedding response contains no data: %s", string(body))
-	}
-
-	embeddings := make([][]float64, len(texts))
-
-	for _, item := range dataObj {
-		dataMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		indexFloat, ok := dataMap["index"].(float64)
-		if !ok {
-			continue
-		}
-		index := int(indexFloat)
-
-		if index < 0 || index >= len(texts) {
-			continue
-		}
-
-		embeddingSlice, ok := dataMap["embedding"].([]interface{})
-		if !ok {
-			continue
-		}
-
-		embedding := make([]float64, len(embeddingSlice))
-		for j, v := range embeddingSlice {
-			switch val := v.(type) {
-			case float64:
-				embedding[j] = val
-			case float32:
-				embedding[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type")
-			}
-		}
-
-		embeddings[index] = embedding
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
@@ -567,7 +552,7 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 		} `json:"results"`
 	}
 
-	if err := json.Unmarshal(body, &rerankResp); err != nil {
+	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 

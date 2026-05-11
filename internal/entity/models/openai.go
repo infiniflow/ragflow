@@ -403,24 +403,31 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return nil
 }
 
-// openaiEmbeddingResponse is the response shape returned by
-// /v1/embeddings. The "index" field gives the position of the embedding
-// in the input array, which we use to keep the output order stable
-// even if the API returns items in a different order.
 type openaiEmbeddingResponse struct {
-	Data []struct {
-		Index     int           `json:"index"`
-		Embedding []interface{} `json:"embedding"`
-	} `json:"data"`
+	Data   []openrouterEmbeddingData `json:"data"`
+	Model  string                    `json:"model"`
+	Object string                    `json:"object"`
+	Usage  openrouterUsage           `json:"usage"`
 }
 
-// Encode turns a list of texts into embedding vectors using the
+type openaiEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type openaiUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// Embed turns a list of texts into embedding vectors using the
 // OpenAI /v1/embeddings endpoint (e.g. text-embedding-3-small,
 // text-embedding-3-large, text-embedding-ada-002). The output has
 // one vector per input, in the same order the inputs were given.
-func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -486,29 +493,12 @@ func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([][]float64, len(texts))
-	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			continue
-		}
-		vec := make([]float64, len(item.Embedding))
-		for j, v := range item.Embedding {
-			switch val := v.(type) {
-			case float64:
-				vec[j] = val
-			case float32:
-				vec[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
-			}
-		}
-		embeddings[item.Index] = vec
-	}
-
-	for i, vec := range embeddings {
-		if vec == nil {
-			return nil, fmt.Errorf("missing embedding for input at index %d", i)
-		}
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil

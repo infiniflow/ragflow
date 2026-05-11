@@ -397,9 +397,9 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	return nil
 }
 
-// Encode encodes a list of texts into embeddings. xAI does not expose a
+// Embed embeds a list of texts into embeddings. xAI does not expose a
 // public embedding API yet, so this is left unimplemented.
-func (z *XAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

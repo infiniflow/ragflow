@@ -351,15 +351,9 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 	return scanner.Err()
 }
 
-type hfEmbeddingRequest struct {
-	Inputs []string `json:"inputs"`
-}
-
-type hfEmbeddingResponse [][]float64
-
-func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -404,12 +398,20 @@ func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *
 		return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
 	}
 
-	var result [][]float64
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, err
+	var parsed openaiEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return result, nil
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
 }
 
 func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {

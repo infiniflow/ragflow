@@ -19,7 +19,6 @@ package models
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -370,20 +369,37 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 }
 
 type siliconflowEmbeddingResponse struct {
-	Data []struct {
-		Index     int       `json:"index"`
-		Embedding []float64 `json:"embedding"`
-	} `json:"data"`
+	Object []string                   `json:"object"`
+	Model  string                     `json:"model"`
+	Data   []siliconflowEmbeddingData `json:"data"`
+	Usage  siliconflowUsage           `json:"usage"`
+}
+
+type siliconflowEmbeddingData struct {
+	Object    string    `json:"object"`
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+type siliconflowUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // siliconflowMaxBatchSize is the per-request input limit documented at
 // https://docs.siliconflow.cn/en/api-reference/embeddings/create-embeddings.
 const siliconflowMaxBatchSize = 32
 
-func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
+	if len(texts) > siliconflowMaxBatchSize {
+		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", siliconflowMaxBatchSize)
+	}
+
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -400,48 +416,19 @@ func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *
 		apiKey = *apiConfig.ApiKey
 	}
 
-	dimension := 0
-	if embeddingConfig != nil {
-		dimension = embeddingConfig.Dimension
-	}
-
-	embeddings := make([][]float64, len(texts))
-	for start := 0; start < len(texts); start += siliconflowMaxBatchSize {
-		end := start + siliconflowMaxBatchSize
-		if end > len(texts) {
-			end = len(texts)
-		}
-		batch := texts[start:end]
-
-		if err := s.encodeBatch(url, *modelName, apiKey, dimension, batch, embeddings[start:end]); err != nil {
-			return nil, err
-		}
-	}
-
-	return embeddings, nil
-}
-
-func (s *SiliconflowModel) encodeBatch(url, modelName, apiKey string, dimension int, batch []string, out [][]float64) error {
 	reqBody := map[string]interface{}{
-		"model":           modelName,
-		"input":           batch,
-		"encoding_format": "float",
-	}
-	if dimension > 0 {
-		reqBody["dimensions"] = dimension
+		"model": modelName,
+		"input": texts,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -451,50 +438,34 @@ func (s *SiliconflowModel) encodeBatch(url, modelName, apiKey string, dimension 
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var result siliconflowEmbeddingResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+	var parsed siliconflowEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	if len(result.Data) != len(batch) {
-		return fmt.Errorf("expected %d embeddings, got %d", len(batch), len(result.Data))
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
-	seen := make([]bool, len(batch))
-	for _, item := range result.Data {
-		if item.Index < 0 || item.Index >= len(batch) {
-			return fmt.Errorf("embedding index %d out of range", item.Index)
-		}
-		if seen[item.Index] {
-			return fmt.Errorf("duplicate embedding index %d", item.Index)
-		}
-		if len(item.Embedding) == 0 {
-			return fmt.Errorf("empty embedding at index %d", item.Index)
-		}
-		seen[item.Index] = true
-		out[item.Index] = item.Embedding
-	}
-
-	for i, ok := range seen {
-		if !ok {
-			return fmt.Errorf("missing embedding index %d", i)
-		}
-	}
-
-	return nil
+	return embeddings, nil
 }
 
 func (z *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {

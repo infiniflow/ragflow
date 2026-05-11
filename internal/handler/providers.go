@@ -950,7 +950,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	}
 
 	// Non-stream response
-	var response *models.EmbeddingResponse
+	var response []models.EmbeddingData
 	var errorCode common.ErrorCode
 	var err error
 
@@ -966,7 +966,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"data":    response.Data,
+		"data":    response,
 		"message": "success",
 	})
 }
