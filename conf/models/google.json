@@ -18,6 +18,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "text-embedding-004",
+      "max_tokens": 2048,
+      "model_types": [
+        "embedding"
+      ]
     }
   ],
   "features": {
