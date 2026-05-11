@@ -19,7 +19,6 @@ from crawl4ai import AsyncWebCrawler
 from agent.tools.base import ToolParamBase, ToolBase
 
 
-
 class CrawlerParam(ToolParamBase):
     """
     Define the Crawler component parameters.
@@ -31,20 +30,26 @@ class CrawlerParam(ToolParamBase):
         self.extract_type = "markdown"
 
     def check(self):
-        self.check_valid_value(self.extract_type, "Type of content from the crawler", ['html', 'markdown', 'content'])
+        self.check_valid_value(self.extract_type, "Type of content from the crawler", ["html", "markdown", "content"])
 
 
 class Crawler(ToolBase, ABC):
     component_name = "Crawler"
 
     def _run(self, history, **kwargs):
-        from api.utils.web_utils import is_valid_url
+        from common.ssrf_guard import assert_url_is_safe, pin_dns_global
+
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
-        if not is_valid_url(ans):
+        try:
+            _ssrf_hostname, _ssrf_ip = assert_url_is_safe(ans)
+        except ValueError:
             return Crawler.be_output("URL not valid")
         try:
-            result = asyncio.run(self.get_web(ans))
+            # pin_dns_global is used (not thread-local) because crawl4ai resolves
+            # DNS in asyncio executor threads that don't share thread-local state.
+            with pin_dns_global(_ssrf_hostname, _ssrf_ip):
+                result = asyncio.run(self.get_web(ans))
 
             return Crawler.be_output(result)
 
@@ -57,18 +62,15 @@ class Crawler(ToolBase, ABC):
 
         proxy = self._param.proxy if self._param.proxy else None
         async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
-            result = await crawler.arun(
-                url=url,
-                bypass_cache=True
-            )
+            result = await crawler.arun(url=url, bypass_cache=True)
 
             if self.check_if_canceled("Crawler async operation"):
                 return
 
-            if self._param.extract_type == 'html':
+            if self._param.extract_type == "html":
                 return result.cleaned_html
-            elif self._param.extract_type == 'markdown':
+            elif self._param.extract_type == "markdown":
                 return result.markdown
-            elif self._param.extract_type == 'content':
+            elif self._param.extract_type == "content":
                 return result.extracted_content
             return result.markdown

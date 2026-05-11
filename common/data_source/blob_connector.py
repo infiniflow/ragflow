@@ -19,7 +19,13 @@ from common.data_source.exceptions import (
     InsufficientPermissionsError
 )
 from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
+from common.data_source.models import (
+    Document,
+    SecondsSinceUnixEpoch,
+    GenerateDocumentsOutput,
+    GenerateSlimDocumentOutput,
+    SlimDocument,
+)
 
 
 class BlobStorageConnector(LoadConnector, PollConnector):
@@ -122,29 +128,7 @@ class BlobStorageConnector(LoadConnector, PollConnector):
         end: datetime,
     ) -> GenerateDocumentsOutput:
         """Generate bucket objects"""
-        if self.s3_client is None:
-            raise ConnectorMissingCredentialError("Blob storage")
-
-        paginator = self.s3_client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=self.bucket_name, Prefix=self.prefix)
-
-        # Collect all objects first to count filename occurrences
-        all_objects = []
-        for page in pages:
-            if "Contents" not in page:
-                continue
-            for obj in page["Contents"]:
-                if obj["Key"].endswith("/"):
-                    continue
-                last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
-                if start < last_modified <= end:
-                    all_objects.append(obj)
-        
-        # Count filename occurrences to determine which need full paths
-        filename_counts: dict[str, int] = {}
-        for obj in all_objects:
-            file_name = os.path.basename(obj["Key"])
-            filename_counts[file_name] = filename_counts.get(file_name, 0) + 1
+        all_objects, filename_counts = self._collect_blob_objects(start, end)
 
         batch: list[Document] = []
         for obj in all_objects:
@@ -162,20 +146,15 @@ class BlobStorageConnector(LoadConnector, PollConnector):
                     f"{file_name} exceeds size threshold of {self.size_threshold}. Skipping."
                 )
                 continue
-            
+
             try:
-                blob = download_object(self.s3_client, self.bucket_name, key, self.size_threshold)
+                blob = download_object(
+                    self.s3_client, self.bucket_name, key, self.size_threshold
+                )
                 if blob is None:
                     continue
 
-                # Use full path only if filename appears multiple times
-                if filename_counts.get(file_name, 0) > 1:
-                    relative_path = key
-                    if self.prefix and key.startswith(self.prefix):
-                        relative_path = key[len(self.prefix):]
-                    semantic_id = relative_path.replace('/', ' / ') if relative_path else file_name
-                else:
-                    semantic_id = file_name
+                semantic_id = self._get_semantic_id(key, file_name, filename_counts)
 
                 batch.append(
                     Document(
@@ -185,7 +164,7 @@ class BlobStorageConnector(LoadConnector, PollConnector):
                         semantic_identifier=semantic_id,
                         extension=get_file_ext(file_name),
                         doc_updated_at=last_modified,
-                        size_bytes=size_bytes if size_bytes else 0
+                        size_bytes=size_bytes if size_bytes else 0,
                     )
                 )
                 if len(batch) == self.batch_size:
@@ -194,7 +173,76 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
             except Exception:
                 logging.exception(f"Error decoding object {key}")
-        
+
+        if batch:
+            yield batch
+
+    def _collect_blob_objects(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        """Collect object metadata for files in the requested window."""
+        if self.s3_client is None:
+            raise ConnectorMissingCredentialError("Blob storage")
+
+        paginator = self.s3_client.get_paginator("list_objects_v2")
+        pages = paginator.paginate(Bucket=self.bucket_name, Prefix=self.prefix)
+
+        # Collect all objects first to count filename occurrences
+        all_objects: list[dict[str, Any]] = []
+        for page in pages:
+            if "Contents" not in page:
+                continue
+            for obj in page["Contents"]:
+                if obj["Key"].endswith("/"):
+                    continue
+                last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
+                if start < last_modified <= end:
+                    all_objects.append(obj)
+
+        filename_counts: dict[str, int] = {}
+        for obj in all_objects:
+            file_name = os.path.basename(obj["Key"])
+            filename_counts[file_name] = filename_counts.get(file_name, 0) + 1
+
+        return all_objects, filename_counts
+
+    def _get_semantic_id(
+        self,
+        key: str,
+        file_name: str,
+        filename_counts: dict[str, int],
+    ) -> str:
+        """Use full relative path only when filenames collide."""
+        if filename_counts.get(file_name, 0) > 1:
+            relative_path = key
+            if self.prefix and key.startswith(self.prefix):
+                relative_path = key[len(self.prefix):]
+            return relative_path.replace("/", " / ") if relative_path else file_name
+        return file_name
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """Return a full current snapshot of blob object IDs without downloading content."""
+        del callback
+
+        all_objects, _ = self._collect_blob_objects(
+            start=datetime(1970, 1, 1, tzinfo=timezone.utc),
+            end=datetime.now(timezone.utc),
+        )
+
+        batch: list[SlimDocument] = []
+        for obj in all_objects:
+            batch.append(
+                SlimDocument(id=f"{self.bucket_type}:{self.bucket_name}:{obj['Key']}")
+            )
+            if len(batch) == self.batch_size:
+                yield batch
+                batch = []
+
         if batch:
             yield batch
 

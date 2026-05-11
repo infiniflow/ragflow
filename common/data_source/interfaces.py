@@ -60,8 +60,6 @@ class SlimConnectorWithPermSync(ABC):
     @abstractmethod
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> Generator[list[SlimDocument], None, None]:
         """Retrieve all simplified documents (with permission sync)"""

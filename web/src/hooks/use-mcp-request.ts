@@ -141,8 +141,12 @@ export const useDeleteMcpServer = () => {
   } = useMutation({
     mutationKey: [McpApiAction.DeleteMcpServer],
     mutationFn: async (ids: string[]) => {
-      const { data = {} } = await mcpServerService.delete({ mcp_ids: ids });
-      if (data.code === 0) {
+      const results = await Promise.all(
+        ids.map((id) => mcpServerService.delete({ mcp_id: id })),
+      );
+      const failed = results.find(({ data = {} }) => data.code !== 0);
+      const data = failed?.data ?? { code: 0, data: true };
+      if (!failed) {
         message.success(i18n.t(`message.deleted`));
 
         queryClient.invalidateQueries({
@@ -188,8 +192,23 @@ export const useExportMcpServer = () => {
   } = useMutation<ResponseType<IExportedMcpServers>, Error, string[]>({
     mutationKey: [McpApiAction.ExportMcpServer],
     mutationFn: async (ids) => {
-      const { data = {} } = await mcpServerService.export({ mcp_ids: ids });
-      if (data.code === 0) {
+      const results = await Promise.all(
+        ids.map((id) => mcpServerService.export({ mcp_id: id })),
+      );
+      const failed = results.find(({ data = {} }) => data.code !== 0);
+      const data = (failed?.data ?? {
+        code: 0,
+        data: results.reduce<IExportedMcpServers>(
+          (acc, result) => ({
+            mcpServers: {
+              ...acc.mcpServers,
+              ...(result.data?.data?.mcpServers ?? {}),
+            },
+          }),
+          { mcpServers: {} },
+        ),
+      }) as ResponseType<IExportedMcpServers>;
+      if (!failed) {
         message.success(i18n.t(`message.operated`));
       }
       return data;
