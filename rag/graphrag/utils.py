@@ -432,14 +432,13 @@ def graph_edge_to_chunk(kb_id, embd_mdl, from_ent_name, to_ent_name, meta, chunk
     chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
     txt = f"{from_ent_name}->{to_ent_name}"
     txt_cnt = f"{txt}: {meta['description']}"
-    ebd = get_embed_cache(embd_mdl.llm_name, txt)
+    ebd = get_embed_cache(embd_mdl.llm_name, txt_cnt)
     has_cache = False
     if ebd is not None:
         chunk["q_%d_vec" % len(ebd)] = ebd
         has_cache = True
     chunks.append(chunk)
-    # here should key be the txt_cnt?
-    return chunk, has_cache, txt, txt_cnt
+    return chunk, has_cache, txt_cnt, txt_cnt
 
 
 async def does_graph_contains(tenant_id, kb_id, doc_id):
@@ -543,8 +542,9 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             callback(msg=f"Get chunk of nodes: {ii}/{len(change.added_updated_nodes)}")
 
     # batch embedding node entity - time-consuming
-    tc = embedding(embd_mdl, todo_chunks, todo_keys, todo_values)
-    callback(msg=f"Get embedding of {len(todo_chunks)} nodes, {tc} tokens")
+    tc = await embedding(embd_mdl, todo_chunks, todo_keys, todo_values)
+    if callback:
+        callback(msg=f"Get embedding of {len(todo_chunks)} nodes, {tc} tokens")
 
     todo_chunks = []
     todo_keys = []
@@ -562,8 +562,9 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
             callback(msg=f"Get chunk of edges: {ii}/{len(change.added_updated_edges)}")
 
     # batch embedding edge relation - time-consuming
-    tc = embedding(embd_mdl, todo_chunks, todo_keys, todo_values)
-    callback(msg=f"Get embedding of {len(todo_chunks)} edges, {tc} tokens")
+    tc = await embedding(embd_mdl, todo_chunks, todo_keys, todo_values)
+    if callback:
+        callback(msg=f"Get embedding of {len(todo_chunks)} edges, {tc} tokens")
 
     # All new chunks are ready.  Now delete old data and insert the new data.
     # Deleting only after chunks are built ensures that a crash during embedding
@@ -633,12 +634,17 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges from index in {now - start:.2f}s.")
 
 
-def embedding(embd_mdl, todo_chunks, todo_keys, todo_values, batch_size=16):
+async def embedding(embd_mdl, todo_chunks, todo_keys, todo_values, batch_size=16):
+    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     total_count = 0
     for i in range(0, len(todo_values), batch_size):
         txts = todo_values[i : i + batch_size]
-        vts, c = embd_mdl.encode(txts)
-        ebds = vts.tolist()
+        timeout = 3 if enable_timeout_assertion else 30000000
+        async with chat_limiter:
+            vts, c = await asyncio.wait_for(thread_pool_exec(embd_mdl.encode, txts), timeout=timeout)
+        ebds = vts.tolist() if hasattr(vts, "tolist") else vts
+        if len(ebds) != len(txts):
+            raise ValueError(f"Embedding model returned {len(ebds)} vectors for {len(txts)} inputs.")
         for j in range(0, len(ebds)):
             idx = i + j
             ebd = ebds[j]
