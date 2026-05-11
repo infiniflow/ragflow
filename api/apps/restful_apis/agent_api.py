@@ -316,6 +316,7 @@ def list_agents(tenant_id):
     keywords = request.args.get("keywords", "")
     canvas_category = request.args.get("canvas_category")
     owner_ids = [item for item in request.args.get("owner_ids", "").strip().split(",") if item]
+    tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
 
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -347,9 +348,38 @@ def list_agents(tenant_id):
         desc,
         keywords,
         canvas_category,
+        tags,
     )
 
     return get_json_result(data={"canvas": canvas, "total": total})
+
+
+@manager.route("/agents/tags", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def list_agent_tags(tenant_id):
+    """Aggregate tag usage counts across agents visible to the caller."""
+    canvas_category = request.args.get("canvas_category")
+    tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+    joined_ids = list({member["tenant_id"] for member in tenants} | {tenant_id})
+    counts = UserCanvasService.list_tags(joined_ids, tenant_id, canvas_category)
+    return get_json_result(data=[{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))])
+
+
+@manager.route("/agent/<canvas_id>/tags", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def update_agent_tags(tenant_id, canvas_id):
+    if not UserCanvasService.accessible(canvas_id, tenant_id):
+        return get_json_result(
+            data=False,
+            message="Agent not found or no permission.",
+            code=RetCode.OPERATING_ERROR,
+        )
+    req = await get_request_json()
+    tags = req.get("tags", "")
+    UserCanvasService.update_tags(canvas_id, tags)
+    return get_json_result(data=True)
 
 
 @manager.route("/agents", methods=["POST"])  # noqa: F821
