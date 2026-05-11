@@ -20,11 +20,58 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
+	"strings"
 
 	"google.golang.org/genai"
 )
 
-// GoogleModel implements ModelDriver for Dummy AI
+type googleModelPage struct {
+	items         []string
+	nextPageToken string
+}
+
+func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]string, error) {
+	var modelNames []string
+	pageToken := ""
+
+	for {
+		page, err := listPage(ctx, pageToken)
+		if err != nil {
+			return nil, err
+		}
+
+		modelNames = append(modelNames, page.items...)
+		if page.nextPageToken == "" {
+			return modelNames, nil
+		}
+		pageToken = page.nextPageToken
+	}
+}
+
+var googleListModels = func(ctx context.Context, apiKey string) ([]string, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return collectGoogleModelNames(ctx, func(ctx context.Context, pageToken string) (googleModelPage, error) {
+		models, err := client.Models.List(ctx, &genai.ListModelsConfig{PageToken: pageToken})
+		if err != nil {
+			return googleModelPage{}, err
+		}
+
+		var modelNames []string
+		for _, m := range models.Items {
+			modelNames = append(modelNames, m.Name)
+		}
+		return googleModelPage{items: modelNames, nextPageToken: models.NextPageToken}, nil
+	})
+}
+
+// GoogleModel implements ModelDriver for Google AI
 type GoogleModel struct {
 	BaseURL   map[string]string
 	URLSuffix URLSuffix
@@ -212,32 +259,68 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return err
 }
 
-// Encode encodes a list of texts into embeddings
+// Encode generates embeddings for a batch of texts using the Gemini embeddings API.
+// The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
 func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
-}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if len(texts) == 0 {
+		return nil, fmt.Errorf("texts is empty")
+	}
 
-func (z *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  *apiConfig.ApiKey,
 		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	// Retrieve the list of models.
-	models, err := client.Models.List(ctx, &genai.ListModelsConfig{})
+	contents := make([]*genai.Content, len(texts))
+	for i, text := range texts {
+		contents[i] = genai.NewContentFromText(text, genai.RoleUser)
+	}
+
+	var cfg *genai.EmbedContentConfig
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		dim := int32(embeddingConfig.Dimension)
+		cfg = &genai.EmbedContentConfig{OutputDimensionality: &dim}
+	}
+
+	resp, err := client.Models.EmbedContent(ctx, *modelName, contents, cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to embed content: %w", err)
 	}
 
-	var modelNames []string
-	for _, m := range models.Items {
-		modelNames = append(modelNames, m.Name)
+	if len(resp.Embeddings) != len(texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Embeddings))
 	}
-	return modelNames, nil
+
+	result := make([][]float64, len(resp.Embeddings))
+	for i, emb := range resp.Embeddings {
+		vec := make([]float64, len(emb.Values))
+		for j, v := range emb.Values {
+			vec[j] = float64(v)
+		}
+		result[i] = vec
+	}
+
+	return result, nil
+}
+
+func (z *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	return googleListModels(context.Background(), *apiConfig.ApiKey)
 }
 
 func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -245,7 +328,8 @@ func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 }
 
 func (z *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	_, err := z.ListModels(apiConfig)
+	return err
 }
 
 // Rerank calculates similarity scores between query and documents
