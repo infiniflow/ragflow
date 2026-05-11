@@ -39,7 +39,7 @@ from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
-from rag.graphrag.general.index import run_graphrag_for_kb
+from rag.graphrag.common.index import run_graphrag_for_kb
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
     gen_metadata

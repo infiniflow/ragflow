@@ -227,6 +227,37 @@ async def run_graphrag_for_kb(
     with_resolution: bool = True,
     with_community: bool = True,
     max_parallel_docs: int = 4,
+    run_context=None,
+) -> dict:
+    from rag.graphrag.common.index import run_graphrag_for_kb as run_common_graphrag_for_kb
+
+    return await run_common_graphrag_for_kb(
+        row=row,
+        doc_ids=doc_ids,
+        language=language,
+        kb_parser_config=kb_parser_config,
+        chat_model=chat_model,
+        embedding_model=embedding_model,
+        callback=callback,
+        with_resolution=with_resolution,
+        with_community=with_community,
+        max_parallel_docs=max_parallel_docs,
+        run_context=run_context,
+    )
+
+
+async def _legacy_run_graphrag_for_kb(
+    row: dict,
+    doc_ids: list[str],
+    language: str,
+    kb_parser_config: dict,
+    chat_model,
+    embedding_model,
+    callback,
+    *,
+    with_resolution: bool = True,
+    with_community: bool = True,
+    max_parallel_docs: int = 4,
 ) -> dict:
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
