@@ -19,6 +19,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -378,8 +379,113 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 }
 
 // Encode encodes a list of texts into embeddings
+type vllmEmbeddingResponse struct {
+	Data []struct {
+		Index     int           `json:"index"`
+		Embedding []interface{} `json:"embedding"`
+	} `json:"data"`
+}
+
 func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("vLLM embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed vllmEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(parsed.Data) != len(texts) {
+		return nil, fmt.Errorf("vllm embeddings: expected %d results, got %d", len(texts), len(parsed.Data))
+	}
+
+	embeddings := make([][]float64, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(texts) {
+			return nil, fmt.Errorf("unexpected embedding index %d for %d inputs", item.Index, len(texts))
+		}
+		vec := make([]float64, len(item.Embedding))
+		for j, v := range item.Embedding {
+			switch val := v.(type) {
+			case float64:
+				vec[j] = val
+			case float32:
+				vec[j] = float64(val)
+			default:
+				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
+			}
+		}
+		embeddings[item.Index] = vec
+	}
+
+	for i, vec := range embeddings {
+		if vec == nil {
+			return nil, fmt.Errorf("missing embedding for input at index %d", i)
+		}
+	}
+
+	return embeddings, nil
 }
 
 func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
