@@ -263,7 +263,6 @@
       ]
     },
     {
-      <<<<<<< HEAD
       "name": "nvidia/nv-embed-v1",
       "max_tokens": 32768,
       "model_types": [
@@ -299,8 +298,6 @@
       ]
     },
     {
-      =======
-      >>>>>>> 0f4fb1da2 (Go: implement provider: CoHere and FishAudio)
       "name": "nvidia/nvidia-nemotron-nano-9b-v2",
       "max_tokens": 131072,
       "model_types": [
