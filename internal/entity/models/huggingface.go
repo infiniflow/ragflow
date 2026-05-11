@@ -351,66 +351,67 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 	return scanner.Err()
 }
 
-type hfEmbeddingRequest struct {
-	Inputs []string `json:"inputs"`
-}
-
-type hfEmbeddingResponse [][]float64
-
 func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	//if len(texts) == 0 {
-	//	return [][]float64{}, nil
-	//}
-	//
-	//if modelName == nil || *modelName == "" {
-	//	return nil, fmt.Errorf("model name is required")
-	//}
-	//
-	//if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-	//	return nil, fmt.Errorf("api key is required")
-	//}
-	//
-	//reqBody := map[string]interface{}{
-	//	"inputs": texts,
-	//}
-	//
-	//jsonData, err := json.Marshal(reqBody)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", *modelName)
-	//
-	//req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//req.Header.Set("Content-Type", "application/json")
-	//req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	//
-	//resp, err := h.httpClient.Do(req)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//defer resp.Body.Close()
-	//
-	//body, err := io.ReadAll(resp.Body)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//if resp.StatusCode != http.StatusOK {
-	//	return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
-	//}
-	//
-	//var result [][]float64
-	//if err = json.Unmarshal(body, &result); err != nil {
-	//	return nil, err
-	//}
-	//
-	//return result, nil
-	return nil, fmt.Errorf("no such method")
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	reqBody := map[string]interface{}{
+		"inputs": texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", *modelName)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
+	}
+
+	var parsed openaiEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
 }
 
 func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
