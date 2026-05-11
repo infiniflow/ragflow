@@ -16,6 +16,7 @@ dependencies = [
     "azure-storage-file-datalake==12.16.0",
     "beartype>=0.20.0,<1.0.0",
     "bio==1.7.1",
+    "boto3>=1.28.0",
     "boxsdk>=10.1.0",
     "captcha>=0.7.1",
     "chardet>=5.2.0,<6.0.0",
