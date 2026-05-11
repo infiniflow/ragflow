@@ -102,7 +102,7 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	models := make([]string, 0, len(result.Items))
 	for _, item := range result.Items {
-		models = append(models, item.ID)
+		models = append(models, item.Title)
 	}
 
 	return models, nil
