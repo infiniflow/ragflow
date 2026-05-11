@@ -607,7 +607,10 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search
 func (s *RetrievalService) GetVector(txt string, embModel *models.EmbeddingModel, topk int, similarity float64) (*types.MatchDenseExpr, error) {
-	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{txt}, embModel.APIConfig, nil)
+	embeddingConfig := &models.EmbeddingConfig{
+		Dimension: 0,
+	}
+	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{txt}, embModel.APIConfig, embeddingConfig)
 	if err != nil {
 		return nil, err
 	}

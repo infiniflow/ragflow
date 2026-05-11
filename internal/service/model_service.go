@@ -101,7 +101,7 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 	tenantModelProvider.UpdateDate = &nowDate
 	err = m.modelProviderDAO.Create(tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to create model provider")
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
 	}
 	return common.CodeSuccess, nil
 }

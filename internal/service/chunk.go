@@ -63,7 +63,7 @@ func NewChunkService() *ChunkService {
 
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
-	KbID                   interface{}            `json:"kb_id" binding:"required"` // string or []string
+	Datasets               []string               `json:"dataset_ids" binding:"required"` // string or []string
 	Question               string                 `json:"question" binding:"required"`
 	Page                   *int                   `json:"page,omitempty"`
 	Size                   *int                   `json:"size,omitempty"`
@@ -105,7 +105,7 @@ type RetrievalTestResponse struct {
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
 func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
-	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.KbID), zap.String("question", req.Question))
+	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
 
 	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
 		"    kbID=%v\n"+
@@ -120,7 +120,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		"    rerankID=%v\n"+
 		"    keyword=%v\n"+
 		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
-		req.KbID, req.Question,
+		req.Datasets, req.Question,
 		ptrString(req.Page), ptrString(req.Size), req.DocIDs,
 		ptrString(req.UseKG), ptrString(req.TopK), req.CrossLanguages, ptrString(req.SearchID),
 		req.Filter,
@@ -134,20 +134,6 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	ctx := context.Background()
 
-	// Determine kb_id list and check permission for each kb_id
-	var kbIDs []string
-	switch v := req.KbID.(type) {
-	case string:
-		kbIDs = []string{v}
-	case []string:
-		kbIDs = v
-	default:
-		return nil, fmt.Errorf("kb_id must be string or array of strings")
-	}
-	if len(kbIDs) == 0 {
-		return nil, fmt.Errorf("kb_id cannot be empty")
-	}
-
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
@@ -159,13 +145,13 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
-	for _, kbID := range kbIDs {
+	for _, datasetID := range req.Datasets {
 		found := false
 		for _, tenant := range tenants {
-			kb, err := s.kbDAO.GetByIDAndTenantID(kbID, tenant.TenantID)
+			kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenant.TenantID)
 			if err == nil && kb != nil {
 				common.Debug("Found knowledge base in database",
-					zap.String("kbID", kbID),
+					zap.String("datasetID", datasetID),
 					zap.String("tenantID", tenant.TenantID),
 					zap.String("kbName", kb.Name),
 					zap.String("embdID", kb.EmbdID))
@@ -227,7 +213,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 				}
 			}
 
-      // If no chatID from search_config, or chatModel not found, use tenant default
+			// If no chatID from search_config, or chatModel not found, use tenant default
 			if chatModelForFilter == nil {
 				tenantSvc := NewTenantService()
 				modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
@@ -253,7 +239,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	if filter != nil {
 		// Get flattened metadata
 		metadataSvc := NewMetadataService()
-		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(kbIDs)
+		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(req.Datasets)
 		if err != nil {
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
@@ -393,7 +379,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	retrievalReq := &nlp.RetrievalRequest{
 		TenantIDs:              tenantIDs,
 		Question:               modifiedQuestion,
-		KbIDs:                  kbIDs,
+		KbIDs:                  req.Datasets,
 		DocIDs:                 docIDs,
 		Page:                   getPageNum(req.Page, 1),
 		PageSize:               getPageSize(req.Size, 30),
@@ -427,7 +413,7 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		delete(filteredChunks[i], "vector")
 	}
 
-	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.KbID), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
+	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
 	return &RetrievalTestResponse{
 		Chunks:  filteredChunks,

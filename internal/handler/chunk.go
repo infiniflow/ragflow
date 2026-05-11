@@ -92,7 +92,7 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		})
 		return
 	}
-	if req.KbID == nil {
+	if req.Datasets == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "kb_id is required",
@@ -100,52 +100,10 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
-	// Validate kb_id type: string or []string
-	switch v := req.KbID.(type) {
-	case string:
-		if v == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "kb_id cannot be empty string",
-			})
-			return
-		}
-	case []interface{}:
-		// Convert to []string
-		var kbIDs []string
-		for _, item := range v {
-			if str, ok := item.(string); ok && str != "" {
-				kbIDs = append(kbIDs, str)
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    400,
-					"message": "kb_id array must contain non-empty strings",
-				})
-				return
-			}
-		}
-		if len(kbIDs) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "kb_id array cannot be empty",
-			})
-			return
-		}
-		// Convert back to interface{} for service
-		req.KbID = kbIDs
-	case []string:
-		// Already correct type
-		if len(v) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "kb_id array cannot be empty",
-			})
-			return
-		}
-	default:
+	if len(req.Datasets) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "kb_id must be string or array of strings",
+			"message": "kb_id array cannot be empty",
 		})
 		return
 	}
