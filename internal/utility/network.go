@@ -17,33 +17,25 @@
 package utility
 
 import (
+	"errors"
 	"net"
 )
 
 // GetLocalIP returns the first non-loopback local IP address of the host
-func GetLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
+func GetLocalIP() (string, error) {
+	addresses, err := net.InterfaceAddrs()
 	if err != nil {
-		return ""
+		return "", err
 	}
 
-	for _, addr := range addrs {
+	for _, addr := range addresses {
 		// Check the address type and skip loopback addresses
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+		if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+			if ipNet.IP.To4() != nil {
+				return ipNet.IP.String(), nil
 			}
 		}
 	}
 
-	return ""
-}
-
-// GetLocalIPWithFallback returns the local IP address with a fallback value
-func GetLocalIPWithFallback(fallback string) string {
-	ip := GetLocalIP()
-	if ip == "" {
-		return fallback
-	}
-	return ip
+	return "", errors.New("no ip address")
 }

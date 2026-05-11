@@ -58,7 +58,7 @@ def setup_auth(login_manager):
                     return None
 
                 # Decode JWT to get the UUID access_token
-                jwt = Serializer(secret_key=settings.SECRET_KEY)
+                jwt = Serializer(secret_key=settings.get_secret_key())
                 access_token = str(jwt.loads(jwt_token))
 
                 if not access_token or not access_token.strip():
