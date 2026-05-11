@@ -104,6 +104,14 @@ export default {
         'Sign up for free to explore top RAG technology. Create datasets and AIs to empower your business.',
       review: 'from 500+ reviews',
       seeAll: 'See all',
+      usernameLabel: 'Username',
+      usernamePlaceholder: 'Please input username',
+      ldapTitle: 'Sign in with {{provider}}',
+      ldapDescription:
+        'Use your directory credentials to sign in.',
+      cancel: 'Cancel',
+      passwordEncryptFailed:
+        'Could not encrypt the password. Please reload the page and try again.',
     },
     header: {
       knowledgeBase: 'Dataset',

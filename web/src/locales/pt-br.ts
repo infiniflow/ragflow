@@ -61,6 +61,13 @@ export default {
       description:
         'Inscreva-se gratuitamente para explorar a tecnologia RAG de ponta. Crie bases de conhecimento e IAs para capacitar seu negócio.',
       review: 'de 500+ avaliações',
+      usernameLabel: 'Nome de usuário',
+      usernamePlaceholder: 'Por favor, insira o nome de usuário',
+      ldapTitle: 'Entrar com {{provider}}',
+      ldapDescription: 'Use suas credenciais de diretório para entrar.',
+      cancel: 'Cancelar',
+      passwordEncryptFailed:
+        'Não foi possível criptografar a senha. Por favor, recarregue a página e tente novamente.',
     },
     header: {
       knowledgeBase: 'Base de Conhecimento',
