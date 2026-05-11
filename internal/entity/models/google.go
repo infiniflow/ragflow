@@ -20,11 +20,58 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
+	"strings"
 
 	"google.golang.org/genai"
 )
 
-// GoogleModel implements ModelDriver for Dummy AI
+type googleModelPage struct {
+	items         []string
+	nextPageToken string
+}
+
+func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]string, error) {
+	var modelNames []string
+	pageToken := ""
+
+	for {
+		page, err := listPage(ctx, pageToken)
+		if err != nil {
+			return nil, err
+		}
+
+		modelNames = append(modelNames, page.items...)
+		if page.nextPageToken == "" {
+			return modelNames, nil
+		}
+		pageToken = page.nextPageToken
+	}
+}
+
+var googleListModels = func(ctx context.Context, apiKey string) ([]string, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return collectGoogleModelNames(ctx, func(ctx context.Context, pageToken string) (googleModelPage, error) {
+		models, err := client.Models.List(ctx, &genai.ListModelsConfig{PageToken: pageToken})
+		if err != nil {
+			return googleModelPage{}, err
+		}
+
+		var modelNames []string
+		for _, m := range models.Items {
+			modelNames = append(modelNames, m.Name)
+		}
+		return googleModelPage{items: modelNames, nextPageToken: models.NextPageToken}, nil
+	})
+}
+
+// GoogleModel implements ModelDriver for Google AI
 type GoogleModel struct {
 	BaseURL   map[string]string
 	URLSuffix URLSuffix
@@ -269,26 +316,11 @@ func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (z *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  *apiConfig.ApiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
-	if err != nil {
-		return nil, err
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return nil, fmt.Errorf("api key is required")
 	}
 
-	// Retrieve the list of models.
-	models, err := client.Models.List(ctx, &genai.ListModelsConfig{})
-	if err != nil {
-		return nil, err
-	}
-
-	var modelNames []string
-	for _, m := range models.Items {
-		modelNames = append(modelNames, m.Name)
-	}
-	return modelNames, nil
+	return googleListModels(context.Background(), *apiConfig.ApiKey)
 }
 
 func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
