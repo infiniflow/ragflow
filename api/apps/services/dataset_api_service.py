@@ -1006,7 +1006,10 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
 
     rerank_mdl = None
     if req.get("tenant_rerank_id"):
-        rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+        allowed_rerank_tenant_ids = {tenant_id, *tenant_ids}
+        rerank_model_config = get_model_config_by_id(
+            req["tenant_rerank_id"], allowed_rerank_tenant_ids
+        )
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
     elif req.get("rerank_id"):
         rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
@@ -1368,7 +1371,10 @@ async def search_datasets(tenant_id: str, req: dict):
 
     rerank_mdl = None
     if req.get("tenant_rerank_id"):
-        rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+        allowed_rerank_tenant_ids = {tenant_id, *tenant_ids}
+        rerank_model_config = get_model_config_by_id(
+            req["tenant_rerank_id"], allowed_rerank_tenant_ids
+        )
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
     elif req.get("rerank_id"):
         rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])

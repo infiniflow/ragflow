@@ -492,7 +492,10 @@ async def retrieval_test(tenant_id):
 
         rerank_mdl = None
         if req.get("tenant_rerank_id"):
-            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+            allowed_rerank_tenant_ids = {tenant_id, *tenant_ids}
+            rerank_model_config = get_model_config_by_id(
+                req["tenant_rerank_id"], allowed_rerank_tenant_ids
+            )
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
         elif req.get("rerank_id"):
             rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
