@@ -713,6 +713,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      tableColumnMode: 'Column mode',
+      tableColumnModeAuto: 'Auto',
+      tableColumnModeManual: 'Manual',
+      tableColumnModeAutoDescription:
+        'All columns are included in chunk text and stored as metadata (RAGFlow default).',
+      tableColumnRoles: 'Column roles',
+      tableColumnRolesTip:
+        'Choose which columns to include in chunk text (indexed for vector and full-text search), in metadata only (filterable), or both. Changes apply to new parses; re-parse existing documents for roles to take effect.',
+      tableColumnRoleIndexing: 'Indexing',
+      tableColumnRoleMetadata: 'Metadata',
+      tableColumnRoleBoth: 'Both',
+      tableColumnRolesEmpty:
+        'Upload and parse a CSV or Excel file to begin configuring column roles.',
+      tableColumnRolesReparseTip:
+        'Re-parse existing documents for the new column roles to take effect.',
       parserLabel: {
         naive: 'General',
         qa: 'Q&A',
