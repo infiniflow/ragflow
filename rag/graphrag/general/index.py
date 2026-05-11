@@ -29,6 +29,7 @@ from rag.graphrag.general.community_reports_extractor import CommunityReportsExt
 from rag.graphrag.general.extractor import Extractor
 from rag.graphrag.general.graph_extractor import GraphExtractor as GeneralKGExt
 from rag.graphrag.light.graph_extractor import GraphExtractor as LightKGExt
+from rag.graphrag.ner.graph_extractor import GraphExtractor as NerKGExt
 from rag.graphrag.phase_markers import (
     PHASE_COMMUNITY,
     PHASE_RESOLUTION,
@@ -52,6 +53,24 @@ from rag.utils.redis_conn import RedisDistributedLock
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
+
+def _select_extractor(graphrag_config: dict):
+    """Return the extractor class matching ``graphrag_config["method"]``.
+
+    Supported values:
+    - ``"general"``  – Microsoft GraphRAG LLM-based extractor (default in
+      earlier versions).
+    - ``"light"``   – LightRAG-style LLM-based extractor (the default when
+      *method* is omitted or unrecognised).
+    - ``"ner"``     – NER-based extractor using spaCy (no LLM
+      needed for entity / relation extraction itself).
+    """
+    method = graphrag_config.get("method", "light")
+    if method == "general":
+        return GeneralKGExt
+    if method == "ner":
+        return NerKGExt
+    return LightKGExt
 
 
 async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
@@ -123,9 +142,7 @@ async def run_graphrag(
     try:
         subgraph = await asyncio.wait_for(
             generate_subgraph(
-                LightKGExt if "method" not in row["kb_parser_config"].get("graphrag", {})
-                    or row["kb_parser_config"]["graphrag"]["method"] != "general"
-                else GeneralKGExt,
+                _select_extractor(row["kb_parser_config"].get("graphrag", {})),
                 tenant_id,
                 kb_id,
                 doc_id,
@@ -294,7 +311,7 @@ async def run_graphrag_for_kb(
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
             return
 
-        kg_extractor = LightKGExt if ("method" not in kb_parser_config.get("graphrag", {}) or kb_parser_config["graphrag"]["method"] != "general") else GeneralKGExt
+        kg_extractor = _select_extractor(kb_parser_config.get("graphrag", {}))
 
         deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
 
