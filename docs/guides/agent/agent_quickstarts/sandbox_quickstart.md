@@ -49,7 +49,7 @@ The sandbox uses isolated base images for secure containerised execution environ
 
 ### Option 1: Build from source
 
-Build the runtime base images manually:
+Build the runtime base images:
 
 ```bash
 docker build -t sandbox-base-python:latest ./sandbox_base_image/python
