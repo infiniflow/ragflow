@@ -352,7 +352,7 @@ def _is_english(lang: str | None) -> bool:
     return lang.strip().lower() in ("english", "en")
 
 
-def vision_llm_describe_prompt(page=None, language="zh") -> str:
+def vision_llm_describe_prompt(page=None) -> str:
     template = PROMPT_JINJA_ENV.from_string(VISION_LLM_DESCRIBE_PROMPT)
     return template.render(page=page)
 
@@ -360,7 +360,9 @@ def vision_llm_describe_prompt(page=None, language="zh") -> str:
 def vision_llm_figure_describe_prompt(language="zh") -> str:
     """Load vision figure describe prompt based on language parameter"""
     suffix = "_en" if _is_english(language) else ""
-    prompt_content = load_prompt(f"vision_llm_figure_describe_prompt{suffix}")
+    prompt_name = f"vision_llm_figure_describe_prompt{suffix}"
+    logging.debug(f"Loading vision figure describe prompt: {prompt_name} (language={language})")
+    prompt_content = load_prompt(prompt_name)
     template = PROMPT_JINJA_ENV.from_string(prompt_content)
     return template.render()
 
@@ -368,7 +370,9 @@ def vision_llm_figure_describe_prompt(language="zh") -> str:
 def vision_llm_figure_describe_prompt_with_context(context_above: str, context_below: str, language="zh") -> str:
     """Load vision figure describe prompt with context based on language parameter"""
     suffix = "_en" if _is_english(language) else ""
-    prompt_content = load_prompt(f"vision_llm_figure_describe_prompt_with_context{suffix}")
+    prompt_name = f"vision_llm_figure_describe_prompt_with_context{suffix}"
+    logging.debug(f"Loading vision figure describe prompt with context: {prompt_name} (language={language})")
+    prompt_content = load_prompt(prompt_name)
     template = PROMPT_JINJA_ENV.from_string(prompt_content)
     return template.render(context_above=context_above, context_below=context_below)
 
