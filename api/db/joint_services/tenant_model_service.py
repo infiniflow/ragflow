@@ -154,7 +154,21 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
     return get_model_config_by_type_and_name(tenant_id, model_type, model_name)
 
 
-def get_model_config_from_provider_instance(tenant_id, provider_name: str, instance_name: str, model_name: str, model_type: str|enum.Enum):
+def get_model_config_from_provider_instance(tenant_id, model_name: str, model_type: str|enum.Enum):
+    # Parse model_name: {model_name} or {model_name}@{factory_name} or {model_name}@{instance_name}@{factory_name}
+    parts = model_name.split("@")
+    if len(parts) == 1:
+        pure_model_name = parts[0]
+        provider_name = ""
+        instance_name = ""
+    elif len(parts) == 2:
+        pure_model_name = parts[0]
+        provider_name = parts[1]
+        instance_name = "default"
+    else:
+        pure_model_name = parts[0]
+        instance_name = parts[1]
+        provider_name = parts[2]
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
@@ -162,7 +176,7 @@ def get_model_config_from_provider_instance(tenant_id, provider_name: str, insta
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
         raise LookupError(f"Instance {instance_name} not found.")
-    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, model_name)
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     import json
     api_key, _, _ = TenantLLMService._decode_api_key_config(instance_obj.api_key)
@@ -170,7 +184,7 @@ def get_model_config_from_provider_instance(tenant_id, provider_name: str, insta
 
     if model_obj:
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
-            raise f"Model {model_name} is disabled."
+            raise LookupError(f"Model {model_name} is disabled.")
 
         return {
             "llm_factory": provider_obj.provider_name,
@@ -183,7 +197,7 @@ def get_model_config_from_provider_instance(tenant_id, provider_name: str, insta
         fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
         if not fac_list:
             raise LookupError(f"Model provider config not found: {provider_name}")
-        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == model_name]
+        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
             raise LookupError(f"Model config not found: {model_name}")
         llm_config = llm_list[0]

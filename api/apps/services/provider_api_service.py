@@ -19,6 +19,7 @@ from common.constants import LLMType, StatusEnum, ActiveStatusEnum
 from common.misc_utils import get_uuid
 from common.settings import FACTORY_LLM_INFOS
 from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
@@ -471,19 +472,12 @@ async def chat_to_model(tenant_id: str, provider_name: str, instance_name: str, 
     # Get model config
     composite_name = f"{model_name}@{instance_name}@{provider_name}"
     try:
-        model_config = TenantLLMService.get_model_config(tenant_id, LLMType.CHAT.value, composite_name)
+        model_config = get_model_config_from_provider_instance(tenant_id, composite_name, LLMType.CHAT.value)
     except LookupError:
         return False, f"Model '{composite_name}' not authorized"
 
     if not model_config:
         return False, f"Model '{composite_name}' not found"
-
-    # Check if model is enabled
-    obj = TenantLLMService.get_or_none(
-        tenant_id=tenant_id, llm_factory=provider_name, llm_name=model_name
-    )
-    if obj and obj.status != StatusEnum.VALID.value:
-        return False, f"Model '{model_name}' is disabled"
 
     llm = LLMBundle(tenant_id, model_config)
 
