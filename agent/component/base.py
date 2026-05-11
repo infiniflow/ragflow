@@ -486,6 +486,10 @@ class ComponentBase(ABC):
                 continue
             if isinstance(v, str) and self._canvas.is_reff(v):
                 self.set_input_value(var, self._canvas.get_variable_value(v))
+            elif isinstance(v, str) and re.search(self.variable_ref_patt, v):
+                elements = self.get_input_elements_from_text(v)
+                kv = {k: e.get('value', '') for k, e in elements.items()}
+                self.set_input_value(var, self.string_format(v, kv))
             else:
                 self.set_input_value(var, v)
             res[var] = self.get_input_value(var)
