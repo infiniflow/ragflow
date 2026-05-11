@@ -79,8 +79,14 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from rag.utils.table_es_metadata import (
+    aggregate_table_manual_doc_metadata,
+    merge_table_parser_config_from_kb,
+    table_parser_strip_doc_metadata_keys,
+)
 
 BATCH_SIZE = 64
+
 
 FACTORY = {
     "general": naive,
@@ -268,6 +274,16 @@ async def build_chunks(task, progress_callback):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Table parser column roles / mode are stored on the dataset (KB) parser_config;
+    # chunk tasks carry document-level parser_config only — merge KB keys so manual roles apply.
+    parser_config_for_chunk = merge_table_parser_config_from_kb(task)
+    if task.get("parser_id", "").lower() == "table" and task.get("kb_parser_config"):
+        logging.debug(
+            "[TASK_EXECUTOR_DEBUG] table parser: merged KB keys into parser_config for chunk; "
+            f"mode={parser_config_for_chunk.get('table_column_mode')}, "
+            f"roles_keys={list((parser_config_for_chunk.get('table_column_roles') or {}).keys())}"
+        )
+
     try:
         async with chunk_limiter:
             cks = await thread_pool_exec(
@@ -279,7 +295,7 @@ async def build_chunks(task, progress_callback):
                 lang=task["language"],
                 callback=progress_callback,
                 kb_id=task["kb_id"],
-                parser_config=task["parser_config"],
+                parser_config=parser_config_for_chunk,
                 tenant_id=task["tenant_id"],
             )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
@@ -627,17 +643,14 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         nonlocal mdl
         return mdl.encode([truncate(c, mdl.max_length - 10) for c in txts])
 
-    cnts_ = np.array([])
+    cnts_batches = []
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
             vts, c = await thread_pool_exec(batch_encode, cnts[i: i + settings.EMBEDDING_BATCH_SIZE])
-        if len(cnts_) == 0:
-            cnts_ = vts
-        else:
-            cnts_ = np.concatenate((cnts_, vts), axis=0)
+        cnts_batches.append(vts)
         tk_count += c
         callback(prog=0.7 + 0.2 * (i + 1) / len(cnts), msg="")
-    cnts = cnts_
+    cnts = np.vstack(cnts_batches) if cnts_batches else np.array([])
     filename_embd_weight = parser_config.get("filename_embd_weight", 0.1)  # due to the db support none value
     if not filename_embd_weight:
         filename_embd_weight = 0.1
@@ -720,21 +733,19 @@ async def run_dataflow(task: dict):
                 nonlocal embedding_model
                 return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
-            vects = np.array([])
+            vects_batches = []
             texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
             delta = 0.20 / (len(texts) // settings.EMBEDDING_BATCH_SIZE + 1)
             prog = 0.8
             for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
                     vts, c = await thread_pool_exec(batch_encode, texts[i: i + settings.EMBEDDING_BATCH_SIZE])
-                if len(vects) == 0:
-                    vects = vts
-                else:
-                    vects = np.concatenate((vects, vts), axis=0)
+                vects_batches.append(vts)
                 embedding_token_consumption += c
                 prog += delta
                 if i % (len(texts) // settings.EMBEDDING_BATCH_SIZE / 100 + 1) == 1:
                     set_progress(task_id, prog=prog, msg=f"{i + 1} / {len(texts) // settings.EMBEDDING_BATCH_SIZE}")
+            vects = np.vstack(vects_batches) if vects_batches else np.array([])
 
             assert len(vects) == len(chunks)
             for i, ck in enumerate(chunks):
@@ -1266,6 +1277,43 @@ async def do_handle_task(task):
         )
 
         DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+
+        # Table parser (manual): push metadata/both column values to document-level metadata for UI / chat filters
+        if task.get("parser_id", "").lower() == "table":
+            eff_pc = merge_table_parser_config_from_kb(task)
+            logging.debug(
+                f"[TABLE_META_DEBUG] table post-index: table_column_mode={eff_pc.get('table_column_mode')!r}"
+            )
+            if eff_pc.get("table_column_mode") == "manual":
+                try:
+                    agg = aggregate_table_manual_doc_metadata(chunks, task)
+                    logging.debug(f"[TABLE_META_DEBUG] aggregated metadata: {agg}")
+                    strip_keys = table_parser_strip_doc_metadata_keys(eff_pc)
+                    existing = DocMetadataService.get_document_metadata(task_doc_id)
+                    existing = existing if isinstance(existing, dict) else {}
+                    preserved = {k: v for k, v in existing.items() if k not in strip_keys}
+                    merged = update_metadata_to(dict(preserved), agg)
+                    logging.debug(
+                        f"[TABLE_META_DEBUG] calling update_document_metadata for doc_id={task_doc_id}, "
+                        f"meta_fields keys={list(merged.keys())}, "
+                        f"table_strip_key_count={len(strip_keys)}, agg_keys={list(agg.keys())}"
+                    )
+                    try:
+                        DocMetadataService.update_document_metadata(task_doc_id, merged)
+                        logging.debug("[TABLE_META_DEBUG] update_document_metadata succeeded")
+                    except Exception as ue:
+                        logging.error(
+                            "update_document_metadata failed (table parser, doc_id=%s): %s",
+                            task_doc_id,
+                            ue,
+                            exc_info=True,
+                        )
+                except Exception as e:
+                    logging.exception(
+                        "Table parser document metadata aggregation failed (doc_id=%s): %s",
+                        task_doc_id,
+                        e,
+                    )
 
         progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 

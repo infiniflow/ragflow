@@ -23,17 +23,10 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
-	"ragflow/internal/logger"
+	"ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
 )
-
-// RerankModel defines the interface for reranker models
-// This matches model.RerankModel interface
-type RerankModel interface {
-	// Similarity calculates similarity between query and texts
-	Similarity(query string, texts []string) ([]float64, error)
-}
 
 // SearchResult represents the result of a search operation
 type SearchResult struct {
@@ -60,7 +53,7 @@ type SearchResult struct {
 //   - tsim: token similarity scores
 //   - vsim: vector similarity scores
 func Rerank(
-	rerankModel RerankModel,
+	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	total int,
 	keywords []string,
@@ -94,7 +87,7 @@ func Rerank(
 
 // RerankByModel performs reranking using a reranker model
 func RerankByModel(
-	rerankModel RerankModel,
+	rerankModel *models.RerankModel,
 	chunks []map[string]interface{},
 	query string,
 	tkWeight, vtWeight float64,
@@ -108,14 +101,14 @@ func RerankByModel(
 
 	chunkCount := len(chunks)
 
-	logger.Info("RerankByModel started", zap.String("query", query), zap.Int("chunkCount", chunkCount), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+	common.Info("RerankByModel started", zap.String("query", query), zap.Int("chunkCount", chunkCount), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
 
 	// Extract keywords from query
 	keywords := []string{}
 	if qb != nil {
 		_, keywords = qb.Question(query, "qa", 0.6)
 	}
-	logger.Info("RerankByModel keywords extracted", zap.Any("keywords", keywords))
+	common.Info("RerankByModel keywords extracted", zap.Any("keywords", keywords))
 
 	// Build token lists and document texts for each chunk
 	insTw := make([][]string, 0, chunkCount)
@@ -141,20 +134,20 @@ func RerankByModel(
 	// Calculate token similarity
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
+	var modelSim []float64
 	// Get similarity scores from reranker model
-	modelSim, err := rerankModel.Similarity(query, docs)
+	rerankResponse, err := rerankModel.ModelDriver.Rerank(rerankModel.ModelName, query, docs, rerankModel.APIConfig, &models.RerankConfig{})
 	if err != nil {
-		logger.Error("RerankByModel: rerankModel.Similarity failed; falling back to token-only similarity", err)
+		common.Error("RerankByModel: rerankModel.Rerank failed; falling back to token-only similarity", err)
 		// If model fails, fall back to token similarity only
 		modelSim = make([]float64, len(tsim))
 	}
-	if len(modelSim) != chunkCount {
-		logger.Warn("reranker returned mismatched score length; padding/truncating",
-			zap.Int("got", len(modelSim)), zap.Int("want", chunkCount))
-		fixed := make([]float64, chunkCount)
-		copy(fixed, modelSim)
-		modelSim = fixed
+
+	loopCount := min(chunkCount, len(rerankResponse.Data))
+	for i := 0; i < loopCount; i++ {
+		modelSim = append(modelSim, rerankResponse.Data[i].RelevanceScore)
 	}
+
 	// Combine token similarity with model similarity
 	// Model similarity is treated as vector similarity component
 	sim = make([]float64, chunkCount)
@@ -166,7 +159,7 @@ func RerankByModel(
 	// Always apply pageranks, even when rankFeature is nil/empty
 	sim = applyRankFeatureScores(chunks, sim, rankFeature)
 
-	logger.Info("RerankByModel completed")
+	common.Info("RerankByModel completed")
 	return sim, tsim, modelSim
 }
 
@@ -187,13 +180,13 @@ func RerankStandard(
 		return []float64{}, []float64{}, []float64{}
 	}
 
-	logger.Info("RerankStandard started", zap.Int("chunkCount", chunkCount), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
+	common.Info("RerankStandard started", zap.Int("chunkCount", chunkCount), zap.Float64("tkWeight", tkWeight), zap.Float64("vtWeight", vtWeight))
 
 	// Compute keywords fresh from query
 	if qb != nil && len(keywords) == 0 {
 		_, keywords = qb.Question(query, "qa", 0.6)
 	}
-	logger.Info("RerankStandard keywords", zap.Any("keywords", keywords))
+	common.Info("RerankStandard keywords", zap.Any("keywords", keywords))
 
 	// Get vector information
 	vectorSize := len(questionVector)
@@ -242,7 +235,7 @@ func RerankStandard(
 	// Always apply pageranks, even when rankFeature is nil/empty
 	sim = applyRankFeatureScores(chunks, sim, rankFeature)
 
-	logger.Info("RerankStandard completed")
+	common.Info("RerankStandard completed")
 	return sim, tsim, vsim
 }
 
@@ -251,7 +244,7 @@ func RerankStandard(
 // so we check multiple possible field names. If no score is found, we default to 1.0
 // to ensure the chunk passes through any similarity threshold filters.
 func RerankInfinityFallback(chunks []map[string]interface{}) (sim []float64, tsim []float64, vsim []float64) {
-	logger.Info("RerankInfinityFallback started", zap.Int("chunkCount", len(chunks)))
+	common.Info("RerankInfinityFallback started", zap.Int("chunkCount", len(chunks)))
 
 	sim = make([]float64, len(chunks))
 	for i, chunk := range chunks {
@@ -268,7 +261,7 @@ func RerankInfinityFallback(chunks []map[string]interface{}) (sim []float64, tsi
 			sim[i] = 1.0
 		}
 	}
-	logger.Info("RerankInfinityFallback completed")
+	common.Info("RerankInfinityFallback completed")
 	return sim, sim, sim
 }
 

@@ -23,7 +23,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -52,90 +53,101 @@ func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekM
 	}
 }
 
+func (z *DeepSeekModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
 func (z *DeepSeekModel) Name() string {
 	return "deepseek"
 }
 
-// Chat sends a message and returns response
-func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if message == nil {
-		return nil, fmt.Errorf("message is nil")
+func (z *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
+	// Convert messages to the format expected by API
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
+		"model":       modelName,
+		"messages":    apiMessages,
 		"stream":      false,
 		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			var thinkingFlag string
-			switch *chatModelConfig.Effort {
-			case "none":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "low":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "medium":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "max":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "max"
-				break
-			default:
-				return nil, fmt.Errorf("invalid effort level")
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				var thinkingFlag string
+				effort := "high"
+				if chatModelConfig.Effort != nil {
+					effort = *chatModelConfig.Effort
+				}
+				switch effort {
+				case "none":
+					thinkingFlag = "disabled"
+					chatModelConfig.Thinking = nil
+				case "low":
+					thinkingFlag = "disabled"
+					chatModelConfig.Thinking = nil
+				case "medium":
+					thinkingFlag = "disabled"
+					chatModelConfig.Thinking = nil
+				case "high":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+				case "default":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+				case "max":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "max"
+				default:
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = effort
+				}
+				reqBody["thinking"] = map[string]interface{}{
+					"type": thinkingFlag,
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -151,7 +163,9 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -195,7 +209,7 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	}
 
 	var reasonContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
@@ -214,91 +228,96 @@ func (z *DeepSeekModel) Chat(modelName, message *string, apiConfig *APIConfig, c
 	return chatResponse, nil
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *DeepSeekModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
-}
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (z *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
 
+	// Convert messages to API format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream":      false,
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      true,
 		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.DoSample != nil {
-		reqBody["do_sample"] = *chatModelConfig.DoSample
-	}
+		if chatModelConfig.DoSample != nil {
+			reqBody["do_sample"] = *chatModelConfig.DoSample
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			var thinkingFlag string
-			switch *chatModelConfig.Effort {
-			case "none":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "low":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "medium":
-				thinkingFlag = "disabled"
-				chatModelConfig.Thinking = nil
-				break
-			case "high":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "default":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "high"
-				break
-			case "max":
-				thinkingFlag = "enabled"
-				reqBody["reasoning_effort"] = "max"
-				break
-			default:
-				return fmt.Errorf("invalid effort level")
-			}
-			reqBody["thinking"] = map[string]interface{}{
-				"type": thinkingFlag,
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				var thinkingFlag string
+				switch *chatModelConfig.Effort {
+				case "none":
+					thinkingFlag = "disabled"
+					break
+				case "low":
+					thinkingFlag = "disabled"
+					break
+				case "medium":
+					thinkingFlag = "disabled"
+					break
+				case "high":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+					break
+				case "default":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "high"
+					break
+				case "max":
+					thinkingFlag = "enabled"
+					reqBody["reasoning_effort"] = "max"
+					break
+				default:
+					return fmt.Errorf("invalid effort level")
+				}
+				reqBody["thinking"] = map[string]interface{}{
+					"type": thinkingFlag,
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -331,7 +350,7 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -396,8 +415,8 @@ func (z *DeepSeekModel) ChatStreamlyWithSender(modelName, message *string, apiCo
 	return scanner.Err()
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DeepSeekModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Encode encodes a list of texts into embeddings
+func (z *DeepSeekModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -465,8 +484,92 @@ func (z *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
+// deepseekBalanceResponse is the shape returned by
+// GET /user/balance. The balance fields are strings in the
+// upstream API, so we parse them on our side.
+type deepseekBalanceResponse struct {
+	IsAvailable  bool `json:"is_available"`
+	BalanceInfos []struct {
+		Currency        string `json:"currency"`
+		TotalBalance    string `json:"total_balance"`
+		GrantedBalance  string `json:"granted_balance"`
+		ToppedUpBalance string `json:"topped_up_balance"`
+	} `json:"balance_infos"`
+}
+
+// Balance returns the user's available balance on DeepSeek by
+// calling GET /user/balance with the configured Bearer token.
+// The result map matches the shape used by the Moonshot driver,
+// so the UI can render it without provider-specific code.
 func (z *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	// Look up the base URL for the requested region. If the region was
+	// supplied but is not configured (or is empty), fall back to the
+	// "default" region instead of erroring out, so a stray region value
+	// does not break an otherwise valid request.
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("deepseek: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Balance)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("DeepSeek balance API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed deepseekBalanceResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(parsed.BalanceInfos) == 0 {
+		return nil, fmt.Errorf("no balance info in response")
+	}
+
+	// Pick the first balance entry, the same way the Moonshot
+	// driver returns a single {balance, currency} pair to the UI.
+	first := parsed.BalanceInfos[0]
+	total, err := strconv.ParseFloat(first.TotalBalance, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid total_balance %q: %w", first.TotalBalance, err)
+	}
+
+	return map[string]interface{}{
+		"balance":  total,
+		"currency": first.Currency,
+	}, nil
 }
 
 func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
@@ -475,4 +578,9 @@ func (z *DeepSeekModel) CheckConnection(apiConfig *APIConfig) error {
 		return err
 	}
 	return nil
+}
+
+// Rerank calculates similarity scores between query and documents
+func (z *DeepSeekModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

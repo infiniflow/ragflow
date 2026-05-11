@@ -145,7 +145,8 @@ class Agent(LLM, ToolBase):
         self._param.function_name = self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
-            m["function"]["parameters"]["properties"]["user_prompt"] = self._param.user_prompt
+            # Keep the JSON schema valid; user_prompt is a string field, not a schema node.
+            m["function"]["parameters"]["properties"]["user_prompt"]["default"] = self._param.user_prompt
         return m
 
     def get_input_form(self) -> dict[str, dict]:
@@ -276,10 +277,13 @@ class Agent(LLM, ToolBase):
                 return
             if delta.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
-                    self.set_output("content", self.get_exception_default_value())
-                    yield self.get_exception_default_value()
+                    fallback = self.get_exception_default_value()
+                    self.set_output("content", fallback)
+                    yield fallback
                 else:
                     self.set_output("_ERROR", delta)
+                    self.set_output("content", delta)
+                    yield delta
                 return
             if not need2cite or cited:
                 yield delta

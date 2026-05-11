@@ -50,7 +50,8 @@ func NewChatService() *ChatService {
 // ChatWithKBNames chat with knowledge base names
 type ChatWithKBNames struct {
 	*entity.Chat
-	KBNames []string `json:"kb_names"`
+	KBNames    []string `json:"kb_names"`
+	DatasetIDs []string `json:"dataset_ids"`
 }
 
 // ListChatsResponse list chats response
@@ -99,10 +100,11 @@ func (s *ChatService) ListChats(userID, status, keywords string, page, pageSize 
 	// Enrich with knowledge base names
 	chatsWithKBNames := make([]*ChatWithKBNames, 0, len(chats))
 	for _, chat := range chats {
-		kbNames := s.getKBNames(chat.KBIDs)
+		kbNames, datasetIDs := s.getDatasetNamesAndIDs(chat.KBIDs)
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
-			Chat:    chat,
-			KBNames: kbNames,
+			Chat:       chat,
+			KBNames:    kbNames,
+			DatasetIDs: datasetIDs,
 		})
 	}
 
@@ -165,10 +167,11 @@ func (s *ChatService) ListChatsNext(userID string, keywords string, page, pageSi
 	// Enrich with knowledge base names
 	chatsWithKBNames := make([]*ChatWithKBNames, 0, len(chats))
 	for _, chat := range chats {
-		kbNames := s.getKBNames(chat.KBIDs)
+		kbNames, datasetIDs := s.getDatasetNamesAndIDs(chat.KBIDs)
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
-			Chat:    chat,
-			KBNames: kbNames,
+			Chat:       chat,
+			KBNames:    kbNames,
+			DatasetIDs: datasetIDs,
 		})
 	}
 
@@ -178,9 +181,10 @@ func (s *ChatService) ListChatsNext(userID string, keywords string, page, pageSi
 	}, nil
 }
 
-// getKBNames gets knowledge base names by IDs
-func (s *ChatService) getKBNames(kbIDs entity.JSONSlice) []string {
-	var names []string
+// getDatasetNamesAndIDs gets knowledge base names by IDs
+func (s *ChatService) getDatasetNamesAndIDs(kbIDs entity.JSONSlice) ([]string, []string) {
+	var names = make([]string, 0, 0)
+	var ids = make([]string, 0, 0)
 	for _, kbID := range kbIDs {
 		kbIDStr, ok := kbID.(string)
 		if !ok {
@@ -193,9 +197,10 @@ func (s *ChatService) getKBNames(kbIDs entity.JSONSlice) []string {
 		// Only include valid KBs
 		if kb.Status != nil && *kb.Status == "1" {
 			names = append(names, kb.Name)
+			ids = append(ids, kbIDStr)
 		}
 	}
-	return names
+	return names, ids
 }
 
 // ParameterConfig parameter configuration in prompt_config
@@ -485,7 +490,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		}
 
 		// Get KB names
-		kbNames := s.getKBNames(chat.KBIDs)
+		kbNames, _ := s.getDatasetNamesAndIDs(chat.KBIDs)
 
 		return &SetDialogResponse{
 			Chat:    chat,
@@ -525,7 +530,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 	}
 
 	// Get KB names
-	kbNames := s.getKBNames(chat.KBIDs)
+	kbNames, _ := s.getDatasetNamesAndIDs(chat.KBIDs)
 
 	return &SetDialogResponse{
 		Chat:    chat,
@@ -679,10 +684,9 @@ func (s *ChatService) GetChat(userID string, chatID string) (*GetChatResponse, e
 
 	// Step 4: Build response with kb_names (same as Python _build_chat_response)
 	// Resolve kb_ids to kb_names
-	kbNames := s.getKBNames(chat.KBIDs)
+	kbNames, datasetIDs := s.getDatasetNamesAndIDs(chat.KBIDs)
 
 	// Build dataset_ids from kb_ids (same as Python _resolve_kb_names returns ids)
-	var datasetIDs []string
 	for _, kbID := range chat.KBIDs {
 		datasetID, ok := kbID.(string)
 		if !ok {

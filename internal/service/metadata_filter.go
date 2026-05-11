@@ -21,15 +21,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/logger"
 )
 
 // MetaFilterCondition represents a single filter condition
@@ -115,7 +114,7 @@ func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints s
 func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, currentDate string) string {
 	prompt, err := renderMetaFilterTemplate(currentDate, metaDataJSON, question, constraintsJSON)
 	if err != nil {
-		logger.Warn("Failed to render meta filter template, using fallback", zap.Error(err))
+		common.Warn("Failed to render meta filter template, using fallback", zap.Error(err))
 		// Fallback to empty prompt
 		return ""
 	}
@@ -123,9 +122,9 @@ func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, currentDate st
 }
 
 // GenMetaFilter generates filter conditions using LLM based on metadata and question.
-func GenMetaFilter(ctx context.Context, creds *entity.ModelCredentials, metaData map[string]interface{}, question string, constraints map[string]string) (*MetaFilterResult, error) {
-	if creds == nil {
-		return nil, fmt.Errorf("model credentials is nil")
+func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaData map[string]interface{}, question string, constraints map[string]string) (*MetaFilterResult, error) {
+	if chatModel == nil {
+		return nil, fmt.Errorf("chat model is nil")
 	}
 
 	if len(metaData) == 0 {
@@ -164,20 +163,23 @@ func GenMetaFilter(ctx context.Context, creds *entity.ModelCredentials, metaData
 		{Role: "user", Content: userMessage},
 	}
 
-	// Call LLM using ChatWithMessagesToModelByApiKey
-	modelProviderSvc := NewModelProviderService()
-	response, code, err := modelProviderSvc.ChatWithMessagesToModelByApiKey(creds.ProviderName, creds.ModelName, creds.APIKey, messages)
+	// Call LLM using ChatModel
+	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, nil)
 	if err != nil {
-		logger.Warn("ChatWithMessagesToModelByApiKey failed for GenMetaFilter",
-			zap.String("provider", creds.ProviderName),
-			zap.String("model", creds.ModelName),
-			zap.Int("code", int(code)),
+		common.Warn("ChatWithMessages failed for GenMetaFilter",
+			zap.String("model",
+                 
+                 *chatModel.ModelName),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to generate meta filter: %w", err)
 	}
 
+	if response == nil || response.Answer == nil {
+		return nil, fmt.Errorf("empty response from meta filter generation")
+	}
+
 	// Clean up response
-	responseStr := strings.TrimSpace(*response)
+	responseStr := strings.TrimSpace(*response.Answer)
 	responseStr = thinkBlockRE.ReplaceAllString(responseStr, "")
 	responseStr = strings.TrimSpace(responseStr)
 
@@ -190,11 +192,11 @@ func GenMetaFilter(ctx context.Context, creds *entity.ModelCredentials, metaData
 	// Parse JSON
 	var result MetaFilterResult
 	if err := json.Unmarshal([]byte(responseStr), &result); err != nil {
-		logger.Warn("Failed to parse meta filter response, returning empty conditions", zap.Error(err))
+		common.Warn("Failed to parse meta filter response, returning empty conditions", zap.Error(err))
 		return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
 	}
 
-	logger.Info("GenMetaFilter result", zap.Any("conditions", result.Conditions), zap.String("logic", result.Logic))
+	common.Info("GenMetaFilter result", zap.Any("conditions", result.Conditions), zap.String("logic", result.Logic))
 
 	return &result, nil
 }
@@ -447,7 +449,7 @@ func ApplyMetaDataFilter(
 	metaDataFilter map[string]interface{},
 	metaData map[string]interface{},
 	question string,
-	creds *entity.ModelCredentials,
+	chatModel *modelModule.ChatModel,
 	baseDocIDs []string,
 	manualValueResolver ...ManualValueResolver,
 ) ([]string, bool) {
@@ -462,9 +464,9 @@ func ApplyMetaDataFilter(
 
 	switch method {
 	case "auto":
-		filters, err := GenMetaFilter(ctx, creds, metaData, question, nil)
+		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
-			logger.Warn("Failed to generate meta filter", zap.Error(err))
+			common.Warn("Failed to generate meta filter", zap.Error(err))
 			return docIDs, false
 		}
 		filteredIDs := ApplyMetaFilter(metaData, filters.Conditions, filters.Logic)
@@ -503,9 +505,9 @@ func ApplyMetaDataFilter(
 			}
 
 			if len(filteredMeta) > 0 {
-				filters, err := GenMetaFilter(ctx, creds, filteredMeta, question, constraints)
+				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
-					logger.Warn("Failed to generate meta filter", zap.Error(err))
+					common.Warn("Failed to generate meta filter", zap.Error(err))
 					return docIDs, false
 				}
 				filteredIDs := ApplyMetaFilter(metaData, filters.Conditions, filters.Logic)

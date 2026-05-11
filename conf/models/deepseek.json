@@ -5,9 +5,10 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "balance": "user/balance"
   },
-  "series": "deepseek",
+  "class": "deepseek",
   "models": [
     {
       "name": "deepseek-v4-flash",

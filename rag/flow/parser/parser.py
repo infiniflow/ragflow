@@ -46,6 +46,9 @@ from rag.flow.parser.schema import ParserFromUpstream
 from rag.flow.parser.utils import (
     enhance_media_sections_with_vision,
     extract_word_outlines,
+    extract_docx_header_footer_texts,
+    remove_header_footer_docx_sections,
+    remove_header_footer_html_blob,
     remove_toc,
     remove_toc_pdf,
     remove_toc_word,
@@ -113,6 +116,7 @@ class ParserParam(ProcessParamBase):
                 "lang": "Chinese",
                 "flatten_media_to_text": False,
                 "remove_toc": False,
+                "remove_header_footer": False,
                 "suffix": [
                     "pdf",
                 ],
@@ -130,6 +134,7 @@ class ParserParam(ProcessParamBase):
             },
             "doc": {
                 "remove_toc": False,
+                "remove_header_footer": False,
                 "suffix": [
                     "doc",
                 ],
@@ -138,6 +143,7 @@ class ParserParam(ProcessParamBase):
             "docx": {
                 "flatten_media_to_text": False,
                 "remove_toc": False,
+                "remove_header_footer": False,
                 "suffix": [
                     "docx",
                 ],
@@ -170,7 +176,8 @@ class ParserParam(ProcessParamBase):
             },
             "html": {
                 "suffix": ["htm", "html"],
-                "remove_toc": "false",
+                "remove_toc": False,
+                "remove_header_footer": False,
                 "output_format": "json",
             },
             "slides": {
@@ -320,10 +327,6 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
         flatten_media_to_text = conf.get("flatten_media_to_text")
         pdf_parser = None
-
-        # Optional PDF post-processing flags applied after parsing.
-        abstract_enabled = "abstract" in conf.get("preprocess", [])
-        author_enabled = "author" in conf.get("preprocess", [])
 
         # Normalize parser selection and optional provider-specific model name.
         raw_parse_method = conf.get("parse_method", "")
@@ -587,7 +590,6 @@ class Parser(ProcessBase):
                 if image is not None:
                     box["image"] = image
                 bboxes.append(box)
-
         # Vision parser treats each page as a large image block.
         else:
             if conf.get("parse_method"):
@@ -634,19 +636,15 @@ class Parser(ProcessBase):
                 toc_bboxes, _ = remove_toc(bboxes[:split_at])
                 bboxes = toc_bboxes + bboxes[split_at:]
 
+        normalize_bboxes = []
         # Normalize shared bbox fields for downstream consumers.
-        layout_counters = {}
         for b in bboxes:
             raw_layout = str(b.get("layout_type") or "").strip()
             has_layout = bool(raw_layout)
             layout = re.sub(r"\s+", " ", raw_layout) if has_layout else "text"
             b["layout_type"] = layout
-
-            if not b.get("layoutno"):
-                seq = layout_counters.get(layout, 0)
-                layout_counters[layout] = seq + 1
-                b["layoutno"] = f"{layout}-{seq}"
-
+            if conf.get("remove_header_footer") and re.search(r"(header|footer|number)", raw_layout, re.I):
+                continue 
             if flatten_media_to_text:
                 b["doc_type_kwd"] = "text"
             elif layout == "table":
@@ -657,67 +655,8 @@ class Parser(ProcessBase):
                 b["doc_type_kwd"] = "image"
             else:
                 b["doc_type_kwd"] = "text"
-
-        # Mark likely author blocks near the title when enabled.
-        if author_enabled:
-            def _begin(txt):
-                if not isinstance(txt, str):
-                    return False
-                return re.match(
-                    r"[0-9. 一、i]*(introduction|abstract|摘要|引言|keywords|key words|关键词|background|背景|目录|前言|contents)",
-                    txt.lower().strip(),
-                )
-
-            i = 0
-            while i < min(32, len(bboxes) - 1):
-                b = bboxes[i]
-                i += 1
-                layout_type = b.get("layout_type", "")
-                layoutno = b.get("layoutno", "")
-                is_title = "title" in str(layout_type).lower() or "title" in str(layoutno).lower()
-                if not is_title:
-                    continue
-
-                title_txt = b.get("text", "")
-                if _begin(title_txt):
-                    break
-
-                for j in range(3):
-                    next_idx = i + j
-                    if next_idx >= len(bboxes):
-                        break
-                    candidate = bboxes[next_idx].get("text", "")
-                    if _begin(candidate):
-                        break
-                    if isinstance(candidate, str) and "@" in candidate:
-                        break
-                    bboxes[next_idx]["author"] = True
-                break
-
-        # Mark the abstract block when enabled.
-        if abstract_enabled:
-            i = 0
-            abstract_idx = None
-            while i + 1 < min(32, len(bboxes)):
-                b = bboxes[i]
-                i += 1
-                txt = b.get("text", "")
-                if not isinstance(txt, str):
-                    continue
-                txt = txt.lower().strip()
-                if re.match(r"(abstract|摘要)", txt):
-                    if len(txt.split()) > 32 or len(txt) > 64:
-                        abstract_idx = i - 1
-                        break
-                    next_txt = bboxes[i].get("text", "") if i < len(bboxes) else ""
-                    if isinstance(next_txt, str):
-                        next_txt = next_txt.lower().strip()
-                        if len(next_txt.split()) > 32 or len(next_txt) > 64:
-                            abstract_idx = i
-                    i += 1
-                    break
-            if abstract_idx is not None:
-                bboxes[abstract_idx]["abstract"] = True
+            normalize_bboxes.append(b)
+        bboxes = normalize_bboxes
 
         enhance_media_sections_with_vision(
             bboxes,
@@ -900,6 +839,9 @@ class Parser(ProcessBase):
         # JSON output keeps text/image blocks and appends table HTML as table items.
         if conf.get("output_format") == "json":
             main_sections = docx_parser(name, binary=blob)
+            if conf.get("remove_header_footer"):
+                header_footer_texts = extract_docx_header_footer_texts(binary=blob)
+                main_sections = remove_header_footer_docx_sections(main_sections, header_footer_texts)
             if conf.get("remove_toc"):
                 main_sections = remove_toc_word(main_sections, outlines)
             sections = []
@@ -931,6 +873,10 @@ class Parser(ProcessBase):
         # Markdown output removes TOC on plain markdown lines before writing back.
         elif conf.get("output_format") == "markdown":
             markdown_text = docx_parser.to_markdown(name, binary=blob)
+            if conf.get("remove_header_footer"):
+                header_footer_texts = extract_docx_header_footer_texts(binary=blob)
+                markdown_lines = remove_header_footer_docx_sections(markdown_text.split("\n"), header_footer_texts)
+                markdown_text = "\n".join(markdown_lines)
             if conf.get("remove_toc"):
                 markdown_text = "\n".join(remove_toc_word(markdown_text.split("\n"), outlines))
 
@@ -1091,8 +1037,11 @@ class Parser(ProcessBase):
         conf = self._param.setups["html"]
         self.set_output("output_format", conf["output_format"])
 
+        if conf.get("remove_header_footer"):
+            blob = remove_header_footer_html_blob(blob)
+
         sections = HtmlParser()(name, blob, int(conf.get("chunk_token_num", 512)))
-        if conf.get("remove_toc") == "true":
+        if conf.get("remove_toc"):
             sections, _ = remove_toc(sections)
         if conf.get("output_format") == "json":
             self.set_output("json", [{"text": section, "doc_type_kwd": "text"} for section in sections if section])

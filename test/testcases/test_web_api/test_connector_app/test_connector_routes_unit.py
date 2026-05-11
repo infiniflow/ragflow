@@ -88,13 +88,16 @@ class _FakeFlow:
         self.credentials = _FakeCredentials()
         self.auth_kwargs = None
         self.token_code = None
+        self.token_code_verifier = None
+        self.code_verifier = "fake-code-verifier"
 
     def authorization_url(self, **kwargs):
         self.auth_kwargs = dict(kwargs)
         return f"https://oauth.example/{kwargs['state']}", kwargs["state"]
 
-    def fetch_token(self, code):
+    def fetch_token(self, code, code_verifier=None):
         self.token_code = code
+        self.token_code_verifier = code_verifier
 
 
 class _FakeBoxToken:
@@ -519,6 +522,8 @@ def test_start_google_web_oauth_matrix(monkeypatch):
     assert any(call.scopes == module.GOOGLE_SCOPES[module.DocumentSource.GOOGLE_DRIVE] for call in flow_calls)
     assert "gmail_web_flow_state:flow-gmail" in redis.store
     assert "google-drive_web_flow_state:flow-drive" in redis.store
+    assert json.loads(redis.store["gmail_web_flow_state:flow-gmail"])["code_verifier"] == "fake-code-verifier"
+    assert json.loads(redis.store["google-drive_web_flow_state:flow-drive"])["code_verifier"] == "fake-code-verifier"
 
 
 @pytest.mark.p2
@@ -586,6 +591,7 @@ def test_google_web_oauth_callbacks_matrix(monkeypatch):
         redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
             "user_id": "tenant-1",
             "client_config": {"web": {"client_id": "cid"}},
+            "code_verifier": "state-code-verifier",
         })
         _set_request(module, args={"state": "sid", "code": "code-123"})
         success = _run(callback())
@@ -598,6 +604,7 @@ def test_google_web_oauth_callbacks_matrix(monkeypatch):
         assert flow_calls[-1].redirect_uri == expected_redirect
         assert flow_calls[-1].scopes == expected_scopes
         assert flow_calls[-1].token_code == "code-123"
+        assert flow_calls[-1].token_code_verifier == "state-code-verifier"
 
 
 @pytest.mark.p2

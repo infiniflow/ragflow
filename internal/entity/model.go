@@ -159,7 +159,7 @@ type Model struct {
 	MaxTokens    int            `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
-	Type         *string        `json:"type"`
+	Class        *string        `json:"class"`
 	ModelTypeMap map[string]bool
 }
 
@@ -170,7 +170,7 @@ type Provider struct {
 	URLSuffix   models.URLSuffix  `json:"url_suffix"`
 	Models      []*Model          `json:"models"`
 	Features    Features          `json:"features"`
-	Type        string            `json:"type"`
+	Class       string            `json:"class"`
 	ModelDriver models.ModelDriver
 }
 
@@ -228,12 +228,12 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 
 		for _, model := range provider.Models {
 			// if the prefix of mode.Name is matched with keys of modelSupportThinking
-			if provider.Type == "" {
+			if provider.Class == "" {
 				pos := strings.Index(model.Name, "-")
-				modelType := model.Name[0:pos]
-				model.Type = &modelType
+				modelClass := model.Name[0:pos]
+				model.Class = &modelClass
 			} else {
-				model.Type = &provider.Name
+				model.Class = &provider.Name
 			}
 
 			model.ModelTypeMap = make(map[string]bool)
@@ -319,22 +319,21 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
-	models := []map[string]interface{}{}
+	modelList := []map[string]interface{}{}
 	for _, model := range provider.Models {
 		modelData := map[string]interface{}{
 			"name":        model.Name,
 			"max_tokens":  model.MaxTokens,
 			"model_types": model.ModelTypes,
-			"features":    GetFeatures(model),
 		}
-		models = append(models, modelData)
+		modelList = append(modelList, modelData)
 	}
 
-	if len(models) == 0 {
+	if len(modelList) == 0 {
 		return nil, fmt.Errorf("no models found")
 	}
 
-	return models, nil
+	return modelList, nil
 }
 
 func (pm *ProviderManager) GetModelByName(providerName, modelName string) (*Model, error) {

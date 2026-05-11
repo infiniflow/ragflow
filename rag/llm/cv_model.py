@@ -437,7 +437,8 @@ class Zhipu4V(GptV4):
             del gen_conf["frequency_penalty"]
         return gen_conf
 
-    def _request(self, msg, stream, gen_conf={}):
+    def _request(self, msg, stream, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             self.base_url,
             json={"model": self.model_name, "messages": msg, "stream": stream, **gen_conf},
@@ -1037,7 +1038,8 @@ class NvidiaCV(Base):
             total_token_count_from_response(response),
         )
 
-    def _request(self, msg, gen_conf={}):
+    def _request(self, msg, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             url=self.base_url,
             headers={
@@ -1255,6 +1257,16 @@ class MoonshotCV(GptV4):
         if not base_url:
             base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
+class FuturMixCV(GptV4):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] CV initialized with model %s", model_name)
 
 
 class RAGconCV(GptV4):

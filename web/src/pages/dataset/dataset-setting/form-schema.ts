@@ -94,6 +94,18 @@ export const formSchema = z
           .optional(),
         enable_metadata: z.boolean().optional(),
         llm_id: z.string().optional(),
+        // Table parser: "auto" = all columns both, "manual" = use column role selector
+        table_column_mode: z.enum(['auto', 'manual']).optional(),
+        // Table parser: column name -> role (indexing | metadata | both); legacy "vectorize" -> indexing
+        table_column_roles: z
+          .record(
+            z
+              .enum(['indexing', 'metadata', 'both', 'vectorize'])
+              .transform((role) => (role === 'vectorize' ? 'indexing' : role)),
+          )
+          .optional(),
+        // Table parser: column names list (set by backend after first parse)
+        table_column_names: z.array(z.string()).optional(),
       })
       .optional(),
     pagerank: z.number(),

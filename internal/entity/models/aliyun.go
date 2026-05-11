@@ -19,11 +19,12 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -52,58 +53,70 @@ func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel
 	}
 }
 
-func (z *AliyunModel) Name() string {
-	return "siliconflow"
+func (z *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
 }
 
-// Chat sends a message and returns response
-func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if message == nil {
-		return nil, fmt.Errorf("message is nil")
+func (z *AliyunModel) Name() string {
+	return "aliyun"
+}
+
+func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
+	// Convert messages to the format expected by API
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
+		"model":       modelName,
+		"messages":    apiMessages,
 		"stream":      false,
 		"temperature": 1,
 	}
 
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
+	if chatModelConfig != nil {
+		if chatModelConfig.Stream != nil {
+			reqBody["stream"] = *chatModelConfig.Stream
+		}
 
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
 
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
 
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
 
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
 
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["enable_thinking"] = true
-		} else {
-			reqBody["enable_thinking"] = false
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["enable_thinking"] = true
+			} else {
+				reqBody["enable_thinking"] = false
+			}
 		}
 	}
 
@@ -118,7 +131,9 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := z.httpClient.Do(req)
 	if err != nil {
@@ -162,7 +177,7 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 	}
 
 	var reasonContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 		reasonContent, ok = messageMap["reasoning_content"].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid content format")
@@ -173,8 +188,6 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 		}
 	}
 
-	//thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelType, &content)
-
 	chatResponse := &ChatResponse{
 		Answer:        &answer,
 		ReasonContent: &reasonContent,
@@ -183,27 +196,33 @@ func (z *AliyunModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 	return chatResponse, nil
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *AliyunModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, chatModelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("%s, ChatWithMessages not implemented", z.Name())
-}
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
 
+	// Convert messages to API format
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]string{
-			{"role": "user", "content": *message},
-		},
-		"stream":      false,
+		"model":       modelName,
+		"messages":    apiMessages,
+		"stream":      true,
 		"temperature": 1,
 	}
 
@@ -267,7 +286,7 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		logger.Info(line)
+		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -332,9 +351,203 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	return scanner.Err()
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *AliyunModel) EncodeToEmbedding(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+type aliyunEmbeddingResponse struct {
+	Data []struct {
+		Index     int           `json:"index"`
+		Embedding []interface{} `json:"embedding"`
+	} `json:"data"`
+}
+
+// Encode encodes a list of texts into embeddings
+func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Aliyun embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed aliyunEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([][]float64, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(texts) {
+			return nil, fmt.Errorf("unexpected embedding index %d for %d inputs", item.Index, len(texts))
+		}
+		vec := make([]float64, len(item.Embedding))
+		for j, v := range item.Embedding {
+			switch val := v.(type) {
+			case float64:
+				vec[j] = val
+			case float32:
+				vec[j] = float64(val)
+			default:
+				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
+			}
+		}
+		embeddings[item.Index] = vec
+	}
+
+	for i, vec := range embeddings {
+		if vec == nil {
+			return nil, fmt.Errorf("missing embedding for input at index %d", i)
+		}
+	}
+
+	return embeddings, nil
+}
+
+type aliyunRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+}
+
+type aliyunRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+}
+
+func (z *AliyunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
+
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
+	reqBody := aliyunRerankRequest{
+		Model:           *modelName,
+		Query:           query,
+		Documents:       documents,
+		TopN:            topN,
+		ReturnDocuments: false,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Aliyun rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var rerankResponse RerankResponse
+	if err = json.Unmarshal(body, &rerankResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &rerankResponse, nil
 }
 
 type AliyunModelItem struct {
