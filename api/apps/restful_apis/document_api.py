@@ -1208,6 +1208,10 @@ def list_thumbnails():
 
     for doc_id in doc_ids:
         if not DocumentService.accessible(doc_id, current_user.id):
+            logging.warning(
+                "thumbnail access denied: user_id=%s doc_id=%s path=%s",
+                current_user.id, doc_id, request.path,
+            )
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
