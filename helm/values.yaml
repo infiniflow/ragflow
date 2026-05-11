@@ -111,7 +111,7 @@ ragflow:
     type: ClusterIP
   admin:
     # Enable Admin Service
-    enabled: true
+    enabled: false
     # Admin Service port configuration
     port: 9381
     # Admin Service type
