@@ -39,6 +39,13 @@
       "model_types": [
         "rerank"
       ]
+    },
+    {
+      "name": "BAAI/bge-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
     }
   ]
 }
