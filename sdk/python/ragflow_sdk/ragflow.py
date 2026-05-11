@@ -334,6 +334,7 @@ class RAGFlow:
             raise Exception(res["message"])
 
     def add_message(self, memory_id: list[str], agent_id: str, session_id: str, user_input: str, agent_response: str, user_id: str = "") -> str:
+        """Append messages to memories; ``user_id`` is forwarded only for API-key auth (external subject)."""
         payload = {
             "memory_id": memory_id,
             "agent_id": agent_id,
