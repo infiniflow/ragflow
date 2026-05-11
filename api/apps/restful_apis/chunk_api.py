@@ -96,11 +96,21 @@ def _strip_chunk_runtime_fields(chunk):
     return chunk
 
 
+def _get_dataset_tenant_id(dataset_id):
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return None
+    return kb.tenant_id
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_chunks(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
@@ -122,7 +132,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
 
     res = {"total": 0, "chunks": [], "doc": _map_doc(doc)}
     if req.get("id"):
-        chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
+        chunk = settings.docStoreConn.get(req.get("id"), search.index_name(dataset_tenant_id), [dataset_id])
         if not chunk:
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.DATA_ERROR)
         if str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
@@ -145,10 +155,10 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
-    elif settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
+    elif settings.docStoreConn.index_exist(search.index_name(dataset_tenant_id), dataset_id):
         sres = await settings.retriever.search(
             query,
-            search.index_name(tenant_id),
+            search.index_name(dataset_tenant_id),
             [dataset_id],
             emb_mdl=None,
             highlight=True,
@@ -183,11 +193,14 @@ async def list_chunks(tenant_id, dataset_id, document_id):
 async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     try:
-        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
+        chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
             return get_result(data=False, message="Chunk not found!", code=RetCode.DATA_ERROR)
         return get_result(data=_strip_chunk_runtime_fields(chunk))
@@ -202,6 +215,9 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
 @add_tenant_id_to_kwargs
 async def add_chunk(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
@@ -254,12 +270,12 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         model_config = get_model_config_by_id(tenant_embd_id)
     else:
         embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
+    settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
 
     if image_base64:
         store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
@@ -289,6 +305,9 @@ async def add_chunk(tenant_id, dataset_id, document_id):
 async def rm_chunk(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
@@ -300,8 +319,8 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     if not chunk_ids:
         if req.get("delete_all") is True:
             doc = docs[0]
-            DocumentService.delete_chunk_images(doc, tenant_id)
-            chunk_number = settings.docStoreConn.delete({"doc_id": document_id}, search.index_name(tenant_id), dataset_id)
+            DocumentService.delete_chunk_images(doc, dataset_tenant_id)
+            chunk_number = settings.docStoreConn.delete({"doc_id": document_id}, search.index_name(dataset_tenant_id), dataset_id)
             if chunk_number != 0:
                 DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
             return get_result(message=f"deleted {chunk_number} chunks")
@@ -310,7 +329,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     unique_chunk_ids, duplicate_messages = check_duplicate_ids(chunk_ids, "chunk")
     chunk_number = settings.docStoreConn.delete(
         {"doc_id": document_id, "id": unique_chunk_ids},
-        search.index_name(tenant_id),
+        search.index_name(dataset_tenant_id),
         dataset_id,
     )
     if chunk_number != 0:
@@ -333,11 +352,14 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
-    chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
+    chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
     if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
         return get_error_data_result(f"Can't find this chunk {chunk_id}")
     req = await get_request_json()
@@ -387,7 +409,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         model_config = get_model_config_by_id(tenant_embd_id)
     else:
         embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING.value, embd_id)
+        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
@@ -404,7 +426,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     )
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
+    settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
     if image_base64:
         store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
     return get_result()
@@ -415,6 +437,9 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
 @add_tenant_id_to_kwargs
 async def switch_chunks(tenant_id, dataset_id, document_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("chunk_ids"):
@@ -434,7 +459,7 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
                 if not settings.docStoreConn.update(
                     {"id": cid},
                     {"available_int": available_int},
-                    search.index_name(tenant_id),
+                    search.index_name(dataset_tenant_id),
                     doc.kb_id,
                 ):
                     return get_error_data_result(message="Index updating failure")

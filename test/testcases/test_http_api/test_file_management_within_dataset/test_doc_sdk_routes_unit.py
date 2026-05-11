@@ -706,6 +706,36 @@ class TestDocRoutesUnit:
         assert res["data"]["total"] == 1
         assert res["data"]["chunks"][0]["id"] == "chunk-1"
 
+    def test_list_chunks_uses_dataset_owner_index_for_team_dataset(self, monkeypatch):
+        module = _load_restful_chunk_module(monkeypatch)
+        seen = {}
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _dataset_id: (True, SimpleNamespace(tenant_id="owner-tenant")),
+        )
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(kb_id="ds-1")])
+        monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({})))
+
+        def _index_exist(index_name, dataset_id):
+            seen["index_exist"] = (index_name, dataset_id)
+            return True
+
+        class _Retriever:
+            async def search(self, _query, index_name, dataset_ids, *_args, **_kwargs):
+                seen["search"] = (index_name, dataset_ids)
+                return SimpleNamespace(total=0, ids=[], field={}, highlight={})
+
+        _patch_docstore(monkeypatch, module, index_exist=_index_exist)
+        monkeypatch.setattr(module.settings, "retriever", _Retriever())
+
+        res = _run(_route_core(module.list_chunks)("member-tenant", "ds-1", "doc-1"))
+
+        assert res["code"] == 0
+        assert seen["index_exist"] == ("idx-owner-tenant", "ds-1")
+        assert seen["search"] == ("idx-owner-tenant", ["ds-1"])
+
     def test_add_chunk_access_guard(self, monkeypatch):
         module = _load_restful_chunk_module(monkeypatch)
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)

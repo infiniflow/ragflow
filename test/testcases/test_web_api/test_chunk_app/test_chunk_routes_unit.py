@@ -377,7 +377,7 @@ def _load_chunk_module(monkeypatch):
 
         @staticmethod
         def get_by_id(_kb_id):
-            return True, SimpleNamespace(pagerank=0.6, tenant_embd_id=2, tenant_llm_id=1)
+            return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id=2, tenant_llm_id=1)
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
@@ -652,5 +652,4 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": ["chunk-1"]}))
     res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "`available_int` or `available` is required.", res
-
 
