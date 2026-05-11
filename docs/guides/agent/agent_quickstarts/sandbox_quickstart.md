@@ -45,7 +45,7 @@ The error message `client version 1.43 is too old. Minimum supported API version
 
 ## Prepare Docker images
 
-The sandbox uses isolated base images for secure containerised execution environments.
+The sandbox uses isolated base images for secure containerized execution environments.
 
 ### Option 1: Build from source
 
