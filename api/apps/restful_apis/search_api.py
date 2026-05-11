@@ -104,8 +104,6 @@ def list_searches():
             search_apps, total = SearchService.get_by_tenant_ids(
                 effective_owner_ids, current_user.id, 0, 0, orderby, desc, keywords
             )
-            allowed_tenants = set(effective_owner_ids)
-            search_apps = [s for s in search_apps if s["tenant_id"] in allowed_tenants]
             total = len(search_apps)
             if page_number and items_per_page:
                 search_apps = search_apps[(page_number - 1) * items_per_page : page_number * items_per_page]

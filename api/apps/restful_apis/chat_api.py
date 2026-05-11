@@ -378,24 +378,18 @@ async def list_chats():
             explicit_owner_filter = False
 
         if explicit_owner_filter:
-            chats, total = DialogService.get_by_tenant_ids(
-                effective_owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters
             chats, total = await thread_pool_exec(
                 DialogService.get_by_tenant_ids,
-                owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
+                effective_owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
             )
-            allowed_tenants = set(effective_owner_ids)
-            chats = [chat for chat in chats if chat["tenant_id"] in allowed_tenants]
             total = len(chats)
             if page_number and items_per_page:
                 start = (page_number - 1) * items_per_page
                 chats = chats[start : start + items_per_page]
         else:
-            chats, total = DialogService.get_by_tenant_ids(
-                effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters
             chats, total = await thread_pool_exec(
                 DialogService.get_by_tenant_ids,
-                [], current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
+                effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
             )
 
         return get_json_result(

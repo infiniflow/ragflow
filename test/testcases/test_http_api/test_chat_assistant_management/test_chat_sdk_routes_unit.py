@@ -912,7 +912,7 @@ def test_list_chats_rejects_unauthorized_owner_ids(monkeypatch):
             )
         ),
     )
-    res = module.list_chats.__wrapped__()
+    res = _run(module.list_chats.__wrapped__())
     assert res["code"] == module.RetCode.OPERATING_ERROR
     assert "authorized owner_ids" in res["message"]
 
@@ -920,6 +920,7 @@ def test_list_chats_rejects_unauthorized_owner_ids(monkeypatch):
 @pytest.mark.p2
 def test_list_chats_authorized_multi_tenant(monkeypatch):
     module = _load_chat_module(monkeypatch)
+    captured = {}
     monkeypatch.setattr(
         module,
         "request",
@@ -938,23 +939,27 @@ def test_list_chats_authorized_multi_tenant(monkeypatch):
             )
         ),
     )
-    monkeypatch.setattr(
-        module.DialogService,
-        "get_by_tenant_ids",
-        lambda *_args, **_kwargs: (
+
+    def _get_by_tenant_ids(owner_ids, user_id, *args, **kwargs):
+        captured["owner_ids"] = owner_ids
+        captured["user_id"] = user_id
+        return (
             [
                 {**_DummyDialogRecord().to_dict(), "tenant_id": "tenant-1", "id": "c1"},
                 {**_DummyDialogRecord().to_dict(), "tenant_id": "team-tenant-2", "id": "c2"},
             ],
             2,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    res = module.list_chats.__wrapped__()
+    res = _run(module.list_chats.__wrapped__())
     assert res["code"] == 0
     assert res["data"]["total"] == 2
     assert {c["id"] for c in res["data"]["chats"]} == {"c1", "c2"}
+    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
+    assert captured["user_id"] == "tenant-1"
 
 
 @pytest.mark.p2
@@ -986,7 +991,7 @@ def test_list_chats_defaults_to_authorized_owner_ids_when_omitted(monkeypatch):
         return ([], 0)
 
     monkeypatch.setattr(module.DialogService, "get_by_tenant_ids", _get_by_tenant_ids)
-    res = module.list_chats.__wrapped__()
+    res = _run(module.list_chats.__wrapped__())
 
     assert res["code"] == 0
     assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}

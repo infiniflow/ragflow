@@ -495,19 +495,17 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
         module,
         {"keywords": "k", "page": "1", "page_size": "1", "orderby": "create_time", "desc": "true", "owner_ids": ["tenant-1"]},
     )
-    monkeypatch.setattr(
-        module.SearchService,
-        "get_by_tenant_ids",
-        lambda _tenants, _uid, _page, _size, _orderby, _desc, _keywords: (
-            [{"id": "x", "tenant_id": "tenant-1"}, {"id": "y", "tenant_id": "tenant-2"}],
-            2,
-        ),
-    )
+
+    def _get_by_tenant_ids_filtered(tenants, _uid, _page, _size, _orderby, _desc, _keywords):
+        all_items = [{"id": "x", "tenant_id": "tenant-1"}, {"id": "y", "tenant_id": "tenant-1"}]
+        filtered = [item for item in all_items if item["tenant_id"] in set(tenants)]
+        return filtered, len(filtered)
+
+    monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids_filtered)
     res = module.list_searches()
     assert res["code"] == 0
-    assert res["data"]["total"] == 1
+    assert res["data"]["total"] == 2
     assert len(res["data"]["search_apps"]) == 1
-    assert res["data"]["search_apps"][0]["tenant_id"] == "tenant-1"
 
     # list: unauthorized owner_ids
     _set_request_args(
@@ -561,6 +559,7 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
 @pytest.mark.p2
 def test_list_searches_authorized_multi_tenant(monkeypatch):
     module = _load_search_api(monkeypatch)
+    captured = {}
 
     _set_request_args(
         monkeypatch,
@@ -574,21 +573,25 @@ def test_list_searches_authorized_multi_tenant(monkeypatch):
             "owner_ids": ["tenant-1", "team-tenant-2"],
         },
     )
-    monkeypatch.setattr(
-        module.SearchService,
-        "get_by_tenant_ids",
-        lambda _tenants, _uid, _page, _size, _orderby, _desc, _keywords: (
+
+    def _get_by_tenant_ids(owner_ids, user_id, *args, **kwargs):
+        captured["owner_ids"] = owner_ids
+        captured["user_id"] = user_id
+        return (
             [
                 {"id": "s1", "tenant_id": "tenant-1"},
                 {"id": "s2", "tenant_id": "team-tenant-2"},
             ],
             2,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids)
     res = module.list_searches()
     assert res["code"] == 0
     assert res["data"]["total"] == 2
     assert {s["id"] for s in res["data"]["search_apps"]} == {"s1", "s2"}
+    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
+    assert captured["user_id"] == "tenant-1"
 
 
 @pytest.mark.p2
