@@ -363,7 +363,7 @@ func (o *OllamaModel) Encode(modelName *string, texts []string, apiConfig *APICo
 	return nil, fmt.Errorf("no such method")
 }
 
-func (o *OllamaModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+func (o *OllamaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 

@@ -35,7 +35,7 @@ function Radio({
   const isChecked = isControlled ? checked : groupContext?.value === value;
   const mergedDisabled = disabled || groupContext?.disabled;
 
-  const handleClick = () => {
+  const handleChange = () => {
     if (mergedDisabled) return;
 
     // if (!isControlled) {
@@ -62,7 +62,7 @@ function Radio({
         type="radio"
         value={value}
         checked={isChecked}
-        onClick={handleClick}
+        onChange={handleChange}
         disabled={mergedDisabled}
         className={cn('peer absolute size-[1px] opacity-0', className)}
         {...props}
@@ -150,11 +150,12 @@ const Group = React.forwardRef<HTMLDivElement, RadioGroupProps>(
             className,
           )}
         >
-          {React.Children.map(children, (child) =>
-            React.cloneElement(child as React.ReactElement, {
-              disabled: disabled || child?.props?.disabled,
-            }),
-          )}
+          {React.Children.map(children, (child) => {
+            if (!React.isValidElement<RadioProps>(child)) return child;
+            return React.cloneElement(child, {
+              disabled: disabled || child.props?.disabled,
+            });
+          })}
         </div>
       </RadioGroupContext.Provider>
     );
