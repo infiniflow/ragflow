@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/server"
 )
 
 var (
@@ -60,21 +63,27 @@ var (
 
 // DatasetsService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetsService struct {
-	kbDAO        *dao.KnowledgebaseDAO
-	documentDAO  *dao.DocumentDAO
-	connectorDAO *dao.ConnectorDAO
-	tenantDAO    *dao.TenantDAO
-	tenantLLMDAO *dao.TenantLLMDAO
+	kbDAO           *dao.KnowledgebaseDAO
+	documentDAO     *dao.DocumentDAO
+	connectorDAO    *dao.ConnectorDAO
+	connector2KbDAO *dao.Connector2KbDAO
+	tenantDAO       *dao.TenantDAO
+	tenantLLMDAO    *dao.TenantLLMDAO
+	docEngine       engine.DocEngine
+	engineType      server.EngineType
 }
 
 // NewDatasetsService creates a new datasets service.
 func NewDatasetsService() *DatasetsService {
 	return &DatasetsService{
-		kbDAO:        dao.NewKnowledgebaseDAO(),
-		documentDAO:  dao.NewDocumentDAO(),
-		connectorDAO: dao.NewConnectorDAO(),
-		tenantDAO:    dao.NewTenantDAO(),
-		tenantLLMDAO: dao.NewTenantLLMDAO(),
+		kbDAO:           dao.NewKnowledgebaseDAO(),
+		documentDAO:     dao.NewDocumentDAO(),
+		connectorDAO:    dao.NewConnectorDAO(),
+		connector2KbDAO: dao.NewConnector2KbDAO(),
+		tenantDAO:       dao.NewTenantDAO(),
+		tenantLLMDAO:    dao.NewTenantLLMDAO(),
+		docEngine:       engine.Get(),
+		engineType:      server.GetConfig().DocEngine.Type,
 	}
 }
 
@@ -106,6 +115,31 @@ type CreateDatasetRequest struct {
 	ParserConfig       map[string]interface{} `json:"parser_config,omitempty"`
 	AutoMetadataConfig *AutoMetadataConfig    `json:"auto_metadata_config,omitempty"`
 	Ext                map[string]interface{} `json:"ext,omitempty"`
+}
+
+// DatasetConnectorRequest represents a connector bound to a dataset.
+type DatasetConnectorRequest struct {
+	ID        string `json:"id" binding:"required"`
+	AutoParse string `json:"auto_parse,omitempty"`
+}
+
+// UpdateDatasetRequest represents the request for updating a dataset.
+type UpdateDatasetRequest struct {
+	Name               *string                   `json:"name,omitempty"`
+	Avatar             *string                   `json:"avatar,omitempty"`
+	Description        *string                   `json:"description,omitempty"`
+	EmbeddingModel     *string                   `json:"embedding_model,omitempty"`
+	Permission         *string                   `json:"permission,omitempty"`
+	Language           *string                   `json:"language,omitempty"`
+	ChunkMethod        *string                   `json:"chunk_method,omitempty"`
+	ParserID           *string                   `json:"parser_id,omitempty"`
+	Pagerank           *int64                    `json:"pagerank,omitempty"`
+	ParseType          *int                      `json:"parse_type,omitempty"`
+	PipelineID         *string                   `json:"pipeline_id,omitempty"`
+	ParserConfig       map[string]interface{}    `json:"parser_config,omitempty"`
+	AutoMetadataConfig *AutoMetadataConfig       `json:"auto_metadata_config,omitempty"`
+	Connectors         []DatasetConnectorRequest `json:"connectors,omitempty"`
+	Ext                map[string]interface{}    `json:"ext,omitempty"`
 }
 
 // ListDatasets lists datasets with pagination and filtering.
@@ -445,6 +479,414 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 	}
 
 	return datasetToMap(createdKB), common.CodeSuccess, nil
+}
+
+// UpdateDataset updates an existing dataset.
+func (s *DatasetsService) UpdateDataset(datasetID, tenantID string, req *UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	normalizedID, err := normalizeDatasetUUID1(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	datasetID = normalizedID
+
+	if req == nil {
+		return nil, common.CodeDataError, errors.New("No properties were modified")
+	}
+
+	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	}
+
+	name := req.Name
+	avatar := req.Avatar
+	description := req.Description
+	embeddingModel := req.EmbeddingModel
+	permission := req.Permission
+	language := req.Language
+	chunkMethod := req.ChunkMethod
+	parserID := req.ParserID
+	pagerank := req.Pagerank
+	parseType := req.ParseType
+	pipelineID := req.PipelineID
+	parserConfig := req.ParserConfig
+	connectors := req.Connectors
+	parserConfigProvided := len(req.ParserConfig) > 0 || req.AutoMetadataConfig != nil
+	extChanges := false
+
+	if req.Ext != nil {
+		for key, value := range req.Ext {
+			switch key {
+			case "name":
+				if v, ok := value.(string); ok {
+					name = &v
+					extChanges = true
+				}
+			case "avatar":
+				if v, ok := value.(string); ok {
+					avatar = &v
+					extChanges = true
+				}
+			case "description":
+				if v, ok := value.(string); ok {
+					description = &v
+					extChanges = true
+				}
+			case "embedding_model", "embd_id":
+				if v, ok := value.(string); ok {
+					embeddingModel = &v
+					extChanges = true
+				}
+			case "permission":
+				if v, ok := value.(string); ok {
+					permission = &v
+					extChanges = true
+				}
+			case "language":
+				if v, ok := value.(string); ok {
+					language = &v
+					extChanges = true
+				}
+			case "chunk_method":
+				if v, ok := value.(string); ok {
+					chunkMethod = &v
+					extChanges = true
+				}
+			case "parser_id":
+				if v, ok := value.(string); ok {
+					parserID = &v
+					extChanges = true
+				}
+			case "pagerank":
+				switch v := value.(type) {
+				case float64:
+					tmp := int64(v)
+					pagerank = &tmp
+					extChanges = true
+				case int64:
+					pagerank = &v
+					extChanges = true
+				case int:
+					tmp := int64(v)
+					pagerank = &tmp
+					extChanges = true
+				}
+			case "pipeline_id":
+				if v, ok := value.(string); ok {
+					pipelineID = &v
+					extChanges = true
+				}
+			case "parser_config":
+				if v, ok := value.(map[string]interface{}); ok {
+					parserConfig = v
+					if len(v) > 0 {
+						parserConfigProvided = true
+						extChanges = true
+					}
+				}
+			case "connectors":
+				if v, ok := value.([]DatasetConnectorRequest); ok {
+					connectors = v
+					extChanges = true
+				}
+			}
+		}
+	}
+
+	if req.AutoMetadataConfig != nil {
+		parserConfig = applyAutoMetadataConfig(parserConfig, req.AutoMetadataConfig)
+		parserConfigProvided = true
+	}
+
+	if parserConfig != nil && len(parserConfig) == 0 {
+		parserConfig = nil
+	}
+
+	if parserConfig != nil {
+		if parentChild, ok := parserConfig["parent_child"].(map[string]interface{}); ok {
+			if useParentChild, _ := parentChild["use_parent_child"].(bool); useParentChild {
+				if childrenDelimiter, ok := parentChild["children_delimiter"].(string); ok && childrenDelimiter != "" {
+					parserConfig["children_delimiter"] = childrenDelimiter
+				} else {
+					parserConfig["children_delimiter"] = "\n"
+				}
+				parserConfig["enable_children"] = true
+			} else {
+				parserConfig["children_delimiter"] = ""
+				parserConfig["enable_children"] = false
+				parserConfig["parent_child"] = map[string]interface{}{}
+			}
+		}
+		if extFields, ok := parserConfig["ext"].(map[string]interface{}); ok {
+			delete(parserConfig, "ext")
+			parserConfig = common.DeepMergeMaps(parserConfig, extFields)
+		}
+	}
+
+	parserMethod := ""
+	if parserID != nil && strings.TrimSpace(*parserID) != "" {
+		parserMethod = strings.TrimSpace(*parserID)
+	} else if chunkMethod != nil && strings.TrimSpace(*chunkMethod) != "" {
+		parserMethod = strings.TrimSpace(*chunkMethod)
+	}
+
+	if parserMethod != "" && parserMethod != kb.ParserID && parserConfig == nil {
+		parserConfig = common.GetParserConfig(parserMethod, nil)
+	}
+
+	if parserConfigProvided && parserConfig != nil {
+		parserConfig = common.DeepMergeMaps(map[string]interface{}(kb.ParserConfig), parserConfig)
+	}
+
+	if parserMethod != "" && parserMethod != kb.ParserID && kb.PipelineID != nil && (pipelineID == nil || strings.TrimSpace(*pipelineID) == "") {
+		emptyPipelineID := ""
+		pipelineID = &emptyPipelineID
+	}
+
+	if err := validateDatasetParserConfigSize(parserConfig); err != nil {
+		return nil, common.CodeDataError, err
+	}
+
+	if name != nil {
+		trimmedName := strings.TrimSpace(*name)
+		if trimmedName == "" {
+			return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+		}
+		if len(trimmedName) > entity.DatasetNameLimit {
+			return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(trimmedName), entity.DatasetNameLimit)
+		}
+		if !strings.EqualFold(trimmedName, kb.Name) {
+			existing, err := s.kbDAO.GetByName(trimmedName, tenantID)
+			if err == nil && existing != nil && existing.ID != datasetID {
+				return nil, common.CodeDataError, fmt.Errorf("Dataset name '%s' already exists", trimmedName)
+			}
+		}
+		*name = trimmedName
+	}
+
+	if avatar != nil {
+		if len(*avatar) > 65535 {
+			return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+		}
+		if err := validateDatasetAvatar(*avatar); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+	if description != nil && len(*description) > 65535 {
+		return nil, common.CodeDataError, errors.New("String should have at most 65535 characters")
+	}
+	if permission != nil {
+		trimmedPermission := strings.TrimSpace(*permission)
+		if trimmedPermission != "me" && trimmedPermission != "team" {
+			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
+		}
+		*permission = trimmedPermission
+	}
+	if language != nil {
+		trimmedLanguage := strings.TrimSpace(*language)
+		*language = trimmedLanguage
+	}
+	if embeddingModel != nil {
+		trimmedEmbeddingModel := strings.TrimSpace(*embeddingModel)
+		if trimmedEmbeddingModel == "" {
+			trimmedEmbeddingModel = kb.EmbdID
+		}
+		if err := validateDatasetEmbeddingModel(trimmedEmbeddingModel); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		ok, message := s.verifyEmbeddingAvailability(trimmedEmbeddingModel, tenantID)
+		if !ok {
+			return nil, common.CodeDataError, errors.New(message)
+		}
+		*embeddingModel = trimmedEmbeddingModel
+	}
+	if pagerank != nil && *pagerank != kb.Pagerank {
+		if s.engineType != server.EngineElasticsearch {
+			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+		}
+	}
+
+	if parseType != nil {
+		_ = parseType
+	}
+
+	hasChanges := false
+	if name != nil || avatar != nil || description != nil || embeddingModel != nil || permission != nil || language != nil || chunkMethod != nil || parserID != nil || pagerank != nil || pipelineID != nil || parserConfig != nil || req.AutoMetadataConfig != nil || req.Connectors != nil || extChanges {
+		hasChanges = true
+	}
+	if !hasChanges {
+		return nil, common.CodeDataError, errors.New("No properties were modified")
+	}
+
+	updates := map[string]interface{}{}
+	if name != nil {
+		updates["name"] = *name
+	}
+	if avatar != nil {
+		updates["avatar"] = *avatar
+	}
+	if description != nil {
+		updates["description"] = *description
+	}
+	if embeddingModel != nil {
+		updates["embd_id"] = *embeddingModel
+	}
+	if permission != nil {
+		updates["permission"] = *permission
+	}
+	if language != nil {
+		updates["language"] = *language
+	}
+	if chunkMethod != nil {
+		trimmedChunkMethod := strings.TrimSpace(*chunkMethod)
+		if trimmedChunkMethod == "" {
+			return nil, common.CodeDataError, errors.New(datasetChunkMethodErrorMessage)
+		}
+		if err := validateDatasetChunkMethod(trimmedChunkMethod); err != nil {
+			return nil, common.CodeDataError, err
+		}
+		updates["parser_id"] = trimmedChunkMethod
+		if parserConfig == nil {
+			updates["parser_config"] = common.GetParserConfig(trimmedChunkMethod, nil)
+		}
+	}
+	if parserID != nil {
+		trimmedParserID := strings.TrimSpace(*parserID)
+		if trimmedParserID != "" && trimmedParserID != kb.ParserID {
+			if err := validateDatasetChunkMethod(trimmedParserID); err != nil {
+				return nil, common.CodeDataError, err
+			}
+			updates["parser_id"] = trimmedParserID
+		}
+	}
+	if pagerank != nil {
+		updates["pagerank"] = *pagerank
+		if *pagerank != kb.Pagerank {
+			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+			if s.docEngine == nil {
+				return nil, common.CodeServerError, errors.New("Document engine not initialized")
+			}
+			condition := map[string]interface{}{"kb_id": datasetID}
+			newValue := map[string]interface{}{}
+			if *pagerank > 0 {
+				newValue["pagerank_fea"] = *pagerank
+			} else {
+				newValue["remove"] = map[string]interface{}{"pagerank_fea": true}
+			}
+			if err := s.docEngine.UpdateDataset(context.Background(), condition, newValue, indexName, datasetID); err != nil {
+				return nil, common.CodeServerError, fmt.Errorf("failed to update pagerank in doc engine: %w", err)
+			}
+		}
+	}
+	if pipelineID != nil {
+		updates["pipeline_id"] = *pipelineID
+	}
+	if parserConfig != nil {
+		updates["parser_config"] = parserConfig
+	}
+
+	now := time.Now().Truncate(time.Second)
+	updateTime := now.UnixMilli()
+	updates["update_time"] = updateTime
+	updates["update_date"] = now
+
+	err = dao.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&entity.Knowledgebase{}).Where("id = ? AND tenant_id = ? AND status = ?", datasetID, tenantID, string(entity.StatusValid)).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		existingMappings, err := s.connector2KbDAO.ListByDatasetID(tx, datasetID)
+		if err != nil {
+			return err
+		}
+
+		existingByConnectorID := make(map[string]*entity.Connector2Kb, len(existingMappings))
+		for _, mapping := range existingMappings {
+			if mapping == nil {
+				continue
+			}
+			existingByConnectorID[mapping.ConnectorID] = mapping
+		}
+
+		seenConnectorIDs := make(map[string]struct{}, len(connectors))
+		desiredConnectorIDs := make(map[string]struct{}, len(connectors))
+
+		for _, connector := range connectors {
+			connectorID := strings.TrimSpace(connector.ID)
+			if connectorID == "" {
+				return errors.New("connector id is required")
+			}
+			if _, exists := seenConnectorIDs[connectorID]; exists {
+				return fmt.Errorf("Duplicate connector id: '%s'", connectorID)
+			}
+			seenConnectorIDs[connectorID] = struct{}{}
+			desiredConnectorIDs[connectorID] = struct{}{}
+
+			ownerConnector, err := s.connectorDAO.GetByID(connectorID)
+			if err != nil || ownerConnector == nil {
+				return fmt.Errorf("connector '%s' not found", connectorID)
+			}
+			if ownerConnector.TenantID != tenantID {
+				return fmt.Errorf("connector '%s' not owned by tenant '%s'", connectorID, tenantID)
+			}
+
+			autoParse := strings.TrimSpace(connector.AutoParse)
+			if autoParse == "" {
+				autoParse = "1"
+			}
+
+			if existingMapping, ok := existingByConnectorID[connectorID]; ok {
+				if existingMapping.AutoParse != autoParse {
+					if err := s.connector2KbDAO.UpdateAutoParse(tx, datasetID, connectorID, autoParse); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+
+			if err := s.connector2KbDAO.Create(tx, &entity.Connector2Kb{
+				ID:          common.GenerateUUID(),
+				ConnectorID: connectorID,
+				KbID:        datasetID,
+				AutoParse:   autoParse,
+			}); err != nil {
+				return err
+			}
+		}
+
+		for connectorID := range existingByConnectorID {
+			if _, ok := desiredConnectorIDs[connectorID]; ok {
+				continue
+			}
+			// Python cancels running sync jobs for removed connectors. Go does not yet
+			// have the sync-log scheduler, so we only keep the association table in sync here.
+			if err := s.connector2KbDAO.DeleteByDatasetIDAndConnectorID(tx, datasetID, connectorID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to update dataset: %w", err)
+	}
+
+	updatedKB, err := s.kbDAO.GetByID(datasetID)
+	if err != nil || updatedKB == nil {
+		return nil, common.CodeDataError, errors.New("Dataset updated failed")
+	}
+
+	if connectors == nil {
+		connectors = []DatasetConnectorRequest{}
+	}
+	result := datasetToMap(updatedKB)
+	result["connectors"] = connectors
+	return result, common.CodeSuccess, nil
 }
 
 // DeleteDatasets deletes multiple datasets.

@@ -163,6 +163,34 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 	})
 }
 
+// UpdateDataset handles PUT /api/v1/datasets/:dataset_id.
+func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+
+	var req service.UpdateDatasetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.datasetsService.UpdateDataset(datasetID, user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
