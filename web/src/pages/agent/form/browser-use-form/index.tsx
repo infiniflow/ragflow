@@ -1,7 +1,7 @@
 import { NextLLMSelect } from '@/components/llm-select/next';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
-import { Input, NumberInput } from '@/components/ui/input';
+import { NumberInput } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
@@ -20,6 +20,7 @@ const FormSchema = z.object({
   prompts: z.string(),
   max_steps: z.coerce.number().min(1),
   headless: z.boolean(),
+  persist_session: z.boolean(),
   upload_sources: z.string().optional(),
 });
 
@@ -46,9 +47,21 @@ function BrowserForm({ node }: INextOperatorForm) {
           <PromptEditor showToolbar={true}></PromptEditor>
         </RAGFlowFormItem>
         <RAGFlowFormItem label={t('flow.maxSteps')} name="max_steps">
-          <NumberInput min={1}></NumberInput>
+          {(field) => <NumberInput min={1} {...field}></NumberInput>}
         </RAGFlowFormItem>
         <RAGFlowFormItem label={t('flow.headless')} name="headless">
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            ></Switch>
+          )}
+        </RAGFlowFormItem>
+        <RAGFlowFormItem
+          label={t('flow.persistSession')}
+          tooltip={t('flow.persistSessionTip')}
+          name="persist_session"
+        >
           {(field) => (
             <Switch
               checked={field.value}
@@ -61,7 +74,14 @@ function BrowserForm({ node }: INextOperatorForm) {
           tooltip={t('flow.uploadSourcesTip')}
           name="upload_sources"
         >
-          <Input placeholder="file_id,https://example.com/a.pdf,{node@files.0.id}"></Input>
+          {(field) => (
+            <PromptEditor
+              {...field}
+              showToolbar
+              multiLine={false}
+              placeholder="file_id,https://example.com/a.pdf,{node@files.0.id}"
+            ></PromptEditor>
+          )}
         </RAGFlowFormItem>
       </FormWrapper>
     </Form>

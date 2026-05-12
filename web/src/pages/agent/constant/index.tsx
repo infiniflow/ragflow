@@ -987,6 +987,7 @@ export const initialBrowserValues = {
   prompts: `{${AgentGlobals.SysQuery}}`,
   max_steps: 30,
   headless: true,
+  persist_session: true,
   upload_sources: '',
   outputs: {
     content: { type: 'string', value: '' },

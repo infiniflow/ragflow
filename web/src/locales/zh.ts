@@ -1517,6 +1517,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       maxRetries: '最大重试轮数',
       maxSteps: '最大步数',
       headless: '无头模式',
+      persistSession: '持久化登录态',
+      persistSessionTip:
+        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
       uploadSources: '上传来源',
       uploadSourcesTip:
         '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',

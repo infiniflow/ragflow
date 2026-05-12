@@ -15,11 +15,13 @@
 #
 
 import asyncio
+import hashlib
 import inspect
 import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 from abc import ABC
 from pathlib import Path
@@ -51,6 +53,8 @@ class BrowserParam(LLMParam):
         self.prompts = "{sys.query}"
         self.max_steps = 30
         self.headless = True
+        # Reuse browser profile across runs of the same agent node by default.
+        self.persist_session = True
         self.upload_sources = []
         self.outputs = {
             "content": {"type": "string", "value": ""},
@@ -61,6 +65,7 @@ class BrowserParam(LLMParam):
         self.check_empty(self.llm_id, "[Browser] LLM")
         self.check_positive_integer(self.max_steps, "[Browser] Max steps")
         self.check_boolean(self.headless, "[Browser] Headless")
+        self.check_boolean(self.persist_session, "[Browser] Persist session")
         self.check_empty(self.prompts, "[Browser] Prompts")
         return True
 
@@ -329,6 +334,34 @@ class Browser(ComponentBase, ABC):
             name = name.split("@", 1)[0].strip()
         return name
 
+    @staticmethod
+    def _safe_path_segment(value: Any) -> str:
+        token = str(value or "").strip()
+        if not token:
+            return "unknown"
+        token = re.sub(r"[^A-Za-z0-9._-]+", "_", token)
+        return token.strip("._-") or "unknown"
+
+    def _resolve_persistent_profile_dir(self) -> str:
+        root = os.path.join(tempfile.gettempdir(), "ragflow_browser_use_profiles")
+        tenant = self._safe_path_segment(self._canvas.get_tenant_id())
+        raw_canvas_id = getattr(self._canvas, "_id", "")
+        if not raw_canvas_id:
+            graph_text = json.dumps(
+                self._canvas.dsl.get("graph", {}),
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+            raw_canvas_id = (
+                f"dsl_{hashlib.sha1(graph_text.encode('utf-8')).hexdigest()[:12]}"
+            )
+        canvas_id = self._safe_path_segment(raw_canvas_id)
+        node_id = self._safe_path_segment(self._id)
+        return os.path.join(root, tenant, canvas_id, node_id)
+
+    def _should_persist_session(self) -> bool:
+        return bool(self._param.persist_session)
+
     def _infer_provider_name(self, cfg: dict[str, Any]) -> str:
         provider = str(cfg.get("llm_factory") or "").strip()
         if provider:
@@ -405,6 +438,7 @@ class Browser(ComponentBase, ABC):
         task_text: str,
         download_dir: str,
         available_file_paths: list[str] | None = None,
+        profile_dir: str | None = None,
     ):
         from browser_use import Agent as BrowserUseAgent
 
@@ -437,6 +471,9 @@ class Browser(ComponentBase, ABC):
                     # Enable only when explicitly required and extensions are pre-cached.
                     "enable_default_extensions": enable_default_extensions,
                 }
+                if profile_dir:
+                    browser_kwargs["user_data_dir"] = profile_dir
+                    browser_kwargs["profile_directory"] = profile_dir
                 if not executable_path:
                     logging.warning(
                         "Browser no local browser executable found. "
@@ -605,12 +642,30 @@ class Browser(ComponentBase, ABC):
                     )
 
                 upload_local_paths = [item.get("local_path", "") for item in uploaded_files if item.get("local_path")]
-                history = asyncio.run(self._run_browser_use_async(task_text, download_dir, upload_local_paths))
+                profile_dir = None
+                if self._should_persist_session():
+                    profile_dir = self._resolve_persistent_profile_dir()
+                    os.makedirs(profile_dir, exist_ok=True)
+                    logging.info(
+                        "Browser using persistent profile dir: %s", profile_dir
+                    )
+                else:
+                    try:
+                        profile_dir = tempfile.mkdtemp(prefix="browser_use_profile_")
+                    except Exception:
+                        profile_dir = None
+                history = asyncio.run(
+                    self._run_browser_use_async(
+                        task_text, download_dir, upload_local_paths, profile_dir
+                    )
+                )
                 target_dir_id = FileService.get_root_folder(self._canvas.get_tenant_id())["id"]
                 downloaded_files = self._save_downloads(download_dir, target_dir_id)
 
                 self.set_output("content", self._extract_history_text(history))
                 self.set_output("downloaded_files", downloaded_files)
+                if profile_dir and not self._should_persist_session():
+                    shutil.rmtree(profile_dir, ignore_errors=True)
                 return self.output()
         except Exception as e:
             logging.exception("Browser invoke failed")

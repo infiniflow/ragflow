@@ -1771,6 +1771,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
       maxRetries: 'Max retry rounds',
       maxSteps: 'Max steps',
       headless: 'Headless',
+      persistSession: 'Persist session',
+      persistSessionTip:
+        'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
       uploadSources: 'Upload sources',
       uploadSourcesTip:
         'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
