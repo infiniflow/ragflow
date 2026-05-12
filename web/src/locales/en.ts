@@ -1769,6 +1769,11 @@ Best for: Documents with flowing, contextually connected content — such as boo
       maxRounds: 'Max reflection rounds',
       delayAfterError: 'Delay after error',
       maxRetries: 'Max retry rounds',
+      maxSteps: 'Max steps',
+      headless: 'Headless',
+      uploadSources: 'Upload sources',
+      uploadSourcesTip:
+        'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
       sysPromptDefaultValue: `
@@ -1871,6 +1876,9 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
+      browser: 'Browser',
+      browserDescription:
+        'Automate browser tasks. Supports model configuration and prompt-driven actions. Upload sources support file IDs and URLs, and downloaded files can be saved to a target folder.',
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
