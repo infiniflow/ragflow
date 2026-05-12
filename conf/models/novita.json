@@ -1,0 +1,62 @@
+{
+  "name": "NovitaAI",
+  "url": {
+    "default": "https://api.novita.ai/v3/openai"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "novita",
+  "models": [
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta-llama/llama-3.3-70b-instruct",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-30b-a3b-fp8",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3-235b-a22b-fp8",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "moonshotai/kimi-k2-instruct",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "google/gemma-3-27b-it",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mistralai/mistral-nemo",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
