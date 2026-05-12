@@ -19,13 +19,13 @@ export function EmbedContainer({
   const appConf = useFetchAppConf();
 
   return (
-    <section className="h-[100vh] flex justify-center items-center">
+    <section className="h-[100vh] flex justify-center items-center bg-background">
       <div className="hidden xl:flex w-40 gap-2 absolute left-3 top-12 items-center">
         <img src="/logo.svg" alt="" />
         <span className="text-2xl font-bold">{appConf.appName}</span>
       </div>
-      <div className="w-full h-full md:w-[80vw] md:h-auto border-0 md:border rounded-none md:rounded-lg">
-        <div className="flex justify-between items-center border-b p-3 relative">
+      <div className="w-full h-full md:w-[80vw] md:h-[92vh] bg-bg-base border-0 md:border md:border-border-default rounded-none md:rounded-xl md:shadow-sm overflow-hidden flex flex-col">
+        <div className="flex justify-between items-center border-b border-border-default px-4 py-3 relative bg-bg-base">
           <div className="flex gap-2 items-center absolute left-1/2 -translate-x-1/2 md:static md:left-auto md:translate-x-0">
             <RAGFlowAvatar
               avatar={avatar}
@@ -33,7 +33,9 @@ export function EmbedContainer({
               isPerson
               className="size-5 md:size-10"
             />
-            <div className="md:text-xl text-foreground">{title}</div>
+            <div className="md:text-xl font-medium text-foreground">
+              {title}
+            </div>
           </div>
           <div className="flex md:hidden items-center">
             <img src="/logo.svg" alt="" className="h-6" />
@@ -49,7 +51,7 @@ export function EmbedContainer({
             </div>
           </Button>
         </div>
-        {children}
+        <div className="flex-1 min-h-0">{children}</div>
       </div>
     </section>
   );
