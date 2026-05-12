@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import uuid
 import hashlib
 import pytest
@@ -92,16 +93,28 @@ class TestGetUuid:
 class TestDownloadImg:
     """Test cases for download_img function"""
 
-    @pytest.mark.asyncio
-    async def test_empty_url_returns_empty_string(self):
+    def test_empty_url_returns_empty_string(self):
         """Test that empty URL returns empty string"""
-        result = await download_img("")
+        result = asyncio.run(download_img(""))
         assert result == ""
 
-    @pytest.mark.asyncio
-    async def test_none_url_returns_empty_string(self):
+    def test_none_url_returns_empty_string(self):
         """Test that None URL returns empty string"""
-        result = await download_img(None)
+        result = asyncio.run(download_img(None))
+        assert result == ""
+
+    def test_loopback_url_blocked(self):
+        """OAuth avatar fetch must not call loopback (SSRF regression)."""
+        result = asyncio.run(download_img("http://127.0.0.1/avatar.png"))
+        assert result == ""
+
+    def test_metadata_ip_blocked(self):
+        """Link-local / cloud metadata ranges are non-global and must be rejected."""
+        result = asyncio.run(download_img("http://169.254.169.254/latest/meta-data/"))
+        assert result == ""
+
+    def test_disallowed_scheme_blocked(self):
+        result = asyncio.run(download_img("file:///etc/passwd"))
         assert result == ""
 
 

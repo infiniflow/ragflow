@@ -24,6 +24,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from urllib.parse import urljoin
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -32,14 +33,92 @@ def get_uuid():
     return uuid.uuid1().hex
 
 
+# OAuth avatar fetch: bounded size; each redirect hop is SSRF-checked and DNS-pinned
+# (see common.ssrf_guard).
+_OAUTH_AVATAR_MAX_BYTES = int(os.environ.get("RAGFLOW_OAUTH_AVATAR_MAX_BYTES", str(5 * 1024 * 1024)))
+_OAUTH_AVATAR_MAX_REDIRECTS = int(os.environ.get("RAGFLOW_OAUTH_AVATAR_MAX_REDIRECTS", "5"))
+_REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
+
+
 async def download_img(url):
+    """Fetch an image URL and return a data URI, or empty string on failure / SSRF block.
+
+    URLs must resolve only to globally routable addresses; redirects are followed
+    only up to ``_OAUTH_AVATAR_MAX_REDIRECTS`` with each target validated.
+    """
     if not url:
         return ""
-    from common.http_client import async_request
-    response = await async_request("GET", url)
-    return "data:" + \
-        response.headers.get('Content-Type', 'image/jpg') + ";" + \
-        "base64," + base64.b64encode(response.content).decode("utf-8")
+    if not isinstance(url, str):
+        url = str(url)
+    url = url.strip()
+    if not url:
+        return ""
+
+    current_url = url
+    redirect_hops = 0
+
+    # Match common/http_client.py defaults without importing http_client (avoids
+    # pulling settings and keeps this path usable in lightweight test envs).
+    request_timeout = float(os.environ.get("HTTP_CLIENT_TIMEOUT", "15"))
+    proxy = os.environ.get("HTTP_CLIENT_PROXY")
+    user_agent = os.environ.get("HTTP_CLIENT_USER_AGENT", "ragflow-http-client")
+
+    from common.ssrf_guard import assert_url_is_safe, pin_dns_global
+
+    while redirect_hops <= _OAUTH_AVATAR_MAX_REDIRECTS:
+        try:
+            hostname, pin_ip = assert_url_is_safe(current_url)
+        except ValueError as exc:
+            logging.warning("download_img rejected URL (SSRF guard): %s", exc)
+            return ""
+
+        import httpx
+
+        timeout = httpx.Timeout(request_timeout)
+        headers = {}
+        if user_agent:
+            headers["User-Agent"] = user_agent
+
+        try:
+            with pin_dns_global(hostname, pin_ip):
+                async with httpx.AsyncClient(
+                    timeout=timeout,
+                    follow_redirects=False,
+                    proxy=proxy,
+                ) as client:
+                    async with client.stream("GET", current_url, headers=headers or None) as response:
+                        if response.status_code in _REDIRECT_STATUS:
+                            await response.aclose()
+                            location = response.headers.get("location")
+                            if not location:
+                                return ""
+                            current_url = urljoin(current_url, location)
+                            redirect_hops += 1
+                            continue
+                        if response.status_code != 200:
+                            return ""
+                        body = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
+                                logging.warning(
+                                    "download_img response exceeded max size (%s bytes); URL rejected",
+                                    _OAUTH_AVATAR_MAX_BYTES,
+                                )
+                                await response.aclose()
+                                return ""
+                            body.extend(chunk)
+                        content_type = response.headers.get("Content-Type", "image/jpeg")
+                        return (
+                            "data:"
+                            + content_type
+                            + ";base64,"
+                            + base64.b64encode(bytes(body)).decode("utf-8")
+                        )
+        except Exception as exc:
+            logging.warning("download_img request failed: %s", exc)
+            return ""
+
+    return ""
 
 
 def hash_str2int(line: str, mod: int = 10 ** 8) -> int:
