@@ -54,7 +54,11 @@ class IterationItem(ComponentBase, ABC):
         if self.check_if_canceled("IterationItem processing"):
             return
 
-        self.set_output("item", arr[self._idx])
+        current_item = arr[self._idx]
+        self.set_output("item", current_item)
+        # Keep `result` as a compatibility alias because existing DSL examples
+        # and downstream references may still consume IterationItem via `@result`.
+        self.set_output("result", current_item)
         self.set_output("index", self._idx)
 
         self._idx += 1
