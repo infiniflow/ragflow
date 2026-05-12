@@ -1,7 +1,7 @@
 {
   "name": "StepFun",
   "url": {
-    "default": "https://api.stepfun.com/v1"
+    "default": "https://api.stepfun.ai/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
@@ -9,6 +9,20 @@
   },
   "class": "step",
   "models": [
+    {
+      "name": "step-3.5-flash",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "step-3.5-flash-paid",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
     {
       "name": "step-2-16k",
       "max_tokens": 16384,
