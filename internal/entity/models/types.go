@@ -26,6 +26,14 @@ type ModelDriver interface {
 	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
 	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
+	// TranscribeAudio transcribe audio
+	TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error)
+	TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error
+	// AudioSpeech convert audio to text
+	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error)
+	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error
+	// OCRFile OCR file
+	OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
 
@@ -51,6 +59,15 @@ type RerankResult struct {
 
 type RerankResponse struct {
 	Data []RerankResult `json:"data"`
+}
+
+type ASRResponse struct {
+}
+
+type TTSResponse struct {
+}
+
+type OCRResponse struct {
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
@@ -91,6 +108,15 @@ type EmbeddingConfig struct {
 
 type RerankConfig struct {
 	TopN int
+}
+
+type ASRConfig struct {
+}
+
+type TTSConfig struct {
+}
+
+type OCRConfig struct {
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration

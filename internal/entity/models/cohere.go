@@ -17,6 +17,11 @@ type CoHereModel struct {
 	httpClient *http.Client
 }
 
+func (c *CoHereModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (c *CoHereModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &CoHereModel{
 		BaseURL:   baseURL,
@@ -478,6 +483,29 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 	}
 
 	return &rerankResponse, nil
+}
+
+// TranscribeAudio transcribe audio
+func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+func (z *CoHereModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (c *CoHereModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+func (z *CoHereModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (c *CoHereModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
 func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {

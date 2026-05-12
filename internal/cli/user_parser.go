@@ -2587,16 +2587,29 @@ func (p *Parser) parseStreamCommand() (*Command, error) {
 	var command *Command
 	var err error
 
-	if p.curToken.Type == TokenChat {
+	switch p.curToken.Type {
+	case TokenChat:
 		command, err = p.parseChatCommand()
 		if err != nil {
 			return nil, err
 		}
-	} else if p.curToken.Type == TokenThink {
+	case TokenThink:
 		command, err = p.parseThinkCommand()
 		if err != nil {
 			return nil, err
 		}
+	case TokenASR:
+		command, err = p.parseASRCommand()
+		if err != nil {
+			return nil, err
+		}
+	case TokenTTS:
+		command, err = p.parseTTSCommand()
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("expected CHAT, THINK, ASR, or TTS after STREAM")
 	}
 
 	command.Params["stream"] = true
@@ -2720,6 +2733,109 @@ documentLoop:
 	cmd.Params["query"] = query
 	cmd.Params["documents"] = documents
 	cmd.Params["top_n"] = topN
+	return cmd, nil
+}
+
+func (p *Parser) parseASRCommand() (*Command, error) {
+	p.nextToken() // consume ASR
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after ASR")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenAudio {
+		return nil, fmt.Errorf("expected AUDIO to ASR")
+	}
+	p.nextToken() // consume FILE
+
+	audioFile, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("asr_user_command")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["audio_file"] = audioFile
+	return cmd, nil
+}
+
+func (p *Parser) parseTTSCommand() (*Command, error) {
+	p.nextToken() // consume TTS
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after TTS")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenText {
+		return nil, fmt.Errorf("expected TEXT to TTS")
+	}
+	p.nextToken() // consume FILE
+
+	text, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("tts_user_command")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["text"] = text
+	return cmd, nil
+}
+
+func (p *Parser) parseOCRCommand() (*Command, error) {
+	p.nextToken() // consume OCR
+
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected WITH after OCR")
+	}
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenFile {
+		return nil, fmt.Errorf("expected FILE to OCR")
+	}
+	p.nextToken() // consume FILE
+
+	file, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("ocr_user_command")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["file"] = file
 	return cmd, nil
 }
 
