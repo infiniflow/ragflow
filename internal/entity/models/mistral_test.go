@@ -496,6 +496,28 @@ func TestMistralEmbedRequiresModelName(t *testing.T) {
 	}
 }
 
+func TestMistralEmbedRejectsDuplicateIndex(t *testing.T) {
+	// A malformed upstream that repeats data[*].index would silently
+	// overwrite the earlier vector; the driver must fail loudly instead.
+	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{1}, "index": 0},
+				{"embedding": []float64{2}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
+		t.Errorf("expected duplicate-index error, got %v", err)
+	}
+}
+
 func TestMistralEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{

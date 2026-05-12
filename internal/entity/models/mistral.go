@@ -455,6 +455,12 @@ func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		if item.Index < 0 || item.Index >= len(texts) {
 			return nil, fmt.Errorf("mistral: response index %d out of range for %d inputs", item.Index, len(texts))
 		}
+		if filled[item.Index] {
+			// A malformed response that repeats the same index would
+			// silently overwrite the earlier vector. Fail loudly so
+			// the caller never uses ambiguous output.
+			return nil, fmt.Errorf("mistral: duplicate embedding index %d in response", item.Index)
+		}
 		embeddings[item.Index] = EmbeddingData{
 			Embedding: item.Embedding,
 			Index:     item.Index,
