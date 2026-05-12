@@ -195,7 +195,7 @@ class XinferenceSeq2txt(Base):
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
         try:
-            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload)
+            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
 
@@ -377,6 +377,7 @@ class ZhipuSeq2txt(Base):
                     data=payload,
                     files=files,
                     headers=headers,
+                    timeout=60,
                 )
                 body = response.json()
                 if response.status_code == 200:

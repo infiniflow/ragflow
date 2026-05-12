@@ -1,0 +1,14 @@
+{
+  "name": "FishAudio",
+  "url": {
+    "default": "https://api.fish.audio"
+  },
+  "url_suffix": {
+    "models": "model",
+    "balance": "self/package"
+  },
+  "class": "fishaudio",
+  "models": [
+
+  ]
+}

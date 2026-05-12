@@ -133,8 +133,8 @@ def _load_file_api_module(monkeypatch):
         True,
         SimpleNamespace(parent_id="bucket1", location="path1", name="doc.txt", type="doc"),
     )
-    file_api_service_mod.get_parent_folder = lambda _file_id: (True, {"parent_folder": {"id": "parent1"}})
-    file_api_service_mod.get_all_parent_folders = lambda _file_id: (True, {"parent_folders": [{"id": "root"}]})
+    file_api_service_mod.get_parent_folder = lambda _file_id, user_id=None: (True, {"parent_folder": {"id": "parent1"}})
+    file_api_service_mod.get_all_parent_folders = lambda _file_id, user_id=None: (True, {"parent_folders": [{"id": "root"}]})
     monkeypatch.setitem(sys.modules, "api.apps.services.file_api_service", file_api_service_mod)
     services_pkg.file_api_service = file_api_service_mod
 

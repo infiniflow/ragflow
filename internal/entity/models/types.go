@@ -23,9 +23,17 @@ type ModelDriver interface {
 	// messages accepts []Message which supports multimodal content (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
 	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
 	// Encode encodes a list of texts into embeddings
-	Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error)
+	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
-	Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error)
+	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
+	// TranscribeAudio transcribe audio
+	TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error)
+	TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error
+	// AudioSpeech convert audio to text
+	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error)
+	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error
+	// OCRFile OCR file
+	OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
 
@@ -37,6 +45,29 @@ type ModelDriver interface {
 type ChatResponse struct {
 	Answer        *string `json:"answer"`
 	ReasonContent *string `json:"reason_content"`
+}
+
+type EmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+type RerankResult struct {
+	Index          int     `json:"index"`
+	RelevanceScore float64 `json:"relevance_score"`
+}
+
+type RerankResponse struct {
+	Data []RerankResult `json:"data"`
+}
+
+type ASRResponse struct {
+}
+
+type TTSResponse struct {
+}
+
+type OCRResponse struct {
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
@@ -72,6 +103,20 @@ type APIConfig struct {
 }
 
 type EmbeddingConfig struct {
+	Dimension int
+}
+
+type RerankConfig struct {
+	TopN int
+}
+
+type ASRConfig struct {
+}
+
+type TTSConfig struct {
+}
+
+type OCRConfig struct {
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
@@ -109,8 +154,8 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig)
 }
 
 // Rerank calculates similarity between query and texts
-func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig)
+func (r *RerankModel) Rerank(query string, texts []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return r.ModelDriver.Rerank(r.ModelName, query, texts, apiConfig, rerankConfig)
 }
 
 // ChatModel wraps a ModelDriver with chat-specific configuration

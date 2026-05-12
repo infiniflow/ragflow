@@ -166,11 +166,13 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
 async def apply_meta_data_filter(
     meta_data_filter: dict | None,
-    metas: dict,
-    question: str,
+    metas: dict | None = None,
+    question: str = "",
     chat_mdl: Any = None,
     base_doc_ids: list[str] | None = None,
     manual_value_resolver: Callable[[dict], dict] | None = None,
+    kb_ids: list[str] | None = None,
+    metas_loader: Callable[[], dict] | None = None,
 ) -> list[str] | None:
     """
     Apply metadata filtering rules and return the filtered doc_ids.
@@ -179,6 +181,20 @@ async def apply_meta_data_filter(
     - auto: generate filter conditions via LLM (gen_meta_filter)
     - semi_auto: generate conditions using selected metadata keys only
     - manual: directly filter based on provided conditions
+
+    When ``kb_ids`` is supplied and the active doc store is Elasticsearch the
+    generated filter conditions are pushed down to ES via
+    ``DocMetadataService.filter_doc_ids_by_meta_pushdown`` instead of being
+    evaluated in Python over ``metas``. The in-memory ``meta_filter`` path
+    remains the fallback so callers without a KB scope, or backends without
+    push-down support, behave exactly as before.
+
+    ``metas`` may be supplied eagerly or via ``metas_loader``. The loader is
+    only invoked when the metadata dict is actually needed — i.e. for the LLM
+    context in ``auto`` / ``semi_auto`` modes, or as the in-memory fallback
+    when push-down can't service a request. ``manual`` mode that lands on the
+    push-down path therefore skips the expensive
+    ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
         list of doc_ids, ["-999"] when manual filters yield no result, or None
@@ -193,9 +209,28 @@ async def apply_meta_data_filter(
 
     method = meta_data_filter.get("method")
 
+    # Memoised metadata loader. ``_get_metas`` materialises the dict at most
+    # once per call; downstream branches that never reach an in-memory eval
+    # leave the loader untouched.
+    cached_metas: dict | None = metas
+
+    def _get_metas() -> dict:
+        nonlocal cached_metas
+        if cached_metas is None:
+            cached_metas = metas_loader() if metas_loader else {}
+        return cached_metas
+
+    def _evaluate(conditions: list[dict], logic: str) -> list[str]:
+        """Run conditions through ES push-down when possible, in-memory otherwise."""
+        if conditions and kb_ids:
+            pushed = _try_meta_pushdown(kb_ids, conditions, logic)
+            if pushed is not None:
+                return pushed
+        return meta_filter(_get_metas(), conditions, logic)
+
     if method == "auto":
-        filters: dict = await gen_meta_filter(chat_mdl, metas, question)
-        doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+        filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
+        doc_ids.extend(_evaluate(filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
             return None
     elif method == "semi_auto":
@@ -212,21 +247,45 @@ async def apply_meta_data_filter(
                     constraints[key] = op
 
         if selected_keys:
-            filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+            current_metas = _get_metas()
+            filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
-                doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                doc_ids.extend(_evaluate(filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None
     elif method == "manual":
         filters = meta_data_filter.get("manual", [])
         if manual_value_resolver:
             filters = [manual_value_resolver(flt) for flt in filters]
-        doc_ids.extend(meta_filter(metas, filters, meta_data_filter.get("logic", "and")))
+        doc_ids.extend(_evaluate(filters, meta_data_filter.get("logic", "and")))
         if filters and not doc_ids:
             doc_ids = ["-999"]
 
     return doc_ids
+
+
+def _try_meta_pushdown(
+    kb_ids: list[str],
+    conditions: list[dict],
+    logic: str,
+) -> list[str] | None:
+    """Attempt the ES push-down path; return ``None`` to fall back in-memory.
+
+    Lazy-imports ``DocMetadataService`` so this module stays usable in
+    environments where the API/db layer hasn't been wired up (e.g. unit tests
+    that exercise ``meta_filter`` directly).
+    """
+    try:
+        from api.db.services.doc_metadata_service import DocMetadataService
+    except Exception as e:
+        logging.debug(f"[apply_meta_data_filter] push-down disabled, import failed: {e}")
+        return None
+    try:
+        return DocMetadataService.filter_doc_ids_by_meta_pushdown(kb_ids, conditions, logic)
+    except Exception as e:
+        logging.warning(f"[apply_meta_data_filter] push-down errored, falling back: {e}")
+        return None
 
 
 def dedupe_list(values: list) -> list:
