@@ -51,7 +51,7 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
     return (allTags ?? [])
       .map((entry) => entry.tag)
       .filter((tag) => !taken.has(tag.toLowerCase()))
-      .filter((tag) => !needle || tag.toLowerCase().includes(needle))
+      .filter((tag) => !needle || tag.toLowerCase().startsWith(needle))
       .slice(0, 20);
   }, [allTags, tags, draft]);
 
@@ -80,8 +80,10 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
 
   const handleSave = async () => {
     const pending = draft.trim();
-    const finalTags =
-      pending && !tags.includes(pending) ? [...tags, pending] : tags;
+    const alreadyPresent = tags.some(
+      (existing) => existing.toLowerCase() === pending.toLowerCase(),
+    );
+    const finalTags = pending && !alreadyPresent ? [...tags, pending] : tags;
     setTags(finalTags);
     setDraft('');
     const success = await updateAgentTags({
@@ -114,7 +116,7 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
               <button
                 type="button"
                 onClick={() => removeTag(tag)}
-                aria-label={`Remove ${tag}`}
+                aria-label={t('flow.removeTagAriaLabel', { tag })}
                 className="hover:text-state-error"
               >
                 <X className="size-3" />
