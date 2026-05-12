@@ -31,10 +31,11 @@ import (
 // UpstageModel implements ModelDriver for Upstage (Solar models).
 //
 // Upstage exposes an OpenAI-compatible REST API at
-// https://api.upstage.ai/v1/solar (chat completions at /chat/completions,
-// list models at /models, embeddings at /embeddings). The Python side has
-// targeted this same base URL via UpstageEmbed(OpenAIEmbed) for a long time,
-// so the wire shape is well known.
+// https://api.upstage.ai/v1 (chat completions at /chat/completions, list
+// models at /models, embeddings at /embeddings). The wire shape matches
+// OpenAI closely enough that the chat path here is a direct port of the
+// OpenAI driver. The legacy /v1/solar/* paths still work but the canonical
+// base is /v1.
 type UpstageModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix

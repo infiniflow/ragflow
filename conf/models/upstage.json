@@ -1,7 +1,7 @@
 {
   "name": "Upstage",
   "url": {
-    "default": "https://api.upstage.ai/v1/solar"
+    "default": "https://api.upstage.ai/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
@@ -10,7 +10,14 @@
   "class": "solar",
   "models": [
     {
-      "name": "solar-pro-2",
+      "name": "solar-pro3",
+      "max_tokens": 65536,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "solar-pro2",
       "max_tokens": 65536,
       "model_types": [
         "chat"
@@ -24,7 +31,7 @@
       ]
     },
     {
-      "name": "solar-mini-chat",
+      "name": "solar-mini",
       "max_tokens": 32768,
       "model_types": [
         "chat"
