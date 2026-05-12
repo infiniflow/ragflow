@@ -36,6 +36,15 @@ type ConnectorListItem struct {
 	Status string `json:"status"`
 }
 
+// ConnectorKBListItem represents a connector linked to a knowledge base.
+type ConnectorKBListItem struct {
+	ID        string `json:"id" gorm:"column:id"`
+	Source    string `json:"source" gorm:"column:source"`
+	Name      string `json:"name" gorm:"column:name"`
+	AutoParse string `json:"auto_parse" gorm:"column:auto_parse"`
+	Status    string `json:"status" gorm:"column:status"`
+}
+
 // ListByTenantID list connectors by tenant ID
 // Only selects id, name, source, status fields (matching Python implementation)
 func (dao *ConnectorDAO) ListByTenantID(tenantID string) ([]*ConnectorListItem, error) {
@@ -45,6 +54,23 @@ func (dao *ConnectorDAO) ListByTenantID(tenantID string) ([]*ConnectorListItem, 
 		Select("id", "name", "source", "status").
 		Where("tenant_id = ?", tenantID).
 		Find(&connectors).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return connectors, nil
+}
+
+// ListByKBID lists connectors linked to a knowledge base.
+func (dao *ConnectorDAO) ListByKBID(kbID string) ([]*ConnectorKBListItem, error) {
+	var connectors []*ConnectorKBListItem
+
+	err := DB.Model(&entity.Connector2Kb{}).
+		Select("connector.id, connector.source, connector.name, connector2kb.auto_parse, connector.status").
+		Joins("JOIN connector ON connector2kb.connector_id = connector.id").
+		Where("connector2kb.kb_id = ?", kbID).
+		Scan(&connectors).Error
 
 	if err != nil {
 		return nil, err

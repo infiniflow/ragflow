@@ -138,3 +138,13 @@ func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
 	err := DB.Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
 	return count, err
 }
+
+// SumSizeByKBID returns the total document size for a knowledge base.
+func (dao *DocumentDAO) SumSizeByKBID(kbID string) (int64, error) {
+	var total int64
+	err := DB.Model(&entity.Document{}).
+		Select("COALESCE(SUM(size), 0)").
+		Where("kb_id = ?", kbID).
+		Scan(&total).Error
+	return total, err
+}
