@@ -40,14 +40,14 @@
     },
     {
       "name": "solar-embedding-1-large-query",
-      "max_tokens": 4000,
+      "max_tokens": 2000,
       "model_types": [
         "embedding"
       ]
     },
     {
       "name": "solar-embedding-1-large-passage",
-      "max_tokens": 4000,
+      "max_tokens": 2000,
       "model_types": [
         "embedding"
       ]
