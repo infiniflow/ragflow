@@ -267,6 +267,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EmbedUserText(cmd)
 	case "rarank_user_document":
 		return c.RerankUserDocument(cmd)
+	case "tts_user_command":
+		return c.TTSUserCommand(cmd)
+	case "asr_user_command":
+		return c.ASRUserCommand(cmd)
+	case "ocr_user_command":
+		return c.OCRUserCommand(cmd)
 	case "check_provider_connection":
 		return c.CheckProviderConnection(cmd)
 	case "use_model":
