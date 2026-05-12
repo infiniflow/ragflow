@@ -102,7 +102,7 @@ def synthesize_with_cache(tts_mdl: Any, cleaned_text: str) -> Optional[str]:
             if isinstance(chunk, (bytes, bytearray)):
                 buf += bytes(chunk)
     except Exception as e:
-        logging.error("TTS failed: %s, text=%r", e, cleaned_text)
+        logging.error("TTS failed: %s (text length=%d)", e, len(cleaned_text))
         return None
 
     if not buf:
