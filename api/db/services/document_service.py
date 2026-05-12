@@ -591,27 +591,51 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
-        num = (
-            cls.model.update(token_num=cls.model.token_num + token_num, chunk_num=cls.model.chunk_num + chunk_num, process_duration=cls.model.process_duration + duration)
-            .where(cls.model.id == doc_id)
-            .execute()
-        )
-        if num == 0:
-            logging.warning("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num + token_num, chunk_num=Knowledgebase.chunk_num + chunk_num).where(Knowledgebase.id == kb_id).execute()
+        with DB.atomic():
+            num = (
+                cls.model.update(
+                    token_num=cls.model.token_num + token_num,
+                    chunk_num=cls.model.chunk_num + chunk_num,
+                    process_duration=cls.model.process_duration + duration,
+                )
+                .where(cls.model.id == doc_id)
+                .execute()
+            )
+            if num == 0:
+                raise LookupError("Document not found which is supposed to be there")
+            num = (
+                Knowledgebase.update(
+                    token_num=Knowledgebase.token_num + token_num,
+                    chunk_num=Knowledgebase.chunk_num + chunk_num,
+                )
+                .where(Knowledgebase.id == kb_id)
+                .execute()
+            )
         return num
 
     @classmethod
     @DB.connection_context()
     def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
-        num = (
-            cls.model.update(token_num=cls.model.token_num - token_num, chunk_num=cls.model.chunk_num - chunk_num, process_duration=cls.model.process_duration + duration)
-            .where(cls.model.id == doc_id)
-            .execute()
-        )
-        if num == 0:
-            raise LookupError("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num - token_num, chunk_num=Knowledgebase.chunk_num - chunk_num).where(Knowledgebase.id == kb_id).execute()
+        with DB.atomic():
+            num = (
+                cls.model.update(
+                    token_num=cls.model.token_num - token_num,
+                    chunk_num=cls.model.chunk_num - chunk_num,
+                    process_duration=cls.model.process_duration + duration,
+                )
+                .where(cls.model.id == doc_id)
+                .execute()
+            )
+            if num == 0:
+                raise LookupError("Document not found which is supposed to be there")
+            num = (
+                Knowledgebase.update(
+                    token_num=Knowledgebase.token_num - token_num,
+                    chunk_num=Knowledgebase.chunk_num - chunk_num,
+                )
+                .where(Knowledgebase.id == kb_id)
+                .execute()
+            )
         return num
 
     @classmethod
