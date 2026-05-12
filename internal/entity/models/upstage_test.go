@@ -20,6 +20,8 @@ func newUpstageForTest(baseURL string) *UpstageModel {
 	)
 }
 
+// ---------- reasoning_effort / reasoning field ----------
+
 func TestUpstageChatPropagatesReasoningEffort(t *testing.T) {
 	// Per https://console.upstage.ai/api/docs/for-agents/raw, Upstage
 	// Solar models accept `reasoning_effort: minimal|low|medium|high`.
@@ -205,5 +207,65 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	}
 	if _, ok := seen["messages"].([]interface{}); !ok {
 		t.Errorf("body[messages] missing or wrong type")
+	}
+}
+
+// ---------- Embed: duplicate / out-of-range / reorder ----------
+
+func TestUpstageEmbedRejectsDuplicateIndex(t *testing.T) {
+	// A malformed upstream that repeats data[*].index would silently
+	// overwrite the earlier vector; the driver must fail loudly instead.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[
+			{"embedding":[1],"index":0},
+			{"embedding":[2],"index":0}]}`)
+	}))
+	defer srv.Close()
+
+	u := newUpstageForTest(srv.URL)
+	apiKey := "test-key"
+	model := "solar-embedding-1-large-passage"
+	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
+		t.Errorf("expected duplicate-index error, got %v", err)
+	}
+}
+
+func TestUpstageEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[{"embedding":[1],"index":7}]}`)
+	}))
+	defer srv.Close()
+
+	u := newUpstageForTest(srv.URL)
+	apiKey := "test-key"
+	model := "solar-embedding-1-large-passage"
+	_, err := u.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("expected out-of-range error, got %v", err)
+	}
+}
+
+func TestUpstageEmbedHappyPathReordersByIndex(t *testing.T) {
+	// Upstream returns vectors in shuffled order; driver must realign.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[
+			{"embedding":[2],"index":2},
+			{"embedding":[0],"index":0},
+			{"embedding":[1],"index":1}]}`)
+	}))
+	defer srv.Close()
+
+	u := newUpstageForTest(srv.URL)
+	apiKey := "test-key"
+	model := "solar-embedding-1-large-passage"
+	vecs, err := u.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	for i, v := range vecs {
+		if v.Index != i || v.Embedding[0] != float64(i) {
+			t.Errorf("slot %d = %+v, want index=%d embedding=[%d]", i, v, i, i)
+		}
 	}
 }
