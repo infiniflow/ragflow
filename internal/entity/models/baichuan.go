@@ -380,6 +380,29 @@ func (b *BaichuanModel) Rerank(modelName *string, query string, documents []stri
 	return nil, fmt.Errorf("no such method")
 }
 
+// TranscribeAudio transcribe audio
+func (z *BaichuanModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *BaichuanModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (z *BaichuanModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *BaichuanModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (z *BaichuanModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
 func (b *BaichuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("no such method")
 }

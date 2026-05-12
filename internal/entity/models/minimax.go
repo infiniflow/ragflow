@@ -35,6 +35,11 @@ type MinimaxModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
+func (z *MinimaxModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewMinimaxModel creates a new Minimax model instance
 func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
 	return &MinimaxModel{
@@ -446,4 +451,27 @@ func (z *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
 // Rerank calculates similarity scores between query and documents
 func (z *MinimaxModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (z *MinimaxModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *MinimaxModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
