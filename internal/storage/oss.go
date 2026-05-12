@@ -218,8 +218,8 @@ func (o *OSSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error)
 	return nil, fmt.Errorf("failed to get object after retries")
 }
 
-// Rm removes an object from OSS
-func (o *OSSStorage) Rm(bucket, fnm string, tenantID ...string) error {
+// Remove removes an object from OSS
+func (o *OSSStorage) Remove(bucket, fnm string, tenantID ...string) error {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
 
 	ctx := context.Background()
@@ -381,7 +381,7 @@ func (o *OSSStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool 
 // Move moves an object from source to destination
 func (o *OSSStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 	if o.Copy(srcBucket, srcPath, destBucket, destPath) {
-		if err := o.Rm(srcBucket, srcPath); err != nil {
+		if err := o.Remove(srcBucket, srcPath); err != nil {
 			zap.L().Error("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
 			return false
 		}

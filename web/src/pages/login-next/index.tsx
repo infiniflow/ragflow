@@ -26,7 +26,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { BgSvg } from './bg';
 import FlipCard3D, { FlipFaceContext } from './card';
@@ -35,7 +35,7 @@ import './index.less';
 type LoginFormContentProps = {
   isLoginPage: boolean;
   title: string;
-  form: ReturnType<typeof useForm>;
+  form: UseFormReturn<any>;
   loading: boolean;
   onCheck: (params: any) => Promise<void>;
   changeTitle: () => void;
@@ -303,18 +303,18 @@ const Login = () => {
         });
       }
     });
-  const form = useForm({
+  type FormValues = z.infer<typeof FormSchema>;
+  const form = useForm<FormValues>({
     defaultValues: {
       nickname: '',
       email: '',
       password: '',
-      confirmPassword: '',
       remember: false,
     },
     resolver: zodResolver(FormSchema),
   });
 
-  const onCheck = async (params: z.infer<typeof FormSchema>) => {
+  const onCheck = async (params: FormValues) => {
     try {
       const rsaPassWord = rsaPsw(params.password) as string;
 

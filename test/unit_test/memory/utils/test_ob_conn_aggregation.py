@@ -20,6 +20,8 @@ Tests the pure aggregation logic used by OBConnection.get_aggregation,
 without requiring a real OceanBase instance or heavy dependencies.
 """
 
+import pytest
+
 from memory.utils.aggregation_utils import aggregate_by_field
 
 
@@ -53,3 +55,24 @@ class TestAggregateByField:
         ]
         out = aggregate_by_field(messages, "message_type_kwd")
         assert set(out) == {("user", 2), ("assistant", 1)}
+
+    @pytest.mark.p2
+    def test_aggregates_list_values_and_trims_whitespace(self):
+        messages = [
+            {"id": "m1", "tags_kwd": [" alpha ", "beta", ""]},
+            {"id": "m2", "tags_kwd": ["alpha", " beta "]},
+            {"id": "m3", "tags_kwd": ["gamma", None, 1]},
+        ]
+        out = aggregate_by_field(messages, "tags_kwd")
+        assert set(out) == {("alpha", 2), ("beta", 2), ("gamma", 1)}
+
+    @pytest.mark.p2
+    def test_ignores_non_string_and_blank_scalar_values(self):
+        messages = [
+            {"id": "m1", "message_type_kwd": "  "},
+            {"id": "m2", "message_type_kwd": None},
+            {"id": "m3", "message_type_kwd": 1},
+            {"id": "m4", "message_type_kwd": "assistant"},
+        ]
+        out = aggregate_by_field(messages, "message_type_kwd")
+        assert out == [("assistant", 1)]

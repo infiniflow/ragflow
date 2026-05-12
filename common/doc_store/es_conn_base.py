@@ -159,6 +159,61 @@ class ESConnectionBase(DocStoreConnection):
         except Exception as e:
             self.logger.exception(f"Error creating document metadata index {index_name}: {e}")
 
+    def refresh_idx(self, index_name: str) -> bool:
+        """
+        Refresh an index so that recently inserted documents become searchable.
+
+        Service layers should call this dispatch method instead of reaching
+        into ``self.es`` directly, so the OpenSearch and Elasticsearch
+        connections present a uniform abstract API.
+        """
+        try:
+            self.es.indices.refresh(index=index_name)
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            self.logger.warning(f"ESConnection.refresh_idx({index_name}) failed: {e}")
+            return False
+
+    def count_idx(self, index_name: str) -> int:
+        """
+        Return the document count for an index, or -1 if the call fails.
+        Used to decide whether a per-tenant metadata index is empty without
+        paying a full search.
+        """
+        try:
+            response = self.es.count(index=index_name)
+            return int(response.get("count", 0))
+        except NotFoundError:
+            return 0
+        except Exception as e:
+            self.logger.warning(f"ESConnection.count_idx({index_name}) failed: {e}")
+            return -1
+
+    def replace_meta_fields(self, index_name: str, doc_id: str, meta_fields: dict) -> bool:
+        """
+        Fully replace the ``meta_fields`` object on a single document.
+
+        Using ES.update with a ``doc`` body would deep-merge object fields,
+        retaining old keys that should be removed. A scripted update assigns
+        the new meta_fields outright, matching delete-key semantics.
+        """
+        body = {
+            "script": {
+                "source": "ctx._source.meta_fields = params.meta_fields",
+                "params": {"meta_fields": meta_fields},
+            }
+        }
+        try:
+            self.es.update(index=index_name, id=doc_id, refresh=True, body=body)
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            self.logger.warning(f"ESConnection.replace_meta_fields({index_name}, {doc_id}) failed: {e}")
+            return False
+
     def delete_idx(self, index_name: str, dataset_id: str):
         if len(dataset_id) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.

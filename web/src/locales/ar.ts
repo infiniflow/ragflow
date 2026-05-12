@@ -606,7 +606,7 @@ export default {
         'قم بإنشاء رسم بياني معرفي على أجزاء ملف من قاعدة المعرفة الحالية لتحسين الإجابة على الأسئلة متعددة القفزات التي تتضمن منطقًا متداخلاً. راجع https://ragflow.io/docs/dev/construct_knowledge_graph للحصول على التفاصيل.',
       graphRagMethod: 'طريقة',
       graphRagMethodTip:
-        'Light: (افتراضي) استخدم المطالبات المقدمة من github.com/HKUDS/LightRAG لاستخراج الكيانات والعلاقات. يستهلك هذا الخيار عددًا أقل من الرموز المميزة، وذاكرة أقل، وموارد حسابية أقل.</br>\n      عام: استخدم المطالبات المقدمة من github.com/microsoft/graphrag لاستخراج الكيانات والعلاقات',
+        'Light: (افتراضي) استخدم المطالبات المقدمة من github.com/HKUDS/LightRAG لاستخراج الكيانات والعلاقات. يستهلك هذا الخيار عددًا أقل من الرموز المميزة، وذاكرة أقل، وموارد حسابية أقل.</br>\n      عام: استخدم المطالبات المقدمة من github.com/microsoft/graphrag لاستخراج الكيانات والعلاقات.</br>\n      NER: استخدم spaCy NER واستخراج الكلمات المفتاحية القائم على القواعد لاستخراج الكيانات والعلاقات. لا حاجة إلى LLM للاستخراج نفسه، مما يجعله سريعًا وفعالاً في الموارد.',
       resolution: 'قرار الكيان',
       resolutionTip:
         'مفتاح إلغاء البيانات المكررة للكيان. عند التمكين، سيجمع LLM بين الكيانات المتشابهة - على سبيل المثال، "2025" و"عام 2025"، أو "تكنولوجيا المعلومات" و"تكنولوجيا المعلومات" - لإنشاء رسم بياني أكثر دقة',
@@ -652,6 +652,9 @@ export default {
       delete: 'يمسح',
     },
     chat: {
+      chatSupport: 'دعم الدردشة',
+      replyInstantly: 'نرد عادةً على الفور',
+      typeYourMessage: 'اكتب رسالتك...',
       messagePlaceholder: 'اكتب رسالتك هنا...',
       exit: 'مخرج',
       multipleModels: 'نماذج متعددة',
@@ -857,6 +860,7 @@ export default {
       selectModelPlaceholder: 'حدد النموذج',
       configureModelTitle: 'تكوين النموذج',
       connectorNameTip: 'اسم وصفي للموصل',
+      syncDeletedFiles: 'مزامنة الملفات المحذوفة',
       confluenceIsCloudTip:
         'تحقق مما إذا كان هذا هو مثيل Confluence Cloud، قم بإلغاء تحديد Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -1516,12 +1520,8 @@ export default {
       searXNG: 'احرق XNG',
       searXNGDescription:
         'مكون يبحث عبر عنوان URL لمثيل SearXNG المقدم. حدد TopN وعنوان URL للمثيل.',
-      pdfGenerator: 'مولد المستندات',
-      pDFGenerator: 'مولد المستندات',
-      pdfGeneratorDescription:
-        'مكون يقوم بإنشاء المستندات (PDF، DOCX، TXT) من محتوى بتنسيق تخفيض السعر مع تصميم وصور وجداول قابلة للتخصيص. يدعم: **غامق**، *مائل*، # عناوين، - قوائم، جداول مع | بناء الجملة.',
-      pDFGeneratorDescription:
-        'مكون يقوم بإنشاء المستندات (PDF، DOCX، TXT) من محتوى بتنسيق تخفيض السعر مع تصميم وصور وجداول قابلة للتخصيص. يدعم: **غامق**، *مائل*، # عناوين، - قوائم، جداول مع | بناء الجملة.',
+      docGenerator: 'مولد المستندات',
+      docGeneratorDescription: 'ينشئ ملفًا من محتوى Markdown.',
       subtitle: 'الترجمة',
       logoImage: 'صورة الشعار',
       logoPosition: 'موقف الشعار',
@@ -2063,12 +2063,10 @@ export default {
       tokenizerRequired: 'الرجاء إضافة عقدة المفهرس أولاً',
       tokenizerDescription:
         'يحول النص إلى بنية البيانات المطلوبة (على سبيل المثال، التضمينات المتجهة لبحث التضمين) اعتمادًا على طريقة البحث المختارة.',
-      splitter: 'رمز مميز',
-      splitterDescription:
+      tokenChunkerDescription:
         'قم بتقسيم النص إلى أجزاء حسب طول الرمز المميز باستخدام محددات وتداخلات اختيارية.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'قم بتقسيم المستندات إلى أقسام حسب التسلسل الهرمي للعناوين باستخدام قواعد regex للتحكم بشكل أفضل.',
-      hierarchicalMerger: 'عنوان',
       extractor: 'محول',
       extractorDescription:
         'استخدم LLM لاستخراج الرؤى المنظمة من أجزاء المستند، مثل الملخصات والتصنيفات وما إلى ذلك.',
@@ -2080,6 +2078,8 @@ export default {
         image: 'صورة',
         email: 'بريد إلكتروني',
         'text&markdown': 'النص والترميز',
+        code: 'Code',
+        html: 'HTML',
         word: 'كلمة',
         slides: 'PPTX',
         audio: 'صوتي',

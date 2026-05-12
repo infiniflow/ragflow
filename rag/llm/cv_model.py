@@ -437,7 +437,8 @@ class Zhipu4V(GptV4):
             del gen_conf["frequency_penalty"]
         return gen_conf
 
-    def _request(self, msg, stream, gen_conf={}):
+    def _request(self, msg, stream, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             self.base_url,
             json={"model": self.model_name, "messages": msg, "stream": stream, **gen_conf},
@@ -445,6 +446,7 @@ class Zhipu4V(GptV4):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
+            timeout=60,
         )
         return response.json()
 
@@ -1028,6 +1030,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": self.prompt(b64)},
+            timeout=60,
         )
         response = response.json()
         return (
@@ -1035,7 +1038,8 @@ class NvidiaCV(Base):
             total_token_count_from_response(response),
         )
 
-    def _request(self, msg, gen_conf={}):
+    def _request(self, msg, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             url=self.base_url,
             headers={
@@ -1044,6 +1048,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": msg, **gen_conf},
+            timeout=60,
         )
         return response.json()
 
@@ -1254,6 +1259,16 @@ class MoonshotCV(GptV4):
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
+class FuturMixCV(GptV4):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] CV initialized with model %s", model_name)
+
+
 class RAGconCV(GptV4):
     """
     RAGcon CV Provider - routes through LiteLLM proxy
@@ -1264,14 +1279,67 @@ class RAGconCV(GptV4):
     _FACTORY_NAME = "RAGcon"
     
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
-        
+
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-        
+
         # Initialize client
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
-        
+
         Base.__init__(self, **kwargs)
+
+
+class BedrockCV(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        self.model_name = f"bedrock/{model_name}"
+        self.lang = lang
+        self._parse_credentials(key)
+        Base.__init__(self, **kwargs)
+
+    def _parse_credentials(self, key):
+        bedrock_key = json.loads(key)
+        self.auth_mode = bedrock_key.get("auth_mode", "")
+        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_ak = bedrock_key.get("bedrock_ak", "")
+        self.aws_sk = bedrock_key.get("bedrock_sk", "")
+        self.aws_role_arn = bedrock_key.get("aws_role_arn", "")
+
+    def _get_aws_creds(self):
+        if self.auth_mode == "access_key_secret":
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": self.aws_ak,
+                "aws_secret_access_key": self.aws_sk,
+            }
+        elif self.auth_mode == "iam_role":
+            import boto3
+            sts_client = boto3.client("sts", region_name=self.aws_region)
+            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockCVSession")
+            creds = resp["Credentials"]
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": creds["AccessKeyId"],
+                "aws_secret_access_key": creds["SecretAccessKey"],
+                "aws_session_token": creds["SessionToken"],
+            }
+        else:
+            return {"aws_region_name": self.aws_region}
+
+    def describe_with_prompt(self, image, prompt=None):
+        import litellm
+        b64 = self.image2base64(image)
+        messages = self.vision_llm_prompt(b64, prompt)
+        res = litellm.completion(
+            model=self.model_name,
+            messages=messages,
+            **self._get_aws_creds(),
+        )
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+    def describe(self, image):
+        return self.describe_with_prompt(image)

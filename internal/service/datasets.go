@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/entity"
 	"strings"
 	"time"
 
@@ -28,7 +29,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
 )
 
 var (
@@ -61,6 +61,8 @@ var (
 // DatasetsService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetsService struct {
 	kbDAO        *dao.KnowledgebaseDAO
+	documentDAO  *dao.DocumentDAO
+	connectorDAO *dao.ConnectorDAO
 	tenantDAO    *dao.TenantDAO
 	tenantLLMDAO *dao.TenantLLMDAO
 }
@@ -69,6 +71,8 @@ type DatasetsService struct {
 func NewDatasetsService() *DatasetsService {
 	return &DatasetsService{
 		kbDAO:        dao.NewKnowledgebaseDAO(),
+		documentDAO:  dao.NewDocumentDAO(),
+		connectorDAO: dao.NewConnectorDAO(),
 		tenantDAO:    dao.NewTenantDAO(),
 		tenantLLMDAO: dao.NewTenantLLMDAO(),
 	}
@@ -196,8 +200,8 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 	if name == "" {
 		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
 	}
-	if len(name) > model.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), model.DatasetNameLimit)
+	if len(name) > entity.DatasetNameLimit {
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := s.tenantDAO.GetByID(tenantID)
@@ -270,8 +274,8 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 			if nameValue == "" {
 				return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
 			}
-			if len(nameValue) > model.DatasetNameLimit {
-				return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(nameValue), model.DatasetNameLimit)
+			if len(nameValue) > entity.DatasetNameLimit {
+				return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(nameValue), entity.DatasetNameLimit)
 			}
 			name = nameValue
 		case "description":
@@ -392,12 +396,21 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-	status := string(model.StatusValid)
-	kb := &model.Knowledgebase{
+	now := time.Now().Truncate(time.Second)
+	createTime := now.UnixMilli()
+	status := string(entity.StatusValid)
+	// Deduplicate name within tenant
+	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
+		existing, err := s.kbDAO.GetByName(n, tid)
+		return err == nil && existing != nil
+	}, name, tenantID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+
+	kb := &entity.Knowledgebase{
 		ID:           kbID,
-		Name:         s.kbDAO.DuplicateName(name, tenantID),
+		Name:         duplicateName,
 		TenantID:     tenantID,
 		CreatedBy:    tenantID,
 		ParserID:     parserID,
@@ -407,10 +420,10 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		EmbdID:       embdID,
 		Status:       &status,
 	}
-	kb.CreateTime = &now
-	kb.UpdateTime = &now
-	kb.CreateDate = &nowDate
-	kb.UpdateDate = &nowDate
+	kb.CreateTime = &createTime
+	kb.UpdateTime = &createTime
+	kb.CreateDate = &now
+	kb.UpdateDate = &now
 
 	if description != nil {
 		kb.Description = description
@@ -466,7 +479,7 @@ func (s *DatasetsService) DeleteDatasets(ids []string, deleteAll bool, tenantID 
 		}
 	}
 
-	kbs := make([]*model.Knowledgebase, 0, len(normalizedIDs))
+	kbs := make([]*entity.Knowledgebase, 0, len(normalizedIDs))
 	unauthorizedIDs := make([]string, 0)
 	for _, id := range normalizedIDs {
 		kb, err := s.kbDAO.GetByIDAndTenantID(id, tenantID)
@@ -514,9 +527,48 @@ func (s *DatasetsService) DeleteDatasets(ids []string, deleteAll bool, tenantID 
 	}, common.CodeSuccess, nil
 }
 
-func (s *DatasetsService) deleteDataset(tenantID string, kb *model.Knowledgebase) error {
+// GetDataset gets a single dataset with its size and linked connectors.
+func (s *DatasetsService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	normalizedID, err := normalizeDatasetUUID1(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	datasetID = normalizedID
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+
+	data := datasetToMap(kb)
+
+	size, err := s.documentDAO.SumSizeByDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	data["size"] = size
+
+	connectors, err := s.connectorDAO.ListByDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	data["connectors"] = connectors
+
+	return data, common.CodeSuccess, nil
+}
+
+func (s *DatasetsService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
-		var documents []model.Document
+		var documents []entity.Document
 		if err := tx.Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
 			return fmt.Errorf("Delete dataset error for %s", kb.ID)
 		}
@@ -527,7 +579,7 @@ func (s *DatasetsService) deleteDataset(tenantID string, kb *model.Knowledgebase
 		}
 
 		if len(docIDs) > 0 {
-			var mappings []model.File2Document
+			var mappings []entity.File2Document
 			if err := tx.Where("document_id IN ?", docIDs).Find(&mappings).Error; err != nil {
 				return fmt.Errorf("Delete dataset error for %s", kb.ID)
 			}
@@ -545,29 +597,29 @@ func (s *DatasetsService) deleteDataset(tenantID string, kb *model.Knowledgebase
 				fileIDs = append(fileIDs, *mapping.FileID)
 			}
 
-			if err := tx.Where("doc_id IN ?", docIDs).Delete(&model.Task{}).Error; err != nil {
+			if err := tx.Where("doc_id IN ?", docIDs).Delete(&entity.Task{}).Error; err != nil {
 				return fmt.Errorf("Delete dataset error for %s", kb.ID)
 			}
-			if err := tx.Where("document_id IN ?", docIDs).Delete(&model.File2Document{}).Error; err != nil {
+			if err := tx.Where("document_id IN ?", docIDs).Delete(&entity.File2Document{}).Error; err != nil {
 				return fmt.Errorf("Delete dataset error for %s", kb.ID)
 			}
 			if len(fileIDs) > 0 {
-				if err := tx.Unscoped().Where("id IN ?", fileIDs).Delete(&model.File{}).Error; err != nil {
+				if err := tx.Unscoped().Where("id IN ?", fileIDs).Delete(&entity.File{}).Error; err != nil {
 					return fmt.Errorf("Delete dataset error for %s", kb.ID)
 				}
 			}
-			if err := tx.Where("id IN ?", docIDs).Delete(&model.Document{}).Error; err != nil {
+			if err := tx.Where("id IN ?", docIDs).Delete(&entity.Document{}).Error; err != nil {
 				return fmt.Errorf("Delete dataset error for %s", kb.ID)
 			}
 		}
 
 		if err := tx.Unscoped().
-			Where("source_type = ? AND type = ? AND name = ? AND tenant_id = ?", string(model.FileSourceKnowledgebase), "folder", kb.Name, tenantID).
-			Delete(&model.File{}).Error; err != nil {
+			Where("source_type = ? AND type = ? AND name = ? AND tenant_id = ?", string(entity.FileSourceKnowledgebase), "folder", kb.Name, tenantID).
+			Delete(&entity.File{}).Error; err != nil {
 			return fmt.Errorf("Delete dataset error for %s", kb.ID)
 		}
 
-		if err := tx.Where("id = ?", kb.ID).Delete(&model.Knowledgebase{}).Error; err != nil {
+		if err := tx.Where("id = ?", kb.ID).Delete(&entity.Knowledgebase{}).Error; err != nil {
 			return fmt.Errorf("Delete dataset error for %s", kb.ID)
 		}
 
@@ -662,7 +714,7 @@ func normalizeDatasetUUID1(id string) (string, error) {
 }
 
 func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	modelName, provider, err := parseModelName(embdID)
+	modelName, _, provider, err := parseModelName(embdID)
 	if err != nil {
 		return false, "Embedding model identifier must follow <model_name>@<provider> format"
 	}
@@ -682,7 +734,7 @@ func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID st
 		}
 		if *tenantLLM.LLMName == modelName &&
 			tenantLLM.LLMFactory == provider &&
-			*tenantLLM.ModelType == string(model.ModelTypeEmbedding) {
+			*tenantLLM.ModelType == string(entity.ModelTypeEmbedding) {
 			return true, ""
 		}
 	}
@@ -722,7 +774,7 @@ func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMe
 	return parserConfig
 }
 
-func datasetListItemToMap(kb *model.KnowledgebaseListItem) map[string]interface{} {
+func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface{} {
 	item := map[string]interface{}{
 		"id":              kb.ID,
 		"name":            kb.Name,
@@ -755,7 +807,7 @@ func datasetListItemToMap(kb *model.KnowledgebaseListItem) map[string]interface{
 	return item
 }
 
-func datasetToMap(kb *model.Knowledgebase) map[string]interface{} {
+func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 	item := map[string]interface{}{
 		"id":                       kb.ID,
 		"tenant_id":                kb.TenantID,

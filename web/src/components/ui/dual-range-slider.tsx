@@ -80,4 +80,6 @@ const SingleFormSlider = React.forwardRef<
   );
 });
 
+SingleFormSlider.displayName = 'SingleFormSlider';
+
 export { DualRangeSlider, SingleFormSlider };

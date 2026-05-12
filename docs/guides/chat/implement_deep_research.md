@@ -25,6 +25,6 @@ To activate this feature:
 
 ![chat_tavily](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_tavily.jpg)
 
-*The following is a screenshot of a conversation that integrates Deep Research:*
+*The following is a screenshot of a conversation that integrates Deep research:*
 
 ![Image](https://github.com/user-attachments/assets/165b88ff-1f5d-4fb8-90e2-c836b25e32e9)

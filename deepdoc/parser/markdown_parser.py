@@ -56,7 +56,7 @@ class RAGFlowMarkdownParser:
             """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(border_table_pattern, tables)
+            working_text = replace_tables_with_rendered_html(border_table_pattern, tables, render=separate_tables)
 
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
@@ -68,7 +68,7 @@ class RAGFlowMarkdownParser:
                 """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
+            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables, render=separate_tables)
 
         # Replace any TAGS e.g. <table ...> to <table>
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]

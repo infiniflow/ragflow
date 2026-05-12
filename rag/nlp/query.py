@@ -22,12 +22,13 @@ from collections import defaultdict
 from common.query_base import QueryBase
 from common.doc_store.doc_store_base import MatchTextExpr
 from rag.nlp import rag_tokenizer, term_weight, synonym
+from rag.utils.redis_conn import REDIS_CONN
 
 
 class FulltextQueryer(QueryBase):
     def __init__(self):
         self.tw = term_weight.Dealer()
-        self.syn = synonym.Dealer()
+        self.syn = synonym.Dealer(redis=REDIS_CONN.REDIS if REDIS_CONN.is_alive() else None)
         self.query_fields = [
             "title_tks^10",
             "title_sm_tks^5",
@@ -41,8 +42,14 @@ class FulltextQueryer(QueryBase):
     def question(self, txt, tbl="qa", min_match: float = 0.6):
         original_query = txt
         txt = self.add_space_between_eng_zh(txt)
+
+        # Strip Infinity ESCAPABLE characters from the query.
+        #
+        # Infinity's search_lexer.l defines ESCAPABLE characters [\x20()^"'~*?:\\]
+        # If these characters appear unescaped in a query, Infinity's lexer will
+        # interpret them as special tokens, causing parsing errors.
         txt = re.sub(
-            r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
+            r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>*~'\"\\]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
@@ -59,7 +66,9 @@ class FulltextQueryer(QueryBase):
             tks_w = [(tk.strip(), w) for tk, w in tks_w if tk.strip()]
             syns = []
             for tk, w in tks_w[:256]:
-                syn = [rag_tokenizer.tokenize(s) for s in self.syn.lookup(tk)]
+                # Strip single quotes from synonym terms to avoid Infinity lexer TokenError
+                # (e.g. WordNet returns "cat-o'-nine-tails" for "cat")
+                syn = [rag_tokenizer.tokenize(s).replace("'", "") for s in self.syn.lookup(tk)]
                 keywords.extend(syn)
                 syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s.strip()]
                 syns.append(" ".join(syn))

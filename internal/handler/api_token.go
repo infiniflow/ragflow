@@ -19,7 +19,8 @@ package handler
 import (
 	"net/http"
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
+
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +34,7 @@ import (
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/system/token_list [get]
+// @Router /api/v1/system/tokens [get]
 func (h *SystemHandler) ListTokens(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
@@ -45,7 +46,7 @@ func (h *SystemHandler) ListTokens(c *gin.Context) {
 		return
 	}
 
-	userModel, ok := user.(*model.User)
+	userModel, ok := user.(*entity.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -93,7 +94,7 @@ func (h *SystemHandler) ListTokens(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param name query string false "Name of the token"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/system/new_token [post]
+// @Router /api/v1/system/tokens [post]
 func (h *SystemHandler) CreateToken(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
@@ -105,7 +106,7 @@ func (h *SystemHandler) CreateToken(c *gin.Context) {
 		return
 	}
 
-	userModel, ok := user.(*model.User)
+	userModel, ok := user.(*entity.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -163,7 +164,7 @@ func (h *SystemHandler) CreateToken(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param token path string true "The API token to remove"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/system/token/{token} [delete]
+// @Router /api/v1/system/tokens/{token} [delete]
 func (h *SystemHandler) DeleteToken(c *gin.Context) {
 	// Get current user from context
 	user, exists := c.Get("user")
@@ -175,7 +176,7 @@ func (h *SystemHandler) DeleteToken(c *gin.Context) {
 		return
 	}
 
-	userModel, ok := user.(*model.User)
+	userModel, ok := user.(*entity.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

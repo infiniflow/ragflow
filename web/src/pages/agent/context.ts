@@ -16,9 +16,9 @@ type AgentInstanceContextType = Pick<
   'addCanvasNode'
 > &
   Pick<ReturnType<typeof useShowFormDrawer>, 'showFormDrawer'> & {
-    lastNode: INodeEvent | null;
-    currentSendLoading: boolean;
-    startButNotFinishedNodeIds: string[];
+    lastNode?: INodeEvent | null;
+    currentSendLoading?: boolean;
+    startButNotFinishedNodeIds?: string[];
   };
 
 export const AgentInstanceContext = createContext<AgentInstanceContextType>(

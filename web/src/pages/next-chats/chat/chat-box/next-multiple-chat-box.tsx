@@ -21,9 +21,9 @@ import {
   useScrollToBottom,
 } from '@/hooks/logic-hooks';
 import {
-  useFetchDialog,
+  useFetchChat,
   useGetChatSearchParams,
-  useSetDialog,
+  usePatchChat,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
@@ -102,7 +102,7 @@ const ChatCard = forwardRef(function ChatCard(
   ref,
 ) {
   const { id: dialogId } = useParams();
-  const { setDialog } = useSetDialog();
+  const { patchChat } = usePatchChat();
 
   const { removeMessageById, derivedMessages, handlePressEnter, sendLoading } =
     useSendSingleMessage({
@@ -131,7 +131,7 @@ const ChatCard = forwardRef(function ChatCard(
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
 
   const { data: userInfo } = useFetchUserInfo();
-  const { data: currentDialog } = useFetchDialog();
+  const { data: currentDialog } = useFetchChat();
 
   useSetDefaultModel(form);
 
@@ -143,13 +143,15 @@ const ChatCard = forwardRef(function ChatCard(
 
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
-    setDialog({
-      ...currentDialog,
-      llm_id: values.llm_id,
-      llm_setting: omit(values, 'llm_id'),
-      dialog_id: dialogId,
+    patchChat({
+      chatId: dialogId!,
+      params: {
+        ...currentDialog,
+        llm_id: values.llm_id,
+        llm_setting: omit(values, 'llm_id'),
+      },
     });
-  }, [currentDialog, dialogId, form, setDialog]);
+  }, [currentDialog, dialogId, form, patchChat]);
 
   useImperativeHandle(
     ref,
@@ -238,7 +240,7 @@ const ChatCard = forwardRef(function ChatCard(
                   avatarDialog={currentDialog.icon}
                   reference={buildMessageItemReference(
                     {
-                      message: derivedMessages,
+                      messages: derivedMessages,
                       reference: conversation.reference,
                     },
                     message,

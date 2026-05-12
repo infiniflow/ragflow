@@ -14,11 +14,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
+import {
+  useRowSelection,
+  useSelectedIds,
+} from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { LucidePlus } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MetadataType } from '../components/metedata/constant';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
@@ -54,13 +57,8 @@ export default function Dataset() {
     checkValue,
   } = useFetchDocumentList();
 
-  const refreshCount = useMemo(() => {
-    return documents.findIndex((doc) => doc.run === '1') + documents.length;
-  }, [documents]);
+  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration();
 
-  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
-    refreshCount,
-  });
   const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 
   const {
@@ -98,6 +96,11 @@ export default function Dataset() {
     setRowSelection,
   });
 
+  const { selectedIds: selectedRowKeys } = useSelectedIds(
+    rowSelection,
+    documents,
+  );
+
   const handleAddMetadataWithDocuments = () => {
     showManageMetadataModal({
       type: MetadataType.Manage,
@@ -122,7 +125,7 @@ export default function Dataset() {
           </div> */}
         </div>
       ),
-      documentIds: documents.map((doc) => doc.id),
+      documentIds: selectedRowKeys,
     });
   };
 
@@ -161,7 +164,7 @@ export default function Dataset() {
               </p>
             </div>
           }
-          preChildren={<Generate disabled={!(dataSetData.chunk_num > 0)} />}
+          preChildren={<Generate disabled={!(dataSetData.chunk_count > 0)} />}
           // preChildren={
           //   <Button
           //     variant={'ghost'}
