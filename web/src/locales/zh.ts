@@ -772,6 +772,11 @@ export default {
       maxTokenMessage: '最大token数是必填项',
       threshold: '阈值',
       thresholdMessage: '阈值是必填项',
+      clusteringMethod: '聚类方法',
+      clusteringMethodTip:
+        '选择 RAPTOR 聚类方法。AHC 可以使用更大的最大聚类数，但在大规模输入时可能占用更多内存。',
+      clusteringMethodGmm: 'GMM',
+      clusteringMethodAhc: 'AHC',
       maxCluster: '最大聚类数',
       maxClusterMessage: '最大聚类数是必填项',
       randomSeed: '随机种子',

@@ -29,7 +29,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.metadata_utils import meta_filter, convert_conditions
-from api.utils.api_utils import apikey_required, build_error_result, get_request_json
+from api.utils.api_utils import apikey_required, build_error_result, get_request_json, get_json_result
 from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
@@ -311,3 +311,10 @@ async def retrieval(tenant_id):
             )
         logging.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
+   
+  
+@manager.route('/dify/retrieval', methods=['GET'])  # noqa: F821
+async def retrieval_health_check():
+    """Health check endpoint for Dify external knowledge base connectivity verification."""
+    return get_json_result(data=True)
+  
