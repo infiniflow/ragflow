@@ -50,13 +50,15 @@ export function useDuplicateAgent() {
         const result = await setAgent({
           title: newTitle,
           dsl: detail.dsl,
-          canvas_category: agent.canvas_category,
+          canvas_category: detail.canvas_category ?? agent.canvas_category,
           avatar: detail.avatar,
           description: detail.description,
         });
 
         if (result?.code === 0) {
           message.success(t('flow.duplicated', { title: newTitle }));
+        } else {
+          message.error(result?.message || t('flow.duplicateFailed'));
         }
       } catch (err) {
         console.error('duplicateAgent error', err);
