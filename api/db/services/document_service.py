@@ -591,6 +591,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
+        """Atomically add chunk/token counters on the document and its knowledge base."""
         with DB.atomic():
             num = (
                 cls.model.update(
@@ -598,10 +599,19 @@ class DocumentService(CommonService):
                     chunk_num=cls.model.chunk_num + chunk_num,
                     process_duration=cls.model.process_duration + duration,
                 )
-                .where(cls.model.id == doc_id)
+                .where((cls.model.id == doc_id) & (cls.model.kb_id == kb_id))
                 .execute()
             )
             if num == 0:
+                logging.error(
+                    "increment_chunk_num: no document matched doc_id=%s kb_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    doc_id,
+                    kb_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
                 raise LookupError("Document not found which is supposed to be there")
             num = (
                 Knowledgebase.update(
@@ -611,11 +621,14 @@ class DocumentService(CommonService):
                 .where(Knowledgebase.id == kb_id)
                 .execute()
             )
+            if num == 0:
+                raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
     @classmethod
     @DB.connection_context()
     def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
+        """Atomically subtract chunk/token counters on the document and its knowledge base."""
         with DB.atomic():
             num = (
                 cls.model.update(
@@ -623,7 +636,7 @@ class DocumentService(CommonService):
                     chunk_num=cls.model.chunk_num - chunk_num,
                     process_duration=cls.model.process_duration + duration,
                 )
-                .where(cls.model.id == doc_id)
+                .where((cls.model.id == doc_id) & (cls.model.kb_id == kb_id))
                 .execute()
             )
             if num == 0:
@@ -636,6 +649,8 @@ class DocumentService(CommonService):
                 .where(Knowledgebase.id == kb_id)
                 .execute()
             )
+            if num == 0:
+                raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
     @classmethod
