@@ -41,6 +41,15 @@ ALLOWED_ARTIFACT_EXTENSIONS = {
     ".svg",
 }
 
+LOCAL_PYTHON_THREAD_ENV_VARS = (
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
 
 def _env_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
@@ -226,13 +235,18 @@ class LocalProvider(SandboxProvider):
         return os.environ.get(env_name, default)
 
     def _build_child_env(self, instance_dir: Path) -> dict[str, str]:
-        return {
+        env = {
             "HOME": str(instance_dir),
             "MPLBACKEND": "Agg",
             "PATH": os.environ.get("PATH", ""),
             "PYTHONUNBUFFERED": "1",
             "TMPDIR": str(instance_dir),
         }
+        for name in LOCAL_PYTHON_THREAD_ENV_VARS:
+            value = os.environ.get(name)
+            if value is not None:
+                env[name] = value
+        return env
 
     def _limit_child_process(self) -> None:
         import resource
