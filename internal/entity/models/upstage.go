@@ -356,6 +356,19 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 			continue
 		}
 
+		// Reasoning chunks first, content second. Upstage's solar-pro3
+		// stream interleaves both fields within the same SSE event when
+		// reasoning_effort is medium or high; emit reasoning before the
+		// visible answer so callers that pipe both into a UI see the
+		// chain-of-thought start before the answer, matching the wire
+		// ordering. solar-pro2 inlines reasoning into delta.content and
+		// never sets delta.reasoning, so this block is a no-op for it.
+		if r, ok := delta["reasoning"].(string); ok && r != "" {
+			if err := sender(nil, &r); err != nil {
+				return err
+			}
+		}
+
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
 			if err := sender(&content, nil); err != nil {
