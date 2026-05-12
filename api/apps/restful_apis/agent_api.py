@@ -249,7 +249,8 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
 @add_tenant_id_to_kwargs
 async def download_agent_file(tenant_id):
     id = request.args.get("id")
-    blob = FileService.get_blob(tenant_id, id)
+    logging.info("Agent file download requested: tenant_id=%s file_id=%s", tenant_id, id)
+    blob = await thread_pool_exec(FileService.get_blob, tenant_id, id)
     return Response(blob)
 
 
@@ -428,14 +429,28 @@ async def create_agent(tenant_id):
 async def upload_agent_file(agent_id, tenant_id):
     files = await request.files
     file_objs = files.getlist("file") if files and files.get("file") else []
+    logging.info(
+        "Agent file upload requested: tenant_id=%s agent_id=%s file_count=%s",
+        tenant_id,
+        agent_id,
+        len(file_objs),
+    )
     try:
         if len(file_objs) == 1:
-            return get_json_result(
-                data=FileService.upload_info(tenant_id, file_objs[0], request.args.get("url"))
+            uploaded = await thread_pool_exec(
+                FileService.upload_info, tenant_id, file_objs[0], request.args.get("url")
             )
-        results = [FileService.upload_info(tenant_id, file_obj) for file_obj in file_objs]
+            return get_json_result(data=uploaded)
+        results = await asyncio.gather(
+            *(thread_pool_exec(FileService.upload_info, tenant_id, file_obj) for file_obj in file_objs)
+        )
         return get_json_result(data=results)
     except Exception as exc:
+        logging.exception(
+            "Agent file upload failed: tenant_id=%s agent_id=%s",
+            tenant_id,
+            agent_id,
+        )
         return server_error_response(exc)
 
 
