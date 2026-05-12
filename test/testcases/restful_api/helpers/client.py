@@ -47,15 +47,25 @@ class RestClient:
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
         data: Any = None,
+        files: Any = None,
+        **request_kwargs: Any,
     ) -> requests.Response:
+        req_headers = self._headers(headers)
+        if files is not None:
+            # requests sets multipart boundary automatically.
+            req_headers.pop("Content-Type", None)
+
+        timeout = request_kwargs.pop("timeout", self.timeout)
         return requests.request(
             method=method,
             url=f"{self.api_root}{path}",
-            headers=self._headers(headers),
+            headers=req_headers,
             params=params,
             json=json,
             data=data,
-            timeout=self.timeout,
+            files=files,
+            timeout=timeout,
+            **request_kwargs,
         )
 
     def get(self, path: str, **kwargs) -> requests.Response:
@@ -66,3 +76,9 @@ class RestClient:
 
     def delete(self, path: str, **kwargs) -> requests.Response:
         return self.request("DELETE", path, **kwargs)
+
+    def put(self, path: str, **kwargs) -> requests.Response:
+        return self.request("PUT", path, **kwargs)
+
+    def patch(self, path: str, **kwargs) -> requests.Response:
+        return self.request("PATCH", path, **kwargs)
