@@ -110,6 +110,20 @@ def test_chat_recommendation_requires_question(rest_client):
 
 
 @pytest.mark.p2
+def test_related_questions_compatibility_requires_auth(rest_client_noauth):
+    # /api/v1/searchbots/related_questions is an SDK compatibility endpoint.
+    res = rest_client_noauth.post(
+        "/searchbots/related_questions",
+        json={"question": "ragflow"},
+        headers={"Authorization": "invalid"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 102, payload
+    assert "Authorization is not valid!" in payload["message"], payload
+
+
+@pytest.mark.p2
 def test_chat_completion_nonstream_with_session(rest_client, create_chat):
     chat_id = create_chat("restful_completion_nonstream_chat")
     create_session_res = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "session_for_completion"})

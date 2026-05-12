@@ -303,6 +303,20 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize("index_type", ["graph", "raptor", "mindmap"])
+def test_dataset_index_run_with_document_creates_task(rest_client, create_document, index_type):
+    dataset_id, _ = create_document("dataset_index_graph_source.txt")
+    run_graph = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": index_type},
+    )
+    assert run_graph.status_code == 200
+    run_graph_payload = run_graph.json()
+    assert run_graph_payload["code"] == 0, run_graph_payload
+    assert run_graph_payload["data"].get("task_id"), run_graph_payload
+
+
+@pytest.mark.p2
 def test_dataset_embedding_endpoints(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_embedding_endpoints")
 

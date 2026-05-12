@@ -101,3 +101,13 @@ def test_retrieval_compatibility_requires_dataset_ids(rest_client):
     payload = res.json()
     assert payload["code"] == 102, payload
     assert payload["message"] == "`dataset_ids` is required.", payload
+
+
+@pytest.mark.p2
+def test_retrieval_compatibility_requires_auth(rest_client_noauth):
+    res = rest_client_noauth.post("/retrieval", json={"question": "test", "dataset_ids": ["x"]})
+    assert res.status_code == 401
+    payload = res.json()
+    # token_required preserves legacy payload code/message while returning HTTP 401.
+    assert payload["code"] == 0, payload
+    assert payload["message"] == "`Authorization` can't be empty", payload
