@@ -553,6 +553,81 @@ def list_instance_models(tenant_id: str = None, provider_name: str = None, insta
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str):
+    """
+    Add a model to an instance.
+    ---
+    tags:
+      - Providers
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: provider_name
+        type: string
+        required: true
+        description: Provider name.
+      - in: path
+        name: instance_name
+        type: string
+        required: true
+        description: Instance name.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Model details.
+        required: true
+        schema:
+          type: object
+          required:
+            - model_name
+            - model_type
+          properties:
+            model_name:
+              type: string
+              description: Model name.
+            model_type:
+              type: string
+              description: Model type.
+            max_tokens:
+              type: integer
+              description: Maximum number of tokens.
+            extra:
+              type: object
+              description: Extra model details.
+    responses:
+      200:
+        description: Model added successfully.
+    """
+    data = await request.get_json()
+    if not data or "model_name" not in data or "model_type" not in data:
+        return get_error_argument_result(message="model_name and model_type are required")
+
+    model_name = data["model_name"]
+    model_type = data["model_type"]
+    max_tokens = data.get("max_tokens", 8192)
+    extra = data.get("extra", {})
+
+    try:
+        success, result = provider_api_service.add_model_to_instance(
+            tenant_id, provider_name, instance_name, model_name, model_type, max_tokens, extra
+        )
+        if success:
+            return get_result(message=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/providers/<provider_name>/instances/<instance_name>/models/<model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

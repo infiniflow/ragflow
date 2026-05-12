@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import logging
 
 from common.constants import LLMType, StatusEnum, ActiveStatusEnum
@@ -386,8 +387,54 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
             "max_tokens": llm.get("max_tokens"),
             "status": status,
         })
+    factory_models = [m["name"] for m in models]
+    for model_record in model_records:
+        if model_record.model_name not in factory_models:
+            extra_fields = json.loads(model_record.extra) if model_record.extra else {}
+            models.append({
+                "name": model_record.model_name,
+                "model_type": model_record.model_type,
+                "max_tokens": extra_fields.get("max_tokens", 8192),
+                "status": model_record.status,
+            })
 
     return True, models
+
+
+def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str, model_name: str, model_type: str|list[str], max_tokens: int, extra: dict):
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        return False, f"No provider found for provider '{provider_name}'"
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if not instance_obj:
+        return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
+    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, model_name)
+    if model_obj:
+        return False, f"Model '{model_name}' already exists for provider '{provider_name}' and instance '{instance_name}'"
+    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+    if not factory_info:
+        return False, f"Provider '{provider_name}' not found"
+    llms = factory_info[0].get("llm", [])
+    if isinstance(model_type, str):
+        model_type = [model_type]
+
+    import json
+
+    for _type in model_type:
+        extra_fields = {"max_tokens": max_tokens}
+        target_model = [llm for llm in llms if llm["model_type"] == _type and llm["llm_name"] == model_name]
+        if target_model:
+            extra_fields.update({"is_tool": target_model[0].get("is_tool", False)})
+        extra_fields.update(extra)
+        TenantModelService.insert(
+            model_name=model_name,
+            provider_id=provider_obj.id,
+            instance_id=instance_obj.id,
+            model_type=_type,
+            extra=json.dumps(extra_fields)
+        )
+
+    return True, "success"
 
 
 def update_model_status(tenant_id: str, provider_name: str, instance_name: str, model_name: str, status: str):
