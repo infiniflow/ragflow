@@ -316,6 +316,71 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         return sections, tables
 
+    def parse_image(
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes | None = None,
+        callback: Optional[Callable[[float, str], None]] = None,
+        *,
+        api_url: Optional[str] = None,
+        access_token: Optional[str] = None,
+        algorithm: Optional[AlgorithmType] = None,
+        request_timeout: Optional[int] = None,
+        prettify_markdown: Optional[bool] = None,
+        show_formula_number: Optional[bool] = None,
+        visualize: Optional[bool] = None,
+        additional_params: Optional[dict[str, Any]] = None,
+        algorithm_config: Optional[dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Parse image using PaddleOCR API. Returns extracted text."""
+        config_dict = {
+            "api_url": api_url if api_url is not None else self.api_url,
+            "access_token": access_token if access_token is not None else self.access_token,
+            "algorithm": algorithm if algorithm is not None else self.algorithm,
+            "request_timeout": request_timeout if request_timeout is not None else self.request_timeout,
+        }
+        if prettify_markdown is not None:
+            config_dict["prettify_markdown"] = prettify_markdown
+        if show_formula_number is not None:
+            config_dict["show_formula_number"] = show_formula_number
+        if visualize is not None:
+            config_dict["visualize"] = visualize
+        if additional_params is not None:
+            config_dict["additional_params"] = additional_params
+        if algorithm_config is not None:
+            config_dict["algorithm_config"] = algorithm_config
+
+        cfg = PaddleOCRConfig.from_dict(config_dict)
+
+        if not cfg.api_url:
+            raise RuntimeError("[PaddleOCR] API URL missing")
+
+        data_bytes = self._prepare_file_data(filepath, binary)
+
+        if callback:
+            callback(0.1, "[PaddleOCR] submitting image request")
+
+        result = self._send_request(data_bytes, cfg, callback, file_type=1)
+
+        # Extract text from response
+        texts: list[str] = []
+        layout_parsing_results = result.get("layoutParsingResults", [])
+        for layout_result in layout_parsing_results:
+            pruned_result = layout_result.get("prunedResult", {})
+            parsing_res_list = pruned_result.get("parsing_res_list", [])
+            for block in parsing_res_list:
+                block_content = block.get("block_content", "").strip()
+                if block_content:
+                    block_content = _remove_images_from_markdown(block_content)
+                    if block_content.strip():
+                        texts.append(block_content.strip())
+
+        if callback:
+            callback(0.9, f"[PaddleOCR] image done, blocks: {len(texts)}")
+
+        return "\n".join(texts)
+
     def _prepare_file_data(self, filepath: str | PathLike[str], binary: BytesIO | bytes | None) -> bytes:
         """Prepare file data for API request."""
         source_path = Path(filepath)
@@ -360,10 +425,10 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
         return payload
 
-    def _send_request(self, data: bytes, config: PaddleOCRConfig, callback: Optional[Callable[[float, str], None]]) -> dict[str, Any]:
+    def _send_request(self, data: bytes, config: PaddleOCRConfig, callback: Optional[Callable[[float, str], None]], *, file_type: Optional[int] = None) -> dict[str, Any]:
         """Send request to PaddleOCR API and parse response."""
         # Build payload
-        payload = self._build_payload(data, self.file_type, config)
+        payload = self._build_payload(data, file_type if file_type is not None else self.file_type, config)
 
         # Prepare headers
         headers = {"Content-Type": "application/json", "Client-Platform": "ragflow"}
