@@ -26,6 +26,7 @@ func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudi
 		},
 	}
 }
+
 func (f *FishAudioModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &FishAudioModel{
 		BaseURL:   baseURL,
