@@ -299,25 +299,36 @@ async def agent_bot_completions(agent_id):
         structured_output = {}
         final_ans = {}
         async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
-            # agent_completion yields SSE-formatted strings ("data:{...}\n\n").
+            # agent_completion yields SSE-formatted strings. A single yielded
+            # chunk can contain multiple "data:..." frames separated by "\n\n"
+            # plus blank or comment lines, so parse line-by-line rather than
+            # assuming one frame per chunk.
             if not isinstance(answer, str):
                 continue
-            try:
-                ans = json.loads(answer[len("data:"):])
-            except Exception:
-                continue
-            event = ans.get("event")
-            if event == "message":
-                full_content += ans.get("data", {}).get("content", "") or ""
-            if ans.get("data", {}).get("reference"):
-                reference.update(ans["data"]["reference"])
-            if event == "node_finished":
-                data = ans.get("data", {})
-                node_out = data.get("outputs") or {}
-                component_id = data.get("component_id")
-                if component_id is not None and "structured" in node_out:
-                    structured_output[component_id] = copy.deepcopy(node_out["structured"])
-            final_ans = ans
+            for line in answer.splitlines():
+                line = line.strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[len("data:"):].strip()
+                if not payload:
+                    continue
+                try:
+                    ans = json.loads(payload)
+                except Exception as e:
+                    logging.debug("agent_bot_completions: skipping malformed SSE frame: %s", e)
+                    continue
+                event = ans.get("event")
+                if event == "message":
+                    full_content += ans.get("data", {}).get("content", "") or ""
+                if ans.get("data", {}).get("reference"):
+                    reference.update(ans["data"]["reference"])
+                if event == "node_finished":
+                    data = ans.get("data", {})
+                    node_out = data.get("outputs") or {}
+                    component_id = data.get("component_id")
+                    if component_id is not None and "structured" in node_out:
+                        structured_output[component_id] = copy.deepcopy(node_out["structured"])
+                final_ans = ans
 
         if not final_ans:
             return get_result(data={})
