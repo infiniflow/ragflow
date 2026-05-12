@@ -620,7 +620,7 @@ def delete_index(tenant_id, dataset_id, index_type):
     if index_type not in dataset_api_service._VALID_INDEX_TYPES:
         return get_error_argument_result(f"Invalid index type '{index_type}'")
     # `wipe` controls whether the persisted index artefacts (graph rows /
-    # raptor summaries) are removed.  Default true preserves historical
+    # raptor summaries) are removed. Default true preserves historical
     # behaviour; pass wipe=false to cancel the running task while keeping
     # prior progress so it can be resumed later.
     wipe_arg = (request.args.get("wipe", "true") or "true").strip().lower()

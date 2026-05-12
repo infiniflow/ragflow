@@ -861,6 +861,11 @@ The above is the content you need to summarize.`,
       thresholdTip:
         'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
+      clusteringMethod: 'Clustering method',
+      clusteringMethodTip:
+        'Select the RAPTOR clustering method. AHC can use a larger max cluster value, but may require more memory on large inputs.',
+      clusteringMethodGmm: 'GMM',
+      clusteringMethodAhc: 'AHC',
       maxCluster: 'Max cluster',
       maxClusterTip: 'The maximum number of clusters to create.',
       maxClusterMessage: 'Max cluster is required',

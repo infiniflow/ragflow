@@ -126,6 +126,99 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.createIndex error %s" % (indexName))
 
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create a per-tenant document metadata index on OpenSearch.
+
+        Mirrors ESConnectionBase.create_doc_meta_idx so that the
+        DocMetadataService dispatches uniformly across ES and OS backends.
+        Index name pattern: ragflow_doc_meta_{tenant_id}
+        """
+        if self.index_exist(index_name, ""):
+            return True
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_es_mapping.json")
+            if not os.path.exists(fp_mapping):
+                logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+
+            with open(fp_mapping, "r") as f:
+                doc_meta_mapping = json.load(f)
+
+            from opensearchpy.client import IndicesClient
+            body = {
+                "settings": doc_meta_mapping["settings"],
+                "mappings": doc_meta_mapping["mappings"],
+            }
+            return IndicesClient(self.os).create(index=index_name, body=body)
+        except Exception as e:
+            logger.exception(f"OSConnection.create_doc_meta_idx error creating {index_name}: {e}")
+            return False
+
+    def refresh_idx(self, index_name: str) -> bool:
+        """
+        Refresh an index so that recently inserted documents become searchable.
+
+        DocMetadataService used to call ``settings.docStoreConn.es.indices.refresh``
+        directly, which raised AttributeError on the OpenSearch backend because
+        OSConnection exposes ``self.os`` rather than ``self.es``. This wrapper
+        gives both backends a uniform abstract entry point.
+        """
+        try:
+            self.os.indices.refresh(index=index_name)
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.warning(f"OSConnection.refresh_idx({index_name}) failed: {e}")
+            return False
+
+    def count_idx(self, index_name: str) -> int:
+        """
+        Return the document count for an index, or -1 if the call fails.
+
+        Used by DocMetadataService._drop_empty_metadata_table to decide whether
+        a per-tenant metadata index is empty without paying a full search.
+        """
+        try:
+            response = self.os.count(index=index_name)
+            return int(response.get("count", 0))
+        except NotFoundError:
+            return 0
+        except Exception as e:
+            logger.warning(f"OSConnection.count_idx({index_name}) failed: {e}")
+            return -1
+
+    def replace_meta_fields(self, index_name: str, doc_id: str, meta_fields: dict) -> bool:
+        """
+        Replace the ``meta_fields`` object on a single document.
+
+        ES.update with a ``doc`` body deep-merges object fields, which retains
+        old keys that should be removed. The fix in ESConnection is a script
+        that fully assigns the new meta_fields. We provide the same primitive
+        on OpenSearch so the service layer never reaches into ``self.es`` or
+        ``self.os`` directly.
+        """
+        body = {
+            "script": {
+                "source": "ctx._source.meta_fields = params.meta_fields",
+                "params": {"meta_fields": meta_fields},
+            }
+        }
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.os.update(index=index_name, id=doc_id, body=body, refresh=True)
+                return True
+            except NotFoundError:
+                return False
+            except Exception as e:
+                logger.warning(f"OSConnection.replace_meta_fields({index_name}, {doc_id}) failed: {e}")
+                if re.search(r"(timeout|connection)", str(e).lower()):
+                    time.sleep(1)
+                    continue
+                return False
+        return False
+
     def delete_idx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
