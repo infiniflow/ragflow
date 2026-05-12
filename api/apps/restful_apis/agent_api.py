@@ -711,7 +711,18 @@ async def test_db_connection():
     try:
         safe_host = assert_host_is_safe(req["host"])
     except ValueError as exc:
+        logging.warning(
+            "Rejected test_db_connection: unsafe host %r (db_type=%s, user=%s): %s",
+            req.get("host"), req.get("db_type"), current_user.id, exc,
+        )
         return get_data_error_result(message=str(exc))
+    except OSError as exc:
+        logging.warning(
+            "Rejected test_db_connection: cannot resolve host %r (db_type=%s, user=%s): %s",
+            req.get("host"), req.get("db_type"), current_user.id, exc,
+        )
+        logging.debug("Full resolver exception for host %r", req.get("host"), exc_info=True)
+        return get_data_error_result(message=f"Could not resolve host {req.get('host')!r}.")
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(
