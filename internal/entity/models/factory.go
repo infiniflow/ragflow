@@ -73,6 +73,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "fishaudio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
+	case "mistral":
+		return NewMistralModel(baseURL, urlSuffix), nil
 	case "upstage":
 		return NewUpstageModel(baseURL, urlSuffix), nil
 	case "stepfun":
