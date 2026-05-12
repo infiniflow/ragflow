@@ -406,9 +406,4 @@ export const FileTypeSuffixMap = {
   ],
 };
 
-export const SingleOperators = [
-  Operator.Tokenizer,
-  Operator.TokenChunker,
-  Operator.TitleChunker,
-  Operator.Parser,
-];
+export const SingleOperators = [Operator.Tokenizer, Operator.Parser];

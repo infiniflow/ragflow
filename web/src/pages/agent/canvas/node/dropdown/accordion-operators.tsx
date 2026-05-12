@@ -133,7 +133,7 @@ export function AccordionOperators({
   );
 }
 
-// Limit the number of operators of a certain type on the canvas to only one
+// Limit structural pipeline operators that must exist at most once.
 function useRestrictSingleOperatorOnCanvas() {
   const { findNodeByName } = useGraphStore((state) => state);
 
@@ -174,13 +174,8 @@ export function PipelineAccordionOperators({
   }, [restrictSingleOperatorOnCanvas]);
 
   const chunkerOperators = useMemo(() => {
-    return [
-      ...restrictSingleOperatorOnCanvas([
-        Operator.TokenChunker,
-        Operator.TitleChunker,
-      ]),
-    ];
-  }, [restrictSingleOperatorOnCanvas]);
+    return [Operator.TokenChunker, Operator.TitleChunker];
+  }, []);
 
   const showChunker = useMemo(() => {
     return (
