@@ -60,6 +60,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from common import settings
+from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
@@ -707,6 +708,10 @@ async def rerun_agent(tenant_id):
 @login_required
 async def test_db_connection():
     req = await get_request_json()
+    try:
+        assert_host_is_safe(req["host"])
+    except ValueError as exc:
+        return server_error_response(str(exc))
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(
