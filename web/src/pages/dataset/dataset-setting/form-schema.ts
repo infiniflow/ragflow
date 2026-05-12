@@ -42,11 +42,14 @@ export const formSchema = z
           .object({
             use_raptor: z.boolean().optional(),
             prompt: z.string().optional(),
-            max_token: z.number().optional(),
-            threshold: z.number().optional(),
-            max_cluster: z.number().optional(),
-            random_seed: z.number().optional(),
+            max_token: z.coerce.number().optional(),
+            threshold: z.coerce.number().optional(),
+            max_cluster: z.coerce.number().optional(),
+            random_seed: z.coerce.number().optional(),
             scope: z.string().optional(),
+            clustering_method: z.enum(['gmm', 'ahc']).optional(),
+            tree_builder: z.enum(['raptor', 'psi']).optional(),
+            ext: z.record(z.string(), z.any()).optional(),
           })
           .refine(
             (data) => {
@@ -94,6 +97,18 @@ export const formSchema = z
           .optional(),
         enable_metadata: z.boolean().optional(),
         llm_id: z.string().optional(),
+        // Table parser: "auto" = all columns both, "manual" = use column role selector
+        table_column_mode: z.enum(['auto', 'manual']).optional(),
+        // Table parser: column name -> role (indexing | metadata | both); legacy "vectorize" -> indexing
+        table_column_roles: z
+          .record(
+            z
+              .enum(['indexing', 'metadata', 'both', 'vectorize'])
+              .transform((role) => (role === 'vectorize' ? 'indexing' : role)),
+          )
+          .optional(),
+        // Table parser: column names list (set by backend after first parse)
+        table_column_names: z.array(z.string()).optional(),
       })
       .optional(),
     pagerank: z.number(),

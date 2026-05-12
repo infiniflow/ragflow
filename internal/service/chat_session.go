@@ -221,7 +221,7 @@ type ListChatSessionsResponse struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -231,7 +231,8 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 	// Check if user is the owner of the dialog
 	isOwner := false
 	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, dialogID)
+		var exists bool
+		exists, err = s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +244,8 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 
 	// Also check with userID as tenant
 	if !isOwner {
-		exists, err := s.chatSessionDAO.CheckDialogExists(userID, dialogID)
+		var exists bool
+		exists, err = s.chatSessionDAO.CheckDialogExists(userID, chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -251,11 +253,11 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 	}
 
 	if !isOwner {
-		return nil, errors.New("Only owner of dialog authorized for this operation")
+		return nil, errors.New("only owner of dialog authorized for this operation")
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByDialogID(dialogID)
+	sessions, err := s.chatSessionDAO.ListByChatID(chatID)
 	if err != nil {
 		return nil, err
 	}
