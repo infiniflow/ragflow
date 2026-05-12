@@ -54,7 +54,6 @@ export default function ChatBasicSetting() {
     );
     if (
       metadataInclude &&
-      !metadataKeysLoading &&
       Array.isArray(currentFields) &&
       currentFields.length > 0 &&
       metadataKeys

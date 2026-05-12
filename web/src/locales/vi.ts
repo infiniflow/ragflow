@@ -348,7 +348,8 @@ export default {
       tagCloud: 'Đám mây',
       graphRagMethod: 'Phương pháp',
       graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
-      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
+      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.
+      NER: Sử dụng spaCy NER và trích xuất từ khóa dựa trên quy tắc để trích xuất thực thể và quan hệ. Không cần LLM cho việc trích xuất, giúp nhanh chóng và tiết kiệm tài nguyên.`,
       useGraphRagTip:
         'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',

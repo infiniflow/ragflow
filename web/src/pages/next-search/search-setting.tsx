@@ -232,7 +232,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     );
     if (
       referenceMetadataEnabled &&
-      !metadataKeysLoading &&
       Array.isArray(currentFields) &&
       currentFields.length > 0 &&
       metadataKeys

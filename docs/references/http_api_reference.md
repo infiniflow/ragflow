@@ -4486,21 +4486,14 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-- Standard mode: send `agent_id` with `query`.
-- OpenAI-compatible mode: send the same endpoint with `"openai-compatible": true`.
-
-:::tip NOTE
-
-- Older agent completion routes have been removed. Use only `/api/v1/agents/chat/completion`.
-- In standard streaming mode, not all responses include a reference, as this depends on the workflow result.
-- In streaming mode, the server terminates the stream with `[DONE]`.
-
+:::caution DEPRECATED
+The API is deprecated. Please use `POST /api/v1/agents/chat/completions` instead.
 :::
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents/chat/completion`
+- URL: `/api/v1/agents/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -4541,7 +4534,7 @@ If the **Begin** component does not take parameters:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4556,7 +4549,7 @@ curl --request POST \
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4593,7 +4586,7 @@ To continue an existing session:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4699,7 +4692,7 @@ Streaming request:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4720,7 +4713,7 @@ Non-stream request with existing session:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -6886,14 +6879,18 @@ Failure:
 
 ### Download attachment
 
-**GET** `/v1/document/download/{attachment_id}`
+**GET** `/api/v1/documents/{doc_id}/download`
+
+:::caution DEPRECATED
+The previous endpoint `GET /v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
+:::
 
 Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/document/download/{attachment_id}`
+- URL: `/api/v1/documents/{doc_id}/download`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query parameter:
@@ -6903,15 +6900,15 @@ Downloads a runtime attachment previously uploaded via the [Upload document](#up
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/v1/document/download/{attachment_id}?ext=pdf' \
+     --url 'http://{address}/api/v1/documents/{doc_id}/download?ext=pdf' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_attachment.pdf
 ```
 
 ##### Request parameters
 
-- `attachment_id`: (*Path parameter*), `string`, *Required*
-  The `id` value returned by the [Upload document](#upload-document) method.
+- `doc_id`: (*Path parameter*), `string`, *Required*
+  The document ID whose attachment should be downloaded.
 - `ext`: (*Query parameter*), `string`, *Optional*
   A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
   - `"markdown"`
@@ -7437,6 +7434,10 @@ or
 
 Converts files to documents and links them to specified datasets.
 
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/convert` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
 - Method: POST
@@ -7809,14 +7810,14 @@ Failure:
 
 ### Search completion
 
-**POST** `/api/v1/searches/{search_id}/completion`
+**POST** `/api/v1/searches/{search_id}/completions`
 
 Generates an answer using the saved search app configuration and returns the result as a Server-Sent Events stream.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/searches/{search_id}/completion`
+- URL: `/api/v1/searches/{search_id}/completions`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -7828,7 +7829,7 @@ Generates an answer using the saved search app configuration and returns the res
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/searches/{search_id}/completion \
+     --url http://{address}/api/v1/searches/{search_id}/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{

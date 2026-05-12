@@ -16,6 +16,7 @@
 import logging
 import json
 import os
+import re
 from common.constants import PAGERANK_FLD
 from common import settings
 from api.db.db_models import File
@@ -26,6 +27,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.services.tenant_llm_service import TenantLLMService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 
@@ -305,8 +307,6 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if "embd_id" in req:
         if not req["embd_id"]:
             req["embd_id"] = kb.embd_id
-        if kb.chunk_num != 0 and req["embd_id"] != kb.embd_id:
-            return False, f"When chunk_num ({kb.chunk_num}) > 0, embedding_model must remain {kb.embd_id}"
         ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
         if not ok:
             return False, err
@@ -446,8 +446,12 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     from rag.nlp import search
-
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), dataset_id)
+    from rag.graphrag.phase_markers import clear_phase_markers
+    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]},
+                                 search.index_name(kb.tenant_id), dataset_id)
+    # Wiping the graph invalidates any phase-completion markers used to
+    # short-circuit resolution / community detection on resume.
+    clear_phase_markers(dataset_id)
 
     return True, True
 
@@ -770,13 +774,17 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
     return True, log.to_dict()
 
 
-def delete_index(dataset_id: str, tenant_id: str, index_type: str):
+def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = True):
     """
     Delete an indexing task (graph/raptor/mindmap) for a dataset.
 
     :param dataset_id: dataset ID
     :param tenant_id: tenant ID
     :param index_type: one of "graph", "raptor", "mindmap"
+    :param wipe: when True (default) the persisted artefacts (graph rows,
+        raptor summaries) are removed from the doc store and any GraphRAG
+        phase-completion markers are cleared.  Pass False to cancel the
+        running task while keeping prior progress so it can be resumed.
     :return: (success, result) or (success, error_message)
     """
     if index_type not in _VALID_INDEX_TYPES:
@@ -796,6 +804,8 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str):
     task_finish_at_field = f"{task_id_field.replace('_task_id', '_task_finish_at')}"
     task_id = getattr(kb, task_id_field, None)
 
+    logging.info("delete_index: dataset=%s index_type=%s wipe=%s", dataset_id, index_type, wipe)
+
     if task_id:
         from rag.utils.redis_conn import REDIS_CONN
 
@@ -805,11 +815,16 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str):
             logging.exception(e)
         TaskService.delete_by_id(task_id)
 
-    if index_type == "graph":
+    if wipe and index_type == "graph":
         from rag.nlp import search
-
-        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), dataset_id)
-    elif index_type == "raptor":
+        from rag.graphrag.phase_markers import clear_phase_markers
+        settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation", "community_report"]},
+                                     search.index_name(kb.tenant_id), dataset_id)
+        # Wiping the graph invalidates any phase-completion markers used to
+        # short-circuit resolution / community detection on resume.
+        clear_phase_markers(dataset_id)
+        logging.info("delete_index: cleared GraphRAG artefacts and phase markers for dataset=%s", dataset_id)
+    elif wipe and index_type == "raptor":
         from rag.nlp import search
 
         settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), dataset_id)
@@ -959,8 +974,15 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs([dataset_id])
-        local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, local_doc_ids)
+        local_doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            local_doc_ids,
+            kb_ids=[dataset_id],
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs([dataset_id]),
+        )
 
     tenant_ids = []
     tenants = UserTenantService.query(user_id=tenant_id)
@@ -1019,6 +1041,368 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
+    total = ranks.get("total", 0)
+    ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
+    ranks["total"] = total
+
+    for c in ranks["chunks"]:
+        c.pop("vector", None)
+    ranks["labels"] = labels
+
+    return True, ranks
+
+
+def check_embedding(dataset_id: str, tenant_id: str, req: dict):
+    """
+    Check embedding model compatibility by sampling random chunks,
+    re-embedding them with the new model, and computing cosine similarity.
+
+    :param dataset_id: dataset ID
+    :param tenant_id: tenant ID
+    :param req: request body with embd_id
+    :return: (success, result) or (success, error_message)
+    """
+    import random
+
+    import numpy as np
+    from common.constants import RetCode
+    from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search
+
+    from api.db.joint_services.tenant_model_service import (
+        get_model_config_by_type_and_name,
+    )
+    from api.db.services.llm_service import LLMBundle
+    from common.constants import LLMType
+
+    def _guess_vec_field(src: dict):
+        for k in src or {}:
+            if k.endswith("_vec"):
+                return k
+        return None
+
+    def _as_float_vec(v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [float(x) for x in v.split("\t") if x != ""]
+        if isinstance(v, (list, tuple, np.ndarray)):
+            return [float(x) for x in v]
+        return []
+
+    def _to_1d(x):
+        a = np.asarray(x, dtype=np.float32)
+        return a.reshape(-1)
+
+    def _cos_sim(a, b, eps=1e-12):
+        a = _to_1d(a)
+        b = _to_1d(b)
+        na = np.linalg.norm(a)
+        nb = np.linalg.norm(b)
+        if na < eps or nb < eps:
+            return 0.0
+        return float(np.dot(a, b) / (na * nb))
+
+    def sample_random_chunks_with_vectors(
+        docStoreConn,
+        tenant_id: str,
+        kb_id: str,
+        n: int = 5,
+        base_fields=("docnm_kwd", "doc_id", "content_with_weight", "page_num_int", "position_int", "top_int"),
+    ):
+        index_nm = search.index_name(tenant_id)
+
+        res0 = docStoreConn.search(
+            select_fields=[], highlight_fields=[],
+            condition={"kb_id": kb_id, "available_int": 1},
+            match_expressions=[], order_by=OrderByExpr(),
+            offset=0, limit=1,
+            index_names=index_nm, knowledgebase_ids=[kb_id],
+        )
+        total = docStoreConn.get_total(res0)
+        if total <= 0:
+            return []
+
+        n = min(n, total)
+        offsets = sorted(random.sample(range(min(total, 1000)), n))
+        out = []
+
+        for off in offsets:
+            res1 = docStoreConn.search(
+                select_fields=list(base_fields),
+                highlight_fields=[],
+                condition={"kb_id": kb_id, "available_int": 1},
+                match_expressions=[], order_by=OrderByExpr(),
+                offset=off, limit=1,
+                index_names=index_nm, knowledgebase_ids=[kb_id],
+            )
+            ids = docStoreConn.get_doc_ids(res1)
+            if not ids:
+                continue
+
+            cid = ids[0]
+            full_doc = docStoreConn.get(cid, index_nm, [kb_id]) or {}
+            vec_field = _guess_vec_field(full_doc)
+            vec = _as_float_vec(full_doc.get(vec_field))
+
+            out.append({
+                "chunk_id": cid,
+                "kb_id": kb_id,
+                "doc_id": full_doc.get("doc_id"),
+                "doc_name": full_doc.get("docnm_kwd"),
+                "vector_field": vec_field,
+                "vector_dim": len(vec),
+                "vector": vec,
+                "page_num_int": full_doc.get("page_num_int"),
+                "position_int": full_doc.get("position_int"),
+                "top_int": full_doc.get("top_int"),
+                "content_with_weight": full_doc.get("content_with_weight") or "",
+                "question_kwd": full_doc.get("question_kwd") or [],
+            })
+        return out
+
+    def _clean(s: str):
+        return re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", s or "").strip()
+
+    if not dataset_id:
+        return False, 'Lack of "Dataset ID"'
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    embd_id = req.get("embd_id", "")
+    if not embd_id:
+        return False, "`embd_id` is required."
+
+    logging.info("check_embedding: dataset=%s tenant=%s embd_id=%s", dataset_id, tenant_id, embd_id)
+
+    ok, err = verify_embedding_availability(embd_id, tenant_id)
+    if not ok:
+        return False, err
+
+    embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, embd_id)
+    emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+
+    n = int(req.get("check_num", 5))
+    samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=kb.tenant_id, kb_id=dataset_id, n=n)
+    logging.info("check_embedding: dataset=%s sampled=%d chunks", dataset_id, len(samples))
+
+    results, eff_sims = [], []
+    mode = "content_only"
+    for ck in samples:
+        title = ck.get("doc_name") or "Title"
+
+        txt_in = "\n".join(ck.get("question_kwd") or []) or ck.get("content_with_weight") or ""
+        txt_in = _clean(txt_in)
+        if not txt_in:
+            results.append({"chunk_id": ck["chunk_id"], "reason": "no_text"})
+            continue
+
+        if not ck.get("vector"):
+            results.append({"chunk_id": ck["chunk_id"], "reason": "no_stored_vector"})
+            continue
+
+        try:
+            v, _ = emb_mdl.encode([title, txt_in])
+            assert len(v[1]) == len(ck["vector"]), (
+                f"The dimension ({len(v[1])}) of given embedding model is different from the original ({len(ck['vector'])})"
+            )
+            sim_content = _cos_sim(v[1], ck["vector"])
+            title_w = 0.1
+            qv_mix = title_w * v[0] + (1 - title_w) * v[1]
+            sim_mix = _cos_sim(qv_mix, ck["vector"])
+            sim = sim_content
+            mode = "content_only"
+            if sim_mix > sim:
+                sim = sim_mix
+                mode = "title+content"
+        except Exception as e:
+            return False, f"Embedding failure. {e}"
+
+        eff_sims.append(sim)
+        results.append({
+            "chunk_id": ck["chunk_id"],
+            "doc_id": ck["doc_id"],
+            "doc_name": ck["doc_name"],
+            "vector_field": ck["vector_field"],
+            "vector_dim": ck["vector_dim"],
+            "cos_sim": round(sim, 6),
+        })
+
+    summary = {
+        "kb_id": dataset_id,
+        "model": embd_id,
+        "sampled": len(samples),
+        "valid": len(eff_sims),
+        "avg_cos_sim": round(float(np.mean(eff_sims)) if eff_sims else 0.0, 6),
+        "min_cos_sim": round(float(np.min(eff_sims)) if eff_sims else 0.0, 6),
+        "max_cos_sim": round(float(np.max(eff_sims)) if eff_sims else 0.0, 6),
+        "match_mode": mode,
+    }
+
+    data = {"summary": summary, "results": results}
+    if not eff_sims:
+        logging.warning("check_embedding: dataset=%s no comparable chunks", dataset_id)
+        return False, "No embedded chunks are available to compare."
+    if summary["avg_cos_sim"] >= 0.9:
+        logging.info("check_embedding: dataset=%s compatible avg_cos_sim=%s valid=%d", dataset_id, summary["avg_cos_sim"], len(eff_sims))
+        return True, data
+    logging.warning("check_embedding: dataset=%s not_effective avg_cos_sim=%s valid=%d", dataset_id, summary["avg_cos_sim"], len(eff_sims))
+    return "not_effective", {"code": RetCode.NOT_EFFECTIVE, "message": "Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", "data": data}
+
+
+async def search_datasets(tenant_id: str, req: dict):
+    """
+    Search (retrieval test) across multiple datasets.
+
+    :param tenant_id: tenant ID
+    :param req: search request containing dataset_ids and other params
+    :return: (success, result) or (success, error_message)
+    """
+    from api.db.joint_services.tenant_model_service import (
+        get_model_config_by_id,
+        get_model_config_by_type_and_name,
+        get_tenant_default_model_by_type,
+    )
+    from api.db.services.doc_metadata_service import DocMetadataService
+    from api.db.services.llm_service import LLMBundle
+    from api.db.services.search_service import SearchService
+    from api.db.services.user_service import UserTenantService
+    from common.constants import LLMType
+    from common.metadata_utils import apply_meta_data_filter
+    from rag.app.tag import label_question
+    from rag.prompts.generator import cross_languages, keyword_extraction
+
+    kb_ids = req.get("dataset_ids", [])
+    page = int(req.get("page", 1))
+    size = int(req.get("size", 30))
+    question = req.get("question", "")
+    doc_ids = req.get("doc_ids", [])
+    use_kg = req.get("use_kg", False)
+    top = max(1, min(int(req.get("top_k", 1024)), 2048))
+    langs = req.get("cross_languages", [])
+
+    logging.debug(
+        "search_datasets(datasets=%s, tenant=%s, question_len=%s)",
+        kb_ids,
+        tenant_id,
+        len(question),
+    )
+
+    # Access check for all datasets
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+            logging.warning("search_datasets access denied: dataset=%s tenant=%s", kb_id, tenant_id)
+            return False, f"Only owner of dataset {kb_id} authorized for this operation."
+
+    kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        return False, "Datasets not found!"
+
+    # All datasets must use the same embedding model
+    embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
+    if len(embd_nms) != 1:
+        return False, "Datasets use different embedding models."
+
+    if doc_ids is not None and not isinstance(doc_ids, list):
+        return False, "`doc_ids` should be a list"
+    local_doc_ids = list(doc_ids) if doc_ids else []
+
+    meta_data_filter = {}
+    chat_mdl = None
+    if req.get("search_id", ""):
+        search_detail = SearchService.get_detail(req.get("search_id", ""))
+        if not search_detail:
+            logging.warning("search config not found: search_id=%s", req.get("search_id", ""))
+            return False, "Invalid search_id"
+        search_config = search_detail.get("search_config", {})
+        meta_data_filter = search_config.get("meta_data_filter", {})
+        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+            chat_id = search_config.get("chat_id", "")
+            if chat_id:
+                chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, search_config["chat_id"])
+            else:
+                chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+    else:
+        meta_data_filter = req.get("meta_data_filter") or {}
+        if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+            chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            chat_mdl = LLMBundle(tenant_id, chat_model_config)
+
+    if meta_data_filter:
+        local_doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            local_doc_ids,
+            kb_ids=kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
+
+    tenant_ids = []
+    tenants = UserTenantService.query(user_id=tenant_id)
+    for tenant in tenants:
+        if any(KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id) for kb_id in kb_ids):
+            tenant_ids.append(tenant.tenant_id)
+            break
+    else:
+        return False, "Only owner of datasets authorized for this operation."
+
+    kb = kbs[0]
+    _question = question
+    if langs:
+        _question = await cross_languages(kb.tenant_id, None, _question, langs)
+    if kb.tenant_embd_id:
+        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
+    elif kb.embd_id:
+        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    else:
+        embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
+    embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
+
+    rerank_mdl = None
+    if req.get("tenant_rerank_id"):
+        rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+        rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+    elif req.get("rerank_id"):
+        rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, req["rerank_id"])
+        rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
+
+    if req.get("keyword", False):
+        default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
+        chat_mdl = LLMBundle(kb.tenant_id, default_chat_model_config)
+        _question += await keyword_extraction(chat_mdl, _question)
+
+    labels = label_question(_question, kbs)
+    ranks = await settings.retriever.retrieval(
+        _question,
+        embd_mdl,
+        tenant_ids,
+        kb_ids,
+        page,
+        size,
+        float(req.get("similarity_threshold", 0.0)),
+        float(req.get("vector_similarity_weight", 0.3)),
+        doc_ids=local_doc_ids,
+        top=top,
+        rerank_mdl=rerank_mdl,
+        rank_feature=labels,
+    )
+
+    if use_kg:
+        try:
+            default_chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
+            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl, LLMBundle(kb.tenant_id, default_chat_model_config))
+            if ck["content_with_weight"]:
+                ranks["chunks"].insert(0, ck)
+        except Exception:
+            logging.warning("search_datasets KG retrieval failed: datasets=%s tenant=%s", kb_ids, tenant_id, exc_info=True)
     total = ranks.get("total", 0)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
     ranks["total"] = total

@@ -197,6 +197,10 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseChatCommand()
 	case TokenThink:
 		return p.parseThinkCommand()
+	case TokenEmbed:
+		return p.parseEmbedCommand()
+	case TokenRerank:
+		return p.parseRerankCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
 	case TokenLS:
@@ -495,43 +499,43 @@ func (p *Parser) parseCESearchCommand() (*Command, error) {
 				p.curToken.Type == TokenChats || p.curToken.Type == TokenDatasets {
 				path = path + "/" + p.curToken.Value
 				p.nextToken()
-		} else if p.curToken.Type == TokenNumber {
-			// Handle version numbers like 1.0.0 (parsed as number . number . number)
-			// OR filenames starting with numbers like 3_list_compressors.pdf
-			numberPart := p.curToken.Value
-			p.nextToken()
-			// Continue reading .number parts (version number format)
-			if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-				versionPart := numberPart
-				for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
-					p.nextToken() // consume .
-					if p.curToken.Type == TokenNumber {
-						versionPart = versionPart + "." + p.curToken.Value
-						p.nextToken()
-					} else {
-						break
+			} else if p.curToken.Type == TokenNumber {
+				// Handle version numbers like 1.0.0 (parsed as number . number . number)
+				// OR filenames starting with numbers like 3_list_compressors.pdf
+				numberPart := p.curToken.Value
+				p.nextToken()
+				// Continue reading .number parts (version number format)
+				if p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+					versionPart := numberPart
+					for p.curToken.Type == TokenIllegal && p.curToken.Value == "." {
+						p.nextToken() // consume .
+						if p.curToken.Type == TokenNumber {
+							versionPart = versionPart + "." + p.curToken.Value
+							p.nextToken()
+						} else {
+							break
+						}
 					}
+					path = path + "/" + versionPart
+				} else if p.curToken.Type == TokenIdentifier {
+					// Filename starting with number: 3_list_compressors.pdf
+					path = path + "/" + numberPart + p.curToken.Value
+					p.nextToken()
+				} else {
+					// Just a number
+					path = path + "/" + numberPart
 				}
-				path = path + "/" + versionPart
-			} else if p.curToken.Type == TokenIdentifier {
-				// Filename starting with number: 3_list_compressors.pdf
-				path = path + "/" + numberPart + p.curToken.Value
+			} else if p.curToken.Type == TokenQuotedString {
+				path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
 				p.nextToken()
 			} else {
-				// Just a number
-				path = path + "/" + numberPart
+				// Trailing slash, just append it
+				path = path + "/"
+				break
 			}
-		} else if p.curToken.Type == TokenQuotedString {
-			path = path + "/" + strings.Trim(p.curToken.Value, "\"'")
-			p.nextToken()
-		} else {
-			// Trailing slash, just append it
-			path = path + "/"
-			break
 		}
-	}
 
-	cmd.Params["path"] = path
+		cmd.Params["path"] = path
 	} else {
 		cmd.Params["path"] = "."
 	}
