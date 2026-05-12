@@ -141,6 +141,13 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+		// Upstage Solar reasoning models (solar-pro2 and the upcoming
+		// solar-pro3) accept reasoning_effort=low|medium|high to trade
+		// latency for chain-of-thought depth, matching the OpenAI
+		// o-series shape. ChatConfig.Effort is the canonical carrier.
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -199,10 +206,19 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	emptyReason := ""
+	// Upstage Solar reasoning models (solar-pro3, solar-pro2 with
+	// reasoning_effort >= medium) return the chain-of-thought in a
+	// `reasoning` field on the message. Pass it through when present
+	// so callers that opted into reasoning can show it. Absent or
+	// non-string means no reasoning was emitted — leave it empty.
+	reasonContent := ""
+	if r, ok := messageMap["reasoning"].(string); ok {
+		reasonContent = r
+	}
+
 	return &ChatResponse{
 		Answer:        &content,
-		ReasonContent: &emptyReason,
+		ReasonContent: &reasonContent,
 	}, nil
 }
 
@@ -267,6 +283,10 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		}
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
+		}
+		// reasoning_effort: same as the non-streaming path above.
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
 	}
 
