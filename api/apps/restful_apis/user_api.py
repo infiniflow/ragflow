@@ -333,21 +333,10 @@ async def setting_user():
         if new_password:
             update_dict["password"] = generate_password_hash(decrypt(new_password))
 
-    for k in request_data.keys():
-        if k in [
-            "password",
-            "new_password",
-            "email",
-            "status",
-            "is_superuser",
-            "login_channel",
-            "is_anonymous",
-            "is_active",
-            "is_authenticated",
-            "last_login_time",
-        ]:
-            continue
-        update_dict[k] = request_data[k]
+    ALLOWED_USER_UPDATE_FIELDS = {"nickname", "avatar", "language", "color_schema", "timezone"}
+    for k in request_data:
+        if k in ALLOWED_USER_UPDATE_FIELDS:
+            update_dict[k] = request_data[k]
 
     try:
         UserService.update_by_id(current_user.id, update_dict)
