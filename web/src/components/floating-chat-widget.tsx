@@ -1,5 +1,6 @@
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { AudioButton } from '@/components/ui/audio-button';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
@@ -497,7 +498,7 @@ const FloatingChatWidget = () => {
 
             {/* Input Area */}
             <div className="border-t border-gray-200 p-4">
-              <div className="flex items-end space-x-3">
+              <div className="flex items-end space-x-2">
                 <div className="flex-1">
                   <textarea
                     value={inputValue}
@@ -514,6 +515,11 @@ const FloatingChatWidget = () => {
                     disabled={hasError || sendLoading}
                   />
                 </div>
+                <AudioButton
+                  onOk={(transcript) => {
+                    setInputValue((prev) => prev + transcript);
+                  }}
+                />
                 <button
                   type="button"
                   onClick={handleSendMessage}
@@ -673,7 +679,7 @@ const FloatingChatWidget = () => {
 
               {/* Input Area */}
               <div className="border-t border-gray-200 p-4">
-                <div className="flex items-end space-x-3">
+                <div className="flex items-end space-x-2">
                   <div className="flex-1">
                     <textarea
                       value={inputValue}
@@ -691,6 +697,11 @@ const FloatingChatWidget = () => {
                       disabled={hasError || sendLoading}
                     />
                   </div>
+                  <AudioButton
+                    onOk={(transcript) => {
+                      setInputValue((prev) => prev + transcript);
+                    }}
+                  />
                   <button
                     type="button"
                     onClick={handleSendMessage}
