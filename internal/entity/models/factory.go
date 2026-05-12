@@ -81,6 +81,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewStepFunModel(baseURL, urlSuffix), nil
 	case "baichuan":
 		return NewBaichuanModel(baseURL, urlSuffix), nil
+	case "jina":
+		return NewJinaModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
