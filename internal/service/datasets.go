@@ -534,6 +534,12 @@ func (s *DatasetsService) GetDataset(datasetID, userID string) (map[string]inter
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
 
+	normalizedID, err := normalizeDatasetUUID1(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	datasetID = normalizedID
+
 	if !s.kbDAO.Accessible(datasetID, userID) {
 		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
