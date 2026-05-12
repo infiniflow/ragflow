@@ -392,8 +392,8 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
+	now := time.Now().Truncate(time.Second)
+	createTime := now.UnixMilli()
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
@@ -416,10 +416,10 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		EmbdID:       embdID,
 		Status:       &status,
 	}
-	kb.CreateTime = &now
-	kb.UpdateTime = &now
-	kb.CreateDate = &nowDate
-	kb.UpdateDate = &nowDate
+	kb.CreateTime = &createTime
+	kb.UpdateTime = &createTime
+	kb.CreateDate = &now
+	kb.UpdateDate = &now
 
 	if description != nil {
 		kb.Description = description
