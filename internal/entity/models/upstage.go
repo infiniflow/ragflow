@@ -100,8 +100,8 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -210,6 +210,10 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 // sender function. The Upstage SSE stream uses the same shape as OpenAI:
 // "data:" lines carrying JSON events, with a final "[DONE]" line.
 func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -375,8 +379,8 @@ func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("api key is required")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
