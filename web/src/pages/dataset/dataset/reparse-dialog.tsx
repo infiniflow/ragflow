@@ -15,7 +15,6 @@ export const ReparseDialog = memo(
   ({
     handleOperationIconClick,
     chunk_num,
-    enable_metadata = false,
     hidden = false,
     visible = true,
     hideModal,
@@ -25,7 +24,6 @@ export const ReparseDialog = memo(
       delete: boolean;
       apply_kb: boolean;
     }) => void;
-    enable_metadata?: boolean;
     visible: boolean;
     hideModal: () => void;
     hidden?: boolean;
@@ -99,7 +97,7 @@ export const ReparseDialog = memo(
       } else {
         setFields([applyKBField]);
       }
-    }, [chunk_num, t, enable_metadata]);
+    }, [chunk_num, t]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 

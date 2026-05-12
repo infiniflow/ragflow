@@ -41,7 +41,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from peewee import OperationalError
 
-from common.constants import ActiveEnum
+from common.constants import ActiveEnum, ParserType
 from api.db.db_models import APIToken
 from api.utils.json_encode import CustomJSONEncoder
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
@@ -404,6 +404,19 @@ def generate_confirmation_token():
 
 
 def get_parser_config(chunk_method, parser_config):
+    """Merge user-supplied parser_config with defaults for the given chunk_method.
+
+    Starts from a base of shared defaults (table/image context sizes), overlays
+    the method-specific defaults, then deep-merges any caller-supplied values on
+    top so that explicit user choices always win.
+
+    Args:
+        chunk_method (str): Parser/chunking method identifier (e.g. "naive", "external").
+        parser_config (dict | None): Caller-supplied config; may be None or partial.
+
+    Returns:
+        dict: Fully-populated config dict ready to pass to the parser.
+    """
     if not chunk_method:
         chunk_method = "naive"
 
@@ -464,7 +477,7 @@ def get_parser_config(chunk_method, parser_config):
         },
         "email": None,
         "picture": None,
-        "external": {"chunk_token_num": 512, "delimiter": "\n", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
+        ParserType.EXTERNAL.value: {"chunk_token_num": 512, "delimiter": "\n", "raptor": {"use_raptor": False}, "graphrag": {"use_graphrag": False}},
     }
 
     default_config = key_mapping[chunk_method]

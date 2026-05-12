@@ -375,6 +375,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """
 
     def new_task():
+        """Return a fresh task skeleton with a unique id and default progress fields."""
         return {
             "id": get_uuid(),
             "doc_id": doc["id"],

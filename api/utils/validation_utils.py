@@ -29,7 +29,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from common.constants import RetCode
+from common.constants import ParserType, RetCode
 
 
 async def validate_and_parse_json_request(
@@ -451,7 +451,12 @@ class UpdateDocumentReq(Base):
     @field_validator("chunk_method", mode="after")
     @classmethod
     def validate_document_chunk_method(cls, chunk_method: str | None):
-        """Validate an optional document parser method."""
+        """Validate an optional document parser method.
+
+        When present, chunk_method must be a recognized parser identifier.
+        Raises PydanticCustomError when the value is not in the allowed set,
+        leaving None untouched.
+        """
         if chunk_method:
             # Validate chunk method if present
             valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag", "external"}
@@ -744,8 +749,8 @@ class CreateDatasetReq(Base):
     @classmethod
     def validate_chunk_method(cls, v: Any, handler, info: ValidationInfo) -> Any:
         """Wrap validation to unify error messages, including type errors (e.g. list)."""
-        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume", "external"}
-        error_msg = f"Input should be in {allowed}"
+        allowed = {pt.value for pt in ParserType} - {ParserType.KG.value, ParserType.AUDIO.value}
+        error_msg = f"Input should be in {sorted(allowed)}"
         try:
             # Run inner validation (type checking)
             result = handler(v)

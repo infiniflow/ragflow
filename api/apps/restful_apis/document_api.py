@@ -1350,6 +1350,20 @@ async def ingest(tenant_id):
         return server_error_response(e)
 
 def _run_sync(user_id:str, req):
+    """Execute a synchronous document parse/run request.
+
+    Validates access rights for every requested document, optionally deletes
+    existing chunks, syncs KB-level parser config when apply_kb is set, then
+    enqueues parsing tasks.
+
+    Args:
+        user_id (str): Authenticated user performing the operation.
+        req (dict): Request payload containing doc_ids, run flag, delete flag,
+                    and optional apply_kb flag.
+
+    Returns:
+        tuple[None, None] on success; (RetCode, str) on auth failure.
+    """
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, user_id):
             return RetCode.AUTHENTICATION_ERROR, "No authorization."
@@ -1391,12 +1405,17 @@ def _run_sync(user_id:str, req):
                 e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
                 if not e:
                     raise LookupError("Can't find this dataset!")
+                if doc.parser_config is None:
+                    doc.parser_config = {}
+                synced_keys = []
                 for _k in ("llm_id", "enable_metadata", "metadata",
                            "chunk_token_num", "delimiter", "children_delimiter",
                            "auto_keywords", "auto_questions", "layout_recognize",
                            "raptor", "graphrag", "parent_child"):
                     if _k in kb.parser_config:
                         doc.parser_config[_k] = kb.parser_config[_k]
+                        synced_keys.append(_k)
+                logging.info("apply_kb: synced keys %s to doc %s", synced_keys, doc.id)
                 DocumentService.update_parser_config(doc.id, doc.parser_config)
             doc_dict = doc.to_dict()
             DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map)

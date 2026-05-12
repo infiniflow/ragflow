@@ -19,7 +19,7 @@ External Loader parser for RAGFlow.
 
 Routes file extensions to either an external REST API or a built-in RAGFlow
 parser, as configured in service_conf.yaml. When an external loader is used,
-the returned markdown is chunked by naive.chunk() (markdown-aware splitting
+the returned Markdown is chunked by naive.chunk() (markdown-aware splitting
 with child chunk support).
 
 Configuration lives entirely in service_conf.yaml under `external_loaders`:
@@ -163,7 +163,13 @@ def _call_loader(path: Path, binary: bytes, loader_cfg: dict) -> str:
     resp = requests.request(method, url, data=binary, headers=headers, timeout=300)
     resp.raise_for_status()
 
-    result = resp.json()
+    try:
+        result = resp.json()
+    except Exception as e:
+        raise ValueError(
+            f"External loader returned invalid JSON for '{path.name}'. "
+            f"Status: {resp.status_code}, Body preview: {resp.text[:200]!r}"
+        ) from e
     page_content = result.get("page_content")
     if page_content is None:
         raise ValueError(
@@ -201,19 +207,22 @@ def chunk(filename:str, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, l
         module_name = _PARSER_MODULE_OVERRIDE.get(parser_name, parser_name)
         module = importlib.import_module(f"rag.app.{module_name}")
         logging.info("external_loader: delegating '%s' to built-in parser '%s'", path.name, parser_name)
-        callback(0.1, f"Using built-in parser '{parser_name}'...")
+        if callback:
+            callback(0.1, f"Using built-in parser '{parser_name}'...")
         return module.chunk(str(path), binary=binary, from_page=from_page, to_page=to_page,
                             lang=lang, callback=callback, **kwargs)
 
     # --- External loader ---
     loader_cfg = target
-    callback(0.05, "Calling external loader...")
+    if callback:
+        callback(0.05, "Calling external loader...")
 
     if binary is None:
         binary = path.read_bytes()
 
     markdown_text = _call_loader(path, binary, loader_cfg)
-    callback(0.45, "External loader finished, chunking markdown...")
+    if callback:
+        callback(0.45, "External loader finished, chunking markdown...")
 
     # Append .md so naive.chunk() takes the markdown-aware code path.
     # e.g. report.pdf -> report.pdf.md
