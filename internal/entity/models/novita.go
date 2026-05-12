@@ -85,7 +85,11 @@ func (n *NovitaModel) baseURLForRegion(region string) (string, error) {
 	if !ok || base == "" {
 		return "", fmt.Errorf("novita: no base URL configured for region %q", region)
 	}
-	return base, nil
+	// Strip a trailing "/" so callers can safely do
+	// fmt.Sprintf("%s/%s", base, suffix) without producing "//" in
+	// the path. The shipped config has no trailing slash, but a
+	// tenant can override the URL per-instance and may add one.
+	return strings.TrimSuffix(base, "/"), nil
 }
 
 const (

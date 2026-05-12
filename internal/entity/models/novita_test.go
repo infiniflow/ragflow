@@ -476,3 +476,92 @@ func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
 		t.Errorf("OCRFile: %v", err)
 	}
 }
+
+// TestNovitaBaseURLTrimsTrailingSlash pins the fix for a `//`-in-path
+// bug a tenant could hit by configuring a baseURL like
+// "https://api.novita.ai/v3/openai/". Every URL the driver builds via
+// fmt.Sprintf("%s/%s", base, suffix) would then produce a double
+// slash. baseURLForRegion now trims the trailing "/" so all three
+// endpoint builders (Chat, Stream, ListModels) emit clean paths.
+func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
+	cases := []struct {
+		name        string
+		path        string
+		method      string
+		invoke      func(n *NovitaModel, apiKey string) error
+		urlSuffix   URLSuffix
+		respBody    string
+		respHeaders map[string]string
+	}{
+		{
+			name:      "Chat",
+			path:      "/chat/completions",
+			method:    http.MethodPost,
+			urlSuffix: URLSuffix{Chat: "chat/completions"},
+			invoke: func(n *NovitaModel, apiKey string) error {
+				_, err := n.ChatWithMessages("m",
+					[]Message{{Role: "user", Content: "x"}},
+					&APIConfig{ApiKey: &apiKey}, nil)
+				return err
+			},
+			respBody: `{"choices":[{"message":{"content":"ok"}}]}`,
+		},
+		{
+			name:      "ListModels",
+			path:      "/models",
+			method:    http.MethodGet,
+			urlSuffix: URLSuffix{Models: "models"},
+			invoke: func(n *NovitaModel, apiKey string) error {
+				_, err := n.ListModels(&APIConfig{ApiKey: &apiKey})
+				return err
+			},
+			respBody: `{"data":[]}`,
+		},
+		{
+			name:      "Stream",
+			path:      "/chat/completions",
+			method:    http.MethodPost,
+			urlSuffix: URLSuffix{Chat: "chat/completions"},
+			invoke: func(n *NovitaModel, apiKey string) error {
+				return n.ChatStreamlyWithSender("m",
+					[]Message{{Role: "user", Content: "x"}},
+					&APIConfig{ApiKey: &apiKey}, nil,
+					func(*string, *string) error { return nil })
+			},
+			respBody: `data: {"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}` + "\n" +
+				`data: [DONE]` + "\n",
+			respHeaders: map[string]string{"Content-Type": "text/event-stream"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// The load-bearing assertion: path is the clean
+				// "/chat/completions" or "/models", never "//chat/...".
+				if r.URL.Path != tc.path {
+					t.Errorf("path=%q want %q (double-slash bug?)", r.URL.Path, tc.path)
+					return
+				}
+				if r.Method != tc.method {
+					t.Errorf("method=%s want %s", r.Method, tc.method)
+					return
+				}
+				for k, v := range tc.respHeaders {
+					w.Header().Set(k, v)
+				}
+				_, _ = io.WriteString(w, tc.respBody)
+			}))
+			defer srv.Close()
+
+			// Configure baseURL WITH a trailing slash on purpose.
+			n := NewNovitaModel(
+				map[string]string{"default": srv.URL + "/"},
+				tc.urlSuffix,
+			)
+			apiKey := "test-key"
+			if err := tc.invoke(n, apiKey); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+		})
+	}
+}
