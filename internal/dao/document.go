@@ -139,12 +139,12 @@ func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
 	return count, err
 }
 
-// SumSizeByKBID returns the total document size for a knowledge base.
-func (dao *DocumentDAO) SumSizeByKBID(kbID string) (int64, error) {
+// SumSizeByDatasetID returns the total document size for a dataset.
+func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
 	var total int64
 	err := DB.Model(&entity.Document{}).
 		Select("COALESCE(SUM(size), 0)").
-		Where("kb_id = ?", kbID).
+		Where("kb_id = ?", datasetID).
 		Scan(&total).Error
 	return total, err
 }

@@ -36,8 +36,8 @@ type ConnectorListItem struct {
 	Status string `json:"status"`
 }
 
-// ConnectorKBListItem represents a connector linked to a knowledge base.
-type ConnectorKBListItem struct {
+// ConnectorDatasetListItem represents a connector linked to a dataset.
+type ConnectorDatasetListItem struct {
 	ID        string `json:"id" gorm:"column:id"`
 	Source    string `json:"source" gorm:"column:source"`
 	Name      string `json:"name" gorm:"column:name"`
@@ -62,14 +62,14 @@ func (dao *ConnectorDAO) ListByTenantID(tenantID string) ([]*ConnectorListItem, 
 	return connectors, nil
 }
 
-// ListByKBID lists connectors linked to a knowledge base.
-func (dao *ConnectorDAO) ListByKBID(kbID string) ([]*ConnectorKBListItem, error) {
-	var connectors []*ConnectorKBListItem
+// ListByDatasetID lists connectors linked to a dataset.
+func (dao *ConnectorDAO) ListByDatasetID(datasetID string) ([]*ConnectorDatasetListItem, error) {
+	var connectors []*ConnectorDatasetListItem
 
 	err := DB.Model(&entity.Connector2Kb{}).
 		Select("connector.id, connector.source, connector.name, connector2kb.auto_parse, connector.status").
 		Joins("JOIN connector ON connector2kb.connector_id = connector.id").
-		Where("connector2kb.kb_id = ?", kbID).
+		Where("connector2kb.kb_id = ?", datasetID).
 		Scan(&connectors).Error
 
 	if err != nil {

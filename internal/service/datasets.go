@@ -545,13 +545,13 @@ func (s *DatasetsService) GetDataset(datasetID, userID string) (map[string]inter
 
 	data := datasetToMap(kb)
 
-	size, err := s.documentDAO.SumSizeByKBID(datasetID)
+	size, err := s.documentDAO.SumSizeByDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
 	data["size"] = size
 
-	connectors, err := s.connectorDAO.ListByKBID(datasetID)
+	connectors, err := s.connectorDAO.ListByDatasetID(datasetID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Database operation failed")
 	}
