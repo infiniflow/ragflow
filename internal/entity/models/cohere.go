@@ -340,9 +340,6 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 
 	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
 	suffix := strings.TrimPrefix(c.URLSuffix.Embedding, "/")
-	if suffix == "" {
-		suffix = "v2/embed"
-	}
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	reqBody := map[string]interface{}{
@@ -417,9 +414,6 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 
 	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
 	suffix := strings.TrimPrefix(c.URLSuffix.Rerank, "/")
-	if suffix == "" {
-		suffix = "v2/rerank"
-	}
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	var topN = rerankConfig.TopN
@@ -500,9 +494,6 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		baseURL = "https://api.cohere.com"
 	}
 	suffix := c.URLSuffix.Models
-	if suffix == "" {
-		suffix = "v1/models"
-	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(suffix, "/"))
 
 	req, err := http.NewRequest("GET", url, nil)
