@@ -253,6 +253,28 @@ def _load_llm_app(monkeypatch):
 
 
 @pytest.mark.p2
+def test_openai_catalog_contains_latest_gpt_models_unit():
+    repo_root = Path(__file__).resolve().parents[4]
+
+    openai_provider_path = repo_root / "conf" / "llm_factories.json"
+    openai_model_path = repo_root / "conf" / "models" / "openai.json"
+
+    with open(openai_provider_path, "r", encoding="utf-8") as f:
+        factories = json.load(f)["factory_llm_infos"]
+
+    openai_factory = next(item for item in factories if item["name"] == "OpenAI")
+    factory_model_names = {item["llm_name"] for item in openai_factory["llm"]}
+
+    with open(openai_model_path, "r", encoding="utf-8") as f:
+        openai_models = json.load(f)["models"]
+    model_file_names = {item["name"] for item in openai_models}
+
+    for model_name in ["gpt-5.5", "gpt-5.4"]:
+        assert model_name in factory_model_names
+        assert model_name in model_file_names
+
+
+@pytest.mark.p2
 def test_list_app_grouping_availability_and_merge(monkeypatch):
     module = _load_llm_app(monkeypatch)
 
@@ -262,12 +284,16 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     tenant_rows = [
         _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
         _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+        _TenantLLMRow(id=3, llm_name="gpt-5.5", llm_factory="OpenAI", model_type="chat", api_key="k3", status="1"),
+        _TenantLLMRow(id=4, llm_name="gpt-5.4", llm_factory="OpenAI", model_type="chat", api_key="k4", status="1"),
     ]
     monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: tenant_rows)
 
     all_llms = [
         _LLMRow(llm_name="tei-embed", fid="Builtin", model_type="embedding", status="1"),
         _LLMRow(llm_name="fast-emb", fid="FastEmbed", model_type="embedding", status="1"),
+        _LLMRow(llm_name="gpt-5.5", fid="OpenAI", model_type="chat", status="1"),
+        _LLMRow(llm_name="gpt-5.4", fid="OpenAI", model_type="chat", status="1"),
         _LLMRow(llm_name="not-in-status", fid="Other", model_type="chat", status="1"),
     ]
     monkeypatch.setattr(module.LLMService, "get_all", lambda: all_llms)
@@ -281,7 +307,7 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     assert ensure_calls == ["tenant-1"]
 
     data = res["data"]
-    assert {"Builtin", "FastEmbed", "CustomFactory"}.issubset(set(data.keys()))
+    assert {"Builtin", "FastEmbed", "CustomFactory", "OpenAI"}.issubset(set(data.keys()))
 
     builtin = data["Builtin"][0]
     assert builtin["llm_name"] == "tei-embed"
@@ -294,6 +320,10 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     tenant_only = data["CustomFactory"][0]
     assert tenant_only["llm_name"] == "tenant-only"
     assert tenant_only["available"] is True
+
+    # Response-level assertion: /llm/list output includes latest OpenAI IDs.
+    openai_names = {item["llm_name"] for item in data["OpenAI"]}
+    assert {"gpt-5.5", "gpt-5.4"}.issubset(openai_names)
 
 
 @pytest.mark.p2

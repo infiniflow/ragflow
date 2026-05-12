@@ -28,19 +28,21 @@ import (
 	"time"
 )
 
-// StepFunModel implements ModelDriver for StepFun (阶跃星辰).
+// MistralModel implements ModelDriver for Mistral AI.
 //
-// StepFun exposes an OpenAI-compatible REST API at https://api.stepfun.com/v1
+// Mistral exposes an OpenAI-compatible REST API at https://api.mistral.ai/v1
 // (chat completions at /chat/completions, list models at /models). The wire
 // shape matches OpenAI closely enough that the chat path here is a direct
-// port of the OpenAI driver.
-type StepFunModel struct {
+// port of the OpenAI driver, with the differences kept small on purpose:
+// no reasoning_content pass-through (Mistral does not expose one), and a
+// distinct Name() so the factory can route to this driver.
+type MistralModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
 }
 
-// NewStepFunModel creates a new StepFun model instance.
+// NewMistralModel creates a new Mistral model instance.
 //
 // We clone http.DefaultTransport so we keep Go's defaults for
 // ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
@@ -51,7 +53,7 @@ type StepFunModel struct {
 // cap the time spent reading the response body, which would cut off
 // long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
 // callers wrap each request with context.WithTimeout instead.
-func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunModel {
+func NewMistralModel(baseURL map[string]string, urlSuffix URLSuffix) *MistralModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
@@ -59,7 +61,7 @@ func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunMod
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
-	return &StepFunModel{
+	return &MistralModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -68,28 +70,28 @@ func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunMod
 	}
 }
 
-func (s *StepFunModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewStepFunModel(baseURL, s.URLSuffix)
+func (m *MistralModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewMistralModel(baseURL, m.URLSuffix)
 }
 
-func (s *StepFunModel) Name() string {
-	return "stepfun"
+func (m *MistralModel) Name() string {
+	return "mistral"
 }
 
 // baseURLForRegion returns the base URL for the given region, or an
 // error if no entry exists. This makes a misconfigured region fail
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
-func (s *StepFunModel) baseURLForRegion(region string) (string, error) {
-	base, ok := s.BaseURL[region]
+func (m *MistralModel) baseURLForRegion(region string) (string, error) {
+	base, ok := m.BaseURL[region]
 	if !ok || base == "" {
-		return "", fmt.Errorf("stepfun: no base URL configured for region %q", region)
+		return "", fmt.Errorf("mistral: no base URL configured for region %q", region)
 	}
 	return base, nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
-func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -103,11 +105,11 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := s.baseURLForRegion(region)
+	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, s.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -157,7 +159,7 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -205,9 +207,9 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. The StepFun SSE stream uses the same shape as OpenAI:
+// sender function. The Mistral SSE stream uses the same shape as OpenAI:
 // "data:" lines carrying JSON events, with a final "[DONE]" line.
-func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (m *MistralModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -225,11 +227,11 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := s.baseURLForRegion(region)
+	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, s.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -273,9 +275,9 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// SSE streams are long-lived. We rely on the transport's
-	// ResponseHeaderTimeout to cap the connection-establishment phase
-	// instead of attaching a hard deadline here.
+	// Use an explicit background context. SSE streams are long-lived
+	// so we do not attach a hard deadline here; the transport's
+	// ResponseHeaderTimeout caps the connection-establishment phase.
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -284,7 +286,7 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -352,7 +354,7 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 	if !sawTerminal {
-		return fmt.Errorf("stepfun: stream ended before [DONE] or finish_reason")
+		return fmt.Errorf("mistral: stream ended before [DONE] or finish_reason")
 	}
 
 	endOfStream := "[DONE]"
@@ -363,15 +365,119 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-// Embed is left as a stub. StepFun has not advertised a public embeddings
-// endpoint in the API reference linked from the umbrella issue, so any real
-// implementation belongs in a follow-up only after the endpoint is verified.
-func (s *StepFunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("not implemented")
+type mistralEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type mistralEmbeddingResponse struct {
+	Data   []mistralEmbeddingData `json:"data"`
+	Model  string                 `json:"model"`
+	Object string                 `json:"object"`
+}
+
+// Embed turns a list of texts into embedding vectors using the
+// Mistral /v1/embeddings endpoint (mistral-embed). The output has
+// one vector per input, in the same order the inputs were given.
+func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := m.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Mistral embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed mistralEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Reorder the returned vectors by their reported index so the output
+	// always lines up with the input texts, even if the upstream API ever
+	// returns items out of order. A nil slot at the end indicates the
+	// upstream did not return an embedding for that input.
+	embeddings := make([]EmbeddingData, len(texts))
+	filled := make([]bool, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index < 0 || item.Index >= len(texts) {
+			return nil, fmt.Errorf("mistral: response index %d out of range for %d inputs", item.Index, len(texts))
+		}
+		if filled[item.Index] {
+			// A malformed response that repeats the same index would
+			// silently overwrite the earlier vector. Fail loudly so
+			// the caller never uses ambiguous output.
+			return nil, fmt.Errorf("mistral: duplicate embedding index %d in response", item.Index)
+		}
+		embeddings[item.Index] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     item.Index,
+		}
+		filled[item.Index] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("mistral: missing embedding for input index %d", i)
+		}
+	}
+
+	return embeddings, nil
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (m *MistralModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -381,11 +487,11 @@ func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := s.baseURLForRegion(region)
+	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, s.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -397,7 +503,7 @@ func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -438,45 +544,45 @@ func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-// Balance is not exposed by the StepFun API, so this returns "no such method".
-func (s *StepFunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+// Balance is not exposed by the Mistral API, so this returns "no such method".
+func (m *MistralModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
-func (s *StepFunModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := s.ListModels(apiConfig)
+func (m *MistralModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := m.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// Rerank calculates similarity scores between query and documents. StepFun
+// Rerank calculates similarity scores between query and documents. Mistral
 // does not expose a public rerank API, so this returns "no such method".
-func (s *StepFunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (m *MistralModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // TranscribeAudio transcribe audio
-func (z *StepFunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (z *MistralModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *StepFunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (z *MistralModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // AudioSpeech convert audio to text
-func (z *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (z *MistralModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // OCRFile OCR file
-func (z *StepFunModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *MistralModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

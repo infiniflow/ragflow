@@ -201,6 +201,12 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseEmbedCommand()
 	case TokenRerank:
 		return p.parseRerankCommand()
+	case TokenASR:
+		return p.parseASRCommand()
+	case TokenTTS:
+		return p.parseTTSCommand()
+	case TokenOCR:
+		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
 	case TokenLS:
