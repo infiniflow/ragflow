@@ -36,13 +36,8 @@ ocr = OCR()
 VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", ".3gp", ".3gpp", ".mkv"]
 
 
-def _ocr_by_paddleocr(filename, binary, tenant_id, lang, callback, parser_config):
+def _ocr_by_paddleocr(filename, binary, tenant_id, lang, callback, paddleocr_llm_name=None):
     """Use PaddleOCR API to extract text from an image."""
-    layout_recognizer, parser_model_name = normalize_layout_recognizer(
-        parser_config.get("layout_recognize", "")
-    )
-
-    paddleocr_llm_name = parser_model_name
     if not paddleocr_llm_name:
         try:
             from api.db.services.tenant_llm_service import TenantLLMService
@@ -106,11 +101,11 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         # Check if PaddleOCR is selected for OCR
         layout_recognizer_raw = parser_config.get("layout_recognize", "")
-        layout_recognizer, _ = normalize_layout_recognizer(layout_recognizer_raw)
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognizer_raw)
 
         txt = None
         if layout_recognizer and layout_recognizer.lower() == "paddleocr":
-            txt = _ocr_by_paddleocr(filename, binary, tenant_id, lang, callback, parser_config)
+            txt = _ocr_by_paddleocr(filename, binary, tenant_id, lang, callback, paddleocr_llm_name=parser_model_name)
 
         if txt is None:
             # Default: use built-in deepdoc OCR

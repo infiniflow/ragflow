@@ -153,7 +153,10 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
         if not ok:
             raise RuntimeError(f"PaddleOCR server not accessible: {reason}")
 
-        return PaddleOCRParser.parse_image(self, filepath=filepath, binary=binary, callback=callback, **kwargs)
+        logging.info(f"PaddleOCR parse_image start: {filepath}")
+        result = PaddleOCRParser.parse_image(self, filepath=filepath, binary=binary, callback=callback, **kwargs)
+        logging.info(f"PaddleOCR parse_image done: {filepath}, text length: {len(result)}")
+        return result
 
 
 class OpenDataLoaderOcrModel(Base, OpenDataLoaderParser):
