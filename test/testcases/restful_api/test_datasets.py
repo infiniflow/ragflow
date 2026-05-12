@@ -129,3 +129,194 @@ def test_dataset_search_requires_question(rest_client, create_dataset):
     payload = res.json()
     assert payload["code"] == 101, payload
     assert "question" in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_tags_and_aggregation(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_tags")
+    second_dataset_id = create_dataset("dataset_tags_second")
+
+    list_tags_res = rest_client.get(f"/datasets/{dataset_id}/tags")
+    assert list_tags_res.status_code == 200
+    list_tags_payload = list_tags_res.json()
+    # Known env/runtime behavior: this route can return 102 when retriever tag
+    # backend is unavailable for an empty dataset. Keep route-contract coverage.
+    assert list_tags_payload["code"] in (0, 102), list_tags_payload
+
+    aggregate_res = rest_client.get(
+        "/datasets/tags/aggregation",
+        params={"dataset_ids": f"{dataset_id},{second_dataset_id}"},
+    )
+    assert aggregate_res.status_code == 200
+    aggregate_payload = aggregate_res.json()
+    assert aggregate_payload["code"] in (0, 102), aggregate_payload
+
+    empty_aggregate_res = rest_client.get("/datasets/tags/aggregation")
+    assert empty_aggregate_res.status_code == 200
+    empty_aggregate_payload = empty_aggregate_res.json()
+    assert empty_aggregate_payload["code"] != 0, empty_aggregate_payload
+
+
+@pytest.mark.p2
+def test_dataset_tags_delete_and_rename_validation(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_tag_mutation")
+
+    delete_missing_tags = rest_client.delete(f"/datasets/{dataset_id}/tags", json={})
+    assert delete_missing_tags.status_code == 200
+    delete_missing_tags_payload = delete_missing_tags.json()
+    assert delete_missing_tags_payload["code"] != 0, delete_missing_tags_payload
+
+    delete_invalid_tags_type = rest_client.delete(f"/datasets/{dataset_id}/tags", json={"tags": "wrong"})
+    assert delete_invalid_tags_type.status_code == 200
+    delete_invalid_tags_type_payload = delete_invalid_tags_type.json()
+    assert delete_invalid_tags_type_payload["code"] != 0, delete_invalid_tags_type_payload
+
+    rename_empty = rest_client.put(
+        f"/datasets/{dataset_id}/tags",
+        json={"from_tag": "", "to_tag": ""},
+    )
+    assert rename_empty.status_code == 200
+    rename_empty_payload = rename_empty.json()
+    assert rename_empty_payload["code"] != 0, rename_empty_payload
+
+    rename_invalid_dataset = rest_client.put(
+        "/datasets/invalid_id/tags",
+        json={"from_tag": "old", "to_tag": "new"},
+    )
+    assert rename_invalid_dataset.status_code == 200
+    rename_invalid_dataset_payload = rename_invalid_dataset.json()
+    assert rename_invalid_dataset_payload["code"] != 0, rename_invalid_dataset_payload
+
+
+@pytest.mark.p2
+def test_dataset_flattened_metadata(rest_client, create_dataset):
+    first_dataset_id = create_dataset("flattened_meta_1")
+    second_dataset_id = create_dataset("flattened_meta_2")
+
+    flattened_res = rest_client.get(
+        "/datasets/metadata/flattened",
+        params={"dataset_ids": f"{first_dataset_id},{second_dataset_id}"},
+    )
+    assert flattened_res.status_code == 200
+    flattened_payload = flattened_res.json()
+    assert flattened_payload["code"] == 0, flattened_payload
+
+    empty_ids_res = rest_client.get("/datasets/metadata/flattened")
+    assert empty_ids_res.status_code == 200
+    empty_ids_payload = empty_ids_res.json()
+    assert empty_ids_payload["code"] != 0, empty_ids_payload
+
+    invalid_dataset_res = rest_client.get(
+        "/datasets/metadata/flattened",
+        params={"dataset_ids": "invalid_id"},
+    )
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] != 0, invalid_dataset_payload
+
+
+@pytest.mark.p2
+def test_dataset_ingestion_summary_and_logs(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_ingestions")
+
+    summary_res = rest_client.get(f"/datasets/{dataset_id}/ingestions/summary")
+    assert summary_res.status_code == 200
+    summary_payload = summary_res.json()
+    assert summary_payload["code"] == 0, summary_payload
+    assert "doc_num" in summary_payload["data"], summary_payload
+    assert "chunk_num" in summary_payload["data"], summary_payload
+    assert "token_num" in summary_payload["data"], summary_payload
+    assert "status" in summary_payload["data"], summary_payload
+
+    logs_res = rest_client.get(
+        f"/datasets/{dataset_id}/ingestions",
+        params={"page": 1, "page_size": 10},
+    )
+    assert logs_res.status_code == 200
+    logs_payload = logs_res.json()
+    assert logs_payload["code"] == 0, logs_payload
+    assert "total" in logs_payload["data"], logs_payload
+    assert "logs" in logs_payload["data"], logs_payload
+
+    not_found_log_res = rest_client.get(f"/datasets/{dataset_id}/ingestions/nonexistent_log")
+    assert not_found_log_res.status_code == 200
+    not_found_log_payload = not_found_log_res.json()
+    assert not_found_log_payload["code"] != 0, not_found_log_payload
+
+
+@pytest.mark.p2
+def test_dataset_ingestion_invalid_dataset(rest_client):
+    summary_res = rest_client.get("/datasets/invalid_id/ingestions/summary")
+    assert summary_res.status_code == 200
+    summary_payload = summary_res.json()
+    assert summary_payload["code"] != 0, summary_payload
+
+    logs_res = rest_client.get("/datasets/invalid_id/ingestions")
+    assert logs_res.status_code == 200
+    logs_payload = logs_res.json()
+    assert logs_payload["code"] != 0, logs_payload
+
+    log_res = rest_client.get("/datasets/invalid_id/ingestions/some_log_id")
+    assert log_res.status_code == 200
+    log_payload = log_res.json()
+    assert log_payload["code"] != 0, log_payload
+
+
+@pytest.mark.p2
+def test_dataset_index_endpoints(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_index_endpoints")
+
+    run_invalid_type = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "invalid_type"},
+    )
+    assert run_invalid_type.status_code == 200
+    run_invalid_type_payload = run_invalid_type.json()
+    assert run_invalid_type_payload["code"] != 0, run_invalid_type_payload
+
+    run_no_docs = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "graph"},
+    )
+    assert run_no_docs.status_code == 200
+    run_no_docs_payload = run_no_docs.json()
+    assert run_no_docs_payload["code"] == 102, run_no_docs_payload
+
+    trace_no_task = rest_client.get(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "graph"},
+    )
+    assert trace_no_task.status_code == 200
+    trace_no_task_payload = trace_no_task.json()
+    assert trace_no_task_payload["code"] == 0, trace_no_task_payload
+    assert trace_no_task_payload["data"] == {}, trace_no_task_payload
+
+    delete_graph = rest_client.delete(f"/datasets/{dataset_id}/graph")
+    assert delete_graph.status_code == 200
+    delete_graph_payload = delete_graph.json()
+    assert delete_graph_payload["code"] == 0, delete_graph_payload
+
+    delete_invalid_type = rest_client.delete(f"/datasets/{dataset_id}/invalid_type")
+    assert delete_invalid_type.status_code == 200
+    delete_invalid_type_payload = delete_invalid_type.json()
+    assert delete_invalid_type_payload["code"] != 0, delete_invalid_type_payload
+
+
+@pytest.mark.p2
+def test_dataset_embedding_endpoints(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_embedding_endpoints")
+
+    run_no_docs_res = rest_client.post(f"/datasets/{dataset_id}/embedding")
+    assert run_no_docs_res.status_code == 200
+    run_no_docs_payload = run_no_docs_res.json()
+    assert run_no_docs_payload["code"] == 102, run_no_docs_payload
+
+    missing_embd_id_res = rest_client.post(f"/datasets/{dataset_id}/embedding/check", json={})
+    assert missing_embd_id_res.status_code == 200
+    missing_embd_id_payload = missing_embd_id_res.json()
+    assert missing_embd_id_payload["code"] != 0, missing_embd_id_payload
+
+    invalid_dataset_res = rest_client.post("/datasets/invalid_id/embedding")
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] != 0, invalid_dataset_payload
