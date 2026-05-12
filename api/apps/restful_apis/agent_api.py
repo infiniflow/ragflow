@@ -372,7 +372,7 @@ def list_agent_tags(tenant_id):
     return get_json_result(data=[{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))])
 
 
-@manager.route("/agent/<canvas_id>/tags", methods=["PUT"])  # noqa: F821
+@manager.route("/agents/<canvas_id>/tags", methods=["PUT"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def update_agent_tags(tenant_id, canvas_id):

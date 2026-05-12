@@ -9,7 +9,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { useUpdateAgentTags } from '@/hooks/use-agent-request';
+import {
+  useFetchAgentTags,
+  useUpdateAgentTags,
+} from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
 import { X } from 'lucide-react';
 import { KeyboardEvent, useEffect, useMemo, useState } from 'react';
@@ -30,6 +33,7 @@ const splitTags = (raw?: string) =>
 export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
   const { t } = useTranslation();
   const { loading, updateAgentTags } = useUpdateAgentTags();
+  const { data: allTags } = useFetchAgentTags();
   const initial = useMemo(() => splitTags(agent.tags), [agent.tags]);
   const [tags, setTags] = useState<string[]>(initial);
   const [draft, setDraft] = useState('');
@@ -41,14 +45,26 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
     }
   }, [open, initial]);
 
-  const commitDraft = () => {
-    const next = draft.trim();
+  const suggestions = useMemo(() => {
+    const taken = new Set(tags.map((t) => t.toLowerCase()));
+    const needle = draft.trim().toLowerCase();
+    return (allTags ?? [])
+      .map((entry) => entry.tag)
+      .filter((tag) => !taken.has(tag.toLowerCase()))
+      .filter((tag) => !needle || tag.toLowerCase().includes(needle))
+      .slice(0, 20);
+  }, [allTags, tags, draft]);
+
+  const addTag = (tag: string) => {
+    const next = tag.trim();
     if (!next) return;
-    if (!tags.includes(next)) {
+    if (!tags.some((existing) => existing.toLowerCase() === next.toLowerCase())) {
       setTags([...tags, next]);
     }
     setDraft('');
   };
+
+  const commitDraft = () => addTag(draft);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ',') {
@@ -114,6 +130,31 @@ export function AgentTagEditor({ agent, open, onOpenChange }: IProps) {
           onBlur={commitDraft}
           placeholder={t('flow.tagsPlaceholder')}
         />
+
+        {suggestions.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-xs text-text-secondary">
+              {t('flow.tagSuggestionsLabel')}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {suggestions.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => addTag(tag)}
+                  className="text-xs"
+                >
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-normal cursor-pointer hover:bg-accent"
+                  >
+                    + {tag}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <DialogFooter>
           <Button

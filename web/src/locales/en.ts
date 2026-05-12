@@ -1697,6 +1697,7 @@ Example: Virtual Hosted Style`,
       editTagsDescription:
         'Add tags to organize and filter your agents. Press Enter or comma to add.',
       tagsPlaceholder: 'Add a tag and press Enter',
+      tagSuggestionsLabel: 'Existing tags',
       includeHeadingContent: 'Separate parent-heading content',
       includeHeadingContentTip:
         'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',
