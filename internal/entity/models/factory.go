@@ -75,6 +75,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "stepfun":
 		return NewStepFunModel(baseURL, urlSuffix), nil
+	case "baichuan":
+		return NewBaichuanModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
