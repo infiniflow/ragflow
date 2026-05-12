@@ -424,16 +424,29 @@ export const useRemoveKnowledgeGraph = () => {
 
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
 ): {
   list: IDataset[];
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+    queryKey: [
+      KnowledgeApiAction.FetchKnowledgeList,
+      shouldFilterListWithoutDocument,
+      keywords,
+    ],
     initialData: [],
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
-      const { data } = await listDataset();
+      const { data } = await listDataset(
+        keywords
+          ? {
+              ext: {
+                keywords,
+              },
+            }
+          : undefined,
+      );
       const list = data?.data ?? [];
       return shouldFilterListWithoutDocument
         ? list.filter((x: IDataset) => x.chunk_count > 0)
