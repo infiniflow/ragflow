@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 import re
+import base64
+import os
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
@@ -25,18 +27,24 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 import pdfplumber
+import requests
 from PIL import Image
+
+from common.constants import MAXIMUM_PAGE_NUMBER
 
 try:
     from docling.document_converter import DocumentConverter
 except Exception:
-    DocumentConverter = None  
+    DocumentConverter = None
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
     class RAGFlowPdfParser:  
         pass
+
+from deepdoc.parser.utils import extract_pdf_outlines
+
 
 
 class DoclingContentType(str, Enum):
@@ -74,15 +82,41 @@ def _extract_bbox_from_prov(item, prov_attr: str = "prov") -> Optional[_BBox]:
 
 
 class DoclingParser(RAGFlowPdfParser):
-    def __init__(self):
+    def __init__(self, docling_server_url: str = "", request_timeout: int = 600):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.page_images: list[Image.Image] = []
         self.page_from = 0
         self.page_to = 10_000
         self.outlines = []
-   
-        
-    def check_installation(self) -> bool:
+        self.docling_server_url = (docling_server_url or "").rstrip("/")
+        self.request_timeout = request_timeout
+
+    def _effective_server_url(self, docling_server_url: Optional[str] = None) -> str:
+        return (docling_server_url or self.docling_server_url or "").rstrip("/") or (
+            os.environ.get("DOCLING_SERVER_URL", "").rstrip("/")
+        )
+
+    @staticmethod
+    def _is_http_endpoint_valid(url: str, timeout: int = 5) -> bool:
+        try:
+            response = requests.head(url, timeout=timeout, allow_redirects=True)
+            return response.status_code in [200, 301, 302, 307, 308]
+        except Exception:
+            try:
+                response = requests.get(url, timeout=timeout, allow_redirects=True)
+                return response.status_code in [200, 301, 302, 307, 308]
+            except Exception:
+                return False
+
+    def check_installation(self, docling_server_url: Optional[str] = None) -> bool:
+        server_url = self._effective_server_url(docling_server_url)
+        if server_url:
+            for path in ("/openapi.json", "/docs", "/v1/convert/source"):
+                if self._is_http_endpoint_valid(f"{server_url}{path}", timeout=5):
+                    return True
+            self.logger.warning(f"[Docling] external server not reachable: {server_url}")
+            return False
+
         if DocumentConverter is None:
             self.logger.warning("[Docling] 'docling' is not importable, please: pip install docling")
             return False
@@ -93,7 +127,7 @@ class DoclingParser(RAGFlowPdfParser):
             self.logger.error(f"[Docling] init DocumentConverter failed: {e}")
             return False
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
         self.page_to = page_to
         bytes_io = None
@@ -213,7 +247,7 @@ class DoclingParser(RAGFlowPdfParser):
                 continue
             
             tag = self._make_line_tag(bbox) if isinstance(bbox,_BBox) else ""
-            if parse_method == "manual":
+            if parse_method in {"manual", "pipeline"}:
                 sections.append((section, typ, tag))
             elif parse_method == "paper":
                 sections.append((section + tag, typ))
@@ -277,6 +311,197 @@ class DoclingParser(RAGFlowPdfParser):
             tables.append(((img, [captions]), positions if positions else ""))
         return tables
 
+    @staticmethod
+    def _sections_from_remote_text(text: str, parse_method: str) -> list[tuple[str, ...]]:
+        txt = (text or "").strip()
+        if not txt:
+            return []
+        if parse_method in {"manual", "pipeline"}:
+            return [(txt, DoclingContentType.TEXT.value, "")]
+        if parse_method == "paper":
+            return [(txt, DoclingContentType.TEXT.value)]
+        return [(txt, "")]
+
+    @staticmethod
+    def _extract_remote_document_entries(payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
+        if isinstance(payload.get("document"), dict):
+            return [payload["document"]]
+        if isinstance(payload.get("documents"), list):
+            return [d for d in payload["documents"] if isinstance(d, dict)]
+        if isinstance(payload.get("results"), list):
+            docs = []
+            for it in payload["results"]:
+                if isinstance(it, dict):
+                    if isinstance(it.get("document"), dict):
+                        docs.append(it["document"])
+                    elif isinstance(it.get("result"), dict):
+                        docs.append(it["result"])
+                    else:
+                        docs.append(it)
+            return docs
+        return []
+
+    def _parse_pdf_remote(
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes | None = None,
+        callback: Optional[Callable] = None,
+        *,
+        parse_method: str = "raw",
+        docling_server_url: Optional[str] = None,
+        request_timeout: Optional[int] = None,
+    ):
+        """
+        Parses a PDF document using a remote Docling server.
+        
+        Prioritizes native chunking endpoints (/v1/chunk/source, /v1alpha/chunk/source) 
+        to prevent token overflow, with a graceful fallback to standard conversion 
+        endpoints if chunking is unavailable.
+        """
+        server_url = self._effective_server_url(docling_server_url)
+        if not server_url:
+            raise RuntimeError("[Docling] DOCLING_SERVER_URL is not configured.")
+
+        timeout = request_timeout or self.request_timeout
+        if binary is not None:
+            if isinstance(binary, (bytes, bytearray)):
+                pdf_bytes = bytes(binary)
+            else:
+                pdf_bytes = bytes(binary.getbuffer())
+        else:
+            src_path = Path(filepath)
+            if not src_path.exists():
+                raise FileNotFoundError(f"PDF not found: {src_path}")
+            with open(src_path, "rb") as f:
+                pdf_bytes = f.read()
+
+        if callback:
+            callback(0.2, f"[Docling] Requesting external server: {server_url}")
+
+        filename = Path(filepath).name or "input.pdf"
+        b64 = base64.b64encode(pdf_bytes).decode("ascii")
+        
+        # Standard payloads
+        # Standard fallback payloads (no chunking)
+        v1_payload_standard = {
+            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
+        }
+        v1alpha_payload_standard = {
+            "options": {"from_formats": ["pdf"], "to_formats": ["json", "md", "text"]},
+            "file_sources": [{"filename": filename, "base64_string": b64}],
+        }
+        
+        # --- NEW: Correct API Contract for Chunking ---
+        chunking_opts = {
+            "from_formats": ["pdf"], 
+            "to_formats": ["json", "md", "text"],
+            "do_chunking": True,
+            "chunking_options": {
+                "max_tokens": 512,
+                "overlap": 50,
+                "tokenizer": "sentencepiece" # Required by Docling contract
+            }
+        }
+        v1_payload_chunked = {
+            "options": chunking_opts,
+            "sources": [{"kind": "file", "filename": filename, "base64_string": b64}],
+        }
+        v1alpha_payload_chunked = {
+            "options": chunking_opts,
+            "file_sources": [{"filename": filename, "base64_string": b64}],
+        }
+
+        errors = []
+        response_json = None
+        is_chunked_response = False
+
+        # Try chunked endpoints first, then fall back to standard if the server is older
+        for endpoint, payload, chunk_flag in (
+            ("/v1/convert/source", v1_payload_chunked, True),
+            ("/v1alpha/convert/source", v1alpha_payload_chunked, True),
+            ("/v1/convert/source", v1_payload_standard, False),
+            ("/v1alpha/convert/source", v1alpha_payload_standard, False),
+        ):
+            try:
+                resp = requests.post(
+                    f"{server_url}{endpoint}",
+                    json=payload,
+                    timeout=timeout,
+                )
+                if resp.status_code < 300:
+                    response_json = resp.json()
+                    is_chunked_response = chunk_flag
+                    
+                    if chunk_flag:
+                        self.logger.info(f"[Docling] Successfully used native chunking on: {endpoint}")
+                    else:
+                        self.logger.info(f"[Docling] Chunking unavailable, fell back to standard: {endpoint}")
+                    break
+                
+                # If chunking request is rejected (e.g., 422 Unprocessable Entity on older servers), 
+                # log it and let the loop naturally fall back to the standard payload.
+                if chunk_flag:
+                    self.logger.warning(f"[Docling] Server rejected chunking parameters: HTTP {resp.status_code}")
+                    continue
+
+                errors.append(f"{endpoint}: HTTP {resp.status_code} {resp.text[:300]}")
+                
+            except Exception as exc:
+                self.logger.error(f"[Docling] Request error on {endpoint}: {exc}")
+                errors.append(f"{endpoint}: {exc}")
+
+        if response_json is None:
+            raise RuntimeError("[Docling] remote convert failed: " + " | ".join(errors))
+
+        sections: list[tuple[str, ...]] = []
+        tables = []
+        
+        # --- NEW: Handle Native Chunked Response ---
+        if is_chunked_response:
+            # The chunking endpoint returns an array of chunk items
+            chunks = response_json if isinstance(response_json, list) else response_json.get("results", [])
+            for chunk_data in chunks:
+                if not isinstance(chunk_data, dict):
+                    continue
+                # Depending on the exact docling-serve spec, the text might be nested
+                chunk_text = chunk_data.get("text", "")
+                if not chunk_text and isinstance(chunk_data.get("chunk"), dict):
+                    chunk_text = chunk_data["chunk"].get("text", "")
+                
+                if isinstance(chunk_text, str) and chunk_text.strip():
+                    # Feed the pre-sliced chunks directly into RAGFlow's expected format
+                    sections.extend(self._sections_from_remote_text(chunk_text, parse_method=parse_method))
+                    
+            if callback:
+                callback(0.95, f"[Docling] Native chunks received: {len(sections)}")
+            return sections, tables
+
+        # --- FALLBACK: Standard RAGFlow parsing for older docling servers ---
+        docs = self._extract_remote_document_entries(response_json)
+        if not docs:
+            raise RuntimeError("[Docling] remote response does not contain parsed documents.")
+
+        for doc in docs:
+            md = doc.get("md_content")
+            txt = doc.get("text_content")
+            if isinstance(md, str) and md.strip():
+                sections.extend(self._sections_from_remote_text(md, parse_method=parse_method))
+            elif isinstance(txt, str) and txt.strip():
+                sections.extend(self._sections_from_remote_text(txt, parse_method=parse_method))
+
+            json_content = doc.get("json_content")
+            if isinstance(json_content, dict):
+                md_fallback = json_content.get("md_content")
+                if isinstance(md_fallback, str) and md_fallback.strip() and not sections:
+                    sections.extend(self._sections_from_remote_text(md_fallback, parse_method=parse_method))
+
+        if callback:
+            callback(0.95, f"[Docling] Remote sections: {len(sections)}")
+        return sections, tables
+
     def parse_pdf(
         self,
         filepath: str | PathLike[str],
@@ -287,11 +512,25 @@ class DoclingParser(RAGFlowPdfParser):
         lang: Optional[str] = None,        
         method: str = "auto",             
         delete_output: bool = True,
-        parse_method: str = "raw"     
+        parse_method: str = "raw",
+        docling_server_url: Optional[str] = None,
+        request_timeout: Optional[int] = None,
     ):
+        self.outlines = extract_pdf_outlines(binary if binary is not None else filepath)
 
-        if not self.check_installation():
+        if not self.check_installation(docling_server_url=docling_server_url):
             raise RuntimeError("Docling not available, please install `docling`")
+
+        server_url = self._effective_server_url(docling_server_url)
+        if server_url:
+            return self._parse_pdf_remote(
+                filepath=filepath,
+                binary=binary,
+                callback=callback,
+                parse_method=parse_method,
+                docling_server_url=server_url,
+                request_timeout=request_timeout,
+            )
 
         if binary is not None:
             tmpdir = Path(output_dir) if output_dir else Path.cwd() / ".docling_tmp"

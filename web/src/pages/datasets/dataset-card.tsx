@@ -3,14 +3,14 @@ import { MoreButton } from '@/components/more-button';
 import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
 import { DatasetDropdown } from './dataset-dropdown';
 import { useRenameDataset } from './use-rename-dataset';
 
 export type DatasetCardProps = {
-  dataset: IKnowledge;
+  dataset: IDataset;
 } & Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'>;
 
 export function DatasetCard({
@@ -23,7 +23,7 @@ export function DatasetCard({
     <HomeCard
       data={{
         ...dataset,
-        description: `${dataset.doc_num} ${t('knowledgeDetails.files')}`,
+        description: `${dataset.document_count} ${t('knowledgeDetails.files')}`,
       }}
       moreDropdown={
         <DatasetDropdown

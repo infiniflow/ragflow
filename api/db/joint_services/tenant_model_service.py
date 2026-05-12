@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import enum
 from common import settings
@@ -20,14 +21,22 @@ from common.constants import LLMType
 from api.db.services.llm_service import LLMService
 from api.db.services.tenant_llm_service import TenantLLMService, TenantService
 
+logger = logging.getLogger(__name__)
+
 
 def get_model_config_by_id(tenant_model_id: int) -> dict:
     found, model_config = TenantLLMService.get_by_id(tenant_model_id)
     if not found:
         raise LookupError(f"Tenant Model with id {tenant_model_id} not found")
     config_dict = model_config.to_dict()
+    api_key, is_tools, api_key_payload = TenantLLMService._decode_api_key_config(config_dict.get("api_key", ""))
+    config_dict["api_key"] = api_key
+    if api_key_payload is not None:
+        config_dict["api_key_payload"] = api_key_payload
+    if is_tools is not None:
+        config_dict["is_tools"] = is_tools
     llm = LLMService.query(llm_name=config_dict["llm_name"])
-    if llm:
+    if "is_tools" not in config_dict and llm:
         config_dict["is_tools"] = llm[0].is_tools
     return config_dict
 
@@ -35,11 +44,19 @@ def get_model_config_by_id(tenant_model_id: int) -> dict:
 def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
     if not model_name:
         raise Exception("Model Name is required")
-    model_config = TenantLLMService.get_api_key(tenant_id, model_name)
+    model_type_val = model_type.value if hasattr(model_type, "value") else model_type
+    model_config = TenantLLMService.get_api_key(tenant_id, model_name, model_type_val)
     if not model_config:
         # model_name in format 'name@factory', split model_name and try again
         pure_model_name, fid = TenantLLMService.split_model_name_and_factory(model_name)
-        if model_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and pure_model_name == os.getenv("TEI_MODEL", ""):
+        compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+        is_tei_builtin_embedding = (
+            model_type_val == LLMType.EMBEDDING.value
+            and "tei-" in compose_profiles
+            and pure_model_name == os.getenv("TEI_MODEL", "")
+            and (fid == "Builtin" or fid is None)
+        )
+        if is_tei_builtin_embedding:
             # configured local embedding model
             embedding_cfg = settings.EMBEDDING_CFG
             config_dict = {
@@ -47,18 +64,61 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
                 "api_key": embedding_cfg["api_key"],
                 "llm_name": pure_model_name,
                 "api_base": embedding_cfg["base_url"],
-                "model_type": LLMType.EMBEDDING,
+                "model_type": LLMType.EMBEDDING.value,
             }
-        else:
-            model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name)
+        elif model_type_val == LLMType.CHAT.value:
+            # Retry as CHAT with pure_model_name first; then fall back to a multimodal model registered under IMAGE2TEXT.
+            model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.CHAT.value)
             if not model_config:
-                raise LookupError(f"Tenant Model with name {model_name} not found")
+                model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.IMAGE2TEXT.value)
+            if not model_config:
+                raise LookupError(f"Tenant Model with name {model_name} and type {model_type_val} not found")
+            config_dict = model_config.to_dict()
+        elif model_type_val == LLMType.IMAGE2TEXT.value:
+            model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.IMAGE2TEXT.value)
+            if not model_config:
+                # Fall back to a chat model only if it has declared IMAGE2TEXT capability (tag check via llm table)
+                chat_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.CHAT.value)
+                logger.debug("IMAGE2TEXT config not found for %s; chat_config found: %s", pure_model_name, chat_config is not None)
+                if chat_config:
+                    llm_entry = LLMService.query(fid=chat_config.llm_factory, llm_name=chat_config.llm_name)
+                    tags = [t.strip() for t in (llm_entry[0].tags or "").split(",")] if llm_entry else []
+                    logger.debug("LLM tags for %s/%s: %s", chat_config.llm_factory, chat_config.llm_name, tags)
+                    if "IMAGE2TEXT" in tags:
+                        logger.debug("Promoting chat config to IMAGE2TEXT for %s", pure_model_name)
+                        model_config = chat_config
+            if not model_config:
+                raise LookupError(f"Tenant Model with name {model_name} and type {model_type_val} not found")
+            config_dict = model_config.to_dict()
+            config_dict["model_type"] = LLMType.IMAGE2TEXT.value
+        else:
+            model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, model_type_val)
+            if not model_config:
+                raise LookupError(f"Tenant Model with name {model_name} and type {model_type_val} not found")
             config_dict = model_config.to_dict()
     else:
         # model_name without @factory
         config_dict = model_config.to_dict()
+    api_key, is_tools, api_key_payload = TenantLLMService._decode_api_key_config(config_dict.get("api_key", ""))
+    config_dict["api_key"] = api_key
+    if api_key_payload is not None:
+        config_dict["api_key_payload"] = api_key_payload
+    if is_tools is not None:
+        config_dict["is_tools"] = is_tools
+    config_model_type = config_dict.get("model_type")
+    config_model_type = config_model_type.value if hasattr(config_model_type, "value") else config_model_type
+    if config_model_type != model_type_val and not (
+            model_type_val == LLMType.CHAT.value
+            and config_model_type == LLMType.IMAGE2TEXT.value
+    ) and not (
+            model_type_val == LLMType.IMAGE2TEXT.value
+            and config_model_type == LLMType.CHAT.value
+    ):
+        raise LookupError(
+            f"Tenant Model with name {model_name} has type {config_model_type}, expected {model_type_val}"
+        )
     llm = LLMService.query(llm_name=config_dict["llm_name"])
-    if llm:
+    if "is_tools" not in config_dict and llm:
         config_dict["is_tools"] = llm[0].is_tools
     return config_dict
 

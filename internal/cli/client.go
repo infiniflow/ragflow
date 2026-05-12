@@ -17,480 +17,307 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"syscall"
-	"unsafe"
+	"io"
+
+	ce "ragflow/internal/cli/filesystem"
 )
+
+// PasswordPromptFunc is a function type for password input
+type PasswordPromptFunc func(prompt string) (string, error)
+
+// CurrentModel holds the current model configuration
+type CurrentModel struct {
+	Provider string
+	Instance string
+	Model    string
+}
 
 // RAGFlowClient handles API interactions with the RAGFlow server
 type RAGFlowClient struct {
-	HTTPClient *HTTPClient
-	ServerType string // "admin" or "user"
+	HTTPClient     *HTTPClient
+	ServerType     string             // "admin" or "user"
+	PasswordPrompt PasswordPromptFunc // Function for password input
+	OutputFormat   OutputFormat       // Output format: table, plain, json
+	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
+	CurrentModel   *CurrentModel      // Current model configuration
 }
 
-// NewRAGFlowClient creates a new RAGFlow client
 func NewRAGFlowClient(serverType string) *RAGFlowClient {
-	return &RAGFlowClient{
-		HTTPClient: NewHTTPClient(),
+	httpClient := NewHTTPClient()
+	// Set port from configuration file based on server type
+	if serverType == "admin" {
+		httpClient.Port = 9381
+	} else {
+		httpClient.Port = 9380
+	}
+
+	client := &RAGFlowClient{
+		HTTPClient: httpClient,
 		ServerType: serverType,
 	}
+
+	// Initialize Context Engine
+	client.initContextEngine()
+
+	return client
 }
 
-// LoginUser performs user login
-func (c *RAGFlowClient) LoginUser(cmd *Command) error {
-	// First, ping the server to check if it's available
-	resp, err := c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
+// initContextEngine initializes the Context Engine with all providers
+func (c *RAGFlowClient) initContextEngine() {
+	engine := ce.NewEngine()
 
-	if resp.StatusCode != 200 || string(resp.Body) != "pong" {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
+	// Register providers
+	engine.RegisterProvider(ce.NewDatasetProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewFileProvider(&httpClientAdapter{c.HTTPClient}))
+	engine.RegisterProvider(ce.NewSkillProvider(&httpClientAdapter{c.HTTPClient}))
 
-	email, ok := cmd.Params["email"].(string)
-	if !ok {
-		return fmt.Errorf("email not provided")
-	}
-
-	// Get password from user input (hidden)
-	fmt.Printf("password for %s: ", email)
-	password, err := readPassword()
-	if err != nil {
-		return fmt.Errorf("failed to read password: %w", err)
-	}
-	password = strings.TrimSpace(password)
-
-	// Login
-	token, err := c.loginUser(email, password)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", email)
-	return nil
+	c.ContextEngine = engine
 }
 
-// loginUser performs the actual login request
-func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
-	// Encrypt password using scrypt (same as Python implementation)
-	encryptedPassword, err := EncryptPassword(password)
-	if err != nil {
-		return "", fmt.Errorf("failed to encrypt password: %w", err)
-	}
-
-	payload := map[string]interface{}{
-		"email":    email,
-		"password": encryptedPassword,
-	}
-
-	var path string
-	if c.ServerType == "admin" {
-		path = "/admin/login"
-	} else {
-		path = "/user/login"
-	}
-
-	resp, err := c.HTTPClient.Request("POST", path, c.ServerType == "admin", "", nil, payload)
-	if err != nil {
-		return "", err
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return "", fmt.Errorf("login failed: invalid JSON response (%w)", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return "", fmt.Errorf("login failed: %s", msg)
-	}
-
-	token := resp.Headers.Get("Authorization")
-	if token == "" {
-		return "", fmt.Errorf("login failed: missing Authorization header")
-	}
-
-	return token, nil
+// httpClientAdapter adapts HTTPClient to ce.HTTPClientInterface
+type httpClientAdapter struct {
+	client *HTTPClient
 }
 
-// PingServer pings the server to check if it's alive
-// Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) PingServer(cmd *Command) (map[string]interface{}, error) {
-	// Get iterations from command params (for benchmark)
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		result, err := c.HTTPClient.RequestWithIterations("GET", "/system/ping", false, "web", nil, nil, iterations)
-		if err != nil {
-			return nil, err
+func (a *httpClientAdapter) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*ce.HTTPResponse, error) {
+	// Auto-detect auth kind based on available tokens
+	// If authKind is "auto" or empty, determine based on token availability
+	if authKind == "auto" || authKind == "" {
+		if a.client.useAPIToken && a.client.APIToken != "" {
+			authKind = "api"
+		} else if a.client.LoginToken != "" {
+			authKind = "web"
+		} else {
+			authKind = "web" // default
 		}
-		return result, nil
 	}
-
-	// Single ping mode
-	resp, err := c.HTTPClient.Request("GET", "/system/ping", false, "web", nil, nil)
+	resp, err := a.client.Request(method, path, authKind, headers, jsonBody)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Server is down")
 		return nil, err
 	}
-
-	if resp.StatusCode == 200 && string(resp.Body) == "pong" {
-		fmt.Println("Server is alive")
-	} else {
-		fmt.Printf("Error: %d\n", resp.StatusCode)
-	}
-	return nil, nil
+	return &ce.HTTPResponse{
+		StatusCode: resp.StatusCode,
+		Body:       resp.Body,
+		Headers:    resp.Headers,
+		Duration:   resp.Duration,
+	}, nil
 }
 
-// ListUserDatasets lists datasets for current user (user mode)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (map[string]interface{}, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("POST", "/kb/list", false, "web", nil, nil, iterations)
-	}
-
-	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return nil, fmt.Errorf("failed to list datasets: %s", msg)
-	}
-
-	data, ok := resJSON["data"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	kbs, ok := data["kbs"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: kbs not found")
-	}
-
-	// Convert to slice of maps
-	tableData := make([]map[string]interface{}, 0, len(kbs))
-	for _, kb := range kbs {
-		if kbMap, ok := kb.(map[string]interface{}); ok {
-			// Remove avatar field
-			delete(kbMap, "avatar")
-			tableData = append(tableData, kbMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
-}
-
-// ListDatasets lists datasets for a specific user (admin mode)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListDatasets(cmd *Command) (map[string]interface{}, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil, iterations)
-	}
-
-	fmt.Printf("Listing all datasets of user: %s\n", userName)
-
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), true, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	// Convert to slice of maps and remove avatar
-	tableData := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			delete(itemMap, "avatar")
-			tableData = append(tableData, itemMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
-}
-
-// readPassword reads password from terminal without echoing
-func readPassword() (string, error) {
-	// Check if stdin is a terminal by trying to get terminal size
-	if isTerminal() {
-		// Use stty to disable echo
-		cmd := exec.Command("stty", "-echo")
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			// Fallback: read normally
-			return readPasswordFallback()
-		}
-		defer func() {
-			// Re-enable echo
-			cmd := exec.Command("stty", "echo")
-			cmd.Stdin = os.Stdin
-			cmd.Run()
-		}()
-
-		reader := bufio.NewReader(os.Stdin)
-		password, err := reader.ReadString('\n')
-		fmt.Println() // New line after password input
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(password), nil
-	}
-
-	// Fallback for non-terminal input (e.g., piped input)
-	return readPasswordFallback()
-}
-
-// isTerminal checks if stdin is a terminal
-func isTerminal() bool {
-	var termios syscall.Termios
-	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
-	return err == 0
-}
-
-// readPasswordFallback reads password as plain text (fallback mode)
-func readPasswordFallback() (string, error) {
-	reader := bufio.NewReader(os.Stdin)
-	password, err := reader.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(password), nil
-}
-
-// getDatasetID gets dataset ID by name
-func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
-	resp, err := c.HTTPClient.Request("POST", "/kb/list", false, "web", nil, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("failed to list datasets: HTTP %d", resp.StatusCode)
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return "", fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return "", fmt.Errorf("failed to list datasets: %s", msg)
-	}
-
-	data, ok := resJSON["data"].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid response format")
-	}
-
-	kbs, ok := data["kbs"].([]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid response format: kbs not found")
-	}
-
-	for _, kb := range kbs {
-		if kbMap, ok := kb.(map[string]interface{}); ok {
-			if name, _ := kbMap["name"].(string); name == datasetName {
-				if id, _ := kbMap["id"].(string); id != "" {
-					return id, nil
-				}
-			}
-		}
-	}
-
-	return "", fmt.Errorf("dataset '%s' not found", datasetName)
-}
-
-// SearchOnDatasets searches for chunks in specified datasets
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (map[string]interface{}, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	question, ok := cmd.Params["question"].(string)
-	if !ok {
-		return nil, fmt.Errorf("question not provided")
-	}
-
-	datasets, ok := cmd.Params["datasets"].(string)
-	if !ok {
-		return nil, fmt.Errorf("datasets not provided")
-	}
-
-	// Parse dataset names (comma-separated) and convert to IDs
-	datasetNames := strings.Split(datasets, ",")
-	datasetIDs := make([]string, 0, len(datasetNames))
-	for _, name := range datasetNames {
-		name = strings.TrimSpace(name)
-		id, err := c.getDatasetID(name)
-		if err != nil {
-			return nil, err
-		}
-		datasetIDs = append(datasetIDs, id)
-	}
-
-	// Check for benchmark iterations
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	payload := map[string]interface{}{
-		"kb_id":                    datasetIDs,
-		"question":                 question,
-		"similarity_threshold":     0.2,
-		"vector_similarity_weight": 0.3,
-	}
-
-	if iterations > 1 {
-		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("POST", "/chunk/retrieval_test", false, "web", nil, payload, iterations)
-	}
-
-	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", "/chunk/retrieval_test", false, "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search on datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to search on datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok || code != 0 {
-		msg, _ := resJSON["message"].(string)
-		return nil, fmt.Errorf("failed to search on datasets: %s", msg)
-	}
-
-	data, ok := resJSON["data"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	chunks, ok := data["chunks"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: chunks not found")
-	}
-
-	// Convert to slice of maps for printing
-	tableData := make([]map[string]interface{}, 0, len(chunks))
-	for _, chunk := range chunks {
-		if chunkMap, ok := chunk.(map[string]interface{}); ok {
-			row := map[string]interface{}{
-				"id":                chunkMap["chunk_id"],
-				"content":           chunkMap["content_with_weight"],
-				"document_id":       chunkMap["doc_id"],
-				"dataset_id":        chunkMap["kb_id"],
-				"docnm_kwd":         chunkMap["docnm_kwd"],
-				"image_id":          chunkMap["image_id"],
-				"similarity":        chunkMap["similarity"],
-				"term_similarity":   chunkMap["term_similarity"],
-				"vector_similarity": chunkMap["vector_similarity"],
-			}
-			tableData = append(tableData, row)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
+func (a *httpClientAdapter) UploadMultipart(path string, contentType string, body io.Reader) error {
+	return a.client.UploadMultipart(path, contentType, body)
 }
 
 // ExecuteCommand executes a parsed command
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
-func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (map[string]interface{}, error) {
+func (c *RAGFlowClient) ExecuteCommand(cmd *Command) (ResponseIf, error) {
+	switch c.ServerType {
+	case "admin":
+		// Admin mode: execute command with admin privileges
+		return c.ExecuteAdminCommand(cmd)
+	case "user":
+		// User mode: execute command with user privileges
+		return c.ExecuteUserCommand(cmd)
+	default:
+		return nil, fmt.Errorf("invalid server type: %s", c.ServerType)
+	}
+}
+
+func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
 	case "login_user":
 		return nil, c.LoginUser(cmd)
-	case "ping_server":
-		return c.PingServer(cmd)
+	case "logout":
+		return c.Logout()
+	case "ping":
+		return c.PingAdmin(cmd)
 	case "benchmark":
-		return nil, c.RunBenchmark(cmd)
+		return c.RunBenchmark(cmd)
+	case "list_users":
+		return c.ListUsers(cmd)
+	case "list_services":
+		return c.ListServices(cmd)
+	case "grant_admin":
+		return c.GrantAdmin(cmd)
+	case "revoke_admin":
+		return c.RevokeAdmin(cmd)
+	case "create_user":
+		return c.CreateUser(cmd)
+	case "activate_user":
+		return c.ActivateUser(cmd)
+	case "alter_user":
+		return c.AlterUserPassword(cmd)
+	case "drop_user":
+		return c.DropUser(cmd)
+	case "show_service":
+		return c.ShowService(cmd)
+	case "show_version":
+		return c.ShowAdminVersion(cmd)
+	case "show_user":
+		return c.ShowUser(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
-	case "list_datasets":
-		return c.ListDatasets(cmd)
-	case "search_on_datasets":
-		return c.SearchOnDatasets(cmd)
+	case "list_agents":
+		return c.ListAgents(cmd)
+	case "generate_token":
+		return c.GenerateAdminToken(cmd)
+	case "list_tokens":
+		return c.ListAdminTokens(cmd)
+	case "drop_token":
+		return c.DropAdminToken(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "list_supported_models":
+		return c.ListSupportedModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
+	case "list_admin_tasks":
+		return c.ListAdminTasks(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
 	}
+}
+func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
+	switch cmd.Type {
+	case "register_user":
+		return c.RegisterUser(cmd)
+	case "login_user":
+		return nil, c.LoginUser(cmd)
+	case "logout":
+		return c.Logout()
+	case "ping":
+		return c.PingServer(cmd)
+	// Configuration commands
+	case "list_configs":
+		return c.ListConfigs(cmd)
+	case "set_log_level":
+		return c.SetLogLevel(cmd)
+	case "benchmark":
+		return c.RunBenchmark(cmd)
+	case "list_datasets":
+		return c.ListDatasets(cmd)
+	case "search_on_datasets":
+		return c.SearchOnDatasets(cmd)
+	case "create_token":
+		return c.CreateToken(cmd)
+	case "list_tokens":
+		return c.ListTokens(cmd)
+	case "drop_token":
+		return c.DropToken(cmd)
+	case "set_token":
+		return c.SetToken(cmd)
+	case "show_token":
+		return c.ShowToken(cmd)
+	case "unset_token":
+		return c.UnsetToken(cmd)
+	case "show_version":
+		return c.ShowServerVersion(cmd)
+	case "list_available_providers":
+		return c.ListAvailableProviders(cmd)
+	case "show_provider":
+		return c.ShowProvider(cmd)
+	case "list_provider_models":
+		return c.ListModels(cmd)
+	case "list_supported_models":
+		return c.ListSupportedModels(cmd)
+	case "list_instance_models":
+		return c.ListInstanceModels(cmd)
+	case "show_model":
+		return c.ShowModel(cmd)
+	// Provider commands
+	case "add_provider":
+		return c.AddProvider(cmd)
+	case "list_providers":
+		return c.ListProviders(cmd)
+	case "delete_provider":
+		return c.DeleteProvider(cmd)
+	// Provider instance commands
+	case "create_provider_instance":
+		return c.CreateProviderInstance(cmd)
+	case "list_provider_instances":
+		return c.ListProviderInstances(cmd)
+	case "show_provider_instance":
+		return c.ShowProviderInstance(cmd)
+	case "show_instance_balance":
+		return c.ShowInstanceBalance(cmd)
+	case "alter_provider_instance":
+		return c.AlterProviderInstance(cmd)
+	case "drop_provider_instance":
+		return c.DropProviderInstance(cmd)
+	case "drop_instance_model":
+		return c.DropInstanceModel(cmd)
+	case "enable_model":
+		return c.EnableOrDisableModel(cmd, "enable")
+	case "disable_model":
+		return c.EnableOrDisableModel(cmd, "disable")
+	case "add_custom_model":
+		return c.AddCustomModel(cmd)
+	case "chat_to_model":
+		return c.ChatToModel(cmd)
+	case "think_chat_to_model":
+		return c.ChatToModel(cmd)
+	case "embed_user_text":
+		return c.EmbedUserText(cmd)
+	case "rarank_user_document":
+		return c.RerankUserDocument(cmd)
+	case "check_provider_connection":
+		return c.CheckProviderConnection(cmd)
+	case "use_model":
+		return c.UseModel(cmd)
+	case "show_current_model":
+		return c.ShowCurrentModel(cmd)
+	case "set_default_model":
+		return c.SetDefaultModel(cmd)
+	case "reset_default_model":
+		return c.ResetDefaultModel(cmd)
+	case "list_user_default_models":
+		return c.ListDefaultModels(cmd)
+	// Dataset, metadata commands
+	case "create_dataset_table":
+		return c.CreateDatasetInDocEngine(cmd)
+	case "drop_dataset_table":
+		return c.DropDatasetInDocEngine(cmd)
+	case "create_metadata_table":
+		return c.CreateMetadataInDocEngine(cmd)
+	case "drop_metadata_table":
+		return c.DropMetadataInDocEngine(cmd)
+	case "insert_dataset_from_file":
+		return c.InsertDatasetFromFile(cmd)
+	case "insert_metadata_from_file":
+		return c.InsertMetadataFromFile(cmd)
+	case "update_chunk":
+		return c.UpdateChunk(cmd)
+	case "set_meta":
+		return c.SetMeta(cmd)
+	case "rm_tags":
+		return c.RmTags(cmd)
+	case "remove_chunks":
+		return c.RemoveChunks(cmd)
+	// ContextEngine commands
+	case "ce_ls":
+		return c.CEList(cmd)
+	case "ce_cat":
+		return c.CECat(cmd)
+	case "ce_search":
+		return c.CESearch(cmd)
+	// TODO: Implement other commands
+	default:
+		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
+	}
+}
+
+// ShowCurrentUser shows the current logged-in user information
+// TODO: Implement showing current user information when API is available
+func (c *RAGFlowClient) ShowCurrentUser(cmd *Command) (map[string]interface{}, error) {
+	// TODO: Call the appropriate API to get current user information
+	// Currently there is no /admin/user/info or /user/info API available
+	// The /admin/auth API only verifies authorization, does not return user info
+	return nil, fmt.Errorf("command 'SHOW CURRENT USER' is not yet implemented")
 }

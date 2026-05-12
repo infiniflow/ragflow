@@ -117,8 +117,26 @@ def step_02_open_agent_list(
     with step("open agent list"):
         _goto_home(page, base_url)
         _nav_click(page, "nav-agent")
-        expect(page.locator("[data-testid='agents-list']")).to_be_visible(
-            timeout=RESULT_TIMEOUT_MS
+        _wait_for_url_regex(page, r"/agents(?:[/?#].*)?$", timeout_ms=RESULT_TIMEOUT_MS)
+        page.wait_for_function(
+            """
+            () => {
+              const isVisible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                  return false;
+                }
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              };
+              return (
+                isVisible(document.querySelector("[data-testid='agents-list']")) ||
+                isVisible(document.querySelector("[data-testid='agents-empty-create']"))
+              );
+            }
+            """,
+            timeout=RESULT_TIMEOUT_MS,
         )
     snap("agent_list_open")
 

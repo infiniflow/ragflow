@@ -55,7 +55,7 @@ from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
 from common import settings
 
 
@@ -726,7 +726,7 @@ class User(DataBaseModel, AuthUser):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
 
     class Meta:
@@ -899,7 +899,7 @@ class Document(DataBaseModel):
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
     name = CharField(max_length=255, null=True, help_text="file name", index=True)
     location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
-    size = IntegerField(default=0, index=True)
+    size = BigIntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
     chunk_num = IntegerField(default=0, index=True)
     progress = FloatField(default=0, index=True)
@@ -924,7 +924,7 @@ class File(DataBaseModel):
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
     name = CharField(max_length=255, null=False, help_text="file name or folder name", index=True)
     location = CharField(max_length=255, null=True, help_text="where dose it store", index=True)
-    size = IntegerField(default=0, index=True)
+    size = BigIntegerField(default=0, index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
     source_type = CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)
 
@@ -945,7 +945,7 @@ class Task(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     doc_id = CharField(max_length=32, null=False, index=True)
     from_page = IntegerField(default=0)
-    to_page = IntegerField(default=100000000)
+    to_page = IntegerField(default=MAXIMUM_TASK_PAGE_NUMBER)
     task_type = CharField(max_length=32, null=False, default="")
     priority = IntegerField(default=0)
 
@@ -1034,6 +1034,7 @@ class API4Conversation(DataBaseModel):
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
     errors = TextField(null=True, help_text="errors")
+    version_title = CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False)
 
     class Meta:
         db_table = "api_4_conversation"
@@ -1062,6 +1063,7 @@ class CanvasTemplate(DataBaseModel):
     title = JSONField(null=True, default=dict, help_text="Canvas title")
     description = JSONField(null=True, default=dict, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_types = ListField(null=True, default=list, help_text="Canvas types")
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
@@ -1075,6 +1077,7 @@ class UserCanvasVersion(DataBaseModel):
 
     title = CharField(max_length=255, null=True, help_text="Canvas title")
     description = TextField(null=True, help_text="Canvas description")
+    release = BooleanField(null=False, help_text="is released", default=False, index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -1367,22 +1370,42 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
 
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
-    # step 0: check if UNIQUE index on email already exists
+    # step 0: check existing index state on user.email and prepare for unique constraint
     try:
-        cursor = DB.execute_sql("""
-            SELECT COUNT(*)
-            FROM information_schema.statistics
-            WHERE table_schema = DATABASE()
-              AND table_name = 'user'
-              AND index_name = 'user_email'
-              AND non_unique = 0
-        """)
-        result = cursor.fetchone()
-        if result and result[0] > 0:
-            logging.info("UNIQUE index on user.email already exists, skipping migration")
-            return
+        if settings.DATABASE_TYPE.upper() == "POSTGRES":
+            cursor = DB.execute_sql("""
+                SELECT COUNT(*)
+                FROM pg_indexes
+                WHERE tablename = 'user'
+                  AND indexname = 'user_email'
+            """)
+            result = cursor.fetchone()
+            if result and result[0] > 0:
+                logging.info("UNIQUE index on user.email already exists, skipping migration")
+                return
+        else:
+            # Fetch the first index on email: tells us both the name and whether it's unique.
+            # non_unique=0 means unique, non_unique=1 means non-unique.
+            cursor = DB.execute_sql("""
+                SELECT index_name, non_unique
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'user'
+                  AND column_name = 'email'
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+            if row:
+                index_name, non_unique = row
+                if non_unique == 0:
+                    logging.info("UNIQUE index on user.email already exists, skipping migration")
+                    return
+                # Non-unique index exists (e.g. from old peewee index=True); drop it so
+                # the upcoming ADD UNIQUE INDEX does not hit MySQL error 1061 "Duplicate key name".
+                DB.execute_sql(f"ALTER TABLE `user` DROP INDEX `{index_name}`")
+                logging.info(f"Dropped non-unique index '{index_name}' on user.email before adding unique index")
     except Exception as ex:
-        logging.warning("Failed to check if UNIQUE index exists on user.email: %s, continuing with migration", ex)
+        logging.warning(f"Failed to check/prepare email index on user table: {ex}, continuing with migration")
 
     # step 1: rename duplicate rows so the UNIQUE constraint can be applied
     try:
@@ -1421,14 +1444,22 @@ def migrate_add_unique_email(migrator):
 
 def update_tenant_llm_to_id_primary_key():
     """Add ID and set to primary key step by step."""
+    if settings.DATABASE_TYPE.upper() == "POSTGRES":
+        _update_tenant_llm_to_id_primary_key_postgres()
+    else:
+        _update_tenant_llm_to_id_primary_key_mysql()
+
+
+def _update_tenant_llm_to_id_primary_key_mysql():
+    """MySQL implementation: Add ID column and set as AUTO_INCREMENT primary key."""
     try:
         with DB.atomic():
-            # 0. Check if exist ID
+            # 0. Check if 'id' column already exists
             cursor = DB.execute_sql("""
-                            SELECT COLUMN_NAME 
-                            FROM INFORMATION_SCHEMA.COLUMNS 
-                            WHERE TABLE_SCHEMA = DATABASE() 
-                            AND TABLE_NAME = 'tenant_llm' 
+                            SELECT COLUMN_NAME
+                            FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_SCHEMA = DATABASE()
+                            AND TABLE_NAME = 'tenant_llm'
                             AND COLUMN_NAME = 'id'
                         """)
             if cursor.rowcount > 0:
@@ -1437,22 +1468,22 @@ def update_tenant_llm_to_id_primary_key():
             # 1. Add nullable column
             DB.execute_sql("ALTER TABLE tenant_llm ADD COLUMN temp_id INT NULL")
 
-            # 2. Set ID
+            # 2. Set ID using MySQL user variables
             DB.execute_sql("SET @row = 0;")
             DB.execute_sql("UPDATE tenant_llm SET temp_id = (@row := @row + 1) ORDER BY tenant_id, llm_factory, llm_name;")
 
             # 3. Drop old primary key
             DB.execute_sql("ALTER TABLE tenant_llm DROP PRIMARY KEY")
 
-            # 4. Update ID column to primary key
+            # 4. Update ID column to primary key with AUTO_INCREMENT
             DB.execute_sql("""
-            ALTER TABLE tenant_llm 
+            ALTER TABLE tenant_llm
             MODIFY COLUMN temp_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY
             """)
 
             # 5. Add unique key
             DB.execute_sql("""
-                ALTER TABLE tenant_llm 
+                ALTER TABLE tenant_llm
                 ADD CONSTRAINT uk_tenant_llm UNIQUE (tenant_id, llm_factory, llm_name)
             """)
 
@@ -1464,11 +1495,87 @@ def update_tenant_llm_to_id_primary_key():
     except Exception as e:
         logging.error(str(e))
         cursor = DB.execute_sql("""
-                                    SELECT COLUMN_NAME 
-                                    FROM INFORMATION_SCHEMA.COLUMNS 
-                                    WHERE TABLE_SCHEMA = DATABASE() 
-                                    AND TABLE_NAME = 'tenant_llm' 
+                                    SELECT COLUMN_NAME
+                                    FROM INFORMATION_SCHEMA.COLUMNS
+                                    WHERE TABLE_SCHEMA = DATABASE()
+                                    AND TABLE_NAME = 'tenant_llm'
                                     AND COLUMN_NAME = 'temp_id'
+                                """)
+        if cursor.rowcount > 0:
+            DB.execute_sql("ALTER TABLE tenant_llm DROP COLUMN temp_id")
+
+
+def _update_tenant_llm_to_id_primary_key_postgres():
+    """PostgreSQL implementation: Add SERIAL primary key column to tenant_llm."""
+    try:
+        with DB.atomic():
+            # 0. Check if 'id' column already exists
+            cursor = DB.execute_sql("""
+                            SELECT column_name
+                            FROM information_schema.columns
+                            WHERE table_catalog = current_database()
+                            AND table_name = 'tenant_llm'
+                            AND column_name = 'id'
+                        """)
+            if cursor.rowcount > 0:
+                return
+
+            # 1. Add nullable integer column
+            DB.execute_sql("ALTER TABLE tenant_llm ADD COLUMN temp_id INTEGER NULL")
+
+            # 2. Assign sequential row numbers ordered consistently
+            DB.execute_sql("""
+                UPDATE tenant_llm
+                SET temp_id = subq.rn
+                FROM (
+                    SELECT ctid,
+                           ROW_NUMBER() OVER (ORDER BY tenant_id, llm_factory, llm_name) AS rn
+                    FROM tenant_llm
+                ) AS subq
+                WHERE tenant_llm.ctid = subq.ctid
+            """)
+
+            # 3. Drop old composite primary key constraint
+            cursor = DB.execute_sql("""
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_catalog = current_database()
+                  AND table_name = 'tenant_llm'
+                  AND constraint_type = 'PRIMARY KEY'
+            """)
+            row = cursor.fetchone()
+            if row:
+                DB.execute_sql(f'ALTER TABLE tenant_llm DROP CONSTRAINT "{row[0]}"')
+
+            # 4. Make temp_id NOT NULL and create a sequence for it
+            DB.execute_sql("ALTER TABLE tenant_llm ALTER COLUMN temp_id SET NOT NULL")
+            DB.execute_sql("CREATE SEQUENCE IF NOT EXISTS tenant_llm_id_seq")
+            DB.execute_sql("""
+                SELECT setval('tenant_llm_id_seq', COALESCE((SELECT MAX(temp_id) FROM tenant_llm), 0))
+            """)
+            DB.execute_sql("ALTER TABLE tenant_llm ALTER COLUMN temp_id SET DEFAULT nextval('tenant_llm_id_seq')")
+            DB.execute_sql("ALTER SEQUENCE tenant_llm_id_seq OWNED BY tenant_llm.temp_id")
+            DB.execute_sql("ALTER TABLE tenant_llm ADD PRIMARY KEY (temp_id)")
+
+            # 5. Add unique constraint
+            DB.execute_sql("""
+                ALTER TABLE tenant_llm
+                ADD CONSTRAINT uk_tenant_llm UNIQUE (tenant_id, llm_factory, llm_name)
+            """)
+
+            # 6. Rename temp_id to id
+            DB.execute_sql("ALTER TABLE tenant_llm RENAME COLUMN temp_id TO id")
+
+            logging.info("Successfully updated tenant_llm to id primary key (PostgreSQL).")
+
+    except Exception as e:
+        logging.error(str(e))
+        cursor = DB.execute_sql("""
+                                    SELECT column_name
+                                    FROM information_schema.columns
+                                    WHERE table_catalog = current_database()
+                                    AND table_name = 'tenant_llm'
+                                    AND column_name = 'temp_id'
                                 """)
         if cursor.rowcount > 0:
             DB.execute_sql("ALTER TABLE tenant_llm DROP COLUMN temp_id")
@@ -1509,6 +1616,7 @@ def migrate_db():
     alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))
     alter_db_add_column(migrator, "user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
     alter_db_add_column(migrator, "canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True))
+    alter_db_add_column(migrator, "canvas_template", "canvas_types", ListField(null=True, default=list, help_text="Canvas types"))
     alter_db_add_column(migrator, "knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))
     alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True))
@@ -1538,6 +1646,10 @@ def migrate_db():
     alter_db_add_column(migrator, "dialog", "tenant_rerank_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "memory", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "memory", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
+    alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
+    alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
+    alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
+    alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

@@ -320,14 +320,14 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": chunk_method})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_chunk_method_none(self, add_dataset_func):
         dataset = add_dataset_func
         with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": None})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
@@ -550,8 +550,8 @@ class TestDatasetUpdate:
             ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ({"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ({"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),

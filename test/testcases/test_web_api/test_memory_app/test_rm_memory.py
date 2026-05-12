@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from test_web_api.common import (list_memory, delete_memory)
+from test_common import (list_memory, delete_memory)
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

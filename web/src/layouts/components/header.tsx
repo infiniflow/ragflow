@@ -7,7 +7,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LanguageList, LanguageMap } from '@/constants/common';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import {
   useFetchUserInfo,
@@ -16,26 +15,25 @@ import {
 import { cn } from '@/lib/utils';
 import { TenantRole } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
-import { camelCase } from 'lodash';
 import { LucideChevronDown, LucideCircleHelp } from 'lucide-react';
 import React, { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { BellButton } from './bell-button';
 import GlobalNavbar from './global-navbar';
 import ThemeButton from './theme-button';
 
+import { supportedLanguages } from '@/locales/config';
+
 export function Header({
   className,
   ...props
 }: React.HTMLAttributes<HTMLElement>) {
-  const { t } = useTranslation();
   const { pathname } = useLocation();
 
   const changeLanguage = useChangeLanguage();
 
   const {
-    data: { language = 'English', avatar, nickname },
+    data: { language = 'en', avatar, nickname },
   } = useFetchUserInfo();
 
   const { data: tenantData } = useListTenant();
@@ -44,10 +42,12 @@ export function Header({
     [tenantData],
   );
 
-  const langItems = LanguageList.map((x) => ({
-    key: x,
-    label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
-  }));
+  const currentLanguage = supportedLanguages.find((x) => x.code === language);
+
+  // const langItems = LanguageList.map((x) => ({
+  //   key: x,
+  //   label: <span>{LanguageMap[x as keyof typeof LanguageMap]}</span>,
+  // }));
 
   return (
     <header
@@ -94,19 +94,18 @@ export function Header({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="flex items-center gap-1" variant="ghost">
-              {t(`common.${camelCase(language)}`)}
-
-              <LucideChevronDown className="size-4" />
+              {currentLanguage?.displayName}
+              <LucideChevronDown className="size-[1em]" />
             </Button>
           </DropdownMenuTrigger>
 
           <DropdownMenuContent>
-            {langItems.map((x) => (
+            {supportedLanguages.map((x) => (
               <DropdownMenuItem
-                key={x.key}
-                onClick={() => changeLanguage(x.key)}
+                key={x.code}
+                onClick={() => changeLanguage(x.code)}
               >
-                {x.label}
+                {x.displayName}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

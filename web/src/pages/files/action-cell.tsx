@@ -49,6 +49,7 @@ export function ActionCell({
 
   const { downloadFile } = useDownloadFile();
   const isFolder = isFolderType(record.type);
+  const isSkillsFolder = isFolder && record.name.toLowerCase() === 'skills';
   const extension = getExtension(record.name);
   const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 
@@ -77,13 +78,17 @@ export function ActionCell({
     handleRemoveFile([documentId]);
   }, [handleRemoveFile, documentId]);
 
+  if (isSkillsFolder) {
+    return null;
+  }
+
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
+    <section className="flex gap-2 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
       {isKnowledgeBase || (
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={handleShowConnectToKnowledgeModal}
         >
           <Link2 />
@@ -93,7 +98,7 @@ export function ActionCell({
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={handleShowMoveFileModal}
         >
           <FolderInput />
@@ -103,7 +108,7 @@ export function ActionCell({
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={handleShowFileRenameModal}
         >
           <FolderPen />
@@ -113,7 +118,7 @@ export function ActionCell({
         <Button
           variant="transparent"
           className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-sm"
           onClick={onDownloadDocument}
         >
           <ArrowDownToLine />
@@ -124,12 +129,13 @@ export function ActionCell({
         <NewDocumentLink
           documentId={documentId}
           documentName={record.name}
+          resource="files"
           className="text-text-sub-title-invert"
         >
           <Button
             variant="transparent"
             className="border-none hover:bg-bg-card text-text-primary"
-            size={'sm'}
+            size="icon-sm"
           >
             <Eye />
           </Button>
@@ -185,7 +191,7 @@ export function ActionCell({
           <Button
             variant="transparent"
             className="border-none hover:bg-bg-card text-text-primary"
-            size={'sm'}
+            size="icon-sm"
           >
             <Trash2 />
           </Button>

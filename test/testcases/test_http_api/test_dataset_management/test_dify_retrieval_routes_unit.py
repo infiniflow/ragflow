@@ -161,6 +161,11 @@ def _load_dify_retrieval_module(monkeypatch):
     
     tenant_llm_service_mod.TenantService = _StubTenantService
     tenant_llm_service_mod.TenantLLMService = _StubTenantLLMService
+
+    class _StubLLMFactoriesService:
+        pass
+
+    tenant_llm_service_mod.LLMFactoriesService = _StubLLMFactoriesService
     monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
 
     # Mock llm_service for LLMService
@@ -265,7 +270,7 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
     )
 
     monkeypatch.setattr(module, "jsonify", lambda payload: payload)
-    monkeypatch.setattr(module.DocMetadataService, "get_meta_by_kbs", lambda _kb_ids: [{"doc_id": "doc-1"}])
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [{"doc_id": "doc-1"}])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB()))
     monkeypatch.setattr(module, "convert_conditions", lambda cond: cond.get("conditions", []))
     monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
@@ -303,7 +308,7 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
 def test_retrieval_kb_not_found(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-missing", "query": "hello"})
-    monkeypatch.setattr(module.DocMetadataService, "get_meta_by_kbs", lambda _kb_ids: [])
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (False, None))
 
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
@@ -315,7 +320,7 @@ def test_retrieval_kb_not_found(monkeypatch):
 def test_retrieval_not_found_exception_mapping(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1", "query": "hello"})
-    monkeypatch.setattr(module.DocMetadataService, "get_meta_by_kbs", lambda _kb_ids: [])
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB()))
     monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: [])
 
@@ -334,7 +339,7 @@ def test_retrieval_not_found_exception_mapping(monkeypatch):
 def test_retrieval_generic_exception_mapping(monkeypatch):
     module = _load_dify_retrieval_module(monkeypatch)
     _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1", "query": "hello"})
-    monkeypatch.setattr(module.DocMetadataService, "get_meta_by_kbs", lambda _kb_ids: [])
+    monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB()))
     monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: [])
 
@@ -347,3 +352,82 @@ def test_retrieval_generic_exception_mapping(monkeypatch):
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
     assert res["code"] == module.RetCode.SERVER_ERROR, res
     assert "boom" in res["message"], res
+
+
+@pytest.mark.p2
+def test_read_retrieval_request_from_get_args(monkeypatch):
+    module = _load_dify_retrieval_module(monkeypatch)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            method="GET",
+            args={
+                "knowledge_id": "kb-1",
+                "query": "hello",
+                "use_kg": "true",
+                "top_k": "12",
+                "score_threshold": "0.66",
+            },
+        ),
+    )
+
+    req = _run(module._read_retrieval_request())
+    assert req["knowledge_id"] == "kb-1", req
+    assert req["query"] == "hello", req
+    assert req["use_kg"] is True, req
+    assert req["retrieval_setting"]["top_k"] == 12, req
+    assert req["retrieval_setting"]["score_threshold"] == 0.66, req
+
+
+@pytest.mark.p2
+def test_read_retrieval_request_from_post_json(monkeypatch):
+    module = _load_dify_retrieval_module(monkeypatch)
+    payload = {"knowledge_id": "kb-1", "query": "hello"}
+    monkeypatch.setattr(module, "request", SimpleNamespace(method="POST", args={}))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(payload))
+
+    req = _run(module._read_retrieval_request())
+    assert req == payload, req
+
+
+@pytest.mark.p2
+def test_retrieval_argument_error_messages(monkeypatch):
+    """Guard: distinguish malformed vs missing argument errors."""
+    module = _load_dify_retrieval_module(monkeypatch)
+
+    # Case 1: malformed numeric options in retrieval_setting
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": "not-int", "score_threshold": "not-float"},
+        },
+    )
+    res = _run(inspect.unwrap(module.retrieval)("tenant-1"))
+    assert res["code"] == module.RetCode.ARGUMENT_ERROR, res
+    assert "invalid or malformed arguments:" in res["message"], res
+
+    # Case 2: missing required fields (knowledge_id, query)
+    _set_request_json(monkeypatch, module, {})
+    res_missing = _run(inspect.unwrap(module.retrieval)("tenant-1"))
+    assert res_missing["code"] == module.RetCode.ARGUMENT_ERROR, res_missing
+    assert "required arguments are missing:" in res_missing["message"], res_missing
+
+    # Case 3: partially missing required field (query)
+    _set_request_json(monkeypatch, module, {"knowledge_id": "kb-1"})
+    res_missing_query = _run(inspect.unwrap(module.retrieval)("tenant-1"))
+    assert res_missing_query["code"] == module.RetCode.ARGUMENT_ERROR, res_missing_query
+    assert "query" in res_missing_query["message"], res_missing_query
+
+    # Case 4: retrieval_setting wrong type
+    _set_request_json(
+        monkeypatch,
+        module,
+        {"knowledge_id": "kb-1", "query": "hello", "retrieval_setting": "bad-type"},
+    )
+    res_wrong_type = _run(inspect.unwrap(module.retrieval)("tenant-1"))
+    assert res_wrong_type["code"] == module.RetCode.ARGUMENT_ERROR, res_wrong_type
+    assert "retrieval_setting must be an object" in res_wrong_type["message"], res_wrong_type

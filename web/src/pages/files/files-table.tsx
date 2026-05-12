@@ -36,12 +36,12 @@ import {
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
-import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import { ActionCell } from './action-cell';
 import { useHandleConnectToKnowledge, useRenameCurrentFile } from './hooks';
 import { KnowledgeCell } from './knowledge-cell';
@@ -49,6 +49,8 @@ import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
 import { isFolderType, isKnowledgeBaseType } from './util';
+
+declare const __API_PROXY_SCHEME__: string;
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -77,6 +79,7 @@ export function FilesTable({
     keyPrefix: 'fileManager',
   });
   const navigateToOtherFolder = useNavigateToOtherFolder();
+  const navigate = useNavigate();
   const {
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
@@ -93,6 +96,44 @@ export function FilesTable({
     initialFileName,
     fileRenameLoading,
   } = useRenameCurrentFile();
+
+  // Check if skills feature is enabled (only in hybrid or go mode)
+  const isSkillsEnabled = useMemo(() => {
+    const scheme =
+      typeof __API_PROXY_SCHEME__ !== 'undefined'
+        ? __API_PROXY_SCHEME__
+        : 'python';
+    return scheme === 'hybrid' || scheme === 'go';
+  }, []);
+
+  // Sort files with skills folder first, then by time
+  // Filter out skills folder if not in hybrid/go mode
+  const sortedFiles = useMemo(() => {
+    if (!files) return [];
+
+    // Filter out skills folder if feature is disabled
+    const filteredFiles = isSkillsEnabled
+      ? files
+      : files.filter((file) => {
+          const isSkills =
+            isFolderType(file.type) && file.name.toLowerCase() === 'skills';
+          return !isSkills;
+        });
+
+    return [...filteredFiles].sort((a, b) => {
+      const aIsSkills =
+        isFolderType(a.type) && a.name.toLowerCase() === 'skills';
+      const bIsSkills =
+        isFolderType(b.type) && b.name.toLowerCase() === 'skills';
+
+      // Skills folder always comes first
+      if (aIsSkills && !bIsSkills) return -1;
+      if (!aIsSkills && bIsSkills) return 1;
+
+      // Then sort by create_time desc (newest first)
+      return (b.create_time || 0) - (a.create_time || 0);
+    });
+  }, [files, isSkillsEnabled]);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -122,13 +163,18 @@ export function FilesTable({
       accessorKey: 'name',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('name')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       meta: { cellClassName: 'max-w-[20vw]' },
@@ -137,9 +183,12 @@ export function FilesTable({
         const type = row.original.type;
         const id = row.original.id;
         const isFolder = isFolderType(type);
+        const isSkillsFolder = isFolder && name.toLowerCase() === 'skills';
 
         const handleNameClick = () => {
-          if (isFolder) {
+          if (isSkillsFolder) {
+            navigate('/files/skills');
+          } else if (isFolder) {
             navigateToOtherFolder(id);
           }
         };
@@ -147,21 +196,18 @@ export function FilesTable({
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex gap-2">
-                <span className="size-4">
-                  <FileIcon name={name} type={type}></FileIcon>
-                </span>
-                <span
-                  className={cn('truncate', { ['cursor-pointer']: isFolder })}
-                  onClick={handleNameClick}
-                >
-                  {name}
-                </span>
-              </div>
+              <Button
+                variant="static"
+                onClick={handleNameClick}
+                className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
+              >
+                <FileIcon name={name} type={isSkillsFolder ? 'skills' : type} />
+
+                <span className="truncate">{name}</span>
+              </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>{name}</p>
-            </TooltipContent>
+
+            <TooltipContent>{name}</TooltipContent>
           </Tooltip>
         );
       },
@@ -170,13 +216,18 @@ export function FilesTable({
       accessorKey: 'create_time',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('uploadDate')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -189,13 +240,18 @@ export function FilesTable({
       accessorKey: 'size',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('size')}
-            <ArrowUpDown />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
@@ -213,6 +269,9 @@ export function FilesTable({
     {
       id: 'actions',
       header: t('action'),
+      meta: {
+        headerCellClassName: 'w-0 whitespace-nowrap',
+      },
       enableHiding: false,
       enablePinning: true,
       cell: ({ row }) => {
@@ -222,7 +281,7 @@ export function FilesTable({
             showConnectToKnowledgeModal={showConnectToKnowledgeModal}
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
-          ></ActionCell>
+          />
         );
       },
     },
@@ -236,7 +295,7 @@ export function FilesTable({
   }, [pagination]);
 
   const table = useReactTable({
-    data: files || [],
+    data: sortedFiles,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -246,10 +305,16 @@ export function FilesTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-
+    getRowId: (row) => row.id, // Use file ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     enableRowSelection(row) {
-      return !isKnowledgeBaseType(row.original.source_type);
+      const name = row.original.name;
+      const type = row.original.type;
+      const isSkillsFolder =
+        isFolderType(type) && name.toLowerCase() === 'skills';
+      // Skills folder is not selectable when enabled (it's a special entry)
+      // When disabled, it's already filtered out
+      return !isKnowledgeBaseType(row.original.source_type) && !isSkillsFolder;
     },
     state: {
       sorting,
@@ -264,14 +329,19 @@ export function FilesTable({
 
   return (
     <>
-      <div className="w-full">
-        <Table rootClassName="max-h-[calc(100vh-242px)] overflow-auto">
+      <div className="flex-1 min-h-0 size-full">
+        <Table rootClassName="max-h-full overflow-auto">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead key={header.id}>
+                    <TableHead
+                      key={header.id}
+                      className={
+                        header.column.columnDef.meta?.headerCellClassName
+                      }
+                    >
                       {header.isPlaceholder
                         ? null
                         : flexRender(
@@ -313,17 +383,17 @@ export function FilesTable({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end py-4">
-        <div className="space-x-2">
-          <RAGFlowPagination
-            {...pick(pagination, 'current', 'pageSize')}
-            total={total}
-            onChange={(page, pageSize) => {
-              setPagination({ page, pageSize });
-            }}
-          ></RAGFlowPagination>
-        </div>
-      </div>
+
+      <footer className="flex items-center justify-end pb-5 mt-4">
+        <RAGFlowPagination
+          {...pick(pagination, 'current', 'pageSize')}
+          total={total}
+          onChange={(page, pageSize) => {
+            setPagination({ page, pageSize });
+          }}
+        />
+      </footer>
+
       {connectToKnowledgeVisible && (
         <LinkToDatasetDialog
           hideModal={hideConnectToKnowledgeModal}

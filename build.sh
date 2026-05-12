@@ -14,7 +14,9 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
-OUTPUT_BINARY="$PROJECT_ROOT/bin/server_main"
+RAGFLOW_SERVER_BINARY="$PROJECT_ROOT/bin/server_main"
+ADMIN_SERVER_BINARY="$PROJECT_ROOT/bin/admin_server"
+RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow_cli"
 
 echo -e "${GREEN}=== RAGFlow Go Server Build Script ===${NC}"
 
@@ -72,7 +74,7 @@ build_cpp() {
 
 # Build Go server
 build_go() {
-    print_section "Building Go server"
+    print_section "Building RAGFlow go"
     
     cd "$PROJECT_ROOT"
     
@@ -90,15 +92,24 @@ build_go() {
         sudo apt -y install libpcre2-dev
     fi
     
-    echo "Building Go binary: $OUTPUT_BINARY"
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$OUTPUT_BINARY" ./cmd/server_main.go
-    
-    if [ ! -f "$OUTPUT_BINARY" ]; then
-        echo -e "${RED}Error: Failed to build Go binary${NC}"
+    echo "Building RAGFlow binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY, and $RAGFLOW_CLI_BINARY"
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_SERVER_BINARY" cmd/server_main.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$ADMIN_SERVER_BINARY" cmd/admin_server.go
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go build -o "$RAGFLOW_CLI_BINARY" cmd/ragflow_cli.go
+
+    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
+        echo -e "${RED}Error: Failed to build RAGFlow server binary${NC}"
         exit 1
     fi
-    
-    echo -e "${GREEN}✓ Go server built successfully: $OUTPUT_BINARY${NC}"
+
+    if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
+        echo -e "${RED}Error: Failed to build Admin server binary${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
+    echo -e "${GREEN}✓ Go admin_server built successfully: $ADMIN_SERVER_BINARY${NC}"
+    echo -e "${GREEN}✓ Go ragflow_cli built successfully: $RAGFLOW_CLI_BINARY${NC}"
 }
 
 # Clean build artifacts
@@ -106,14 +117,24 @@ clean() {
     print_section "Cleaning build artifacts"
     
     rm -rf "$BUILD_DIR"
-    rm -f "$OUTPUT_BINARY"
-    
+    rm -f "$RAGFLOW_SERVER_BINARY"
+    rm -f "$ADMIN_SERVER_BINARY"
+
     echo -e "${GREEN}✓ Build artifacts cleaned${NC}"
 }
 
 # Run the server
 run() {
-    if [ ! -f "$OUTPUT_BINARY" ]; then
+    if [ ! -f "$ADMIN_SERVER_BINARY" ]; then
+        echo -e "${RED}Error: Binary not found. Build first with --all or --go${NC}"
+        exit 1
+    fi
+
+    print_section "Starting ADMIN server"
+    cd "$PROJECT_ROOT"
+    ./admin_server
+
+    if [ ! -f "$RAGFLOW_SERVER_BINARY" ]; then
         echo -e "${RED}Error: Binary not found. Build first with --all or --go${NC}"
         exit 1
     fi
@@ -183,7 +204,7 @@ main() {
             build_cpp
             build_go
             echo -e "\n${GREEN}=== Build completed successfully! ===${NC}"
-            echo "Binary: $OUTPUT_BINARY"
+            echo "Binary: $RAGFLOW_SERVER_BINARY, $ADMIN_SERVER_BINARY"
             ;;
         *)
             echo -e "${RED}Unknown option: $1${NC}"

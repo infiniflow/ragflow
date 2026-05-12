@@ -25,7 +25,7 @@ const Preview = ({
   return (
     <>
       {fileType === 'pdf' && highlights && setWidthAndHeight && (
-        <section>
+        <section className="h-full">
           <PdfPreviewer
             className={className}
             highlights={highlights}

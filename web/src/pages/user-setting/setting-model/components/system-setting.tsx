@@ -173,13 +173,16 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
   };
 
   return (
-    <div className="rounded-lg w-full">
-      <div className="flex flex-col py-4">
-        <div className="text-2xl font-medium">{t('systemModelSettings')}</div>
-        <div className="text-sm text-text-secondary">
+    <article className="rounded-lg w-full">
+      <header className="py-5">
+        <h2 className="text-2xl font-medium text-text-primary">
+          {t('systemModelSettings')}
+        </h2>
+        <p className="mt-1 text-sm text-text-secondary ">
           {t('systemModelDescription')}
-        </div>
-      </div>
+        </p>
+      </header>
+
       <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
         {llmList.map((item) => (
           <Items key={item.id} {...item} />
@@ -194,7 +197,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
             {t('common:cancel')}
           </Button>
         </div> */}
-    </div>
+    </article>
   );
 };
 

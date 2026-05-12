@@ -38,8 +38,6 @@ export default function RetrievalTesting() {
             <CardDescription>
               {t('knowledgeDetails.testingDescription')}
             </CardDescription>
-
-            {/* <Button>Save as Preset</Button> */}
           </header>
         </CardHeader>
 
@@ -50,9 +48,6 @@ export default function RetrievalTesting() {
                 <h2 className="font-semibold text-base leading-8">
                   {t('knowledgeDetails.testSetting')}
                 </h2>
-                {/* <Button variant={'outline'} onClick={addCount}>
-                  <Plus /> Add New Test
-                </Button> */}
               </header>
 
               <div className="flex-1 h-0">

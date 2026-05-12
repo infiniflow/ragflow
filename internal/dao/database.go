@@ -17,20 +17,52 @@
 package dao
 
 import (
+	"encoding/json"
 	"fmt"
-	"ragflow/internal/model"
-	"ragflow/internal/server"
+	"log"
+	"os"
+	"path/filepath"
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"strings"
 	"time"
 
+	"ragflow/internal/server"
+	"ragflow/internal/utility"
+
+	"go.uber.org/zap"
 	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-
-	"ragflow/internal/logger"
 )
 
 var DB *gorm.DB
+var modelProviderManager *entity.ProviderManager
+
+// LLMFactoryConfig represents a single LLM factory configuration
+type LLMFactoryConfig struct {
+	Name   string      `json:"name"`
+	Logo   string      `json:"logo"`
+	Tags   string      `json:"tags"`
+	Status string      `json:"status"`
+	Rank   string      `json:"rank"`
+	LLM    []LLMConfig `json:"llm"`
+}
+
+// LLMConfig represents a single LLM model configuration
+type LLMConfig struct {
+	LLMName   string `json:"llm_name"`
+	Tags      string `json:"tags"`
+	MaxTokens int64  `json:"max_tokens"`
+	ModelType string `json:"model_type"`
+	IsTools   bool   `json:"is_tools"`
+}
+
+// LLMFactoriesFile represents the structure of llm_factories.json
+type LLMFactoriesFile struct {
+	FactoryLLMInfos []LLMFactoryConfig `json:"factory_llm_infos"`
+}
 
 // InitDB initialize database connection
 func InitDB() error {
@@ -61,6 +93,7 @@ func InitDB() error {
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},
+		TranslateError: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to connect database: %w", err)
@@ -79,56 +112,192 @@ func InitDB() error {
 
 	// Auto migrate all models
 	models := []interface{}{
-		&model.User{},
-		&model.Tenant{},
-		&model.UserTenant{},
-		&model.File{},
-		&model.File2Document{},
-		&model.TenantLLM{},
-		&model.Chat{},
-		&model.ChatSession{},
-		&model.Task{},
-		&model.APIToken{},
-		&model.API4Conversation{},
-		&model.Knowledgebase{},
-		&model.InvitationCode{},
-		&model.Document{},
-		&model.UserCanvas{},
-		&model.CanvasTemplate{},
-		&model.UserCanvasVersion{},
-		&model.LLMFactories{},
-		&model.LLM{},
-		&model.TenantLangfuse{},
-		&model.SystemSettings{},
-		&model.Connector{},
-		&model.Connector2Kb{},
-		&model.SyncLogs{},
-		&model.MCPServer{},
-		&model.Memory{},
-		&model.Search{},
-		&model.PipelineOperationLog{},
-		&model.EvaluationDataset{},
-		&model.EvaluationCase{},
-		&model.EvaluationRun{},
-		&model.EvaluationResult{},
+		&entity.User{},
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.TenantLLM{},
+		&entity.Chat{},
+		&entity.ChatSession{},
+		&entity.Task{},
+		&entity.APIToken{},
+		&entity.API4Conversation{},
+		&entity.Knowledgebase{},
+		&entity.InvitationCode{},
+		&entity.Document{},
+		&entity.UserCanvas{},
+		&entity.CanvasTemplate{},
+		&entity.UserCanvasVersion{},
+		&entity.LLMFactories{},
+		&entity.LLM{},
+		&entity.TenantLangfuse{},
+		&entity.SystemSettings{},
+		&entity.Connector{},
+		&entity.Connector2Kb{},
+		&entity.SyncLogs{},
+		&entity.MCPServer{},
+		&entity.Memory{},
+		&entity.Search{},
+		&entity.PipelineOperationLog{},
+		&entity.EvaluationDataset{},
+		&entity.EvaluationCase{},
+		&entity.EvaluationRun{},
+		&entity.EvaluationResult{},
+		&entity.TimeRecord{},
+		&entity.License{},
+		&entity.SkillSearchConfig{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.TenantModelGroupMapping{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelGroup{},
 	}
 
 	for _, m := range models {
-		if err := DB.AutoMigrate(m); err != nil {
+		if err = autoMigrateSafely(DB, m); err != nil {
 			return fmt.Errorf("failed to migrate model %T: %w", m, err)
 		}
 	}
 
 	// Run manual migrations for complex schema changes
-	if err := RunMigrations(DB); err != nil {
+	if err = RunMigrations(DB); err != nil {
 		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
-	logger.Info("Database connected and migrated successfully")
+	common.Info("Database connected and migrated successfully")
+
+	modelProviderManager, err = entity.NewProviderManager("conf/models")
+	if err != nil {
+		log.Fatal("Failed to load model providers:", err)
+	}
+	common.Info("Model providers loaded successfully")
 	return nil
 }
 
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// GetModelProviderManager get database instance
+func GetModelProviderManager() *entity.ProviderManager {
+	return modelProviderManager
+}
+
+// autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
+// This handles cases where indexes already exist (e.g., created by Python backend)
+func autoMigrateSafely(db *gorm.DB, model interface{}) error {
+	err := db.AutoMigrate(model)
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is MySQL duplicate index error (Error 1061)
+	errStr := err.Error()
+	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+		common.Info("Index already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
+		common.Info("Column already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
+		common.Info("Table already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	return err
+}
+
+// InitLLMFactory initializes LLM factories and models from JSON file.
+// It reads the llm_factories.json configuration file and populates the database
+// with LLM factory and model information. If a factory or model already exists,
+// it will be updated with the new configuration.
+//
+// Returns:
+//   - error: An error if the initialization fails, nil otherwise.
+func InitLLMFactory() error {
+	configPath := filepath.Join(utility.GetProjectBaseDirectory(), "conf", "llm_factories.json")
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read llm_factories.json: %w", err)
+	}
+
+	var fileData LLMFactoriesFile
+	if err := json.Unmarshal(data, &fileData); err != nil {
+		return fmt.Errorf("failed to parse llm_factories.json: %w", err)
+	}
+
+	db := DB
+
+	for _, factory := range fileData.FactoryLLMInfos {
+		status := factory.Status
+		if status == "" {
+			status = "1"
+		}
+
+		llmFactory := &entity.LLMFactories{
+			Name:   factory.Name,
+			Logo:   utility.StringPtr(factory.Logo),
+			Tags:   factory.Tags,
+			Rank:   utility.ParseInt64(factory.Rank),
+			Status: &status,
+		}
+
+		var existingFactory entity.LLMFactories
+		result := db.Where("name = ?", factory.Name).First(&existingFactory)
+		if result.Error != nil {
+			if err := db.Create(llmFactory).Error; err != nil {
+				log.Printf("Failed to create LLM factory %s: %v", factory.Name, err)
+				continue
+			}
+		} else {
+			if err := db.Model(&entity.LLMFactories{}).Where("name = ?", factory.Name).Updates(map[string]interface{}{
+				"logo":   llmFactory.Logo,
+				"tags":   llmFactory.Tags,
+				"rank":   llmFactory.Rank,
+				"status": llmFactory.Status,
+			}).Error; err != nil {
+				log.Printf("Failed to update LLM factory %s: %v", factory.Name, err)
+			}
+		}
+
+		for _, llm := range factory.LLM {
+			llmStatus := "1"
+			llmModel := &entity.LLM{
+				LLMName:   llm.LLMName,
+				ModelType: llm.ModelType,
+				FID:       factory.Name,
+				MaxTokens: llm.MaxTokens,
+				Tags:      llm.Tags,
+				IsTools:   llm.IsTools,
+				Status:    &llmStatus,
+			}
+
+			var existingLLM entity.LLM
+			result := db.Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).First(&existingLLM)
+			if result.Error != nil {
+				if err := db.Create(llmModel).Error; err != nil {
+					log.Printf("Failed to create LLM %s/%s: %v", factory.Name, llm.LLMName, err)
+				}
+			} else {
+				if err := db.Model(&entity.LLM{}).Where("llm_name = ? AND fid = ?", llm.LLMName, factory.Name).Updates(map[string]interface{}{
+					"model_type": llmModel.ModelType,
+					"max_tokens": llmModel.MaxTokens,
+					"tags":       llmModel.Tags,
+					"is_tools":   llmModel.IsTools,
+					"status":     llmModel.Status,
+				}).Error; err != nil {
+					log.Printf("Failed to update LLM %s/%s: %v", factory.Name, llm.LLMName, err)
+				}
+			}
+		}
+	}
+
+	return nil
 }

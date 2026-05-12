@@ -32,8 +32,7 @@ interface SharedChatSearchParams {
 export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data = Object.fromEntries(
-    searchParams
-      .entries()
+    Array.from(searchParams.entries())
       .filter(([key]) => key.startsWith(DATA_PREFIX))
       .map(([key, value]) => [key.replace(DATA_PREFIX, ''), value]),
   );
@@ -74,7 +73,7 @@ export const useSendNextSharedMessage = (
     showModal: showParameterDialog,
   } = useSetModalState();
 
-  const ret = useSendAgentMessage({
+  const { handlePressEnter, ...ret } = useSendAgentMessage({
     url,
     addEventList,
     beginParams: params,
@@ -100,6 +99,10 @@ export const useSendNextSharedMessage = (
     [hideParameterDialog, isTaskMode, ret],
   );
 
+  const onPressEnter = useCallback(() => {
+    handlePressEnter();
+  }, [handlePressEnter]);
+
   const runTask = useCallback(() => {
     if (
       isTaskMode &&
@@ -124,5 +127,6 @@ export const useSendNextSharedMessage = (
     hideParameterDialog,
     showParameterDialog,
     ok,
+    handlePressEnter: onPressEnter,
   };
 };

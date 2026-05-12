@@ -16,10 +16,12 @@
 
 import logging
 import os
+import random
 import re
 import json
 import time
 from abc import abstractmethod
+from typing import Callable, TypeVar
 
 import infinity
 from infinity.common import ConflictType
@@ -30,6 +32,117 @@ from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
 from common import settings
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
+
+
+# Concurrent CREATE/DROP TABLE on the same Infinity instance can race on
+# Infinity's RocksDB-backed catalog counters (e.g. ``db|1|next_table_id``).
+# When two writers touch the counter at the same instant, Infinity surfaces
+# error 9003 / "Resource busy" instead of waiting on a lock — turning a
+# user-visible operation into an avoidable failure under modest concurrency
+# (two users creating a knowledge base at the same time, batch onboarding,
+# multi-replica deployments, …).
+#
+# We retry the metadata path (CREATE TABLE / CREATE INDEX / DROP TABLE) on
+# this specific error with exponential backoff + jitter. The wrapped calls
+# already use ``ConflictType.Ignore``, so re-running them on retry is
+# idempotent. The retry budget is intentionally bounded (5 attempts,
+# ~1.5s worst case) so a genuine outage still surfaces quickly.
+#
+# Tunable from the environment:
+#   INFINITY_META_RETRY_MAX           default 5
+#   INFINITY_META_RETRY_BASE_DELAY_MS default 50
+
+_T = TypeVar("_T")
+
+# Infinity error code 9003 is raised on RocksDB transaction contention. It is
+# not in the SDK's ErrorCode enum yet, so we keep the literal here.
+_INFINITY_RESOURCE_BUSY_CODE = 9003
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read an int from the environment without crashing on bad input.
+
+    A misconfigured ``INFINITY_META_RETRY_MAX=`` (empty value) or non-numeric
+    string would otherwise raise ``ValueError`` at module import time and
+    take down every backend worker. We log and fall back to the default
+    instead.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "Ignoring invalid %s=%r, falling back to %d", name, raw, default,
+        )
+        return default
+
+
+_META_RETRY_MAX = _int_env("INFINITY_META_RETRY_MAX", 5)
+_META_RETRY_BASE_DELAY_MS = _int_env("INFINITY_META_RETRY_BASE_DELAY_MS", 50)
+
+
+def _is_meta_contention_error(exc: BaseException) -> bool:
+    """Return True iff ``exc`` is the RocksDB metadata-counter "Resource busy".
+
+    Prefer the numeric error code when the SDK exposes one — substring matching
+    on ``str(exc)`` is the fallback for older SDKs that surface only a tuple
+    or a plain string. Both surfaces are observed in the wild today.
+    """
+    code = getattr(exc, "error_code", None)
+    if code is None:
+        # Some Infinity SDK paths raise a plain ``Exception((9003, "..."))``
+        # whose ``args[0]`` carries the code.
+        args = getattr(exc, "args", None)
+        if args and isinstance(args, tuple) and args:
+            code = args[0]
+    if code == _INFINITY_RESOURCE_BUSY_CODE:
+        return True
+    msg = str(exc)
+    return "Resource busy" in msg and "rocksdb" in msg.lower()
+
+
+def _retry_on_meta_contention(
+    op_name: str,
+    operation: Callable[[], _T],
+    *,
+    logger: logging.Logger | None = None,
+    max_attempts: int = _META_RETRY_MAX,
+    base_delay_ms: int = _META_RETRY_BASE_DELAY_MS,
+) -> _T:
+    """Run ``operation`` and retry on RocksDB "Resource busy" errors.
+
+    Exponential backoff with ±50% jitter to avoid a thundering herd when many
+    workers retry simultaneously. Any exception that does not match
+    :func:`_is_meta_contention_error` is re-raised immediately so genuine
+    failures still surface fast.
+    """
+    log = logger or logging.getLogger(__name__)
+    last_exc: BaseException | None = None
+    for attempt in range(max_attempts):
+        try:
+            return operation()
+        except Exception as exc:
+            if not _is_meta_contention_error(exc):
+                raise
+            last_exc = exc
+            if attempt == max_attempts - 1:
+                break
+            base = (base_delay_ms / 1000.0) * (2 ** attempt)
+            sleep_for = base + random.uniform(0, base * 0.5)
+            log.info(
+                "INFINITY meta contention on %s (attempt %d/%d), "
+                "retrying in %.3fs: %s",
+                op_name, attempt + 1, max_attempts, sleep_for, exc,
+            )
+            time.sleep(sleep_for)
+    log.warning(
+        "INFINITY meta contention on %s exhausted %d attempts: %s",
+        op_name, max_attempts, last_exc,
+    )
+    assert last_exc is not None
+    raise last_exc
 
 
 class InfinityConnectionBase(DocStoreConnection):
@@ -173,7 +286,15 @@ class InfinityConnectionBase(DocStoreConnection):
 
         cond = list()
         for k, v in condition.items():
-            if not isinstance(k, str) or not v:
+            if not isinstance(k, str):
+                continue
+            if k == "available_int":
+                if v == 0:
+                    cond.append("available_int=0")
+                elif v == 1:
+                    cond.append("available_int=1")
+                continue
+            if not v:
                 continue
             if self.field_keyword(k):
                 if isinstance(v, list):
@@ -187,7 +308,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         strInCond = f"({strInCond})"
                         cond.append(strInCond)
                 else:
-                    cond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{v}')")
+                    escaped_v = str(v).replace("'", "''")
+                    cond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped_v}')")
             elif isinstance(v, list):
                 inCond = list()
                 for item in v:
@@ -206,7 +328,8 @@ class InfinityConnectionBase(DocStoreConnection):
                         if kk == "exists":
                             cond.append("NOT (%s)" % exists(vv))
             elif isinstance(v, str):
-                cond.append(f"{k}='{v}'")
+                escaped_v = v.replace("'", "''")
+                cond.append(f"{k}='{escaped_v}'")
             elif k == "exists":
                 cond.append(exists(v))
             else:
@@ -225,6 +348,8 @@ class InfinityConnectionBase(DocStoreConnection):
                 schema.append("SCORE")
             elif field_name == "similarity()":  # Workaround: fix schema is changed to similarity()
                 schema.append("SIMILARITY")
+            elif field_name == "row_id()":  # Workaround: fix schema - Infinity returns "row_id" not "row_id()"
+                schema.append("row_id")
             else:
                 schema.append(field_name)
         return pd.DataFrame(columns=schema)
@@ -241,14 +366,16 @@ class InfinityConnectionBase(DocStoreConnection):
         Return the health status of the database.
         """
         inf_conn = self.connPool.get_conn()
-        res = inf_conn.show_current_node()
-        self.connPool.release_conn(inf_conn)
-        res2 = {
-            "type": "infinity",
-            "status": "green" if res.error_code == 0 and res.server_status in ["started", "alive"] else "red",
-            "error": res.error_msg,
-        }
-        return res2
+        try:
+            res = inf_conn.show_current_node()
+            res2 = {
+                "type": "infinity",
+                "status": "green" if res.error_code == 0 and res.server_status in ["started", "alive"] else "red",
+                "error": res.error_msg,
+            }
+            return res2
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     """
     Table operations
@@ -259,83 +386,111 @@ class InfinityConnectionBase(DocStoreConnection):
         self.logger.debug(f"CREATE_IDX: Creating table {table_name}, parser_id: {parser_id}")
 
         inf_conn = self.connPool.get_conn()
-        inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
+        try:
+            inf_db = _retry_on_meta_contention(
+                f"create_database({self.dbName})",
+                lambda: inf_conn.create_database(self.dbName, ConflictType.Ignore),
+                logger=self.logger,
+            )
 
-        # Use configured schema
-        fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
-        if not os.path.exists(fp_mapping):
-            raise Exception(f"Mapping file not found at {fp_mapping}")
-        schema = json.load(open(fp_mapping))
+            # Use configured schema
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
+            if not os.path.exists(fp_mapping):
+                raise Exception(f"Mapping file not found at {fp_mapping}")
+            with open(fp_mapping) as f:
+                schema = json.load(f)
 
-        if parser_id is not None:
-            from common.constants import ParserType
+            if parser_id is not None:
+                from common.constants import ParserType
 
-            if parser_id == ParserType.TABLE.value:
-                # Table parser: add chunk_data JSON column to store table-specific fields
-                schema["chunk_data"] = {"type": "json", "default": "{}"}
-                self.logger.info("Added chunk_data column for TABLE parser")
+                if parser_id == ParserType.TABLE.value:
+                    # Table parser: add chunk_data JSON column to store table-specific fields
+                    schema["chunk_data"] = {"type": "json", "default": "{}"}
+                    self.logger.info("Added chunk_data column for TABLE parser")
 
-        vector_name = f"q_{vector_size}_vec"
-        schema[vector_name] = {"type": f"vector,{vector_size},float"}
-        inf_table = inf_db.create_table(
-            table_name,
-            schema,
-            ConflictType.Ignore,
-        )
-        inf_table.create_index(
-            "q_vec_idx",
-            IndexInfo(
-                vector_name,
-                IndexType.Hnsw,
-                {
-                    "M": "16",
-                    "ef_construction": "50",
-                    "metric": "cosine",
-                    "encode": "lvq",
-                },
-            ),
-            ConflictType.Ignore,
-        )
-        for field_name, field_info in schema.items():
-            if field_info["type"] != "varchar" or "analyzer" not in field_info:
-                continue
-            analyzers = field_info["analyzer"]
-            if isinstance(analyzers, str):
-                analyzers = [analyzers]
-            for analyzer in analyzers:
-                inf_table.create_index(
-                    f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
-                    IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+            vector_name = f"q_{vector_size}_vec"
+            schema[vector_name] = {"type": f"vector,{vector_size},float"}
+            inf_table = _retry_on_meta_contention(
+                f"create_table({table_name})",
+                lambda: inf_db.create_table(
+                    table_name,
+                    schema,
                     ConflictType.Ignore,
-                )
-
-        # Create secondary indexes for fields with index_type
-        for field_name, field_info in schema.items():
-            if "index_type" not in field_info:
-                continue
-            index_config = field_info["index_type"]
-            if isinstance(index_config, str) and index_config == "secondary":
-                inf_table.create_index(
-                    f"sec_{field_name}",
-                    IndexInfo(field_name, IndexType.Secondary),
+                ),
+                logger=self.logger,
+            )
+            _retry_on_meta_contention(
+                f"create_index(q_vec_idx, {table_name})",
+                lambda: inf_table.create_index(
+                    "q_vec_idx",
+                    IndexInfo(
+                        vector_name,
+                        IndexType.Hnsw,
+                        {
+                            "M": "16",
+                            "ef_construction": "50",
+                            "metric": "cosine",
+                            "encode": "lvq",
+                        },
+                    ),
                     ConflictType.Ignore,
-                )
-                self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
-            elif isinstance(index_config, dict):
-                if index_config.get("type") == "secondary":
-                    params = {}
-                    if "cardinality" in index_config:
-                        params = {"cardinality": index_config["cardinality"]}
-                    inf_table.create_index(
-                        f"sec_{field_name}",
-                        IndexInfo(field_name, IndexType.Secondary, params),
-                        ConflictType.Ignore,
+                ),
+                logger=self.logger,
+            )
+            for field_name, field_info in schema.items():
+                if field_info["type"] != "varchar" or "analyzer" not in field_info:
+                    continue
+                analyzers = field_info["analyzer"]
+                if isinstance(analyzers, str):
+                    analyzers = [analyzers]
+                for analyzer in analyzers:
+                    idx_name = f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}"
+                    _retry_on_meta_contention(
+                        f"create_index({idx_name}, {table_name})",
+                        lambda fn=field_name, an=analyzer, name=idx_name: inf_table.create_index(
+                            name,
+                            IndexInfo(fn, IndexType.FullText, {"ANALYZER": an}),
+                            ConflictType.Ignore,
+                        ),
+                        logger=self.logger,
                     )
-                    self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
 
-        self.connPool.release_conn(inf_conn)
-        self.logger.info(f"INFINITY created table {table_name}, vector size {vector_size}")
-        return True
+            # Create secondary indexes for fields with index_type
+            for field_name, field_info in schema.items():
+                if "index_type" not in field_info:
+                    continue
+                index_config = field_info["index_type"]
+                if isinstance(index_config, str) and index_config == "secondary":
+                    _retry_on_meta_contention(
+                        f"create_index(sec_{field_name}, {table_name})",
+                        lambda fn=field_name: inf_table.create_index(
+                            f"sec_{fn}",
+                            IndexInfo(fn, IndexType.Secondary),
+                            ConflictType.Ignore,
+                        ),
+                        logger=self.logger,
+                    )
+                    self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name}")
+                elif isinstance(index_config, dict):
+                    if index_config.get("type") == "secondary":
+                        params = {}
+                        if "cardinality" in index_config:
+                            params = {"cardinality": index_config["cardinality"]}
+                        _retry_on_meta_contention(
+                            f"create_index(sec_{field_name}, {table_name})",
+                            lambda fn=field_name, p=params: inf_table.create_index(
+                                f"sec_{fn}",
+                                IndexInfo(fn, IndexType.Secondary, p),
+                                ConflictType.Ignore,
+                            ),
+                            logger=self.logger,
+                        )
+                        self.logger.info(f"INFINITY created secondary index sec_{field_name} for field {field_name} with params {params}")
+
+            self.logger.info(f"INFINITY created table {table_name}, vector size {vector_size}")
+            return True
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     def create_doc_meta_idx(self, index_name: str):
         """
@@ -346,18 +501,26 @@ class InfinityConnectionBase(DocStoreConnection):
         """
         table_name = index_name
         inf_conn = self.connPool.get_conn()
-        inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
         try:
+            inf_db = _retry_on_meta_contention(
+                f"create_database({self.dbName})",
+                lambda: inf_conn.create_database(self.dbName, ConflictType.Ignore),
+                logger=self.logger,
+            )
             fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_infinity_mapping.json")
             if not os.path.exists(fp_mapping):
                 self.logger.error(f"Document metadata mapping file not found at {fp_mapping}")
                 return False
             with open(fp_mapping) as f:
                 schema = json.load(f)
-            inf_db.create_table(
-                table_name,
-                schema,
-                ConflictType.Ignore,
+            _retry_on_meta_contention(
+                f"create_table({table_name})",
+                lambda: inf_db.create_table(
+                    table_name,
+                    schema,
+                    ConflictType.Ignore,
+                ),
+                logger=self.logger,
             )
 
             # Create secondary indexes on id and kb_id for better query performance
@@ -383,14 +546,14 @@ class InfinityConnectionBase(DocStoreConnection):
             except Exception as e:
                 self.logger.warning(f"Failed to create index on kb_id for {table_name}: {e}")
 
-            self.connPool.release_conn(inf_conn)
             self.logger.debug(f"INFINITY created document metadata table {table_name} with secondary indexes")
             return True
 
         except Exception as e:
-            self.connPool.release_conn(inf_conn)
             self.logger.exception(f"Error creating document metadata table {table_name}: {e}")
             return False
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     def delete_idx(self, index_name: str, dataset_id: str):
         if index_name.startswith("ragflow_doc_meta_"):
@@ -398,25 +561,32 @@ class InfinityConnectionBase(DocStoreConnection):
         else:
             table_name = f"{index_name}_{dataset_id}"
         inf_conn = self.connPool.get_conn()
-        db_instance = inf_conn.get_database(self.dbName)
-        db_instance.drop_table(table_name, ConflictType.Ignore)
-        self.connPool.release_conn(inf_conn)
-        self.logger.info(f"INFINITY dropped table {table_name}")
+        try:
+            db_instance = inf_conn.get_database(self.dbName)
+            _retry_on_meta_contention(
+                f"drop_table({table_name})",
+                lambda: db_instance.drop_table(table_name, ConflictType.Ignore),
+                logger=self.logger,
+            )
+            self.logger.info(f"INFINITY dropped table {table_name}")
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     def index_exist(self, index_name: str, dataset_id: str) -> bool:
         if index_name.startswith("ragflow_doc_meta_"):
             table_name = index_name
         else:
             table_name = f"{index_name}_{dataset_id}"
+        inf_conn = self.connPool.get_conn()
         try:
-            inf_conn = self.connPool.get_conn()
             db_instance = inf_conn.get_database(self.dbName)
             _ = db_instance.get_table(table_name)
-            self.connPool.release_conn(inf_conn)
             return True
         except Exception as e:
             self.logger.warning(f"INFINITY indexExist {str(e)}")
-        return False
+            return False
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     """
     CRUD operations
@@ -453,21 +623,23 @@ class InfinityConnectionBase(DocStoreConnection):
 
     def delete(self, condition: dict, index_name: str, dataset_id: str) -> int:
         inf_conn = self.connPool.get_conn()
-        db_instance = inf_conn.get_database(self.dbName)
-        if index_name.startswith("ragflow_doc_meta_"):
-            table_name = index_name
-        else:
-            table_name = f"{index_name}_{dataset_id}"
         try:
-            table_instance = db_instance.get_table(table_name)
-        except Exception:
-            self.logger.warning(f"Skipped deleting from table {table_name} since the table doesn't exist.")
-            return 0
-        filter = self.equivalent_condition_to_str(condition, table_instance)
-        self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
-        res = table_instance.delete(filter)
-        self.connPool.release_conn(inf_conn)
-        return res.deleted_rows
+            db_instance = inf_conn.get_database(self.dbName)
+            if index_name.startswith("ragflow_doc_meta_"):
+                table_name = index_name
+            else:
+                table_name = f"{index_name}_{dataset_id}"
+            try:
+                table_instance = db_instance.get_table(table_name)
+            except Exception:
+                self.logger.warning(f"Skipped deleting from table {table_name} since the table doesn't exist.")
+                return 0
+            filter = self.equivalent_condition_to_str(condition, table_instance)
+            self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
+            res = table_instance.delete(filter)
+            return res.deleted_rows
+        finally:
+            self.connPool.release_conn(inf_conn)
 
     """
     Helper functions for search result
@@ -479,17 +651,29 @@ class InfinityConnectionBase(DocStoreConnection):
         return len(res)
 
     def get_doc_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
-        return list(res["id"])
+            df, count = res
+            if count == 0:
+                return []
+        else:
+            df = res
+        return list(df["id"])
 
     @abstractmethod
     def get_fields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
 
     def get_highlight(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, keywords: list[str], field_name: str):
+        # Extract DataFrame from result
         if isinstance(res, tuple):
-            res = res[0]
+            df, _ = res
+        else:
+            df = res
+
+        if df.empty or field_name not in df.columns:
+            return {}
+
         ans = {}
         num_rows = len(res)
         column_id = res["id"]

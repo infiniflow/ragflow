@@ -1,4 +1,4 @@
-import { ICategorizeNode } from '@/interfaces/database/flow';
+import { ICategorizeNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
 import { memo } from 'react';

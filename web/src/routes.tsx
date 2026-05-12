@@ -16,7 +16,8 @@ export enum Routes {
   Home = '/home',
   Datasets = '/datasets',
   DatasetBase = '/dataset',
-  Dataset = `${Routes.DatasetBase}${Routes.DatasetBase}`,
+  Files = '/files',
+  Dataset = `${Routes.DatasetBase}/${Routes.Files}`,
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
@@ -32,7 +33,8 @@ export enum Routes {
   SearchShare = '/search/share',
   Chats = '/chats',
   Chat = '/chat',
-  Files = '/files',
+
+  Skills = '/files/skills',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
   Api = '/api',
@@ -49,7 +51,7 @@ export enum Routes {
   ProfileModel = `${ProfileSetting}${Model}`,
   ProfilePrompt = `${ProfileSetting}${Prompt}`,
   ProfileProfile = `${ProfileSetting}${Profile}`,
-  DatasetTesting = '/testing',
+  DatasetTesting = '/retrieval',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
@@ -62,8 +64,8 @@ export enum Routes {
   ChatShare = `${Chats}/share`,
   ChatWidget = `${Chats}/widget`,
   UserSetting = '/user-setting',
-  DataSetOverview = '/dataset-overview',
-  DataSetSetting = '/dataset-setting',
+  DataSetOverview = '/logs',
+  DataSetSetting = '/configuration',
   DataflowResult = '/dataflow-result',
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
@@ -147,7 +149,7 @@ const routeConfigOptions = [
     path: Routes.Root,
     layout: false,
     Component: () => import('@/layouts/root-layout'),
-    loader: ({ request }) => {
+    loader: ({ request }: { request: Request }) => {
       const url = new URL(request.url);
       const auth = url.searchParams.get('auth');
       if (auth) {
@@ -247,6 +249,10 @@ const routeConfigOptions = [
         Component: () => import('@/pages/files'),
       },
       {
+        path: Routes.Skills,
+        Component: () => import('@/pages/skills'),
+      },
+      {
         path: Routes.UserSetting,
         Component: () => import('@/pages/user-setting'),
         layout: false,
@@ -261,10 +267,12 @@ const routeConfigOptions = [
             path: `${Routes.UserSetting}/profile`,
             Component: () => import('@/pages/user-setting/profile'),
           },
+          /*
           {
             path: `${Routes.UserSetting}/locale`,
             Component: () => import('@/pages/user-setting/setting-locale'),
           },
+          */
           {
             path: `${Routes.UserSetting}/model`,
             Component: () => import('@/pages/user-setting/setting-model'),
@@ -281,16 +289,18 @@ const routeConfigOptions = [
             path: `${Routes.UserSetting}${Routes.Mcp}`,
             Component: () => import('@/pages/user-setting/mcp'),
           },
-          {
-            path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
-            Component: () =>
-              import('@/pages/user-setting/data-source/data-source-detail-page'),
-          },
+
           {
             path: `${Routes.UserSetting}${Routes.DataSource}`,
             Component: () => import('@/pages/user-setting/data-source'),
           },
         ],
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+        layout: false,
+        Component: () =>
+          import('@/pages/user-setting/data-source/data-source-detail-page'),
       },
     ],
   },

@@ -1,0 +1,49 @@
+{
+  "name": "OpenRouter",
+  "url": {
+    "default": "https://openrouter.ai/api/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "balance": "credits"
+  },
+  "class": "openrouter",
+  "models": [
+    {
+      "name": "google/gemma-4-31b-it",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.5",
+      "max_tokens": 196608,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "tencent/hy3-preview",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    }
+  ]
+}

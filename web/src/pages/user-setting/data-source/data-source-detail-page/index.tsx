@@ -17,7 +17,9 @@ import { FieldValues } from 'react-hook-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
-  DataSourceFormFields,
+  getCommonExtraDefaultValues,
+  getDataSourceFieldsWithExtras,
+  mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
 import {
@@ -65,15 +67,17 @@ const SourceDetailPage = () => {
         required: false,
         render: (fieldProps: FormFieldConfig) => (
           <div className="flex items-center gap-1 w-full relative">
-            <Input
-              {...fieldProps}
-              type={FormFieldType.Number}
-              suffix={
-                <span className="text-text-secondary italic">
-                  {t('setting.minutes')}
-                </span>
-              }
-            />
+            <div className="flex-1">
+              <Input
+                {...fieldProps}
+                type={FormFieldType.Number}
+                suffix={
+                  <span className="px-2 text-text-secondary italic">
+                    {t('setting.minutes')}
+                  </span>
+                }
+              />
+            </div>
             <button
               type="button"
               className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button hover:bg-border-button hover:text-text-primary"
@@ -100,13 +104,17 @@ const SourceDetailPage = () => {
         render: (fieldProps: FormFieldConfig) => {
           return (
             <div className="flex items-center gap-1 w-full relative">
-              <Input
-                {...fieldProps}
-                type={FormFieldType.Number}
-                suffix={
-                  <span className="text-text-secondary italic">hours</span>
-                }
-              />
+              <div className="flex-1">
+                <Input
+                  {...fieldProps}
+                  type={FormFieldType.Number}
+                  suffix={
+                    <span className="px-2 text-text-secondary italic">
+                      hours
+                    </span>
+                  }
+                />
+              </div>
             </div>
           );
         },
@@ -118,22 +126,24 @@ const SourceDetailPage = () => {
         required: false,
         render: (fieldProps: FormFieldConfig) => (
           <div className="flex items-center gap-1 w-full relative">
-            <Input
-              {...fieldProps}
-              type={FormFieldType.Number}
-              suffix={
-                <span className="text-text-secondary italic">
-                  {t('setting.seconds')}
-                </span>
-              }
-            />
+            <div className="flex-1">
+              <Input
+                {...fieldProps}
+                type={FormFieldType.Number}
+                suffix={
+                  <span className="px-2 text-text-secondary italic">
+                    {t('setting.seconds')}
+                  </span>
+                }
+              />
+            </div>
           </div>
         ),
       },
     ];
   }, [detail, runSchedule]);
 
-  const { addLoading, handleAddOk } = useAddDataSource();
+  const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
@@ -155,9 +165,7 @@ const SourceDetailPage = () => {
     if (detail) {
       const fields = [
         ...baseFields,
-        ...DataSourceFormFields[
-          detail.source as keyof typeof DataSourceFormFields
-        ],
+        ...getDataSourceFieldsWithExtras(detail.source as any),
         ...customFields,
       ] as FormFieldConfig[];
 
@@ -171,10 +179,13 @@ const SourceDetailPage = () => {
       setFields(newFields);
 
       const defaultValueTemp = {
-        ...(DataSourceFormDefaultValues[
-          detail?.source as keyof typeof DataSourceFormDefaultValues
-        ] as FieldValues),
-        ...detail,
+        ...mergeDataSourceFormValues(
+          DataSourceFormDefaultValues[
+            detail?.source as keyof typeof DataSourceFormDefaultValues
+          ] as FieldValues,
+          getCommonExtraDefaultValues(),
+          detail as FieldValues,
+        ),
       };
       console.log('defaultValue', defaultValueTemp);
       setDefaultValues(defaultValueTemp);

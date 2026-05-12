@@ -28,12 +28,13 @@ class Chunk(Base):
         self.id = ""
         self.content = ""
         self.important_keywords = []
+        self.tag_kwd = []
         self.questions = []
         self.create_time = ""
         self.create_timestamp = 0.0
         self.dataset_id = None
         self.document_name = ""
-        self.documnet_keyword = ""
+        self.document_keyword = ""
         self.document_id = ""
         self.available = True
         # Additional fields for retrieval results
@@ -49,11 +50,11 @@ class Chunk(Base):
 
         #for backward compatibility
         if not self.document_name:
-            self.document_name = self.documnet_keyword
+            self.document_name = self.document_keyword
 
 
     def update(self, update_message: dict):
-        res = self.put(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
+        res = self.patch(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise ChunkUpdateError(

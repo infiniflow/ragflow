@@ -31,12 +31,13 @@ type HTTPClient struct {
 	Host           string
 	Port           int
 	APIVersion     string
-	APIKey         string
+	APIToken       string
 	LoginToken     string
 	ConnectTimeout time.Duration
 	ReadTimeout    time.Duration
 	VerifySSL      bool
 	client         *http.Client
+	useAPIToken    bool
 }
 
 // NewHTTPClient creates a new HTTP client
@@ -53,7 +54,7 @@ func NewHTTPClient() *HTTPClient {
 		VerifySSL:      false,
 		client: &http.Client{
 			Transport: transport,
-			Timeout:   60 * time.Second,
+			Timeout:   300 * time.Second,
 		},
 	}
 }
@@ -69,11 +70,8 @@ func (c *HTTPClient) NonAPIBase() string {
 }
 
 // BuildURL builds the full URL for a given path
-func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
+func (c *HTTPClient) BuildURL(path string) string {
 	base := c.APIBase()
-	if !useAPIBase {
-		base = c.NonAPIBase()
-	}
 	if c.VerifySSL {
 		return fmt.Sprintf("https://%s%s", base, path)
 	}
@@ -83,16 +81,21 @@ func (c *HTTPClient) BuildURL(path string, useAPIBase bool) string {
 // Headers builds the request headers
 func (c *HTTPClient) Headers(authKind string, extra map[string]string) map[string]string {
 	headers := make(map[string]string)
+
 	switch authKind {
 	case "api":
-		if c.APIKey != "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIKey)
+		if c.APIToken != "" {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.APIToken)
+		} else if c.LoginToken != "" {
+			// Fallback to login token for API requests (user mode)
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", c.LoginToken)
 		}
 	case "web", "admin":
 		if c.LoginToken != "" {
 			headers["Authorization"] = c.LoginToken
 		}
 	}
+
 	for k, v := range extra {
 		headers[k] = v
 	}
@@ -104,6 +107,7 @@ type Response struct {
 	StatusCode int
 	Body       []byte
 	Headers    http.Header
+	Duration   float64
 }
 
 // JSON parses the response body as JSON
@@ -116,8 +120,8 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 }
 
 // Request makes an HTTP request
-func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
-	url := c.BuildURL(path, useAPIBase)
+func (c *HTTPClient) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -142,11 +146,14 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		req.Header.Set(k, v)
 	}
 
-	resp, err := c.client.Do(req)
+	var resp *http.Response
+	startTime := time.Now()
+	resp, err = c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	duration := time.Since(startTime).Seconds()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -157,24 +164,34 @@ func (c *HTTPClient) Request(method, path string, useAPIBase bool, authKind stri
 		StatusCode: resp.StatusCode,
 		Body:       respBody,
 		Headers:    resp.Header.Clone(),
+		Duration:   duration,
 	}, nil
 }
 
 // RequestWithIterations makes multiple HTTP requests for benchmarking
 // Returns a map with "duration" (total time in seconds) and "response_list"
-func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (map[string]interface{}, error) {
+func (c *HTTPClient) RequestWithIterations(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}, iterations int) (*BenchmarkResponse, error) {
+	response := new(BenchmarkResponse)
+
 	if iterations <= 1 {
-		resp, err := c.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+		start := time.Now()
+		resp, err := c.Request(method, path, authKind, headers, jsonBody)
+		totalDuration := time.Since(start).Seconds()
 		if err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{
-			"duration":      0.0,
-			"response_list": []*Response{resp},
-		}, nil
+
+		response.Code = resp.StatusCode
+		response.Duration = totalDuration
+		if response.Code == 0 {
+			response.SuccessCount = 1
+		} else {
+			response.FailureCount = 1
+		}
+		return response, nil
 	}
 
-	url := c.BuildURL(path, useAPIBase)
+	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 
 	var body io.Reader
@@ -232,17 +249,114 @@ func (c *HTTPClient) RequestWithIterations(method, path string, useAPIBase bool,
 		totalDuration += time.Since(start).Seconds()
 	}
 
-	return map[string]interface{}{
-		"duration":      totalDuration,
-		"response_list": responseList,
-	}, nil
+	response.Code = 0
+	response.Duration = totalDuration
+	for _, resp := range responseList {
+		if resp.StatusCode == 200 {
+			response.SuccessCount++
+		} else {
+			response.FailureCount++
+		}
+	}
+
+	return response, nil
 }
 
 // RequestJSON makes an HTTP request and returns JSON response
-func (c *HTTPClient) RequestJSON(method, path string, useAPIBase bool, authKind string, headers map[string]string, jsonBody map[string]interface{}) (map[string]interface{}, error) {
-	resp, err := c.Request(method, path, useAPIBase, authKind, headers, jsonBody)
+func (c *HTTPClient) RequestJSON(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (map[string]interface{}, error) {
+	resp, err := c.Request(method, path, authKind, headers, jsonBody)
 	if err != nil {
 		return nil, err
 	}
 	return resp.JSON()
+}
+
+// UploadMultipart uploads data using multipart/form-data
+func (c *HTTPClient) UploadMultipart(path string, contentType string, body io.Reader) error {
+	url := c.BuildURL(path)
+
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return err
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", contentType)
+	if c.APIToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.APIToken))
+	} else if c.LoginToken != "" {
+		req.Header.Set("Authorization", c.LoginToken)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("upload failed: HTTP %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	// Check response code
+	var result struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(respBody, &result); err == nil && result.Code != 0 {
+		return fmt.Errorf("upload failed: %s", result.Message)
+	}
+
+	return nil
+}
+
+// RequestStream makes an HTTP request for SSE streaming and returns the response body reader
+func (c *HTTPClient) RequestStream(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (io.ReadCloser, error) {
+	url := c.BuildURL(path)
+	mergedHeaders := c.Headers(authKind, headers)
+
+	var body io.Reader
+	if jsonBody != nil {
+		jsonData, err := json.Marshal(jsonBody)
+		if err != nil {
+			return nil, err
+		}
+		body = bytes.NewReader(jsonData)
+		if mergedHeaders == nil {
+			mergedHeaders = make(map[string]string)
+		}
+		mergedHeaders["Content-Type"] = "application/json"
+	}
+	// Add Accept header for SSE
+	if mergedHeaders == nil {
+		mergedHeaders = make(map[string]string)
+	}
+	mergedHeaders["Accept"] = "text/event-stream"
+
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range mergedHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	return resp.Body, nil
 }
