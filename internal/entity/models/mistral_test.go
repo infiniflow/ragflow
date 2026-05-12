@@ -174,6 +174,52 @@ func TestMistralChatRejectsHTTPError(t *testing.T) {
 	}
 }
 
+func TestMistralChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
+	// Empty *Region pointer must fall back to the "default" entry, not
+	// be treated as an explicit "" region (which would miss the lookup).
+	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]interface{}{"content": "ok"}}},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	emptyRegion := ""
+	_, err := m.ChatWithMessages("mistral-large-latest",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil)
+	if err != nil {
+		t.Errorf("empty Region: expected fallback to default, got %v", err)
+	}
+}
+
+func TestMistralListModelsFallsBackToDefaultOnEmptyRegion(t *testing.T) {
+	srv := newMistralServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	emptyRegion := ""
+	if _, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}); err != nil {
+		t.Errorf("empty Region: expected fallback to default, got %v", err)
+	}
+}
+
+func TestMistralStreamRequiresSender(t *testing.T) {
+	m := newMistralForTest("http://unused")
+	apiKey := "test-key"
+	err := m.ChatStreamlyWithSender("mistral-large-latest",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "sender is required") {
+		t.Errorf("expected sender-required error, got %v", err)
+	}
+}
+
 func TestMistralChatRejectsUnknownRegion(t *testing.T) {
 	m := newMistralForTest("http://unused")
 	apiKey := "test-key"
