@@ -98,8 +98,8 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -208,6 +208,10 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 // sender function. The StepFun SSE stream uses the same shape as OpenAI:
 // "data:" lines carrying JSON events, with a final "[DONE]" line.
 func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -372,8 +376,8 @@ func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("api key is required")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
