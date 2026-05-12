@@ -161,7 +161,7 @@ class Message(ComponentBase):
             if k in kwargs:
                 continue
             v = v["value"]
-            if not v:
+            if v is None:
                 v = ""
             ans = ""
             if isinstance(v, partial):
