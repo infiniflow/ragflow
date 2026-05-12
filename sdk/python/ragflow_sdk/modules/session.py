@@ -15,7 +15,11 @@
 #
 
 import json
+import logging
+
 from .base import Base
+
+logger = logging.getLogger(__name__)
 
 
 class Session(Base):
@@ -82,6 +86,17 @@ class Session(Base):
             kwargs["release"] = release
         if return_trace is not None:
             kwargs["return_trace"] = return_trace
+
+        if inputs is not None or release is not None or return_trace is not None:
+            logger.debug(
+                "Session.ask explicit-params session_type=%s session_id=%s "
+                "input_keys=%s release=%s return_trace=%s",
+                self.__session_type,
+                getattr(self, "id", None),
+                list(inputs.keys()) if isinstance(inputs, dict) else None,
+                release,
+                return_trace,
+            )
 
         if self.__session_type == "agent":
             res = self._ask_agent(question, stream, **kwargs)
