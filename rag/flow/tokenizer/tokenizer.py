@@ -68,7 +68,8 @@ class Tokenizer(ProcessBase):
             embd_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config)
         texts = []
-        for c in chunks:
+        valid_pairs = []
+        for i, c in enumerate(chunks):
             txt = ""
             if isinstance(self._param.fields, str):
                 self._param.fields=[self._param.fields]
@@ -78,34 +79,40 @@ class Tokenizer(ProcessBase):
                     txt += f
                 elif isinstance(f, list):
                     txt += "\n".join(f)
-            texts.append(re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt))
+            cleaned_txt = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt).strip()
+            if not cleaned_txt:
+                continue
+            texts.append(cleaned_txt)
+            valid_pairs.append((i, c))
+
+        if not texts:
+            return chunks, token_count
+
         vts, c = embedding_model.encode([name])
         token_count += c
-        tts = np.concatenate([vts[0] for _ in range(len(texts))], axis=0)
+        tts = np.tile(vts[0], (len(texts), 1))
 
         @timeout(60)
         def batch_encode(txts):
             nonlocal embedding_model
             return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
-        cnts_ = np.array([])
+        cnts_batches = []
         for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
                 vts, c = await thread_pool_exec(batch_encode,texts[i : i + settings.EMBEDDING_BATCH_SIZE],)
-            if len(cnts_) == 0:
-                cnts_ = vts
-            else:
-                cnts_ = np.concatenate((cnts_, vts), axis=0)
+            cnts_batches.append(vts)
             token_count += c
             if i % 33 == 32:
                 self.callback(i * 1.0 / len(texts) / parts / settings.EMBEDDING_BATCH_SIZE + 0.5 * (parts - 1))
+        cnts_ = np.vstack(cnts_batches) if cnts_batches else np.array([])
 
         cnts = cnts_
         title_w = float(self._param.filename_embd_weight)
         vects = (title_w * tts + (1 - title_w) * cnts) if len(tts) == len(cnts) else cnts
 
-        assert len(vects) == len(chunks)
-        for i, ck in enumerate(chunks):
+        assert len(vects) == len(valid_pairs)
+        for i, (_, ck) in enumerate(valid_pairs):
             v = vects[i].tolist()
             ck["q_%d_vec" % len(v)] = v
         return chunks, token_count

@@ -30,11 +30,12 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
+from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
 
-from common.misc_utils import thread_pool_exec
+
 class LLMErrorCode(StrEnum):
     ERROR_RATE_LIMIT = "RATE_LIMIT_EXCEEDED"
     ERROR_AUTHENTICATION = "AUTH_ERROR"
@@ -220,7 +221,8 @@ class Base(ABC):
                     ans += LENGTH_NOTIFICATION_EN
             yield ans, tol
 
-    async def async_chat_streamly(self, system, history, gen_conf: dict = {}, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf: dict | None = None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -300,7 +302,7 @@ class Base(ABC):
                 "role": "assistant",
                 "tool_calls": [
                     {
-                        "index": tool_call.index,
+                        "index": getattr(tool_call, "index", None),
                         "id": tool_call.id,
                         "function": {
                             "name": tool_call.function.name,
@@ -324,18 +326,20 @@ class Base(ABC):
         one assistant message containing all tool_calls, followed by one tool message per call.
         results: list of (tool_call, name, args, result, error)
         """
-        hist.append({
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "index": tc.index,
-                    "id": tc.id,
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    "type": "function",
-                }
-                for tc, _, _, _, _ in results
-            ],
-        })
+        hist.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": getattr(tc, "index", None),
+                        "id": tc.id,
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        "type": "function",
+                    }
+                    for tc, _, _, _, _ in results
+                ],
+            }
+        )
         for tc, _, _, result, err in results:
             if err:
                 content = str(err)
@@ -353,7 +357,8 @@ class Base(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -414,7 +419,8 @@ class Base(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
@@ -573,7 +579,8 @@ class Base(ABC):
             ans = self._length_stop(ans)
         return ans, total_token_count_from_response(response)
 
-    async def async_chat(self, system, history, gen_conf={}, **kwargs):
+    async def async_chat(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -639,7 +646,8 @@ class BaiChuanChat(Base):
             "top_p": gen_conf.get("top_p", 0.85),
         }
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
@@ -654,7 +662,8 @@ class BaiChuanChat(Base):
                 ans += LENGTH_NOTIFICATION_EN
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         if "max_tokens" in gen_conf:
@@ -737,7 +746,8 @@ class LocalLLM(Base):
             yield answer + "\n**ERROR**: " + str(e)
         yield num_tokens_from_string(answer)
 
-    def chat(self, system, history, gen_conf={}, **kwargs):
+    def chat(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = self._prepare_prompt(system, history, gen_conf)
@@ -746,7 +756,8 @@ class LocalLLM(Base):
         total_tokens = next(chat_gen)
         return ans, total_tokens
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = self._prepare_prompt(system, history, gen_conf)
@@ -785,7 +796,8 @@ class MistralChat(Base):
                 del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
         ans = response.choices[0].message.content
@@ -796,7 +808,8 @@ class MistralChat(Base):
                 ans += LENGTH_NOTIFICATION_EN
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         gen_conf = self._clean_conf(gen_conf)
@@ -864,7 +877,8 @@ class ReplicateChat(Base):
         self.model_name = model_name
         self.client = Client(api_token=key)
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
         response = self.client.run(
@@ -874,7 +888,8 @@ class ReplicateChat(Base):
         ans = "".join(response)
         return ans, num_tokens_from_string(ans)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:]])
@@ -943,7 +958,8 @@ class BaiduYiyanChat(Base):
         ans = response["result"]
         return ans, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -1017,7 +1033,8 @@ class GoogleChat(Base):
                     del gen_conf[k]
         return gen_conf
 
-    def _chat(self, history, gen_conf={}, **kwargs):
+    def _chat(self, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         system = history[0]["content"] if history and history[0]["role"] == "system" else ""
 
         if "claude" in self.model_name:
@@ -1095,7 +1112,8 @@ class GoogleChat(Base):
 
         return ans, total_tokens
 
-    def chat_streamly(self, system, history, gen_conf={}, **kwargs):
+    def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        gen_conf = dict(gen_conf or {})
         if "claude" in self.model_name:
             if "max_tokens" in gen_conf:
                 del gen_conf["max_tokens"]
@@ -1208,6 +1226,34 @@ class AvianChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class AstraflowChat(Base):
+    _FACTORY_NAME = "Astraflow"
+
+    def __init__(self, key, model_name, base_url="https://api-us-ca.umodelverse.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api-us-ca.umodelverse.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class AstraflowCNChat(Base):
+    _FACTORY_NAME = "Astraflow-CN"
+
+    def __init__(self, key, model_name, base_url="https://api.modelverse.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.modelverse.cn/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
+
+class FuturMixChat(Base):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] Chat initialized with model %s", model_name)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1267,6 +1313,17 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
+        elif self.provider == SupportedLiteLLMProvider.MiniMax:
+            # MiniMax requires GroupId as a query parameter for API authentication
+            try:
+                key_obj = json.loads(key) if isinstance(key, str) else key
+                self.api_key = key_obj.get("api_key", key) if isinstance(key_obj, dict) else key
+                self.group_id = key_obj.get("group_id", "") if isinstance(key_obj, dict) else ""
+            except (json.JSONDecodeError, TypeError):
+                self.api_key = key
+                self.group_id = ""
+        else:
+            self.group_id = ""
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -1302,6 +1359,9 @@ class LiteLLMBase(ABC):
 
         gen_conf.pop("max_tokens", None)
         return gen_conf
+
+    def _need_reasoning_content_back(self) -> bool:
+        return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1437,23 +1497,24 @@ class LiteLLMBase(ABC):
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
-    def _append_history(self, hist, tool_call, tool_res):
-        hist.append(
-            {
-                "role": "assistant",
-                "tool_calls": [
-                    {
-                        "index": tool_call.index,
-                        "id": tool_call.id,
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                        "type": "function",
+    def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
+        assistant_msg = {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "index": getattr(tool_call, "index", None),
+                    "id": tool_call.id,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
                     },
-                ],
-            }
-        )
+                    "type": "function",
+                },
+            ],
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         try:
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
@@ -1461,24 +1522,27 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
         return hist
 
-    def _append_history_batch(self, hist, results):
+    def _append_history_batch(self, hist, results, reasoning_content=None):
         """
         Append a batch of tool calls to history following the OpenAI protocol:
         one assistant message containing all tool_calls, followed by one tool message per call.
         results: list of (tool_call, name, args, result, error)
         """
-        hist.append({
+        assistant_msg = {
             "role": "assistant",
             "tool_calls": [
                 {
-                    "index": tc.index,
+                    "index": getattr(tc, "index", None),
                     "id": tc.id,
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                     "type": "function",
                 }
                 for tc, _, _, _, _ in results
             ],
-        })
+        }
+        if reasoning_content:
+            assistant_msg["reasoning_content"] = reasoning_content
+        hist.append(assistant_msg)
         for tc, _, _, result, err in results:
             if err:
                 content = str(err)
@@ -1496,7 +1560,8 @@ class LiteLLMBase(ABC):
         self.toolcall_session = toolcall_session
         self.tools = tools
 
-    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1523,11 +1588,13 @@ class LiteLLMBase(ABC):
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     message = response.choices[0].message
+                    reasoning_content = None
+                    if self._need_reasoning_content_back():
+                        reasoning_content = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
 
                     if not hasattr(message, "tool_calls") or not message.tool_calls:
-                        _reasoning = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
-                        if _reasoning:
-                            ans += f"<think>{_reasoning}</think>"
+                        if reasoning_content:
+                            ans += f"<think>{reasoning_content}</think>"
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
@@ -1548,7 +1615,11 @@ class LiteLLMBase(ABC):
 
                     logging.info(f"Response tool_calls={message.tool_calls}")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in message.tool_calls])
-                    history = self._append_history_batch(history, results)
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
                     for tc, name, args, result, err in results:
                         ans += self._verbose_tool_use(name, args, err if err else result)
 
@@ -1567,7 +1638,8 @@ class LiteLLMBase(ABC):
 
         assert False, "Shouldn't be here."
 
-    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict = {}):
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
+        gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         tools = self.tools
         if system and history and history[0].get("role") != "system":
@@ -1581,6 +1653,7 @@ class LiteLLMBase(ABC):
             try:
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
+                    reasoning_content = ""
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
@@ -1615,6 +1688,8 @@ class LiteLLMBase(ABC):
 
                         _reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
                         if _reasoning:
+                            if self._need_reasoning_content_back():
+                                reasoning_content += _reasoning
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
@@ -1663,7 +1738,11 @@ class LiteLLMBase(ABC):
                             args = {}
                         yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
-                    history = self._append_history_batch(history, results)
+                    history = self._append_history_batch(
+                        history,
+                        results,
+                        reasoning_content=reasoning_content if self._need_reasoning_content_back() else None,
+                    )
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
 
@@ -1797,21 +1876,28 @@ class LiteLLMBase(ABC):
         extra_headers = deepcopy(completion_args.get("extra_headers") or {})
         if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
             extra_headers["Authorization"] = f"Bearer {self.api_key}"
+        # MiniMax requires GroupId as a query parameter for API authentication
+        if self.provider == SupportedLiteLLMProvider.MiniMax and hasattr(self, 'group_id') and self.group_id:
+            api_base = completion_args.get("api_base", self.base_url)
+            separator = "&" if "?" in api_base else "?"
+            completion_args["api_base"] = f"{api_base}{separator}GroupId={self.group_id}"
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args
 
+
 class RAGconChat(Base):
     """
     RAGcon Chat Provider - routes through LiteLLM proxy
-    
+
     All model types are handled through a unified LiteLLM endpoint.
     Default Base URL: https://connect.ragcon.com/v1
     """
+
     _FACTORY_NAME = "RAGcon"
-    
+
     def __init__(self, key, model_name, base_url=None, **kwargs):
         if not base_url:
             base_url = "https://connect.ragcon.com/v1"
-        
+
         super().__init__(key, model_name, base_url, **kwargs)

@@ -288,7 +288,8 @@ export default {
         'Construit un graphe basé sur les segments de cette base pour répondre à des questions complexes. Voir documentation.',
       graphRagMethod: 'Méthode',
       graphRagMethodTip: `Light : (Par défaut) utilise les prompts de github.com/HKUDS/LightRAG. Moins de consommation.
-    General : utilise ceux de github.com/microsoft/graphrag.`,
+    General : utilise ceux de github.com/microsoft/graphrag.
+    NER : utilise spaCy NER et l'extraction de mots-clés basée sur des règles pour extraire les entités et les relations. Aucun LLM n'est requis pour l'extraction, ce qui la rend rapide et économe en ressources.`,
       resolution: 'Résolution d’entités',
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l’année 2025".',

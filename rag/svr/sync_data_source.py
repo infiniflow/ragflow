@@ -74,12 +74,19 @@ from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
+from collections import namedtuple
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
 
 class SyncBase:
+    """
+    Base class for all data source synchronization connectors.
+    
+    Defines the standard interface for connecting to external APIs, polling for 
+    new or updated documents, and managing synchronization state intervals.
+    """
     SOURCE_NAME: str = None
 
     def __init__(self, conf: dict) -> None:
@@ -118,6 +125,13 @@ class SyncBase:
         logging.info("Connect to %s: %s, %s", name, details, cls.window_info(task))
 
     async def __call__(self, task: dict):
+        """
+        Entry point for executing a synchronization task worker.
+        
+        Manages task execution boundaries including status logging, asynchronous 
+        timeouts, and top-level exception handling, while delegating the core 
+        ingestion logic to `_run_task_logic`.
+        """
         SyncLogsService.start(task["id"], task["connector_id"])
 
         async with task_limiter:
@@ -144,6 +158,13 @@ class SyncBase:
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
 
     async def _run_task_logic(self, task: dict):
+        """
+        Executes the core synchronization pipeline for a data source task.
+        
+        This method retrieves documents from the external source via the `_generate` method,
+        parses and upserts them into the Knowledge Base (KB), and handles stale document
+        reconciliation (sync deletion) if a remote snapshot (`file_list`) is provided.
+        """
         generate_output = await self._generate(task)
         # `_generate()` currently supports two outputs:
         # 1. `document_batch_generator`
@@ -181,7 +202,7 @@ class SyncBase:
             docs = []
             for doc in document_batch:
                 d = {
-                    "id": hash128(doc.id),
+                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -192,6 +213,8 @@ class SyncBase:
                 }
                 if doc.metadata:
                     d["metadata"] = doc.metadata
+                if getattr(doc, "fingerprint", None):
+                    d["fingerprint"] = doc.fingerprint
                 docs.append(d)
 
             try:
@@ -227,8 +250,22 @@ class SyncBase:
         prefix = self._get_source_prefix()
         prefix = f"{prefix} " if prefix else ""
         next_update_info = self._format_window_boundary(next_update)
-        if file_list is not None:
-            removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
+        expects_deleted_file_snapshot = (
+            task.get("reindex") != "1"
+            and task.get("poll_range_start")
+            and self.conf.get("sync_deleted_files")
+        )
+        cleanup_errors = []
+        if expects_deleted_file_snapshot and file_list is None:
+            logging.warning(
+                "%s deleted-file snapshot retrieval failed "
+                "(connector_id=%s, kb_id=%s)",
+                self.SOURCE_NAME,
+                task["connector_id"],
+                task["kb_id"],
+            )
+        elif file_list is not None:
+            removed_docs, cleanup_errors = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
                 task["kb_id"],
@@ -246,6 +283,13 @@ class SyncBase:
             summary = f"{summary}, skipped={failed_docs}"
         logging.info(summary)
 
+        if (
+            isinstance(self, _RDBMSBase)
+            and failed_docs == 0
+            and (not expects_deleted_file_snapshot or file_list is not None)
+            and not cleanup_errors
+        ):
+            self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
 
@@ -259,6 +303,81 @@ class SyncBase:
 class _BlobLikeBase(SyncBase):
     DEFAULT_BUCKET_TYPE: str = "s3"
 
+    def _fingerprint_filtered_generator(self, task: dict):
+        """Generator that uses list_keys() + get_value() to skip unchanged objects.
+
+        Pre-loads {doc_id: content_hash} for the connector's existing docs in
+        this KB, iterates the bucket via list_keys(), and only materializes a
+        Document (one GetObject call) when the listing fingerprint differs from
+        the persisted content_hash. Unchanged objects are skipped entirely --
+        no download, no re-parse.
+
+        Per-key fetch failures are counted and surfaced via SyncLogsService so
+        a partially failing sync (e.g. throttling, IAM regression mid-run)
+        doesn't silently report DONE while half the bucket is unreachable.
+        Connectors yielding KeyRecord(deleted=True) are skipped here -- actual
+        deletion reconciliation lives in the unified delete pass (PR-4).
+        """
+        source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
+        existing_fingerprints = DocumentService.list_id_content_hash_map_by_kb_and_source_type(
+            task["kb_id"], source_type,
+        )
+
+        bypass_count = 0
+        fetch_count = 0
+        fail_count = 0
+        batch = []
+        for key_record in self.connector.list_keys():
+            if key_record.deleted:
+                continue
+
+            doc_id = hash128(key_record.key)
+            stored = existing_fingerprints.get(doc_id, "")
+            if key_record.fingerprint and stored and key_record.fingerprint == stored:
+                bypass_count += 1
+                continue
+
+            try:
+                doc = self.connector.get_value(key_record.key)
+            except Exception as ex:
+                fail_count += 1
+                logging.exception(
+                    "Failed to fetch %s from %s: %s",
+                    key_record.key,
+                    self.SOURCE_NAME,
+                    ex,
+                )
+                continue
+
+            fetch_count += 1
+            batch.append(doc)
+            if len(batch) >= self.connector.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
+
+        log_msg = (
+            "[%s] fingerprint sync: %d bypassed, %d fetched, %d failed "
+            "(connector_id=%s, kb_id=%s)"
+        )
+        log_args = (
+            self.SOURCE_NAME,
+            bypass_count,
+            fetch_count,
+            fail_count,
+            task["connector_id"],
+            task["kb_id"],
+        )
+        # Use WARNING when any fetch failed so partial-bucket regressions
+        # (auth, throttling, IAM drift) surface without diving into the
+        # per-exception traces above.
+        if fail_count:
+            logging.warning(log_msg, *log_args)
+        else:
+            logging.info(log_msg, *log_args)
+
     async def _generate(self, task: dict):
         bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
 
@@ -267,21 +386,31 @@ class _BlobLikeBase(SyncBase):
             bucket_name=self.conf["bucket_name"],
             prefix=self.conf.get("prefix", ""),
         )
+        self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
-        document_batch_generator = (
-            self.connector.load_from_state()
-            if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(
-                task["poll_range_start"].timestamp(),
-                datetime.now(timezone.utc).timestamp(),
-            )
-        )
+        file_list = None
+        # Fingerprint-bypass path: skip GetObject for unchanged ETags. Disabled
+        # on full reindex (we want to re-fetch everything in that case).
+        use_fingerprint_path = task["reindex"] != "1"
+        if use_fingerprint_path:
+            document_batch_generator = self._fingerprint_filtered_generator(task)
+        else:
+            document_batch_generator = self.connector.load_from_state()
+
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
 
         _begin_info = (
-            "totally"
-            if task["reindex"] == "1" or not task["poll_range_start"]
-            else "from {}".format(task["poll_range_start"])
+            "fingerprint-bypass"
+            if use_fingerprint_path
+            else "full reindex"
         )
 
         logging.info(
@@ -292,7 +421,7 @@ class _BlobLikeBase(SyncBase):
                 _begin_info,
             )
         )
-        return document_batch_generator
+        return document_batch_generator, file_list
 
 
 class S3(_BlobLikeBase):
@@ -329,10 +458,30 @@ class RSS(SyncBase):
         if task["reindex"] == "1" or not task["poll_range_start"]:
             return self.connector.load_from_state()
 
-        return self.connector.poll_source(
+        end_time = datetime.now(timezone.utc).timestamp()
+        file_list = None
+        if self.conf.get("sync_deleted_files"):
+            logging.info(
+                "[RSS] Syncing deleted files via slim snapshot (connector_id=%s)",
+                task["connector_id"],
+            )
+            snapshot_start = time.perf_counter()
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+            logging.info(
+                "[RSS] Slim snapshot fetched %d docs in %.2f seconds",
+                len(file_list),
+                time.perf_counter() - snapshot_start,
+            )
+
+        document_generator = self.connector.poll_source(
             task["poll_range_start"].timestamp(),
-            datetime.now(timezone.utc).timestamp(),
+            end_time,
         )
+        if file_list is not None:
+            return document_generator, file_list
+        return document_generator
 
 
 class Confluence(SyncBase):
@@ -374,14 +523,17 @@ class Confluence(SyncBase):
                                                          credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
+        file_list = None
         # Determine the time range for synchronization based on reindex or poll_range_start
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
-            _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
-            _begin_info = f"from {task['poll_range_start']}"
-
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            
         end_time = datetime.now(timezone.utc).timestamp()
 
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
@@ -426,7 +578,7 @@ class Confluence(SyncBase):
                 yield batch
 
         self.log_connection("Confluence", self.conf["wiki_base"], task)
-        return wrapper()
+        return wrapper(), file_list
 
 
 class Notion(SyncBase):
@@ -435,6 +587,7 @@ class Notion(SyncBase):
     async def _generate(self, task: dict):
         self.connector = NotionConnector(root_page_id=self.conf["root_page_id"])
         self.connector.load_credentials(self.conf["credentials"])
+        file_list = None
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
@@ -442,10 +595,19 @@ class Notion(SyncBase):
                                             datetime.now(timezone.utc).timestamp())
         )
 
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Notion", f"root({self.conf['root_page_id']})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Discord(SyncBase):
@@ -463,17 +625,26 @@ class Discord(SyncBase):
             batch_size=self.conf.get("batch_size", 1024),
         )
         self.connector.load_credentials(self.conf["credentials"])
+        file_list = None
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
             else self.connector.poll_source(task["poll_range_start"].timestamp(),
                                             datetime.now(timezone.utc).timestamp())
         )
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
 
         _begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
             task["poll_range_start"])
         self.log_connection("Discord", f"servers({server_ids}), channel({channel_names})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Gmail(SyncBase):
@@ -512,6 +683,8 @@ class Gmail(SyncBase):
                     task["connector_id"],
                 )
 
+        file_list = None
+
         # Decide between full reindex and incremental polling by time range.
         if task["reindex"] == "1" or not task.get("poll_range_start"):
             start_time = None
@@ -531,13 +704,17 @@ class Gmail(SyncBase):
                 end_time = datetime.now(timezone.utc).timestamp()
                 _begin_info = f"from {poll_start}"
                 document_generator = self.connector.poll_source(start_time, end_time)
+                if self.conf.get("sync_deleted_files"):
+                    file_list = []
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
 
         try:
             admin_email = self.connector.primary_admin_email
         except RuntimeError:
             admin_email = "unknown"
         self.log_connection("Gmail", f"as {admin_email}", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Dropbox(SyncBase):
@@ -546,25 +723,35 @@ class Dropbox(SyncBase):
     async def _generate(self, task: dict):
         self.connector = DropboxConnector(batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
         self.connector.load_credentials(self.conf["credentials"])
+        poll_start = task["poll_range_start"]
+        file_list = None
 
-        if task["reindex"] == "1" or not task["poll_range_start"]:
+        if task["reindex"] == "1" or not poll_start:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(), datetime.now(timezone.utc).timestamp()
-            )
+            end_time = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Dropbox", "workspace", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class GoogleDrive(SyncBase):
+    """
+    Data synchronization connector for Google Drive.
+    Handles both full re-indexing and incremental polling, including the capability
+    to synchronize deleted files by retrieving a lightweight snapshot of current files.
+    """
     SOURCE_NAME: str = FileSource.GOOGLE_DRIVE
 
     async def _generate(self, task: dict):
+        """Generates document batches from Google Drive, handling both full and incremental syncs."""
         connector_kwargs = {
             "include_shared_drives": self.conf.get("include_shared_drives", False),
             "include_my_drives": self.conf.get("include_my_drives", False),
@@ -586,14 +773,30 @@ class GoogleDrive(SyncBase):
         if new_credentials:
             self._persist_rotated_credentials(task["connector_id"], new_credentials)
 
+        file_list = None
+
+        # Capture end_time BEFORE the snapshot to prevent the ingestion race condition
+        end_time = datetime.now(timezone.utc).timestamp()
+
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
-
-        end_time = datetime.now(timezone.utc).timestamp()
+            
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                SlimDoc = namedtuple('SlimDoc', ['id'])
+                
+                # Add observability timing so operators can track the O(N) cost
+                snapshot_start = time.perf_counter()
+                
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(SlimDoc(doc.id) for doc in slim_batch)
+                    
+                logging.info("Slim snapshot fetched %d files in %.2f seconds", len(file_list), time.perf_counter() - snapshot_start)
+                
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
@@ -603,6 +806,7 @@ class GoogleDrive(SyncBase):
             batch_size = INDEX_BATCH_SIZE
 
         def document_batches():
+            """Yields paginated batches of parsed Google Drive documents using checkpoints."""
             checkpoint = self.connector.build_dummy_checkpoint()
             pending_docs = []
             iterations = 0
@@ -636,9 +840,11 @@ class GoogleDrive(SyncBase):
         except RuntimeError:
             admin_email = "unknown"
         self.log_connection("Google Drive", f"as {admin_email}", task)
-        return document_batches()
+        
+        return document_batches(), file_list
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
+        """Saves refreshed OAuth credentials back to the database configuration."""
         try:
             updated_conf = copy.deepcopy(self.conf)
             updated_conf["credentials"] = credentials
@@ -647,8 +853,7 @@ class GoogleDrive(SyncBase):
             logging.info("Persisted refreshed Google Drive credentials for connector %s", connector_id)
         except Exception:
             logging.exception("Failed to persist refreshed Google Drive credentials for connector %s", connector_id)
-
-
+            
 class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
 
@@ -679,12 +884,17 @@ class Jira(SyncBase):
 
         self.connector.load_credentials(credentials)
         self.connector.validate_connector_settings()
+        file_list = None
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = 0.0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             _begin_info = f"from {task['poll_range_start']}"
 
         end_time = datetime.now(timezone.utc).timestamp()
@@ -743,7 +953,7 @@ class Jira(SyncBase):
                 f"overlap_buffer_s={getattr(self.connector, 'time_buffer_seconds', connector_kwargs.get('time_buffer_seconds'))}"
             ),
         )
-        return document_batches()
+        return document_batches(), file_list
 
     @staticmethod
     def _normalize_list(values: Any) -> list[str] | None:
@@ -779,20 +989,45 @@ class WebDAV(SyncBase):
     SOURCE_NAME: str = FileSource.WEBDAV
 
     async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = WebDAVConnector(
             base_url=self.conf["base_url"],
-            remote_path=self.conf.get("remote_path", "/")
+            remote_path=self.conf.get("remote_path", "/"),
+            batch_size=batch_size,
         )
         self.connector.set_allow_images(self.conf.get("allow_images", False))
         self.connector.load_credentials(self.conf["credentials"])
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_batch_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            start_ts = task["poll_range_start"].timestamp()
             end_ts = datetime.now(timezone.utc).timestamp()
-            document_batch_generator = self.connector.poll_source(start_ts, end_ts)
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "WebDAV slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
+            document_batch_generator = self.connector.poll_source(
+                task["poll_range_start"].timestamp(),
+                end_ts,
+            )
             _begin_info = "from {}".format(task["poll_range_start"])
 
         self.log_connection("WebDAV", f"{self.conf['base_url']}(path: {self.conf.get('remote_path', '/')})", task)
@@ -801,7 +1036,7 @@ class WebDAV(SyncBase):
             for document_batch in document_batch_generator:
                 yield document_batch
 
-        return wrapper()
+        return wrapper(), file_list
 
 
 class Moodle(SyncBase):
@@ -817,19 +1052,40 @@ class Moodle(SyncBase):
 
         # Determine the time range for synchronization based on reindex or poll_range_start
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            # Freeze the poll end time BEFORE the slim snapshot so that the
+            # snapshot and the poll cover the same point in time. Without
+            # this, a module created between the snapshot and the poll
+            # could be polled as new and at the same time be missing from
+            # the slim list, which would mark it as stale and delete it.
+            end_ts = datetime.now(timezone.utc).timestamp()
+
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "Moodle slim snapshot failed; skipping stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task.get("connector_id"),
+                        task.get("kb_id"),
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Moodle", self.conf["moodle_url"], task)
-        return document_generator
+        return document_generator, file_list
 
 
 class BOX(SyncBase):
@@ -857,18 +1113,23 @@ class BOX(SyncBase):
 
         self.connector.load_credentials(auth)
         poll_start = task["poll_range_start"]
+        file_list = None
 
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 datetime.now(timezone.utc).timestamp(),
             )
             _begin_info = f"from {poll_start}"
         self.log_connection("Box", f"folder_id({self.conf['folder_id']})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Airtable(SyncBase):
@@ -893,11 +1154,16 @@ class Airtable(SyncBase):
         )
 
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
                 datetime.now(timezone.utc).timestamp(),
@@ -910,7 +1176,7 @@ class Airtable(SyncBase):
             task,
         )
 
-        return document_generator
+        return document_generator, file_list
 
 class Asana(SyncBase):
     SOURCE_NAME: str = FileSource.ASANA
@@ -929,20 +1195,23 @@ class Asana(SyncBase):
             {"asana_api_token_secret": credentials["asana_api_token_secret"]}
         )
 
-        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+        poll_start = task.get("poll_range_start")
+        file_list = None
+
+        if task.get("reindex") == "1" or not poll_start:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
-            poll_start = task.get("poll_range_start")
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                _begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp(),
-                )
-                _begin_info = f"from {poll_start}"
+            end_time = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                end_time,
+            )
+            _begin_info = f"from {poll_start}"
 
         self.log_connection(
             "Asana",
@@ -950,7 +1219,7 @@ class Asana(SyncBase):
             task,
         )
 
-        return document_generator
+        return document_generator, file_list
 
 class Github(SyncBase):
     SOURCE_NAME: str = FileSource.GITHUB
@@ -979,10 +1248,8 @@ class Github(SyncBase):
         file_list = None
         if task.get("reindex") == "1" or not task.get("poll_range_start"):
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
-            _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
-            _begin_info = f"from {start_time}"
             if self.conf.get("sync_deleted_files"):
                 file_list = []
                 for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
@@ -1039,12 +1306,68 @@ class IMAP(SyncBase):
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.IMAP, credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
         end_time = datetime.now(timezone.utc).timestamp()
+        try:
+            poll_range_days = float(self.conf.get("poll_range", 30))
+        except (TypeError, ValueError):
+            poll_range_days = 30
+        default_initial_sync_start = end_time - poll_range_days * 24 * 60 * 60
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            start_time = end_time - self.conf.get("poll_range",30) * 24 * 60 * 60
+            start_time = default_initial_sync_start
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
             _begin_info = f"from {task['poll_range_start']}"
+
+        if task["reindex"] == "1":
+            initial_sync_start = default_initial_sync_start
+            should_persist_initial_start = True
+        else:
+            initial_sync_start = self.conf.get("imap_initial_sync_start")
+            should_persist_initial_start = initial_sync_start is None
+            try:
+                initial_sync_start = float(initial_sync_start)
+            except (TypeError, ValueError):
+                initial_sync_start = (
+                    0 if task["poll_range_start"] else default_initial_sync_start
+                )
+                should_persist_initial_start = True
+
+        if should_persist_initial_start:
+            updated_conf = copy.deepcopy(self.conf)
+            updated_conf["imap_initial_sync_start"] = initial_sync_start
+            try:
+                ConnectorService.update_by_id(
+                    task["connector_id"], {"config": updated_conf}
+                )
+                self.conf = updated_conf
+            except Exception:
+                logging.exception(
+                    "Failed to persist IMAP initial sync start for connector %s",
+                    task["connector_id"],
+                )
+
+        file_list = None
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            try:
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync(
+                    start=initial_sync_start,
+                    end=end_time,
+                ):
+                    file_list.extend(slim_batch)
+            except Exception:
+                logging.exception(
+                    "IMAP slim snapshot failed; continuing without stale-document cleanup "
+                    "(connector_id=%s, kb_id=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                )
+                file_list = None
+
         raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
         try:
             batch_size = int(raw_batch_size)
@@ -1089,7 +1412,7 @@ class IMAP(SyncBase):
             f"host({self.conf['imap_host']}) port({self.conf['imap_port']}) user({self.conf['credentials']['imap_username']}) folder({self.conf['imap_mailbox']})",
             task,
         )
-        return wrapper()
+        return wrapper(), file_list
 
 class Zendesk(SyncBase):
 
@@ -1099,11 +1422,26 @@ class Zendesk(SyncBase):
         self.connector.load_credentials(self.conf["credentials"])
 
         end_time = datetime.now(timezone.utc).timestamp()
+        file_list = None
         if task["reindex"] == "1" or not task.get("poll_range_start"):
             start_time = 0
             _begin_info = "totally"
         else:
             start_time = task["poll_range_start"].timestamp()
+            if self.conf.get("sync_deleted_files"):
+                logging.info(
+                    "[Zendesk] Syncing deleted files via slim snapshot (connector_id=%s)",
+                    task.get("connector_id"),
+                )
+                snapshot_start = time.perf_counter()
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
+                logging.info(
+                    "[Zendesk] Slim snapshot fetched %d docs in %.2f seconds",
+                    len(file_list),
+                    time.perf_counter() - snapshot_start,
+                )
             _begin_info = f"from {task['poll_range_start']}"
 
         raw_batch_size = (
@@ -1165,6 +1503,8 @@ class Zendesk(SyncBase):
 
         self.log_connection("Zendesk", f"subdomain({self.conf['credentials'].get('zendesk_subdomain')})", task)
 
+        if file_list is not None:
+            return wrapper(), file_list
         return wrapper()
 
 
@@ -1191,6 +1531,7 @@ class Gitlab(SyncBase):
             }
         )
 
+        file_list = None
         if task["reindex"] == "1" or not task["poll_range_start"]:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
@@ -1204,9 +1545,13 @@ class Gitlab(SyncBase):
                     poll_start.timestamp(),
                     datetime.now(timezone.utc).timestamp()
                 )
+                if self.conf.get("sync_deleted_files"):
+                    file_list = []
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
                 _begin_info = "from {}".format(poll_start)
         self.log_connection("Gitlab", f"({self.conf['project_name']})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class Bitbucket(SyncBase):
@@ -1225,12 +1570,17 @@ class Bitbucket(SyncBase):
             "bitbucket_api_token": self.conf["credentials"].get("bitbucket_api_token"),
             }
         )
+        file_list = None
 
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_time = datetime.fromtimestamp(0, tz=timezone.utc)
             _begin_info = "totally"
         else:
             start_time = task.get("poll_range_start")
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                    file_list.extend(slim_batch)
             _begin_info = f"from {start_time}"
         
         end_time = datetime.now(timezone.utc)
@@ -1262,7 +1612,8 @@ class Bitbucket(SyncBase):
                 yield batch
 
         self.log_connection("Bitbucket", f"workspace({self.conf.get('workspace')})", task)
-
+        if file_list is not None:
+            return wrapper(), file_list
         return wrapper()
 
 
@@ -1271,9 +1622,17 @@ class SeaFile(SyncBase):
 
     async def _generate(self, task: dict):
         conf = self.conf
+        raw_batch_size = conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = SeaFileConnector(
             seafile_url=conf["seafile_url"],
-            batch_size=conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
             include_shared=conf.get("include_shared", True),
             sync_scope=conf.get("sync_scope", SeafileSyncScope.ACCOUNT),
             repo_id=conf.get("repo_id") or None,
@@ -1281,14 +1640,29 @@ class SeaFile(SyncBase):
         )
         self.connector.load_credentials(conf["credentials"])
 
+        file_list = None
         poll_start = task.get("poll_range_start")
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "SeaFile slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
@@ -1300,7 +1674,7 @@ class SeaFile(SyncBase):
             extra += f" path={conf.get('sync_path')}"
 
         self.log_connection("SeaFile", f"{conf['seafile_url']} (scope={scope}{extra})", task)
-        return document_generator
+        return document_generator, file_list
 
 
 class DingTalkAITable(SyncBase):
@@ -1310,10 +1684,18 @@ class DingTalkAITable(SyncBase):
         """
         Sync records from DingTalk AI Table (Notable).
         """
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = DingTalkAITableConnector(
             table_id=self.conf.get("table_id"),
             operator_id=self.conf.get("operator_id"),
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
         )
 
         credentials = self.conf.get("credentials", {})
@@ -1325,14 +1707,36 @@ class DingTalkAITable(SyncBase):
         )
 
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                logging.info(
+                    "DingTalk AI Table: fetching slim snapshot for stale-document reconciliation "
+                    "(connector_id=%s, kb_id=%s, table_id=%s)",
+                    task["connector_id"],
+                    task["kb_id"],
+                    self.conf.get("table_id"),
+                )
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "DingTalk AI Table slim snapshot failed; continuing without stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task["connector_id"],
+                        task["kb_id"],
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
@@ -1342,85 +1746,77 @@ class DingTalkAITable(SyncBase):
             task,
         )
 
-        return document_generator
+        return document_generator, file_list
 
 
-class MySQL(SyncBase):
+class _RDBMSBase(SyncBase):
+    DB_TYPE: str = ""
+    LOG_NAME: str = ""
+    DEFAULT_PORT: int = 0
+
+    async def _generate(self, task: dict):
+        self.connector = RDBMSConnector(
+            db_type=self.DB_TYPE,
+            host=self.conf.get("host", "localhost"),
+            port=int(self.conf.get("port", self.DEFAULT_PORT)),
+            database=self.conf.get("database", ""),
+            query=self.conf.get("query", ""),
+            content_columns=self.conf.get("content_columns", ""),
+            metadata_columns=self.conf.get("metadata_columns", ""),
+            id_column=self.conf.get("id_column") or None,
+            timestamp_column=self.conf.get("timestamp_column") or None,
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError(f"{self.DB_TYPE} connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+
+        file_list = None
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            _begin_info = "totally"
+        elif not self.connector.timestamp_column:
+            document_generator = self.connector.load_from_state()
+            _begin_info = f"from {task['poll_range_start']}"
+        else:
+            poll_start = task["poll_range_start"]
+            start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            document_generator = self.connector.load_from_cursor_range(
+                start_cursor_value,
+                self.connector._pending_sync_cursor_value,
+            )
+            _begin_info = f"from {poll_start}"
+
+        self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
+        return document_generator, file_list
+
+
+class MySQL(_RDBMSBase):
     SOURCE_NAME: str = FileSource.MYSQL
-
-    async def _generate(self, task: dict):
-        self.connector = RDBMSConnector(
-            db_type="mysql",
-            host=self.conf.get("host", "localhost"),
-            port=int(self.conf.get("port", 3306)),
-            database=self.conf.get("database", ""),
-            query=self.conf.get("query", ""),
-            content_columns=self.conf.get("content_columns", ""),
-            metadata_columns=self.conf.get("metadata_columns", ""),
-            id_column=self.conf.get("id_column") or None,
-            timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-        )
-
-        credentials = self.conf.get("credentials")
-        if not credentials:
-            raise ValueError("MySQL connector is missing credentials.")
-
-        self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-
-        if task["reindex"] == "1" or not task["poll_range_start"]:
-            document_generator = self.connector.load_from_state()
-            _begin_info = "totally"
-        else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
-            )
-            _begin_info = f"from {poll_start}"
-
-        self.log_connection("MySQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+    DB_TYPE: str = "mysql"
+    LOG_NAME: str = "MySQL"
+    DEFAULT_PORT: int = 3306
 
 
-class PostgreSQL(SyncBase):
+class PostgreSQL(_RDBMSBase):
     SOURCE_NAME: str = FileSource.POSTGRESQL
-
-    async def _generate(self, task: dict):
-        self.connector = RDBMSConnector(
-            db_type="postgresql",
-            host=self.conf.get("host", "localhost"),
-            port=int(self.conf.get("port", 5432)),
-            database=self.conf.get("database", ""),
-            query=self.conf.get("query", ""),
-            content_columns=self.conf.get("content_columns", ""),
-            metadata_columns=self.conf.get("metadata_columns", ""),
-            id_column=self.conf.get("id_column") or None,
-            timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-        )
-
-        credentials = self.conf.get("credentials")
-        if not credentials:
-            raise ValueError("PostgreSQL connector is missing credentials.")
-
-        self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-
-        if task["reindex"] == "1" or not task["poll_range_start"]:
-            document_generator = self.connector.load_from_state()
-            _begin_info = "totally"
-        else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
-            )
-            _begin_info = f"from {poll_start}"
-
-        self.log_connection("PostgreSQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+    DB_TYPE: str = "postgresql"
+    LOG_NAME: str = "PostgreSQL"
+    DEFAULT_PORT: int = 5432
 
 
 func_factory = {
@@ -1457,6 +1853,7 @@ func_factory = {
 
 
 async def dispatch_tasks():
+    """Polls the database for pending synchronization tasks and dispatches them concurrently."""
     while True:
         try:
             list(SyncLogsService.list_sync_tasks()[0])
@@ -1489,6 +1886,7 @@ stop_event = threading.Event()
 
 
 def signal_handler(sig, frame):
+    """Handles system interruption signals to ensure a graceful worker shutdown."""
     logging.info("Received interrupt signal, shutting down...")
     stop_event.set()
     time.sleep(1)
@@ -1500,6 +1898,7 @@ CONSUMER_NAME = "data_sync_" + CONSUMER_NO
 
 
 async def main():
+    """Entry point for the RAGFlow data synchronization worker process."""
     logging.info(r"""
   _____        _           _____
  |  __ \      | |         / ____|

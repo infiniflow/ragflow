@@ -250,20 +250,16 @@ class PipelineOperationLogService(CommonService):
     @DB.connection_context()
     def get_documents_info(cls, id):
         fields = [Document.id, Document.name, Document.progress, Document.kb_id]
-        return (
-            cls.model.select(*fields)
-            .join(Document, on=(cls.model.document_id == Document.id))
-            .where(
-                cls.model.id == id
-            )
-            .dicts()
-        )
+        return cls.model.select(*fields).join(Document, on=(cls.model.document_id == Document.id)).where(cls.model.id == id).dicts()
 
     @classmethod
     @DB.connection_context()
-    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from=None, create_date_to=None):
+    def get_dataset_logs_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from=None, create_date_to=None, keywords=None):
         fields = cls.get_dataset_logs_fields()
-        logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
+        if keywords:
+            logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID), (fn.LOWER(cls.model.document_name).contains(keywords.lower())))
+        else:
+            logs = cls.model.select(*fields).where((cls.model.kb_id == kb_id), (cls.model.document_id == GRAPH_RAPTOR_FAKE_DOC_ID))
 
         if operation_status:
             logs = logs.where(cls.model.operation_status.in_(operation_status))

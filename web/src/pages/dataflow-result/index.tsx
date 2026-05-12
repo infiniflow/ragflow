@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { Images } from '@/constants/common';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { Routes } from '@/routes';
 import { LucideArrowBigLeft } from 'lucide-react';
@@ -34,7 +33,7 @@ import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
 const DataflowResult = () => {
-  const { isReadOnly, knowledgeId, agentId, agentTitle, documentExtension } =
+  const { isReadOnly, knowledgeId, agentId, documentExtension } =
     useGetPipelineResultSearchParams();
 
   const isAgent = !!agentId;
@@ -56,12 +55,6 @@ const DataflowResult = () => {
     agentId ? (pipelineResult as IPipelineFileLogDetail) : dataset,
   );
 
-  const {
-    navigateToDatasetOverview,
-    navigateToDatasetList,
-    navigateToAgents,
-    navigateToAgent,
-  } = useNavigatePage();
   const fileUrl = useGetDocumentUrl(isAgent);
 
   const { highlights, setWidthAndHeight } =

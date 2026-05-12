@@ -37,6 +37,7 @@ SYSTEM_OUTPUT_KEYS = frozenset(
     {
         "content",
         "actual_type",
+        "attachments",
         "_ERROR",
         "_ARTIFACTS",
         "_ATTACHMENT_CONTENT",
@@ -312,7 +313,10 @@ module.exports = { main };
         self.lang = Language.PYTHON.value
         self.script = 'def main(arg1: str, arg2: str) -> dict: return {"result": arg1 + arg2}'
         self.arguments = {}
-        self.outputs = {"result": {"value": "", "type": "object"}}
+        self.outputs = {
+            "result": {"value": "", "type": "object"},
+            "attachments": {"value": [], "type": "Array<String>"},
+        }
 
     def check(self):
         self.check_valid_value(self.lang, "Support languages", ["python", "python3", "nodejs", "javascript"])
@@ -357,6 +361,7 @@ class CodeExec(ToolBase, ABC):
             # Try using the new sandbox provider system first
             try:
                 from agent.sandbox.client import execute_code as sandbox_execute_code
+                from agent.sandbox.providers.base import SandboxProviderConfigError
 
                 if self.check_if_canceled("CodeExec execution"):
                     return
@@ -376,8 +381,16 @@ class CodeExec(ToolBase, ABC):
                     execution_metadata=result.metadata,
                 )
 
-            except (ImportError, RuntimeError) as provider_error:
-                # Provider system not available or not configured, fall back to HTTP
+            except SandboxProviderConfigError as provider_error:
+                self.set_output("_ERROR", str(provider_error))
+                return self.output()
+            except ImportError as provider_error:
+                # Provider modules are unavailable, fall back to legacy HTTP sandbox.
+                logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
+            except RuntimeError as provider_error:
+                if not self._should_fallback_to_http(provider_error):
+                    self.set_output("_ERROR", f"Provider system execution failed: {provider_error}")
+                    return self.output()
                 logging.info(f"[CodeExec]: Provider system not available, using HTTP fallback: {provider_error}")
 
             # Fallback to direct HTTP request
@@ -459,11 +472,13 @@ class CodeExec(ToolBase, ABC):
             self.set_output("_ARTIFACTS", artifact_urls or None)
             attachment_text = self._build_attachment_content(artifacts, artifact_urls)
             self.set_output("_ATTACHMENT_CONTENT", attachment_text)
+            self.set_output("attachments", self._build_attachment_markdown_list(artifact_urls))
             if attachment_text:
                 content_parts.append(attachment_text)
         else:
             self.set_output("_ARTIFACTS", None)
             self.set_output("_ATTACHMENT_CONTENT", "")
+            self.set_output("attachments", [])
 
         self.set_output("content", "\n\n".join([part for part in content_parts if part]).strip())
 
@@ -486,6 +501,15 @@ class CodeExec(ToolBase, ABC):
         if metadata.get("result_present") is True:
             return metadata.get("result_value"), False
         return self._deserialize_stdout(stdout), True
+
+    @staticmethod
+    def _should_fallback_to_http(provider_error: RuntimeError) -> bool:
+        message = str(provider_error).lower()
+        fallback_markers = (
+            "no sandbox provider configured",
+            "sandbox provider type not configured",
+        )
+        return any(marker in message for marker in fallback_markers)
 
     @classmethod
     def _ensure_bucket_lifecycle(cls):
@@ -533,7 +557,7 @@ class CodeExec(ToolBase, ABC):
 
                 settings.STORAGE_IMPL.put(SANDBOX_ARTIFACT_BUCKET, storage_name, binary)
 
-                url = f"/v1/document/artifact/{storage_name}"
+                url = f"/api/v1/documents/artifact/{storage_name}"
                 uploaded.append(
                     {
                         "name": name,
@@ -622,6 +646,23 @@ class CodeExec(ToolBase, ABC):
         if sections:
             return f"attachment_count: {len(sections)}\n\n" + "\n\n".join(sections)
         return "attachment_count: 0"
+
+    def _build_attachment_markdown_list(self, artifact_urls: list[dict]) -> list[str]:
+        markdown_items = []
+        for art in artifact_urls:
+            name = _art_field(art, "name")
+            url = _art_field(art, "url")
+            mime_type = str(_art_field(art, "mime_type") or "").strip().lower()
+            if not name:
+                continue
+
+            if mime_type.startswith("image/") and url:
+                markdown_items.append(f"![{name}]({url})")
+            elif url:
+                markdown_items.append(f"[Download {name}]({url})")
+            else:
+                markdown_items.append(name)
+        return markdown_items
 
     def _normalize_attachment_type(self, name: str, mime_type: str) -> str:
         mime_type = str(mime_type or "").strip().lower()

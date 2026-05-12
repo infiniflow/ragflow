@@ -20,13 +20,13 @@ import (
 	"fmt"
 )
 
-// DummyModel implements ModelDriver for Zhipu AI
+// DummyModel implements ModelDriver for Dummy AI
 type DummyModel struct {
 	BaseURL   map[string]string
 	URLSuffix URLSuffix
 }
 
-// NewDummyModel creates a new Zhipu AI model instance
+// NewDummyModel creates a new Dummy AI model instance
 func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
 		BaseURL:   baseURL,
@@ -34,17 +34,42 @@ func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	}
 }
 
-// Chat sends a message and returns response
-func (z *DummyModel) Chat(modelName, apiKey, message *string, modelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("not implemented")
+func (z *DummyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
 }
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *DummyModel) ChatStreamlyWithSender(modelName, apiKey, message *string, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (z *DummyModel) Name() string {
+	return "dummy"
+}
+
+// ChatWithMessages sends multiple messages with roles and returns response
+func (z *DummyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (z *DummyModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("not implemented")
 }
 
-// EncodeToEmbedding encodes a list of texts into embeddings
-func (z *DummyModel) EncodeToEmbedding(modelName, apiKey *string, texts []string, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (z *DummyModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (z *DummyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (z *DummyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+func (z *DummyModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("no such method")
+}
+
+// Rerank calculates similarity scores between query and documents
+func (z *DummyModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }

@@ -104,6 +104,7 @@ type Knowledgebase struct {
 	Language               *string    `gorm:"column:language;size:32;index" json:"language,omitempty"`
 	Description            *string    `gorm:"column:description;type:longtext" json:"description,omitempty"`
 	EmbdID                 string     `gorm:"column:embd_id;size:128;not null;index" json:"embd_id"`
+	TenantEmbdID           *int64     `gorm:"column:tenant_embd_id;index" json:"tenant_embd_id,omitempty"`
 	Permission             string     `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
 	CreatedBy              string     `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
 	DocNum                 int64      `gorm:"column:doc_num;default:0;index" json:"doc_num"`
