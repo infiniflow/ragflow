@@ -390,14 +390,163 @@ func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
 	}
 }
 
-func TestMistralEmbedReturnsNotImplemented(t *testing.T) {
-	// This test pins the stub on the driver branch. PR #14807 (stacked)
-	// replaces the stub with a real implementation and updates this test
-	// to assert success on a real /v1/embeddings call.
+func TestMistralEmbedHappyPath(t *testing.T) {
+	srv := newMistralServer(t, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "mistral-embed" {
+			t.Errorf("model=%v want mistral-embed", body["model"])
+		}
+		inputs, ok := body["input"].([]interface{})
+		if !ok || len(inputs) != 3 {
+			t.Errorf("input=%v want 3-element array", body["input"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1, 0.2}, "index": 0},
+				{"embedding": []float64{0.3, 0.4}, "index": 1},
+				{"embedding": []float64{0.5, 0.6}, "index": 2},
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	vecs, err := m.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(vecs) != 3 {
+		t.Fatalf("len(vecs)=%d want 3", len(vecs))
+	}
+	if vecs[1].Embedding[0] != 0.3 || vecs[1].Index != 1 {
+		t.Errorf("vecs[1]=%+v want {Embedding:[0.3 0.4] Index:1}", vecs[1])
+	}
+}
+
+func TestMistralEmbedReordersByIndex(t *testing.T) {
+	// Upstream returns the three vectors in shuffled order. The driver
+	// must reorder them so the slot at position i corresponds to input i.
+	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{2}, "index": 2},
+				{"embedding": []float64{0}, "index": 0},
+				{"embedding": []float64{1}, "index": 1},
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	vecs, err := m.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	for i, v := range vecs {
+		if v.Index != i || v.Embedding[0] != float64(i) {
+			t.Errorf("slot %d = %+v, want Embedding=[%d] Index=%d", i, v, i, i)
+		}
+	}
+}
+
+func TestMistralEmbedEmptyInputShortCircuits(t *testing.T) {
+	// Empty input must NOT make an HTTP call; the test fails the request
+	// rather than the assertion if it does.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("Embed([]) made an unexpected HTTP call")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	vecs, err := m.Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed([]): %v", err)
+	}
+	if len(vecs) != 0 {
+		t.Errorf("len(vecs)=%d want 0", len(vecs))
+	}
+}
+
+func TestMistralEmbedRequiresAPIKey(t *testing.T) {
 	m := newMistralForTest("http://unused")
 	model := "mistral-embed"
 	_, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "not implemented") {
-		t.Errorf("Embed: expected 'not implemented' on this branch, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("expected api-key error, got %v", err)
+	}
+}
+
+func TestMistralEmbedRequiresModelName(t *testing.T) {
+	m := newMistralForTest("http://unused")
+	apiKey := "test-key"
+	_, err := m.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("expected model-name error, got %v", err)
+	}
+	empty := ""
+	_, err = m.Embed(&empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("empty model: expected model-name error, got %v", err)
+	}
+}
+
+func TestMistralEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{1}, "index": 7}, // out of range for 2-input request
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("expected out-of-range error, got %v", err)
+	}
+}
+
+func TestMistralEmbedRejectsMissingSlot(t *testing.T) {
+	// Upstream returns only one of the two requested embeddings.
+	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{1}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
+		t.Errorf("expected missing-embedding error for slot 1, got %v", err)
+	}
+}
+
+func TestMistralEmbedRejectsHTTPError(t *testing.T) {
+	srv := newMistralServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+	})
+	defer srv.Close()
+
+	m := newMistralForTest(srv.URL)
+	apiKey := "test-key"
+	model := "mistral-embed"
+	_, err := m.Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Mistral embeddings API error") {
+		t.Errorf("expected Mistral embeddings API error, got %v", err)
 	}
 }
