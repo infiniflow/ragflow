@@ -15,10 +15,14 @@
 
 import time
 
+start_ts = time.time()
+
+# LiteLLM fetches a model cost map from GitHub during import unless this is set.
+# Parser pods should not block startup on external network access.
+import os
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # no internet, save about 10s
 
 from common.misc_utils import thread_pool_exec
-
-start_ts = time.time()
 
 import asyncio
 import socket
@@ -47,7 +51,6 @@ from rag.utils.raptor_utils import (
 )
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
-from rag.graphrag.general.index import run_graphrag_for_kb
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
     gen_metadata
@@ -80,7 +83,6 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import (
     RAPTOR_TREE_BUILDER,
-    RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor,
 )
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
@@ -982,6 +984,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         """Run RAPTOR and append generated summary chunks for one doc id."""
         nonlocal tk_count, res
         logging.info("RAPTOR: using tree_builder=%s clustering_method=%s for doc %s", tree_builder, clustering_method, did)
+        from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor  # Lazy load, save around 8s
         raptor = Raptor(
             raptor_config.get("max_cluster", 64),
             chat_mdl,
@@ -1401,6 +1404,7 @@ async def do_handle_task(task):
         with_community = graphrag_conf.get("community", False)
         async with kg_limiter:
             # await run_graphrag(task, task_language, with_resolution, with_community, chat_model, embedding_model, progress_callback)
+            from rag.graphrag.general.index import run_graphrag_for_kb # Lazy load, save around 2s
             result = await run_graphrag_for_kb(
                 row=task,
                 doc_ids=task.get("doc_ids", []),
