@@ -467,7 +467,7 @@ jobs:
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Elasticsearch
         env:
