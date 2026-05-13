@@ -55,7 +55,7 @@ def validate_version(version: str) -> bool:
 
 
 def version_to_dirname(version: str) -> str:
-    """Convert version string to valid directory name (e.g., 'v0.25.3' -> 'v0_25_2')"""
+    """Convert version string to valid directory name (e.g., 'v0.25.3' -> 'v0_25_3')"""
     return version.replace('.', '_')
 
 
