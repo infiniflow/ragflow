@@ -25,6 +25,7 @@ import psycopg2
 import pyodbc
 import sqlglot
 from sqlglot import expressions as exp
+from sqlglot.errors import SqlglotError
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
 
@@ -102,9 +103,6 @@ def _normalize_sql(sql: str) -> str:
     return _ID_MARKER_RE.sub("", sql).strip()
 
 
-def _strip_sql_code_fences(sql: str) -> str:
-    """Strip SQL code fences from a string."""
-    return _normalize_sql(sql)
 
 
 def _sqlglot_dialect(db_type: str) -> str | None:
@@ -125,7 +123,8 @@ def _parse_sql_statements(sql: str, db_type: str) -> list[exp.Expression]:
     dialect = _sqlglot_dialect(db_type)
     try:
         statements = [statement for statement in sqlglot.parse(sql, read=dialect) if statement]
-    except Exception as e:
+    except SqlglotError as e:
+        logger.warning("SQL validation rejected: db_type=%s, stage=parse, reason=%s", db_type, type(e).__name__)
         raise ValueError(f"Invalid SQL statement: {e}")
     return statements
 
