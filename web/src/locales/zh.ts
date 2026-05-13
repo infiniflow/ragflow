@@ -1517,6 +1517,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       maxRetries: '最大重试轮数',
       maxSteps: '最大步数',
       headless: '无头模式',
+      enableDefaultExtensions: '启用默认扩展',
+      enableDefaultExtensionsTip:
+        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
+      chromiumSandbox: 'Chromium 沙箱',
+      chromiumSandboxTip:
+        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
       persistSession: '持久化登录态',
       persistSessionTip:
         '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',

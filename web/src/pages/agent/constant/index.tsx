@@ -987,6 +987,8 @@ export const initialBrowserValues = {
   prompts: `{${AgentGlobals.SysQuery}}`,
   max_steps: 30,
   headless: true,
+  enable_default_extensions: false,
+  chromium_sandbox: false,
   persist_session: true,
   upload_sources: '',
   outputs: {

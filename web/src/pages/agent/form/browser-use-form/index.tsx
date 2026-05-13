@@ -20,6 +20,8 @@ const FormSchema = z.object({
   prompts: z.string(),
   max_steps: z.coerce.number().min(1),
   headless: z.boolean(),
+  enable_default_extensions: z.boolean(),
+  chromium_sandbox: z.boolean(),
   persist_session: z.boolean(),
   upload_sources: z.string().optional(),
 });
@@ -50,6 +52,30 @@ function BrowserForm({ node }: INextOperatorForm) {
           {(field) => <NumberInput min={1} {...field}></NumberInput>}
         </RAGFlowFormItem>
         <RAGFlowFormItem label={t('flow.headless')} name="headless">
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            ></Switch>
+          )}
+        </RAGFlowFormItem>
+        <RAGFlowFormItem
+          label={t('flow.enableDefaultExtensions')}
+          tooltip={t('flow.enableDefaultExtensionsTip')}
+          name="enable_default_extensions"
+        >
+          {(field) => (
+            <Switch
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            ></Switch>
+          )}
+        </RAGFlowFormItem>
+        <RAGFlowFormItem
+          label={t('flow.chromiumSandbox')}
+          tooltip={t('flow.chromiumSandboxTip')}
+          name="chromium_sandbox"
+        >
           {(field) => (
             <Switch
               checked={field.value}

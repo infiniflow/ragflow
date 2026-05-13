@@ -26,6 +26,7 @@ import tempfile
 from abc import ABC
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
@@ -53,6 +54,8 @@ class BrowserParam(LLMParam):
         self.prompts = "{sys.query}"
         self.max_steps = 30
         self.headless = True
+        self.enable_default_extensions = False
+        self.chromium_sandbox = False
         # Reuse browser profile across runs of the same agent node by default.
         self.persist_session = True
         self.upload_sources = []
@@ -65,6 +68,8 @@ class BrowserParam(LLMParam):
         self.check_empty(self.llm_id, "[Browser] LLM")
         self.check_positive_integer(self.max_steps, "[Browser] Max steps")
         self.check_boolean(self.headless, "[Browser] Headless")
+        self.check_boolean(self.enable_default_extensions, "[Browser] Enable default extensions")
+        self.check_boolean(self.chromium_sandbox, "[Browser] Chromium sandbox")
         self.check_boolean(self.persist_session, "[Browser] Persist session")
         self.check_empty(self.prompts, "[Browser] Prompts")
         return True
@@ -85,20 +90,6 @@ class Browser(ComponentBase, ABC):
             json.dumps(self._param.upload_sources, ensure_ascii=False),
         ]
         return self.get_input_elements_from_text("\n".join(text_parts))
-
-    def _iter_strings(self, value: Any):
-        if value is None:
-            return
-        if isinstance(value, str):
-            yield value
-            return
-        if isinstance(value, dict):
-            for item in value.values():
-                yield from self._iter_strings(item)
-            return
-        if isinstance(value, (list, tuple, set)):
-            for item in value:
-                yield from self._iter_strings(item)
 
     def _resolve_param_value(self, value: Any) -> Any:
         if isinstance(value, str):
@@ -200,31 +191,73 @@ class Browser(ComponentBase, ABC):
             return name
         return f"url_file_{get_uuid()[:8]}.bin"
 
+    @staticmethod
+    def _resolve_upload_url_max_bytes() -> int:
+        raw = str(os.getenv("RAGFLOW_BROWSER_UPLOAD_URL_MAX_BYTES", "") or "").strip()
+        default_max_bytes = 100 * 1024 * 1024
+        if not raw:
+            return default_max_bytes
+        try:
+            parsed = int(raw)
+            return parsed if parsed > 0 else default_max_bytes
+        except (TypeError, ValueError):
+            return default_max_bytes
+
+    @staticmethod
+    def _restore_env_var(key: str, value: str | None):
+        if value is None:
+            os.environ.pop(key, None)
+            return
+        os.environ[key] = value
+
     def _prepare_upload_url_file(self, url: str, upload_dir: str) -> dict[str, Any] | None:
+        max_bytes = self._resolve_upload_url_max_bytes()
+        local_path = ""
+        local_name = ""
+        total_size = 0
         try:
             req = Request(url, headers={"User-Agent": "RAGFlow-Browser-Node/1.0"})
             with urlopen(req, timeout=30) as response:
-                blob = response.read()
-                if not blob:
-                    logging.warning("Browser upload url returned empty content: %s", url)
-                    return None
                 local_name = self._extract_url_filename(url, response.headers)
-        except Exception as e:
+
+                local_path = os.path.join(upload_dir, local_name)
+                index = 1
+                while os.path.exists(local_path):
+                    stem, ext = os.path.splitext(local_name)
+                    local_path = os.path.join(upload_dir, f"{stem}_{index}{ext}")
+                    index += 1
+
+                with open(local_path, "wb") as f:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        total_size += len(chunk)
+                        if total_size > max_bytes:
+                            raise ValueError(f"upload url file exceeds max size limit: {max_bytes}")
+                        f.write(chunk)
+        except (HTTPError, URLError, OSError, TimeoutError, ValueError) as e:
+            if local_path and os.path.exists(local_path):
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
             logging.warning("Browser failed to fetch upload url. url=%s, error=%s", url, e)
             return None
 
-        local_path = os.path.join(upload_dir, local_name)
-        index = 1
-        while os.path.exists(local_path):
-            stem, ext = os.path.splitext(local_name)
-            local_path = os.path.join(upload_dir, f"{stem}_{index}{ext}")
-            index += 1
-        with open(local_path, "wb") as f:
-            f.write(blob)
+        if total_size <= 0:
+            if local_path and os.path.exists(local_path):
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
+            logging.warning("Browser upload url returned empty content: %s", url)
+            return None
+
         return {
             "file_id": "",
             "name": local_name,
-            "size": len(blob),
+            "size": total_size,
             "local_path": local_path,
             "source_url": url,
         }
@@ -251,7 +284,7 @@ class Browser(ComponentBase, ABC):
             try:
                 result = cfg_obj.to_dict()
                 return result if isinstance(result, dict) else {}
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 return {}
         result = {}
         for key in ("model", "model_name", "llm_name", "llm_factory", "api_key", "base_url", "api_base", "temperature"):
@@ -259,39 +292,6 @@ class Browser(ComponentBase, ABC):
             if val not in (None, ""):
                 result[key] = val
         return result
-
-    @staticmethod
-    def _build_with_signature(cls: Any, kwargs: dict[str, Any]):
-        clean_kwargs = {k: v for k, v in kwargs.items() if v not in (None, "")}
-        try:
-            sig = inspect.signature(cls)
-            accepted = {k: v for k, v in clean_kwargs.items() if k in sig.parameters}
-            if accepted:
-                return cls(**accepted)
-            # Some constructors expose a generic `**kwargs` signature; in that case,
-            # parameter-name filtering above would drop all fields and lose config.
-            if clean_kwargs:
-                return cls(**clean_kwargs)
-            return cls()
-        except Exception:
-            return cls(**clean_kwargs) if clean_kwargs else cls()
-
-    @staticmethod
-    def _env_truthy(name: str, default: bool = False) -> bool:
-        val = os.getenv(name)
-        if val is None:
-            return default
-        return val.strip().lower() in {"1", "true", "yes", "on"}
-
-    @staticmethod
-    def _env_float(name: str, default: float) -> float:
-        val = os.getenv(name)
-        if val is None:
-            return default
-        try:
-            return float(val)
-        except Exception:
-            return default
 
     @staticmethod
     def _error_chain(exc: Exception) -> str:
@@ -306,18 +306,29 @@ class Browser(ComponentBase, ABC):
 
     @staticmethod
     def _resolve_browser_executable() -> str:
-        explicit = os.getenv("BROWSER_USE_EXECUTABLE_PATH", "").strip()
-        if explicit and os.path.isfile(explicit):
-            return explicit
+        explicit_candidates = [
+            os.getenv("BROWSER_USE_EXECUTABLE_PATH", "").strip(),
+            os.getenv("BROWSER_USE_BROWSER_BINARY_PATH", "").strip(),
+            os.getenv("BROWSER_USE_CHROME_BINARY_PATH", "").strip(),
+        ]
+        for explicit in explicit_candidates:
+            if explicit and os.path.isfile(explicit) and os.access(explicit, os.X_OK):
+                return explicit
         candidates = [
+            "/opt/chrome/chrome",
             "/usr/local/bin/chrome",
+            "/usr/local/bin/google-chrome",
             "/usr/bin/google-chrome",
             "/usr/bin/google-chrome-stable",
             "/usr/bin/chromium",
             "/usr/bin/chromium-browser",
         ]
         for path in candidates:
-            if os.path.isfile(path):
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+        for cmd in ("chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
+            path = shutil.which(cmd)
+            if path and os.path.isfile(path) and os.access(path, os.X_OK):
                 return path
         return ""
 
@@ -371,22 +382,14 @@ class Browser(ComponentBase, ABC):
             return llm_id.split("@", 1)[1].strip()
         return ""
 
-    def _resolve_openai_compatible_base_url(self, cfg: dict[str, Any], model_name: str) -> str:
+    def _resolve_openai_compatible_base_url(self, cfg: dict[str, Any]) -> str:
         explicit = str(cfg.get("base_url") or cfg.get("api_base") or "").strip()
         if explicit:
             return explicit
 
         provider = self._infer_provider_name(cfg)
         fallback = str(FACTORY_DEFAULT_BASE_URL.get(provider, "")).strip()
-        if fallback:
-            logging.info(
-                "Browser filled empty base_url with provider default. provider=%s, model=%s, base_url=%s",
-                provider,
-                model_name,
-                fallback,
-            )
-            return fallback
-        return ""
+        return fallback if fallback else ""
 
     def _build_browser_llm(self):
         from browser_use.llm import ChatBrowserUse, ChatOpenAI
@@ -400,16 +403,7 @@ class Browser(ComponentBase, ABC):
         model_name = self._normalize_model_name(cfg.get("model_name") or cfg.get("model") or self._param.llm_id)
         if not model_name:
             raise ValueError(f"Invalid model config for Browser llm_id={self._param.llm_id}")
-        base_url = self._resolve_openai_compatible_base_url(cfg, model_name)
-        llm_timeout = self._env_float("RAGFLOW_BROWSER_USE_LLM_TIMEOUT", 120.0)
-        logging.info(
-            "Browser building LLM adapter. llm_id=%s, model=%s, base_url=%s, timeout=%s, max_retries=%s",
-            self._param.llm_id,
-            model_name,
-            base_url,
-            llm_timeout,
-            self._param.max_retries,
-        )
+        base_url = self._resolve_openai_compatible_base_url(cfg)
 
         # ChatBrowserUse only supports bu-* models. For tenant models, use OpenAI-compatible adapter.
         if model_name.startswith("bu-") or model_name.startswith("browser-use/"):
@@ -418,20 +412,20 @@ class Browser(ComponentBase, ABC):
                 "api_key": cfg.get("api_key"),
                 "base_url": base_url,
                 "temperature": self._param.temperature,
-                "timeout": llm_timeout,
                 "max_retries": self._param.max_retries,
             }
-            return self._build_with_signature(ChatBrowserUse, llm_kwargs)
+            llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
+            return ChatBrowserUse(**llm_kwargs)
 
         llm_kwargs = {
             "model": model_name,
             "api_key": cfg.get("api_key"),
             "base_url": base_url,
             "temperature": self._param.temperature,
-            "timeout": llm_timeout,
             "max_retries": self._param.max_retries,
         }
-        return self._build_with_signature(ChatOpenAI, llm_kwargs)
+        llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
+        return ChatOpenAI(**llm_kwargs)
 
     async def _run_browser_use_async(
         self,
@@ -440,67 +434,64 @@ class Browser(ComponentBase, ABC):
         available_file_paths: list[str] | None = None,
         profile_dir: str | None = None,
     ):
-        from browser_use import Agent as BrowserUseAgent
+        from browser_use import Agent as BrowserUseAgent, Browser as BrowserUseBrowser
 
         llm = self._build_browser_llm()
-        agent_kwargs: dict[str, Any] = {"task": task_text, "llm": llm}
-        browser_obj = None
+        # NOTE:
+        # _invoke() uses asyncio.run(), which creates a fresh event loop per task run.
+        # Reusing a Browser object created by a previous loop can deadlock/timestamp out
+        # in browser-use watchdog handlers on subsequent runs.
+        # We keep persistent user_data_dir for session continuity, but we do not keep
+        # browser instances alive across runs.
         available_file_paths = available_file_paths or []
-        logging.info(
-            "Browser available_file_paths prepared. count=%s, paths=%s",
-            len(available_file_paths),
-            available_file_paths,
-        )
+        agent_kwargs: dict[str, Any] = {
+            "task": task_text,
+            "llm": llm,
+            "available_file_paths": available_file_paths,
+        }
+        browser_obj = None
+        previous_disable_extensions = os.environ.get("BROWSER_USE_DISABLE_EXTENSIONS")
+        previous_browser_binary_path = os.environ.get("BROWSER_USE_BROWSER_BINARY_PATH")
 
         try:
-            import browser_use as browser_use_pkg
+            if browser_obj is None:
+                enable_default_extensions = bool(self._param.enable_default_extensions)
+                if not enable_default_extensions:
+                    os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = "1"
+                else:
+                    os.environ.pop("BROWSER_USE_DISABLE_EXTENSIONS", None)
 
-            browser_cls = getattr(browser_use_pkg, "Browser", None)
-            if browser_cls:
-                enable_default_extensions = self._env_truthy("RAGFLOW_BROWSER_USE_ENABLE_DEFAULT_EXTENSIONS", False)
                 executable_path = self._resolve_browser_executable()
                 browser_kwargs = {
                     "headless": self._param.headless,
                     "downloads_path": download_dir,
-                    "downloads_dir": download_dir,
-                    "save_downloads_path": download_dir,
-                    "executable_path": executable_path,
                     # Docker often runs as root without user namespaces; disable sandbox by default.
-                    "chromium_sandbox": self._env_truthy("RAGFLOW_BROWSER_USE_CHROMIUM_SANDBOX", False),
+                    "chromium_sandbox": bool(self._param.chromium_sandbox),
                     # Disable runtime extension download by default for intranet/offline environments.
                     # Enable only when explicitly required and extensions are pre-cached.
                     "enable_default_extensions": enable_default_extensions,
                 }
-                if profile_dir:
-                    browser_kwargs["user_data_dir"] = profile_dir
-                    browser_kwargs["profile_directory"] = profile_dir
-                if not executable_path:
+                if executable_path:
+                    browser_kwargs["executable_path"] = executable_path
+                    # Keep browser-use watchdog fallback in sync with our resolved path.
+                    os.environ["BROWSER_USE_BROWSER_BINARY_PATH"] = executable_path
+                else:
                     logging.warning(
                         "Browser no local browser executable found. "
                         "Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install."
                     )
-                browser_obj = self._build_with_signature(browser_cls, browser_kwargs)
+                if profile_dir:
+                    browser_kwargs["user_data_dir"] = profile_dir
+                    # browser-use expects profile_directory to be a profile name
+                    # such as "Default" / "Profile 1", not an absolute path.
+                    browser_kwargs["profile_directory"] = "Default"
 
-                sig = inspect.signature(BrowserUseAgent)
-                if "browser" in sig.parameters:
-                    agent_kwargs["browser"] = browser_obj
-                elif "browser_context" in sig.parameters:
-                    agent_kwargs["browser_context"] = browser_obj
-                if "available_file_paths" in sig.parameters:
-                    agent_kwargs["available_file_paths"] = available_file_paths
-                    logging.info(
-                        "Browser injecting available_file_paths into Agent kwargs. count=%s",
-                        len(available_file_paths),
-                    )
-                elif available_file_paths:
-                    logging.warning(
-                        "Browser Agent signature has no available_file_paths parameter. paths=%s",
-                        available_file_paths,
-                    )
-        except Exception as e:
+                browser_obj = BrowserUseBrowser(**browser_kwargs)
+                agent_kwargs["browser"] = browser_obj
+        except (OSError, RuntimeError, TypeError, ValueError) as e:
             logging.warning("Browser browser context customization skipped: %s", e)
 
-        agent = self._build_with_signature(BrowserUseAgent, agent_kwargs)
+        agent = BrowserUseAgent(**agent_kwargs)
 
         history = None
         run_fn = getattr(agent, "run", None)
@@ -517,17 +508,19 @@ class Browser(ComponentBase, ABC):
             logging.error("Browser agent.run failed. error_chain=%s", self._error_chain(e))
             logging.exception("Browser agent.run traceback")
             raise
-
-        if browser_obj:
-            close_fn = getattr(browser_obj, "close", None)
-            if close_fn:
-                try:
-                    if inspect.iscoroutinefunction(close_fn):
-                        await close_fn()
-                    else:
-                        await asyncio.to_thread(close_fn)
-                except Exception:
-                    pass
+        finally:
+            if browser_obj:
+                close_fn = getattr(browser_obj, "close", None)
+                if close_fn:
+                    try:
+                        if inspect.iscoroutinefunction(close_fn):
+                            await close_fn()
+                        else:
+                            await asyncio.to_thread(close_fn)
+                    except Exception as close_err:
+                        logging.warning("Browser failed to close browser object cleanly: %s", close_err)
+            self._restore_env_var("BROWSER_USE_DISABLE_EXTENSIONS", previous_disable_extensions)
+            self._restore_env_var("BROWSER_USE_BROWSER_BINARY_PATH", previous_browser_binary_path)
 
         return history
 
@@ -574,26 +567,35 @@ class Browser(ComponentBase, ABC):
         exists, folder = FileService.get_by_id(parent_id)
         if not exists or folder.type != FileType.FOLDER.value:
             raise ValueError(f"RAGFlow target folder does not exist or is not a folder: {parent_id}")
+        tenant_id = self._canvas.get_tenant_id()
+        storage_put = settings.STORAGE_IMPL.put
+        insert_file = FileService.insert
 
         for path in Path(download_dir).rglob("*"):
             if not path.is_file():
                 continue
-            blob = path.read_bytes()
+            try:
+                if path.stat().st_size <= 0:
+                    continue
+                blob = path.read_bytes()
+            except OSError as e:
+                logging.warning("Browser failed to read downloaded file. path=%s, error=%s", path, e)
+                continue
             if not blob:
                 continue
             display_name = duplicate_name(FileService.query, name=path.name, parent_id=parent_id)
-            settings.STORAGE_IMPL.put(parent_id, display_name, blob)
+            storage_put(parent_id, display_name, blob)
             file_data = {
                 "id": get_uuid(),
                 "parent_id": parent_id,
-                "tenant_id": self._canvas.get_tenant_id(),
-                "created_by": self._canvas.get_tenant_id(),
+                "tenant_id": tenant_id,
+                "created_by": tenant_id,
                 "type": filename_type(display_name),
                 "name": display_name,
                 "location": display_name,
                 "size": len(blob),
             }
-            inserted = FileService.insert(file_data)
+            inserted = insert_file(file_data)
             downloaded_files.append(
                 {
                     "file_id": inserted.id,
@@ -608,21 +610,30 @@ class Browser(ComponentBase, ABC):
     def _extract_history_text(history: Any) -> str:
         if history is None:
             return ""
-        if isinstance(history, str):
-            return history
-        if isinstance(history, dict):
-            for key in ("final_result", "result", "answer", "content", "message"):
-                if key in history and history[key]:
-                    return str(history[key])
-            return json.dumps(history, ensure_ascii=False)
-        if isinstance(history, list):
-            if not history:
+
+        def pick_final_result(value: Any) -> str:
+            if value is None:
                 return ""
-            return json.dumps(history[-1], ensure_ascii=False)
-        return str(history)
+            if isinstance(value, str):
+                return value.strip()
+            if isinstance(value, (int, float, bool)):
+                return str(value)
+            return ""
+
+        # Only trust browser-use's explicit final_result API/property.
+        final_result_fn = getattr(history, "final_result", None)
+        if callable(final_result_fn):
+            try:
+                final_result_value = final_result_fn()
+                return pick_final_result(final_result_value)
+            except Exception:
+                return ""
+        return pick_final_result(final_result_fn)
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     def _invoke(self, **kwargs):
+        profile_dir = None
+        persist_session = self._should_persist_session()
         try:
             user_prompt = self._resolve_text(kwargs.get("prompts", self._param.prompts))
             with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(
@@ -642,17 +653,13 @@ class Browser(ComponentBase, ABC):
                     )
 
                 upload_local_paths = [item.get("local_path", "") for item in uploaded_files if item.get("local_path")]
-                profile_dir = None
-                if self._should_persist_session():
+                if persist_session:
                     profile_dir = self._resolve_persistent_profile_dir()
                     os.makedirs(profile_dir, exist_ok=True)
-                    logging.info(
-                        "Browser using persistent profile dir: %s", profile_dir
-                    )
                 else:
                     try:
                         profile_dir = tempfile.mkdtemp(prefix="browser_use_profile_")
-                    except Exception:
+                    except OSError:
                         profile_dir = None
                 history = asyncio.run(
                     self._run_browser_use_async(
@@ -664,13 +671,14 @@ class Browser(ComponentBase, ABC):
 
                 self.set_output("content", self._extract_history_text(history))
                 self.set_output("downloaded_files", downloaded_files)
-                if profile_dir and not self._should_persist_session():
-                    shutil.rmtree(profile_dir, ignore_errors=True)
                 return self.output()
         except Exception as e:
             logging.exception("Browser invoke failed")
             self.set_output("_ERROR", str(e))
             return self.output()
+        finally:
+            if profile_dir and not persist_session:
+                shutil.rmtree(profile_dir, ignore_errors=True)
 
     def thoughts(self) -> str:
         return "Planning and executing browser actions..."

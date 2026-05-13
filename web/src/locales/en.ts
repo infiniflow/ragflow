@@ -1771,6 +1771,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       maxRetries: 'Max retry rounds',
       maxSteps: 'Max steps',
       headless: 'Headless',
+      enableDefaultExtensions: 'Enable default extensions',
+      enableDefaultExtensionsTip:
+        'Enable browser-use default extensions (uBlock, cookie handling, ClearURLs). Disable this to avoid runtime extension downloads.',
+      chromiumSandbox: 'Chromium sandbox',
+      chromiumSandboxTip:
+        'Whether to enable Chromium sandbox. In Docker root environments this is usually disabled; on regular hosts it is recommended to enable.',
       persistSession: 'Persist session',
       persistSessionTip:
         'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
