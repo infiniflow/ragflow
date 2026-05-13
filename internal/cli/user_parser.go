@@ -2822,20 +2822,33 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenFile {
-		return nil, fmt.Errorf("expected FILE to OCR")
-	}
-	p.nextToken() // consume FILE
-
-	file, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
 	cmd := NewCommand("ocr_user_command")
+
+	switch p.curToken.Type {
+	case TokenFile:
+		p.nextToken()
+		var file string
+		file, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["file"] = file
+		p.nextToken()
+	case TokenURL:
+		p.nextToken()
+		var url string
+		url, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["url"] = url
+		p.nextToken()
+	default:
+		return nil, fmt.Errorf("expected FILE or URL")
+	}
+
 	cmd.Params["composite_model_name"] = compositeModelName
-	cmd.Params["file"] = file
+
 	return cmd, nil
 }
 
