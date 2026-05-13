@@ -213,10 +213,10 @@ func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (ma
 		updates["parser_config"] = req.ParserConfig
 	}
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-	updates["update_time"] = now
-	updates["update_date"] = nowDate
+	now := time.Now().Truncate(time.Second)
+	updateTime := now.UnixMilli()
+	updates["update_time"] = updateTime
+	updates["update_date"] = now
 
 	// Update in database
 	if err := s.kbDAO.UpdateByID(req.KBID, updates); err != nil {
