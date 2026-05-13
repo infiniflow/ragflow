@@ -274,6 +274,18 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+		// Map ChatConfig.Thinking -> Novita's `enable_thinking`.
+		// Per https://novita.ai/docs/api-reference/model-apis-llm-create-chat-completion,
+		// enable_thinking (boolean | null, default true) "controls the
+		// switches between thinking and non-thinking modes" for
+		// zai-org/glm-4.5, deepseek/deepseek-v3.1[-terminus|-exp]. For
+		// models outside that supported set Novita ignores the field,
+		// so it's safe to forward whenever the caller opts in. Tenants
+		// can now disable thinking mode at request time without having
+		// to use prompt-level hacks like "/no_think".
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -332,11 +344,23 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	// Some Novita-routed models (qwen3, deepseek-r1, etc.) embed the
-	// chain-of-thought inline inside <think>...</think> tags. Strip
-	// them out of the visible Answer and surface the inner text via
-	// ReasonContent. Models without think tags pass through unchanged.
+	// Novita emits chain-of-thought in two different shapes depending
+	// on the model and on enable_thinking:
+	//   - qwen3-* and other inline-style models: chain-of-thought is
+	//     embedded inside content as <think>...</think> tags.
+	//   - deepseek-v3.1 / glm-4.5 (and any model with separate
+	//     reasoning enabled): chain-of-thought arrives in a separate
+	//     `reasoning_content` field, with `content` already cleaned.
+	// Handle both so the visible Answer is always tag-free and any
+	// reasoning the upstream supplied is preserved.
 	visible, reasoning := splitNovitaThink(rawContent)
+	if r, ok := messageMap["reasoning_content"].(string); ok && r != "" {
+		if reasoning != "" {
+			reasoning += "\n" + r
+		} else {
+			reasoning = r
+		}
+	}
 
 	return &ChatResponse{
 		Answer:        &visible,
@@ -345,9 +369,13 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via
-// the sender. Uses a stateful think-tag extractor across SSE chunks so
-// that callers receive content chunks free of <think>...</think>
-// clutter and reasoning chunks via the second sender arg.
+// the sender. Handles both reasoning shapes Novita can emit:
+//   - delta.reasoning_content (deepseek-v3.1 / glm-4.5 / any model
+//     with separate reasoning): forwarded as-is to the second arg.
+//   - delta.content containing <think>...</think> (qwen3-* and other
+//     inline-style models): a stateful extractor splits tag bytes
+//     across SSE chunk boundaries, then routes content/reasoning to
+//     the first/second sender arg respectively.
 func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
@@ -399,6 +427,10 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		}
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
+		}
+		// See ChatWithMessages for why we forward this.
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 	}
 
@@ -454,6 +486,18 @@ func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		delta, ok := firstChoice["delta"].(map[string]interface{})
 		if !ok {
 			continue
+		}
+		// deepseek-v3.1 / glm-4.5 (and other models that emit reasoning
+		// separately) put chain-of-thought in delta.reasoning_content
+		// rather than inside content as <think>...</think>. Surface it
+		// before any content from the same chunk so callers piping to
+		// a UI render reasoning before the visible answer for that
+		// token, matching the wire ordering Novita emits.
+		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
+			rr := r
+			if err := sender(nil, &rr); err != nil {
+				return err
+			}
 		}
 		if c, ok := delta["content"].(string); ok && c != "" {
 			for _, seg := range extractor.Feed(c) {
@@ -534,6 +578,7 @@ func (n *NovitaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := n.httpClient.Do(req)

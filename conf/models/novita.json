@@ -1,11 +1,11 @@
 {
-  "name": "NovitaAI",
+  "name": "Novita",
   "url": {
-    "default": "https://api.novita.ai/v3/openai"
+    "default": "https://api.novita.ai"
   },
   "url_suffix": {
-    "chat": "chat/completions",
-    "models": "models"
+    "chat": "openai/v1/chat/completions",
+    "models": "openai/v1/models"
   },
   "class": "novita",
   "models": [

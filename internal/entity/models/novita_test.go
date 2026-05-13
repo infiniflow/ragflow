@@ -20,11 +20,15 @@ func newNovitaServer(t *testing.T, expectedPath string, handler func(t *testing.
 			t.Errorf("expected Authorization=Bearer test-key, got %q", got)
 			return
 		}
+		// Content-Type must declare JSON on BOTH POST chat (body is
+		// JSON) and GET ListModels (Novita platform expects callers to
+		// negotiate JSON content even though the body is empty —
+		// maintainer review explicitly flagged the missing header).
+		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Errorf("expected Content-Type to start with application/json, got %q", got)
+			return
+		}
 		if r.Method == http.MethodPost {
-			if got := r.Header.Get("Content-Type"); got != "application/json" {
-				t.Errorf("expected Content-Type=application/json, got %q", got)
-				return
-			}
 			raw, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Errorf("read body: %v", err)
@@ -45,8 +49,37 @@ func newNovitaServer(t *testing.T, expectedPath string, handler func(t *testing.
 func newNovitaForTest(baseURL string) *NovitaModel {
 	return NewNovitaModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "chat/completions", Models: "models"},
+		URLSuffix{Chat: "openai/v1/chat/completions", Models: "openai/v1/models"},
 	)
+}
+
+// newNovitaSSEServer asserts the SSE-chat wire contract (POST, path,
+// Authorization, Content-Type) the same way newNovitaServer does for
+// the JSON-chat path, then writes the supplied SSE payload. Closes
+// the gap CodeRabbit flagged where streaming tests used
+// httptest.NewServer directly and skipped the request-shape checks.
+func newNovitaSSEServer(t *testing.T, expectedPath, ssePayload string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			return
+		}
+		if r.URL.Path != expectedPath {
+			t.Errorf("expected path=%s, got %s", expectedPath, r.URL.Path)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("expected Authorization=Bearer test-key, got %q", got)
+			return
+		}
+		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Errorf("expected Content-Type to start with application/json, got %q", got)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, ssePayload)
+	}))
 }
 
 // ---- think-tag split helpers ----
@@ -203,7 +236,7 @@ func TestNovitaName(t *testing.T) {
 }
 
 func TestNovitaChatPureText(t *testing.T) {
-	srv := newNovitaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{"content": "pong"},
@@ -228,7 +261,7 @@ func TestNovitaChatPureText(t *testing.T) {
 func TestNovitaChatExtractsThinkTags(t *testing.T) {
 	// qwen3-style response: <think>...</think> embedded in content.
 	// Driver must split it into Answer + ReasonContent.
-	srv := newNovitaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{
@@ -256,6 +289,188 @@ func TestNovitaChatExtractsThinkTags(t *testing.T) {
 	}
 }
 
+// deepseek-v3.1 / glm-4.5 with enable_thinking=true return reasoning
+// in a separate `reasoning_content` field on the message rather than
+// inline as <think>...</think>. The driver must surface this field
+// to ChatResponse.ReasonContent. Live-confirmed against
+// api.novita.ai/openai/v1/chat/completions with deepseek/deepseek-v3.1.
+func TestNovitaChatExtractsReasoningContentField(t *testing.T) {
+	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"role":              "assistant",
+					"content":           "4",
+					"reasoning_content": "2+2 is straightforward arithmetic: the answer is 4.",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	resp, err := newNovitaForTest(srv.URL).ChatWithMessages(
+		"deepseek/deepseek-v3.1",
+		[]Message{{Role: "user", Content: "2+2?"}},
+		&APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Answer == nil || resp.ReasonContent == nil {
+		t.Fatalf("Answer/ReasonContent must be non-nil pointers")
+	}
+	if *resp.Answer != "4" {
+		t.Errorf("Answer=%q", *resp.Answer)
+	}
+	if *resp.ReasonContent != "2+2 is straightforward arithmetic: the answer is 4." {
+		t.Errorf("ReasonContent=%q", *resp.ReasonContent)
+	}
+}
+
+// Streaming deepseek-v3.1 with thinking on emits delta.reasoning_content
+// (not delta.content with <think> tags). The driver must forward
+// those chunks via the sender's second arg.
+func TestNovitaStreamExtractsDeltaReasoningContent(t *testing.T) {
+	srv := newNovitaSSEServer(t, "/openai/v1/chat/completions",
+		`data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"step 1. "}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 2."}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":"stop"}]}`+"\n"+
+			`data: [DONE]`+"\n",
+	)
+	defer srv.Close()
+
+	apiKey := "test-key"
+	var content, reasoning []string
+	err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
+		"deepseek/deepseek-v3.1",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil,
+		func(c *string, r *string) error {
+			if c != nil && r != nil {
+				t.Errorf("sender called with both args non-nil")
+			}
+			if r != nil && *r != "" {
+				reasoning = append(reasoning, *r)
+			}
+			if c != nil && *c != "" && *c != "[DONE]" {
+				content = append(content, *c)
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if got := strings.Join(reasoning, ""); got != "step 1. step 2." {
+		t.Errorf("reasoning=%q", got)
+	}
+	if got := strings.Join(content, ""); got != "final answer" {
+		t.Errorf("content=%q", got)
+	}
+}
+
+// TestNovitaChatPropagatesEnableThinking pins the maintainer's
+// requested behaviour: when ChatConfig.Thinking is set, the driver
+// MUST forward it as Novita's documented `enable_thinking` body field
+// so a tenant can switch a deepseek-v3.1 / glm-4.5 / qwen3 deployment
+// out of its default thinking mode without prompt-level hacks.
+func TestNovitaChatPropagatesEnableThinking(t *testing.T) {
+	cases := []struct {
+		name  string
+		value bool
+	}{
+		{"enabled", true},
+		{"disabled", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+				got, present := body["enable_thinking"]
+				if !present {
+					t.Errorf("enable_thinking missing from body, want %v", tc.value)
+				}
+				if got != tc.value {
+					t.Errorf("enable_thinking=%v want %v", got, tc.value)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"choices": []map[string]interface{}{{
+						"message": map[string]interface{}{"content": "ok"},
+					}},
+				})
+			})
+			defer srv.Close()
+
+			apiKey := "test-key"
+			thinking := tc.value
+			_, err := newNovitaForTest(srv.URL).ChatWithMessages(
+				"qwen/qwen3-30b-a3b-fp8",
+				[]Message{{Role: "user", Content: "x"}},
+				&APIConfig{ApiKey: &apiKey},
+				&ChatConfig{Thinking: &thinking})
+			if err != nil {
+				t.Fatalf("Chat: %v", err)
+			}
+		})
+	}
+}
+
+// Sending enable_thinking when the caller didn't ask for it would
+// silently flip behavior for downstream proxies that distinguish
+// "field absent" from "field present with default". Leave it out.
+func TestNovitaChatOmitsEnableThinkingWhenUnset(t *testing.T) {
+	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if _, present := body["enable_thinking"]; present {
+			t.Errorf("enable_thinking must be absent when Thinking unset, got %v", body["enable_thinking"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "ok"},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	_, err := newNovitaForTest(srv.URL).ChatWithMessages("m",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{}) // no Thinking
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+// TestNovitaStreamPropagatesEnableThinking mirrors the non-stream
+// case for ChatStreamlyWithSender so callers get the same toggle
+// regardless of streaming mode.
+func TestNovitaStreamPropagatesEnableThinking(t *testing.T) {
+	var seen map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &seen)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n"+
+				`data: [DONE]`+"\n",
+		)
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := false
+	err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
+		"deepseek/deepseek-v3.1",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+		func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if got, ok := seen["enable_thinking"].(bool); !ok || got != false {
+		t.Errorf("stream enable_thinking=%v want false", seen["enable_thinking"])
+	}
+}
+
 func TestNovitaChatRequiresAPIKey(t *testing.T) {
 	_, err := newNovitaForTest("http://unused").ChatWithMessages("m",
 		[]Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil)
@@ -274,7 +489,7 @@ func TestNovitaChatRequiresMessages(t *testing.T) {
 }
 
 func TestNovitaChatRejectsHTTPError(t *testing.T) {
-	srv := newNovitaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"detail":"unauthorized"}`))
 	})
@@ -293,22 +508,19 @@ func TestNovitaChatRejectsHTTPError(t *testing.T) {
 // delta.content must surface reasoning chunks through the sender's
 // second arg, and visible content through the first.
 func TestNovitaStreamSplitsThinkTags(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		// Simulate the realistic case where tags span deltas — split
-		// "<think>" across two chunks, and split "</think>" too.
-		_, _ = io.WriteString(w,
-			`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"<"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"think>"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"Okay, "}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"compute. </"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"think>"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"12"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"."},"finish_reason":"stop"}]}`+"\n"+
-				`data: [DONE]`+"\n",
-		)
-	}))
+	// Simulate the realistic case where tags span deltas — split
+	// "<think>" across two chunks, and split "</think>" too.
+	srv := newNovitaSSEServer(t, "/openai/v1/chat/completions",
+		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"<"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"think>"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"Okay, "}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"compute. </"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"think>"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"12"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"."},"finish_reason":"stop"}]}`+"\n"+
+			`data: [DONE]`+"\n",
+	)
 	defer srv.Close()
 
 	apiKey := "test-key"
@@ -345,15 +557,12 @@ func TestNovitaStreamSplitsThinkTags(t *testing.T) {
 // Streaming for a non-reasoning model that emits only content chunks
 // must continue to work unchanged.
 func TestNovitaStreamPureContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w,
-			`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"Hello "}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"world"},"finish_reason":"stop"}]}`+"\n"+
-				`data: [DONE]`+"\n",
-		)
-	}))
+	srv := newNovitaSSEServer(t, "/openai/v1/chat/completions",
+		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"Hello "}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"world"},"finish_reason":"stop"}]}`+"\n"+
+			`data: [DONE]`+"\n",
+	)
 	defer srv.Close()
 
 	apiKey := "test-key"
@@ -408,7 +617,7 @@ func TestNovitaStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestNovitaListModelsHappyPath(t *testing.T) {
-	srv := newNovitaServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newNovitaServer(t, "/openai/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"id": "meta-llama/llama-3.3-70b-instruct"},
@@ -430,7 +639,7 @@ func TestNovitaListModelsHappyPath(t *testing.T) {
 }
 
 func TestNovitaCheckConnection(t *testing.T) {
-	srv := newNovitaServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newNovitaServer(t, "/openai/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
 	})
 	defer srv.Close()
@@ -495,9 +704,9 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 	}{
 		{
 			name:      "Chat",
-			path:      "/chat/completions",
+			path:      "/openai/v1/chat/completions",
 			method:    http.MethodPost,
-			urlSuffix: URLSuffix{Chat: "chat/completions"},
+			urlSuffix: URLSuffix{Chat: "openai/v1/chat/completions"},
 			invoke: func(n *NovitaModel, apiKey string) error {
 				_, err := n.ChatWithMessages("m",
 					[]Message{{Role: "user", Content: "x"}},
@@ -508,9 +717,9 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 		},
 		{
 			name:      "ListModels",
-			path:      "/models",
+			path:      "/openai/v1/models",
 			method:    http.MethodGet,
-			urlSuffix: URLSuffix{Models: "models"},
+			urlSuffix: URLSuffix{Models: "openai/v1/models"},
 			invoke: func(n *NovitaModel, apiKey string) error {
 				_, err := n.ListModels(&APIConfig{ApiKey: &apiKey})
 				return err
@@ -519,9 +728,9 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 		},
 		{
 			name:      "Stream",
-			path:      "/chat/completions",
+			path:      "/openai/v1/chat/completions",
 			method:    http.MethodPost,
-			urlSuffix: URLSuffix{Chat: "chat/completions"},
+			urlSuffix: URLSuffix{Chat: "openai/v1/chat/completions"},
 			invoke: func(n *NovitaModel, apiKey string) error {
 				return n.ChatStreamlyWithSender("m",
 					[]Message{{Role: "user", Content: "x"}},
@@ -537,7 +746,7 @@ func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// The load-bearing assertion: path is the clean
-				// "/chat/completions" or "/models", never "//chat/...".
+				// "/openai/v1/chat/completions" or "/openai/v1/models", never "//chat/...".
 				if r.URL.Path != tc.path {
 					t.Errorf("path=%q want %q (double-slash bug?)", r.URL.Path, tc.path)
 					return
