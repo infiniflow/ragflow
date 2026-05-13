@@ -33,6 +33,16 @@ MODEL_TYPE_TO_FIELD = {
     "ocr": "ocr_id",
 }
 
+MODEL_TAG_TO_TYPE = {
+    "chat": "chat",
+    "embedding": "embedding",
+    "rerank": "rerank",
+    "asr": "speech2text",
+    "vision": "image2text",
+    "tts": "tts",
+    "ocr": "ocr",
+}
+
 
 def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     """
@@ -133,21 +143,22 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
     factory_info = [f for f in (FACTORY_LLM_INFOS or []) if f["name"] == provider_name]
     if not factory_info:
         return False, f"Provider '{provider_name}' not found in factory info"
-
-    llms = factory_info[0].get("llm", [])
-    target_llm = [llm for llm in llms if llm["llm_name"] == model_name]
-    if not target_llm:
-        return False, f"Model '{model_name}' not found for provider '{provider_name}'"
-
-    if target_llm[0].get("model_type") != model_type:
-        return False, f"Model '{model_name}' isn't a {model_type} model"
-
+    model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Check if model is disabled
-    model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(
-        provider_obj.id, instance_obj.id, model_name
+    model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
+        provider_obj.id, instance_obj.id, model_name, model_type
     )
     if model_entity and model_entity.status == "inactive":
         return False, f"Model '{model_name}' isn't available"
+
+    llms = factory_info[0].get("llm", [])
+    target_llm = [llm for llm in llms if llm["llm_name"] == model_name]
+    if not target_llm and not model_entity:
+        return False, f"Model '{model_name}' not found for provider '{provider_name}'"
+
+    if target_llm:
+        if target_llm[0].get("model_type") != model_type:
+            return False, f"Model '{model_name}' isn't a {model_type} model"
 
     return True, None
 
