@@ -48,22 +48,6 @@ type LongCatModel struct {
 	httpClient *http.Client
 }
 
-// longcatKnownModels is the set of models the LongCat platform docs
-// list under https://longcat.chat/platform/docs/Models.html. The
-// platform does not expose a /models endpoint, so we ship the catalog
-// instead of probing it.
-var longcatKnownModels = []string{
-	"LongCat-Flash-Chat",
-	"LongCat-Flash-Lite",
-	"LongCat-Flash-Thinking-2601",
-	"LongCat-Flash-Omni-2603",
-	"LongCat-2.0-Preview",
-}
-
-// longcatPingModel is the cheapest documented model; used by
-// CheckConnection to verify credentials with a minimal request.
-const longcatPingModel = "LongCat-Flash-Lite"
-
 // NewLongCatModel creates a new LongCat model instance.
 //
 // We clone http.DefaultTransport so we keep Go's defaults for
@@ -420,44 +404,23 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-// ListModels returns the catalog of LongCat models. The LongCat
-// platform does not document a /models endpoint, so we return the
-// statically shipped list instead of issuing a network call.
-//
-// API key is still required so that misconfigured providers surface
-// the same authentication error here as on the chat path. The
-// region is also validated up-front: without this guard, a tenant
-// who picks a region with no configured base URL would see ListModels
-// succeed but then fail later on the first chat/embed call.
+// ListModels is not exposed by the LongCat platform. The official
+// docs at https://longcat.chat/platform/docs/APIDocs.html only
+// document /openai/v1/chat/completions and /anthropic/v1/messages;
+// no /models endpoint exists. The shipped catalog lives in
+// conf/models/longcat.json; this driver method does not invent a
+// fake one.
 func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	if _, err := l.baseURLForRegion(region); err != nil {
-		return nil, err
-	}
-	out := make([]string, len(longcatKnownModels))
-	copy(out, longcatKnownModels)
-	return out, nil
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-// CheckConnection verifies credentials by issuing a 1-token chat
-// completion against the cheapest documented model. ListModels can't
-// validate the key (no /models endpoint), so we hit the documented
-// chat endpoint instead.
+// CheckConnection is not exposed by the LongCat platform. With no
+// documented /models or /health endpoint, there is no cheap way to
+// verify the API key without burning a real chat completion against
+// a tenant's quota. Return the documented sentinel rather than
+// pretend.
 func (l *LongCatModel) CheckConnection(apiConfig *APIConfig) error {
-	maxTokens := 1
-	_, err := l.ChatWithMessages(
-		longcatPingModel,
-		[]Message{{Role: "user", Content: "ping"}},
-		apiConfig,
-		&ChatConfig{MaxTokens: &maxTokens},
-	)
-	return err
+	return fmt.Errorf("%s, no such method", l.Name())
 }
 
 // Embed is not exposed by the LongCat API. The /v1/embeddings endpoint

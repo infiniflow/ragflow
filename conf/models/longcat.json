@@ -1,10 +1,10 @@
 {
   "name": "LongCat",
   "url": {
-    "default": "https://api.longcat.chat/openai"
+    "default": "https://api.longcat.chat"
   },
   "url_suffix": {
-    "chat": "v1/chat/completions"
+    "chat": "openai/v1/chat/completions"
   },
   "class": "longcat",
   "models": [

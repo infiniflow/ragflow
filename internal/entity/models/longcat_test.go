@@ -47,7 +47,7 @@ func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing
 func newLongCatForTest(baseURL string) *LongCatModel {
 	return NewLongCatModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "v1/chat/completions"},
+		URLSuffix{Chat: "openai/v1/chat/completions"},
 	)
 }
 
@@ -86,7 +86,7 @@ func TestLongCatName(t *testing.T) {
 }
 
 func TestLongCatChatHappyPath(t *testing.T) {
-	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Chat" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -125,7 +125,7 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	// message.reasoning_content (OpenAI o-series shape). Live-probed
 	// against api.longcat.chat; the fixture mimics the actual response
 	// shape captured there.
-	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Thinking" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -166,7 +166,7 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 // top_p — anything else is undocumented and must not be sent, since
 // the maintainer specifically flagged this on PR #14809.
 func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
-	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		for _, k := range []string{"stop", "reasoning_effort", "response_format", "tools", "tool_choice", "presence_penalty", "frequency_penalty", "n", "logprobs"} {
 			if _, present := body[k]; present {
 				t.Errorf("undocumented field %q must not be sent: %v", k, body[k])
@@ -223,7 +223,7 @@ func TestLongCatChatRequiresMessages(t *testing.T) {
 }
 
 func TestLongCatChatRejectsHTTPError(t *testing.T) {
-	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 	})
@@ -240,7 +240,7 @@ func TestLongCatChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestLongCatStreamHappyPath(t *testing.T) {
-	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n"+
@@ -281,7 +281,7 @@ func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
 	// Fixture matches the shape captured live from
 	// LongCat-Flash-Thinking against api.longcat.chat: deltas
 	// interleave reasoning_content and content within the stream.
-	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 1. "}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 2."}}]}`+"\n"+
@@ -345,7 +345,7 @@ func TestLongCatStreamRequiresSender(t *testing.T) {
 }
 
 func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
-	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
 	defer srv.Close()
@@ -365,7 +365,7 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 // which masked truncated or corrupted streams. The driver must now
 // fail hard with a "longcat: invalid SSE event" wrapper.
 func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
-	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {this is not valid json}`+"\n",
 	)
@@ -386,7 +386,7 @@ func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
 // the "no choices" continue and leave the caller with a generic
 // truncation error. The driver must surface the upstream error verbatim.
 func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
-	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+	srv := newLongCatSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"rate limit exceeded","type":"rate_limit_error"}}`+"\n",
 	)
@@ -406,102 +406,23 @@ func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
 	}
 }
 
-// LongCat does not document a /models endpoint, so ListModels returns
-// a shipped catalog rather than hitting the network. This test pins the
-// known names so accidental edits to longcatKnownModels are caught.
-func TestLongCatListModelsReturnsKnownCatalog(t *testing.T) {
+// LongCat does not document /models or /health endpoints, so per
+// maintainer guidance ListModels and CheckConnection both return the
+// "no such method" sentinel rather than inventing fake catalogs or
+// burning chat completions for connection checks.
+func TestLongCatListModelsReturnsNoSuchMethod(t *testing.T) {
 	apiKey := "test-key"
-	ids, err := newLongCatForTest("http://unused").ListModels(&APIConfig{ApiKey: &apiKey})
-	if err != nil {
-		t.Fatalf("ListModels: %v", err)
-	}
-	want := map[string]bool{
-		"LongCat-Flash-Chat":          true,
-		"LongCat-Flash-Lite":          true,
-		"LongCat-Flash-Thinking-2601": true,
-		"LongCat-Flash-Omni-2603":     true,
-		"LongCat-2.0-Preview":         true,
-	}
-	if len(ids) != len(want) {
-		t.Errorf("len(ids)=%d want %d (%v)", len(ids), len(want), ids)
-	}
-	for _, id := range ids {
-		if !want[id] {
-			t.Errorf("unexpected model id %q", id)
-		}
+	_, err := newLongCatForTest("http://unused").ListModels(&APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "no such method") {
+		t.Errorf("ListModels: want 'no such method', got %v", err)
 	}
 }
 
-func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
-	m := newLongCatForTest("http://unused")
-	if _, err := m.ListModels(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
-		t.Errorf("expected api-key error, got %v", err)
-	}
-}
-
-// Even though ListModels does not hit the network, a region with no
-// configured base URL is a misconfiguration that the caller deserves
-// to see now instead of on the first chat request.
-func TestLongCatListModelsRejectsUnknownRegion(t *testing.T) {
-	m := newLongCatForTest("http://unused")
+func TestLongCatCheckConnectionReturnsNoSuchMethod(t *testing.T) {
 	apiKey := "test-key"
-	region := "atlantis"
-	_, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &region})
-	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
-		t.Errorf("expected region-not-configured error, got %v", err)
-	}
-}
-
-// CheckConnection must hit the documented chat endpoint, not /models,
-// since LongCat does not expose /models. A 1-token chat ping against
-// LongCat-Flash-Lite is what the maintainer asked for.
-func TestLongCatCheckConnectionChatPings(t *testing.T) {
-	var (
-		sawChat   bool
-		sawModel  string
-		sawTokens interface{}
-	)
-	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		sawChat = true
-		if m, ok := body["model"].(string); ok {
-			sawModel = m
-		}
-		sawTokens = body["max_tokens"]
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{"content": "ok"},
-			}},
-		})
-	})
-	defer srv.Close()
-	apiKey := "test-key"
-	if err := newLongCatForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
-		t.Errorf("CheckConnection: %v", err)
-	}
-	if !sawChat {
-		t.Error("CheckConnection did not hit /v1/chat/completions")
-	}
-	if sawModel != "LongCat-Flash-Lite" {
-		t.Errorf("CheckConnection ping model=%q want LongCat-Flash-Lite", sawModel)
-	}
-	if mt, ok := sawTokens.(float64); !ok || mt != 1 {
-		t.Errorf("CheckConnection max_tokens=%v want 1", sawTokens)
-	}
-}
-
-// On 401 (bad key), CheckConnection must surface the upstream error
-// instead of silently returning nil — credentials are exactly what
-// this method exists to validate.
-func TestLongCatCheckConnectionPropagatesAuthError(t *testing.T) {
-	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
-	})
-	defer srv.Close()
-	apiKey := "test-key"
-	err := newLongCatForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "401") {
-		t.Errorf("expected 401 propagated, got %v", err)
+	err := newLongCatForTest("http://unused").CheckConnection(&APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "no such method") {
+		t.Errorf("CheckConnection: want 'no such method', got %v", err)
 	}
 }
 
