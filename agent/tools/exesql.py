@@ -15,6 +15,7 @@
 #
 import contextlib
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -26,6 +27,8 @@ import sqlglot
 from sqlglot import expressions as exp
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.connection_utils import timeout
+
+logger = logging.getLogger(__name__)
 
 
 class ExeSQLParam(ToolParamBase):
@@ -86,12 +89,26 @@ _ALLOWED_READ_EXPRESSIONS = (
     exp.Intersect,
 )
 
+_CODE_FENCE_RE = re.compile(r"^\s*```(?:\w+)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
+_ID_MARKER_RE = re.compile(r"\[ID:[0-9]+\]")
+
+
+def _normalize_sql(sql: str) -> str:
+    """Strip code fences (including language tags) and ID markers from SQL."""
+    sql = sql.strip()
+    match = _CODE_FENCE_RE.match(sql)
+    if match:
+        sql = match.group(1).strip()
+    return _ID_MARKER_RE.sub("", sql).strip()
+
 
 def _strip_sql_code_fences(sql: str) -> str:
-    return sql.replace("```", "").strip()
+    """Strip SQL code fences from a string."""
+    return _normalize_sql(sql)
 
 
 def _sqlglot_dialect(db_type: str) -> str | None:
+    """Map database type to sqlglot dialect."""
     return {
         "mysql": "mysql",
         "mariadb": "mysql",
@@ -104,6 +121,7 @@ def _sqlglot_dialect(db_type: str) -> str | None:
 
 
 def _parse_sql_statements(sql: str, db_type: str) -> list[exp.Expression]:
+    """Parse SQL string into a list of sqlglot expression statements."""
     dialect = _sqlglot_dialect(db_type)
     try:
         statements = [statement for statement in sqlglot.parse(sql, read=dialect) if statement]
@@ -113,23 +131,31 @@ def _parse_sql_statements(sql: str, db_type: str) -> list[exp.Expression]:
 
 
 def _split_sql_statements(sql: str, db_type: str) -> list[str]:
+    """Split and validate that SQL contains exactly one statement."""
+    sql = _normalize_sql(sql)
     statements = _parse_sql_statements(sql, db_type)
     if len(statements) != 1:
         raise ValueError("For security reasons, only one read-only SQL statement is supported.")
-    return [sql.strip()]
+    return [sql]
 
 
 def _ensure_read_only_sql(sql: str, db_type: str) -> None:
+    """Validate that SQL is a single read-only SELECT statement."""
     statements = _parse_sql_statements(sql, db_type)
     if len(statements) != 1:
+        logger.warning("SQL validation rejected: db_type=%s, stage=parse, reason=multiple_statements", db_type)
         raise ValueError("For security reasons, only one read-only SQL statement is supported.")
 
     statement = statements[0]
     if not isinstance(statement, _ALLOWED_READ_EXPRESSIONS):
+        logger.warning("SQL validation rejected: db_type=%s, stage=type_check, statement_type=%s",
+                        db_type, type(statement).__name__)
         raise ValueError("For security reasons, only read-only SELECT statements are supported.")
 
-    unsafe = statement.find(exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter, exp.Command, exp.Lock)
+    unsafe = statement.find(exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter, exp.Command, exp.Lock, exp.Into)
     if unsafe or statement.args.get("locks"):
+        reason = f"unsafe_node={type(unsafe).__name__}" if unsafe else "locks_present"
+        logger.warning("SQL validation rejected: db_type=%s, stage=safety_check, %s", db_type, reason)
         raise ValueError("For security reasons, only read-only SELECT statements are supported.")
 
 
@@ -259,10 +285,9 @@ class ExeSQL(ToolBase, ABC):
                     if self.check_if_canceled("ExeSQL processing"):
                         return
 
-                    single_sql = _strip_sql_code_fences(single_sql)
+                    single_sql = _normalize_sql(single_sql)
                     if not single_sql:
                         continue
-                    single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
                     _ensure_read_only_sql(single_sql, self._param.db_type)
 
                     stmt = ibm_db.exec_immediate(conn, single_sql)
@@ -308,10 +333,9 @@ class ExeSQL(ToolBase, ABC):
                 if self.check_if_canceled("ExeSQL processing"):
                     return
 
-                single_sql = _strip_sql_code_fences(single_sql)
+                single_sql = _normalize_sql(single_sql)
                 if not single_sql:
                     continue
-                single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
                 _ensure_read_only_sql(single_sql, self._param.db_type)
                 # The SQL is user/LLM-provided, so validate the parsed statement above before execution.
                 cursor.execute(single_sql)
