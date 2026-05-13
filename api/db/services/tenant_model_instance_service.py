@@ -34,6 +34,11 @@ class TenantModelInstanceService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_provider_ids(cls, provider_ids):
+        return list(cls.model.get_or_none(cls.model.provider_id.in_(provider_ids)))
+
+    @classmethod
+    @DB.connection_context()
     def get_by_provider_id_and_instance_name(cls, provider_id, instance_name):
         return cls.model.get_or_none(
             cls.model.provider_id == provider_id,

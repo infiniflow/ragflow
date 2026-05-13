@@ -30,6 +30,11 @@ class TenantModelProviderService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_tenant_id(cls, tenant_id):
+        return list(cls.model.select().where(cls.model.tenant_id == tenant_id))
+
+    @classmethod
+    @DB.connection_context()
     def delete_by_tenant_id(cls, tenant_id):
         return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()
 

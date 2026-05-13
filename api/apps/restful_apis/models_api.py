@@ -27,10 +27,64 @@ from api.utils.api_utils import (
 )
 
 
+@manager.route("/models", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def get_added_models(tenant_id: str):
+    """
+    List tenant all added models.
+    ---
+    tags:
+      - Models
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: List of added models.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                models:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      model_provider:
+                        type: string
+                      model_instance:
+                        type: string
+                      model_name:
+                        type: string
+                      model_type:
+                        type: string
+                      enable:
+                        type: boolean
+    """
+    model_type_filter = request.args.get("model_type")
+    try:
+        success, result = models_api_service.list_tenant_added_models(tenant_id, model_type_filter)
+        if success:
+            return get_result(data=result)
+        else:
+            return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/models/default", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def get_models(tenant_id: str):
+def get_default_models(tenant_id: str):
     """
     List tenant default models.
     ---
@@ -83,7 +137,7 @@ def get_models(tenant_id: str):
 @manager.route("/models/default", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-async def set_models(tenant_id: str):
+async def set_default_models(tenant_id: str):
     """
     Set or clear a tenant default model.
     ---

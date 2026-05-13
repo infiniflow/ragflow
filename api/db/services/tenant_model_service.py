@@ -46,5 +46,10 @@ class TenantModelService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_models_by_provider_ids(cls, provider_ids):
+        return list(cls.model.select().where(cls.model.provider_id.in_(provider_ids)))
+
+    @classmethod
+    @DB.connection_context()
     def delete_by_id(cls, model_id):
         return cls.model.delete().where(cls.model.id == model_id).execute()

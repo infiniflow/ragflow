@@ -16,10 +16,9 @@
 import json
 import logging
 
-from common.constants import LLMType, StatusEnum, ActiveStatusEnum
+from common.constants import LLMType, ActiveStatusEnum
 from common.misc_utils import get_uuid
 from common.settings import FACTORY_LLM_INFOS
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -267,7 +266,7 @@ def list_provider_instances(tenant_id: str, provider_name: str):
             "instance_name": instance_obj.instance_name,
             "provider_id": provider_id,
             "region": extra_fields.get("region", ""),
-            "status": "enable" if instance_obj.status == ActiveStatusEnum.ACTIVE.value else "disable",
+            "status": instance_obj.status,
         })
 
     return True, instances
@@ -297,7 +296,7 @@ def show_provider_instance(tenant_id: str, provider_name: str, instance_name: st
         "instance_name": instance_obj.instance_name,
         "provider_id": provider_id,
         "region": extra_fields.get("region", ""),
-        "status": "enable" if instance_obj.status == ActiveStatusEnum.ACTIVE.value else "disable"
+        "status": instance_obj.status
     }
 
 
