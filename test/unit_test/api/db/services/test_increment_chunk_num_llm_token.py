@@ -164,6 +164,8 @@ def _load_document_service(monkeypatch):
     common_constants.StatusEnum = SimpleNamespace()
     common_constants.TaskStatus = SimpleNamespace()
     common_constants.SVR_CONSUMER_GROUP_NAME = "group"
+    common_constants.MAXIMUM_PAGE_NUMBER = 100000
+    common_constants.MAXIMUM_TASK_PAGE_NUMBER = 100000 * 1000
     monkeypatch.setitem(sys.modules, "common.constants", common_constants)
 
     sys.modules["common.doc_store.doc_store_base"].OrderByExpr = type("OrderByExpr", (), {})

@@ -109,6 +109,7 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
         "progress": 0,
         "progress_msg": "",
         "run": TaskStatus.UNSTART.value,
+        "llm_token_num": 0,
     }
     if parser_id is not None:
         update_fields["parser_id"] = parser_id
