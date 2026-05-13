@@ -452,6 +452,10 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
     # Wiping the graph invalidates any phase-completion markers used to
     # short-circuit resolution / community detection on resume.
     clear_phase_markers(dataset_id)
+    KnowledgebaseService.update_by_id(
+        kb.id,
+        {"graphrag_task_id": "", "graphrag_task_finish_at": None},
+    )
 
     return True, True
 

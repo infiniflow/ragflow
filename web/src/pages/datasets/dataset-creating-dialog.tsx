@@ -106,7 +106,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-  }, [parseType, form]);
+    if (tenantInfo?.embd_id) {
+      form.setValue('embedding_model', tenantInfo?.embd_id);
+    }
+  }, [parseType, form, tenantInfo]);
 
   return (
     <Form {...form}>
