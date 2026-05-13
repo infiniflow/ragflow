@@ -28,6 +28,8 @@ from urllib.parse import urljoin
 
 from concurrent.futures import ThreadPoolExecutor
 
+logger = logging.getLogger(__name__)
+
 
 def get_uuid():
     return uuid.uuid1().hex
@@ -79,7 +81,8 @@ async def download_img(url):
         if user_agent:
             headers["User-Agent"] = user_agent
 
-        try:
+        async def _stream_one_get() -> tuple[str, str | None]:
+            """Return ``('redirect', new_url)``, ``('data', data_uri)``, or ``('fail', None)``."""
             with pin_dns_global(hostname, pin_ip):
                 async with httpx.AsyncClient(
                     timeout=timeout,
@@ -91,12 +94,22 @@ async def download_img(url):
                             await response.aclose()
                             location = response.headers.get("location")
                             if not location:
-                                return ""
-                            current_url = urljoin(current_url, location)
-                            redirect_hops += 1
-                            continue
+                                logger.warning(
+                                    "download_img redirect missing Location header: url=%r status=%s redirect_hops=%s",
+                                    current_url,
+                                    response.status_code,
+                                    redirect_hops,
+                                )
+                                return ("fail", None)
+                            return ("redirect", urljoin(current_url, location))
                         if response.status_code != 200:
-                            return ""
+                            logger.warning(
+                                "download_img non-200 response: url=%r status=%s redirect_hops=%s",
+                                current_url,
+                                response.status_code,
+                                redirect_hops,
+                            )
+                            return ("fail", None)
                         body = bytearray()
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
@@ -105,19 +118,45 @@ async def download_img(url):
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
-                                return ""
+                                return ("fail", None)
                             body.extend(chunk)
                         content_type = response.headers.get("Content-Type", "image/jpeg")
-                        return (
+                        data_uri = (
                             "data:"
                             + content_type
                             + ";base64,"
                             + base64.b64encode(bytes(body)).decode("utf-8")
                         )
+                        return ("data", data_uri)
+
+        try:
+            kind, payload = await asyncio.wait_for(_stream_one_get(), timeout=request_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "download_img total wall-clock timeout: url=%r redirect_hops=%s timeout=%s",
+                current_url,
+                redirect_hops,
+                request_timeout,
+            )
+            return ""
         except Exception as exc:
             logging.warning("download_img request failed: %s", exc)
             return ""
 
+        if kind == "redirect":
+            current_url = str(payload)
+            redirect_hops += 1
+            continue
+        if kind == "fail":
+            return ""
+        return str(payload)
+
+    logger.warning(
+        "download_img redirect hop limit exceeded: url=%r redirect_hops=%s max_redirects=%s",
+        current_url,
+        redirect_hops,
+        _OAUTH_AVATAR_MAX_REDIRECTS,
+    )
     return ""
 
 
