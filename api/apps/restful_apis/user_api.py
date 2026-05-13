@@ -334,9 +334,20 @@ async def setting_user():
             update_dict["password"] = generate_password_hash(decrypt(new_password))
 
     ALLOWED_USER_UPDATE_FIELDS = {"nickname", "avatar", "language", "color_schema", "timezone"}
-    for k in request_data:
+    PASSWORD_FLOW_FIELDS = {"password", "new_password"}
+    ignored_fields = []
+    for k, v in request_data.items():
         if k in ALLOWED_USER_UPDATE_FIELDS:
-            update_dict[k] = request_data[k]
+            update_dict[k] = v
+        elif k not in PASSWORD_FLOW_FIELDS:
+            ignored_fields.append(k)
+
+    if ignored_fields:
+        logging.warning(
+            "Ignoring unsupported fields in PATCH /users/me. user_id=%s fields=%s",
+            current_user.id,
+            sorted(ignored_fields),
+        )
 
     try:
         UserService.update_by_id(current_user.id, update_dict)
