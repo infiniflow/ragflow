@@ -90,7 +90,7 @@ class Extractor:
                     logging.info(f"Task {task_id} cancelled during entity resolution candidate processing.")
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
             try:
-                response, _ = await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self._llm.async_chat(system_msg[0]["content"], hist, conf),
                     timeout=60 * 20,
                 )

@@ -861,7 +861,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
-        token_usage = last_state.token_usage if last_state else 0
+        token_usage = last_state.token_usage if last_state else None
         if full_answer:
             final = decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True

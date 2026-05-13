@@ -424,6 +424,11 @@ class LLMBundle(LLM4Tenant):
             use_kwargs = self._clean_param(chat_partial, **kwargs)
             try:
                 async for txt in chat_partial(**use_kwargs):
+                    # Final token usage (API-provided dict) is collapsed to its total
+                    # so existing consumers that only know about int sentinels still work.
+                    if isinstance(txt, dict) and "total_tokens" in txt:
+                        total_tokens = txt.get("total_tokens", 0) or 0
+                        break
                     if isinstance(txt, int):
                         total_tokens = txt
                         break
