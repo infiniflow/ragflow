@@ -83,6 +83,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewBaichuanModel(baseURL, urlSuffix), nil
 	case "jina":
 		return NewJinaModel(baseURL, urlSuffix), nil
+	case "longcat":
+		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	default:
