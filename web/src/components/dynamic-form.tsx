@@ -347,7 +347,6 @@ export const RenderField = ({
   field: FormFieldConfig;
   labelClassName?: string;
 }) => {
-  const form = useFormContext();
   if (field.render) {
     if (field.type === FormFieldType.Custom && field.hideLabel) {
       return <div className="w-full">{field.render({})}</div>;
