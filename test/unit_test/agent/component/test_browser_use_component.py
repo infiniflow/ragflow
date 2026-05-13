@@ -111,9 +111,17 @@ def test_prepare_upload_files_supports_http_url(monkeypatch, tmp_path):
     class _FakeResponse:
         def __init__(self):
             self.headers = {"Content-Disposition": 'attachment; filename="remote_demo.txt"'}
+            self._data = b"hello from url"
+            self._pos = 0
 
-        def read(self):
-            return b"hello from url"
+        def read(self, size=-1):
+            if size <= 0:
+                chunk = self._data[self._pos :]
+                self._pos = len(self._data)
+                return chunk
+            chunk = self._data[self._pos : self._pos + size]
+            self._pos += len(chunk)
+            return chunk
 
         def __enter__(self):
             return self

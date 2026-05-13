@@ -454,40 +454,39 @@ class Browser(ComponentBase, ABC):
         previous_browser_binary_path = os.environ.get("BROWSER_USE_BROWSER_BINARY_PATH")
 
         try:
-            if browser_obj is None:
-                enable_default_extensions = bool(self._param.enable_default_extensions)
-                if not enable_default_extensions:
-                    os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = "1"
-                else:
-                    os.environ.pop("BROWSER_USE_DISABLE_EXTENSIONS", None)
+            enable_default_extensions = bool(self._param.enable_default_extensions)
+            if not enable_default_extensions:
+                os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = "1"
+            else:
+                os.environ.pop("BROWSER_USE_DISABLE_EXTENSIONS", None)
 
-                executable_path = self._resolve_browser_executable()
-                browser_kwargs = {
-                    "headless": self._param.headless,
-                    "downloads_path": download_dir,
-                    # Docker often runs as root without user namespaces; disable sandbox by default.
-                    "chromium_sandbox": bool(self._param.chromium_sandbox),
-                    # Disable runtime extension download by default for intranet/offline environments.
-                    # Enable only when explicitly required and extensions are pre-cached.
-                    "enable_default_extensions": enable_default_extensions,
-                }
-                if executable_path:
-                    browser_kwargs["executable_path"] = executable_path
-                    # Keep browser-use watchdog fallback in sync with our resolved path.
-                    os.environ["BROWSER_USE_BROWSER_BINARY_PATH"] = executable_path
-                else:
-                    logging.warning(
-                        "Browser no local browser executable found. "
-                        "Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install."
-                    )
-                if profile_dir:
-                    browser_kwargs["user_data_dir"] = profile_dir
-                    # browser-use expects profile_directory to be a profile name
-                    # such as "Default" / "Profile 1", not an absolute path.
-                    browser_kwargs["profile_directory"] = "Default"
+            executable_path = self._resolve_browser_executable()
+            browser_kwargs = {
+                "headless": self._param.headless,
+                "downloads_path": download_dir,
+                # Docker often runs as root without user namespaces; disable sandbox by default.
+                "chromium_sandbox": bool(self._param.chromium_sandbox),
+                # Disable runtime extension download by default for intranet/offline environments.
+                # Enable only when explicitly required and extensions are pre-cached.
+                "enable_default_extensions": enable_default_extensions,
+            }
+            if executable_path:
+                browser_kwargs["executable_path"] = executable_path
+                # Keep browser-use watchdog fallback in sync with our resolved path.
+                os.environ["BROWSER_USE_BROWSER_BINARY_PATH"] = executable_path
+            else:
+                logging.warning(
+                    "Browser no local browser executable found. "
+                    "Set BROWSER_USE_EXECUTABLE_PATH or preinstall chromium in image to avoid runtime playwright install."
+                )
+            if profile_dir:
+                browser_kwargs["user_data_dir"] = profile_dir
+                # browser-use expects profile_directory to be a profile name
+                # such as "Default" / "Profile 1", not an absolute path.
+                browser_kwargs["profile_directory"] = "Default"
 
-                browser_obj = BrowserUseBrowser(**browser_kwargs)
-                agent_kwargs["browser"] = browser_obj
+            browser_obj = BrowserUseBrowser(**browser_kwargs)
+            agent_kwargs["browser"] = browser_obj
         except (OSError, RuntimeError, TypeError, ValueError) as e:
             logging.warning("Browser browser context customization skipped: %s", e)
 
@@ -539,19 +538,26 @@ class Browser(ComponentBase, ABC):
             if not exists:
                 logging.warning("Browser upload file_id not found: %s", file_id)
                 continue
-            blob = settings.STORAGE_IMPL.get(file.parent_id, file.location)
-            if not blob:
-                logging.warning("Browser upload blob not found: %s", file_id)
+            try:
+                blob = settings.STORAGE_IMPL.get(file.parent_id, file.location)
+                if not blob:
+                    logging.warning("Browser upload blob not found: %s", file_id)
+                    continue
+                local_name = os.path.basename(file.location) if file.location else (file.name or f"{file_id}.bin")
+                local_path = os.path.join(upload_dir, local_name)
+                index = 1
+                while os.path.exists(local_path):
+                    stem, ext = os.path.splitext(local_name)
+                    local_path = os.path.join(upload_dir, f"{stem}_{index}{ext}")
+                    index += 1
+                with open(local_path, "wb") as f:
+                    f.write(blob)
+            except OSError as e:
+                logging.warning("Browser failed to prepare upload file. file_id=%s, error=%s", file_id, e)
                 continue
-            local_name = os.path.basename(file.location) if file.location else (file.name or f"{file_id}.bin")
-            local_path = os.path.join(upload_dir, local_name)
-            index = 1
-            while os.path.exists(local_path):
-                stem, ext = os.path.splitext(local_name)
-                local_path = os.path.join(upload_dir, f"{stem}_{index}{ext}")
-                index += 1
-            with open(local_path, "wb") as f:
-                f.write(blob)
+            except Exception as e:
+                logging.warning("Browser failed to fetch upload blob. file_id=%s, error=%s", file_id, e)
+                continue
             prepared.append(
                 {
                     "file_id": file.id,
@@ -569,6 +575,7 @@ class Browser(ComponentBase, ABC):
             raise ValueError(f"RAGFlow target folder does not exist or is not a folder: {parent_id}")
         tenant_id = self._canvas.get_tenant_id()
         storage_put = settings.STORAGE_IMPL.put
+        storage_rm = getattr(settings.STORAGE_IMPL, "rm", None)
         insert_file = FileService.insert
 
         for path in Path(download_dir).rglob("*"):
@@ -583,27 +590,52 @@ class Browser(ComponentBase, ABC):
                 continue
             if not blob:
                 continue
-            display_name = duplicate_name(FileService.query, name=path.name, parent_id=parent_id)
-            storage_put(parent_id, display_name, blob)
-            file_data = {
-                "id": get_uuid(),
-                "parent_id": parent_id,
-                "tenant_id": tenant_id,
-                "created_by": tenant_id,
-                "type": filename_type(display_name),
-                "name": display_name,
-                "location": display_name,
-                "size": len(blob),
-            }
-            inserted = insert_file(file_data)
-            downloaded_files.append(
-                {
-                    "file_id": inserted.id,
-                    "name": inserted.name,
-                    "size": inserted.size,
-                    "parent_id": inserted.parent_id,
+            display_name = ""
+            blob_stored = False
+            try:
+                display_name = duplicate_name(FileService.query, name=path.name, parent_id=parent_id)
+                storage_put(parent_id, display_name, blob)
+                blob_stored = True
+                file_data = {
+                    "id": get_uuid(),
+                    "parent_id": parent_id,
+                    "tenant_id": tenant_id,
+                    "created_by": tenant_id,
+                    "type": filename_type(display_name),
+                    "name": display_name,
+                    "location": display_name,
+                    "size": len(blob),
                 }
-            )
+                inserted = insert_file(file_data)
+                downloaded_files.append(
+                    {
+                        "file_id": inserted.id,
+                        "name": inserted.name,
+                        "size": inserted.size,
+                        "parent_id": inserted.parent_id,
+                    }
+                )
+            except Exception as e:
+                if blob_stored and callable(storage_rm):
+                    try:
+                        storage_rm(parent_id, display_name)
+                    except Exception as rollback_err:
+                        logging.warning(
+                            "Browser rollback stored download failed. path=%s, parent_id=%s, display_name=%s, error=%s",
+                            path,
+                            parent_id,
+                            display_name,
+                            rollback_err,
+                        )
+                logging.error(
+                    "Browser failed to save download. path=%s, tenant_id=%s, parent_id=%s, display_name=%s, error=%s",
+                    path,
+                    tenant_id,
+                    parent_id,
+                    display_name,
+                    e,
+                )
+                continue
         return downloaded_files
 
     @staticmethod

@@ -4,7 +4,6 @@ USER root
 SHELL ["/bin/bash", "-c"]
 
 ARG NEED_MIRROR=0
-ARG PRELOAD_BROWSER_USE_EXTENSIONS=0
 
 WORKDIR /ragflow
 
@@ -151,15 +150,6 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     uv sync --python 3.12 --frozen && \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
     .venv/bin/python3 -m ensurepip --upgrade
-
-# Optional: preload browser-use default extensions (uBlock / cookies / ClearURLs)
-# Build in a networked environment with:
-#   --build-arg PRELOAD_BROWSER_USE_EXTENSIONS=1
-# so offline runtime won't download these extensions again.
-RUN if [ "$PRELOAD_BROWSER_USE_EXTENSIONS" = "1" ]; then \
-        .venv/bin/python3 -c "from browser_use.browser.profile import BrowserProfile; BrowserProfile(enable_default_extensions=True)._ensure_default_extensions_downloaded()" && \
-        ls -la /root/.config/browseruse/extensions; \
-    fi
 
 COPY web web
 COPY docs docs
