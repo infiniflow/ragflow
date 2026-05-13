@@ -1576,7 +1576,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		}
 
 		if !model.ModelTypeMap["ocr"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a OCR model", providerName, modelName))
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an OCR model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1602,7 +1602,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 	}
 
 	if modelInfo.Status == "active" {
-		if modelInfo.ModelType != "tts" {
+		if modelInfo.ModelType != "ocr" {
 			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an OCR model", modelName, providerName))
 		}
 		// For local deployed models
@@ -1685,8 +1685,8 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 		}
 
-		if !model.ModelTypeMap["ocr"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a OCR model", providerName, modelName))
+		if !model.ModelTypeMap["doc_parse"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a Document Parse model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1712,8 +1712,8 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 	}
 
 	if modelInfo.Status == "active" {
-		if modelInfo.ModelType != "tts" {
-			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an OCR model", modelName, providerName))
+		if modelInfo.ModelType != "doc_parse" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is a Document Parse model", modelName, providerName))
 		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
