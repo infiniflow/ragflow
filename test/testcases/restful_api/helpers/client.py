@@ -56,9 +56,10 @@ class RestClient:
             req_headers.pop("Content-Type", None)
 
         timeout = request_kwargs.pop("timeout", self.timeout)
+        normalized_path = f"/{path.lstrip('/')}" if path else "/"
         return requests.request(
             method=method,
-            url=f"{self.api_root}{path}",
+            url=f"{self.api_root}{normalized_path}",
             headers=req_headers,
             params=params,
             json=json,

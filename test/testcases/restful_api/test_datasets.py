@@ -76,7 +76,7 @@ def test_dataset_crud_cycle(rest_client, clear_datasets):
     [
         ("", "String should have at least 1 character"),
         (" ", "String should have at least 1 character"),
-        ("a" * (DATASET_NAME_LIMIT + 1), "String should have at most 128 characters"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
     ],
     ids=["empty", "spaces", "too_long"],
 )

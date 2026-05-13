@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import base64
 import importlib.util
 import sys
 from pathlib import Path
@@ -42,7 +43,7 @@ class _AwaitableValue:
         return _co().__await__()
 
 
-class _ExprField:
+class _Field:
     def __init__(self, name):
         self.name = name
 
@@ -70,7 +71,10 @@ def _run(coro):
 
 
 def _set_request_json(monkeypatch, module, payload):
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(payload))
+    async def _request_json():
+        return payload
+
+    monkeypatch.setattr(module, "get_request_json", _request_json)
 
 
 def _load_tenant_module(monkeypatch):
@@ -95,8 +99,8 @@ def _load_tenant_module(monkeypatch):
         "UserTenant",
         (),
         {
-            "tenant_id": _ExprField("tenant_id"),
-            "user_id": _ExprField("user_id"),
+            "tenant_id": _Field("tenant_id"),
+            "user_id": _Field("user_id"),
         },
     )
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
@@ -317,44 +321,6 @@ def test_agree_success_and_exception_unit(monkeypatch):
     res = module.agree("tenant-1")
     assert res["code"] == 100, res
     assert "agree boom" in res["message"], res
-#
-#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-#
-
-import base64
-
-import pytest
-
-
-class _DummyManager:
-    def route(self, *_args, **_kwargs):
-        def decorator(func):
-            return func
-
-        return decorator
-
-
-class _AwaitableValue:
-    def __init__(self, value):
-        self._value = value
-
-    def __await__(self):
-        async def _co():
-            return self._value
-
-        return _co().__await__()
 
 
 class _Args(dict):
@@ -417,25 +383,6 @@ class _DummyUser:
 
     def to_dict(self):
         return {"id": self.id, "email": self.email}
-
-
-class _Field:
-    def __init__(self, name):
-        self.name = name
-
-    def __eq__(self, other):
-        return (self.name, other)
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-def _set_request_json(monkeypatch, module, payload):
-    async def _request_json():
-        return payload
-
-    monkeypatch.setattr(module, "get_request_json", _request_json)
 
 
 def _set_request_args(monkeypatch, module, args=None):

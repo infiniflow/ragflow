@@ -64,12 +64,16 @@ def create_agent_resource(rest_client):
 
     yield _create
 
+    cleanup_errors = []
     for agent_id in created_agent_ids:
         res = rest_client.delete(f"/agents/{agent_id}")
         if res.status_code != 200:
+            cleanup_errors.append((agent_id, res.status_code, res.text))
             continue
         payload = res.json()
-        assert payload["code"] in (0, 103), payload
+        if payload["code"] not in (0, 103):
+            cleanup_errors.append((agent_id, res.status_code, payload))
+    assert not cleanup_errors, f"Agent cleanup failed: {cleanup_errors}"
 
 
 @pytest.mark.p2

@@ -581,11 +581,13 @@ def test_convert_branch_matrix_unit(monkeypatch):
     # Falsy file returns "File not found!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_FalsyFile("f1", module.FileType.DOC.value)])
     res = _run(module.convert())
+    assert res["code"] == 102
     assert res["message"] == "File not found!"
 
     # Valid file but invalid kb returns "Can't find this dataset!" during synchronous validation.
     monkeypatch.setattr(module.FileService, "get_by_ids", lambda _ids: [_DummyFile("f1", module.FileType.DOC.value)])
     res = _run(module.convert())
+    assert res["code"] == 102
     assert res["message"] == "Can't find this dataset!"
 
     kb = SimpleNamespace(id="kb-1", parser_id="naive", pipeline_id="p1", parser_config={})
@@ -594,12 +596,14 @@ def test_convert_branch_matrix_unit(monkeypatch):
     # Unauthorized file access is rejected before scheduling background work.
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: False)
     res = _run(module.convert())
+    assert res["code"] == 102
     assert res["message"] == "No authorization."
 
     # Unauthorized dataset access is rejected before scheduling background work.
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: False)
     res = _run(module.convert())
+    assert res["code"] == 102
     assert res["message"] == "No authorization."
 
     # Valid file and kb schedule background work and return data=True immediately.

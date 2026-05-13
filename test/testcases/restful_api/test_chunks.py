@@ -69,6 +69,11 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     delete_payload = delete_res.json()
     assert delete_payload["code"] == 0, delete_payload
 
+    deleted_get_res = rest_client.get(f"{base_path}/{delete_candidate_id}")
+    assert deleted_get_res.status_code == 200
+    deleted_get_payload = deleted_get_res.json()
+    assert deleted_get_payload["code"] != 0, deleted_get_payload
+
 
 @pytest.mark.p2
 def test_chunks_add_requires_content(rest_client, create_document):

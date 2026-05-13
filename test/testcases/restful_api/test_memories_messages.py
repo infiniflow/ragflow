@@ -21,33 +21,27 @@ import pytest
 
 
 @pytest.fixture
-def clear_memories(rest_client):
+def memory_cleanup(rest_client):
+    created_ids: list[str] = []
+
     def _cleanup():
-        list_res = rest_client.get("/memories")
-        if list_res.status_code != 200:
-            return
-        list_payload = list_res.json()
-        if list_payload.get("code") != 0:
-            return
-        memory_list = list_payload.get("data", {}).get("memory_list", [])
-        for memory in memory_list:
-            memory_id = memory.get("id")
-            if not memory_id:
-                continue
+        cleanup_errors = []
+        for memory_id in created_ids:
             delete_res = rest_client.delete(f"/memories/{memory_id}")
             if delete_res.status_code != 200:
+                cleanup_errors.append((memory_id, delete_res.status_code, delete_res.text))
                 continue
             delete_payload = delete_res.json()
-            assert delete_payload["code"] in (0, 404), delete_payload
+            if delete_payload["code"] not in (0, 404):
+                cleanup_errors.append((memory_id, delete_res.status_code, delete_payload))
+        assert not cleanup_errors, f"Memory cleanup failed: {cleanup_errors}"
 
-    yield
+    yield created_ids
     _cleanup()
 
 
 @pytest.fixture
-def create_memory_resource(rest_client, clear_memories):
-    created_ids: list[str] = []
-
+def create_memory_resource(rest_client, memory_cleanup):
     def _create(name_prefix: str = "restful_memory") -> str:
         payload = {
             "name": f"{name_prefix}_{uuid.uuid4().hex[:8]}",
@@ -60,17 +54,10 @@ def create_memory_resource(rest_client, clear_memories):
         res_payload = res.json()
         assert res_payload["code"] == 0, res_payload
         memory_id = res_payload["data"]["id"]
-        created_ids.append(memory_id)
+        memory_cleanup.append(memory_id)
         return memory_id
 
     yield _create
-
-    for memory_id in created_ids:
-        delete_res = rest_client.delete(f"/memories/{memory_id}")
-        if delete_res.status_code != 200:
-            continue
-        delete_payload = delete_res.json()
-        assert delete_payload["code"] in (0, 404), delete_payload
 
 
 def _add_message(rest_client, memory_id: str, user_input: str, agent_response: str) -> None:
@@ -88,6 +75,22 @@ def _add_message(rest_client, memory_id: str, user_input: str, agent_response: s
     assert add_res.status_code == 200
     add_payload = add_res.json()
     assert add_payload["code"] == 0, add_payload
+
+
+def _wait_for_memory_messages(rest_client, memory_id: str, timeout: float = 10, interval: float = 0.2) -> list[dict]:
+    deadline = time.time() + timeout
+    last_payload = None
+    while time.time() < deadline:
+        res = rest_client.get(f"/memories/{memory_id}")
+        if res.status_code == 200:
+            payload = res.json()
+            last_payload = payload
+            if payload.get("code") == 0:
+                message_list = payload.get("data", {}).get("messages", {}).get("message_list", [])
+                if message_list:
+                    return message_list
+        time.sleep(interval)
+    pytest.fail(f"Timed out waiting for memory messages: {last_payload}")
 
 
 @pytest.mark.p1
@@ -138,14 +141,7 @@ def test_messages_add_list_recent_content_update_forget(rest_client, create_memo
         agent_response="coriander can refer to leaves or seeds",
     )
 
-    time.sleep(1)
-
-    memory_messages_res = rest_client.get(f"/memories/{memory_id}")
-    assert memory_messages_res.status_code == 200
-    memory_messages_payload = memory_messages_res.json()
-    assert memory_messages_payload["code"] == 0, memory_messages_payload
-    message_list = memory_messages_payload["data"]["messages"]["message_list"]
-    assert message_list, memory_messages_payload
+    message_list = _wait_for_memory_messages(rest_client, memory_id)
 
     message_id = message_list[0]["message_id"]
 
@@ -177,13 +173,7 @@ def test_message_status_validation_requires_boolean(rest_client, create_memory_r
     memory_id = create_memory_resource("restful_message_status_validation")
     _add_message(rest_client, memory_id, user_input="hello", agent_response="hello")
 
-    time.sleep(1)
-
-    list_res = rest_client.get(f"/memories/{memory_id}")
-    assert list_res.status_code == 200
-    list_payload = list_res.json()
-    assert list_payload["code"] == 0, list_payload
-    message_id = list_payload["data"]["messages"]["message_list"][0]["message_id"]
+    message_id = _wait_for_memory_messages(rest_client, memory_id)[0]["message_id"]
 
     invalid_update = rest_client.put(f"/messages/{memory_id}:{message_id}", json={"status": "false"})
     assert invalid_update.status_code == 200
@@ -211,7 +201,7 @@ def test_message_search_route_contract(rest_client, create_memory_resource):
         agent_response="pineapple is a tropical fruit",
     )
 
-    time.sleep(1)
+    _wait_for_memory_messages(rest_client, memory_id)
 
     res = rest_client.get("/messages/search", params={"memory_id": memory_id, "query": "pineapple", "top_n": 3})
     assert res.status_code == 200

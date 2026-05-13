@@ -41,9 +41,9 @@ def rest_client_noauth():
 def clear_datasets(rest_client):
     def _cleanup():
         res = rest_client.delete("/datasets", json={"ids": None, "delete_all": True})
-        if res.status_code == 200:
-            payload = res.json()
-            assert payload["code"] == 0, payload
+        assert res.status_code == 200, res.text
+        payload = res.json()
+        assert payload["code"] in (0, 102), payload
 
     yield
     _cleanup()
@@ -53,9 +53,9 @@ def clear_datasets(rest_client):
 def clear_chats(rest_client):
     def _cleanup():
         res = rest_client.delete("/chats", json={"ids": None, "delete_all": True})
-        if res.status_code == 200:
-            payload = res.json()
-            assert payload["code"] in (0, 102), payload
+        assert res.status_code == 200, res.text
+        payload = res.json()
+        assert payload["code"] in (0, 102), payload
 
     yield
     _cleanup()
@@ -101,8 +101,7 @@ def create_chat(rest_client, clear_chats):
 
     if created_ids:
         res = rest_client.delete("/chats", json={"ids": created_ids})
-        if res.status_code != 200:
-            return
+        assert res.status_code == 200, res.text
         payload = res.json()
         assert payload["code"] in (0, 102), payload
 
@@ -128,8 +127,7 @@ def create_document(rest_client, create_dataset, tmp_path):
 
     for dataset_id, document_id in created_docs:
         res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": [document_id]})
-        if res.status_code != 200:
-            continue
+        assert res.status_code == 200, res.text
         payload = res.json()
         assert payload["code"] in (0, 102), payload
 

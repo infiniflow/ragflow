@@ -207,3 +207,6 @@ def test_openai_compatible_reference_metadata_fields_filter_accepts_array(rest_c
     assert res.status_code == 200
     payload = res.json()
     assert payload.get("choices"), payload
+    choice_msg = payload["choices"][0]["message"]
+    assert "reference" in choice_msg, payload
+    assert isinstance(choice_msg["reference"], list), payload

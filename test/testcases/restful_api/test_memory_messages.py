@@ -46,8 +46,7 @@ def memory_resource(rest_client):
         yield memory
     finally:
         delete_res = rest_client.delete(f"/memories/{memory_id}")
-        if delete_res.status_code != 200:
-            return
+        assert delete_res.status_code == 200, delete_res.text
         delete_payload = delete_res.json()
         assert delete_payload["code"] in (0, 404), delete_payload
 
@@ -74,28 +73,28 @@ def test_memory_and_message_routes_require_auth(rest_client_noauth):
 def test_memory_crud_and_config(rest_client):
     memory = _create_memory(rest_client, f"restful_memory_crud_{uuid.uuid4().hex[:8]}")
     memory_id = memory["id"]
+    try:
+        config_res = rest_client.get(f"/memories/{memory_id}/config")
+        assert config_res.status_code == 200
+        config_payload = config_res.json()
+        assert config_payload["code"] == 0, config_payload
+        assert config_payload["data"]["id"] == memory_id, config_payload
 
-    config_res = rest_client.get(f"/memories/{memory_id}/config")
-    assert config_res.status_code == 200
-    config_payload = config_res.json()
-    assert config_payload["code"] == 0, config_payload
-    assert config_payload["data"]["id"] == memory_id, config_payload
+        list_res = rest_client.get("/memories", params={"keywords": memory["name"]})
+        assert list_res.status_code == 200
+        list_payload = list_res.json()
+        assert list_payload["code"] == 0, list_payload
+        assert any(item["id"] == memory_id for item in list_payload["data"]["memory_list"]), list_payload
 
-    list_res = rest_client.get("/memories", params={"keywords": memory["name"]})
-    assert list_res.status_code == 200
-    list_payload = list_res.json()
-    assert list_payload["code"] == 0, list_payload
-    assert any(item["id"] == memory_id for item in list_payload["data"]["memory_list"]), list_payload
-
-    update_res = rest_client.put(f"/memories/{memory_id}", json={"name": "restful_memory_updated"})
-    assert update_res.status_code == 200
-    update_payload = update_res.json()
-    assert update_payload["code"] == 0, update_payload
-
-    delete_res = rest_client.delete(f"/memories/{memory_id}")
-    assert delete_res.status_code == 200
-    delete_payload = delete_res.json()
-    assert delete_payload["code"] == 0, delete_payload
+        update_res = rest_client.put(f"/memories/{memory_id}", json={"name": "restful_memory_updated"})
+        assert update_res.status_code == 200
+        update_payload = update_res.json()
+        assert update_payload["code"] == 0, update_payload
+    finally:
+        delete_res = rest_client.delete(f"/memories/{memory_id}")
+        assert delete_res.status_code == 200, delete_res.text
+        delete_payload = delete_res.json()
+        assert delete_payload["code"] in (0, 404), delete_payload
 
 
 @pytest.mark.p2

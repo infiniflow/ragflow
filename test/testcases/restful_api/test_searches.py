@@ -33,8 +33,7 @@ def search_resource(rest_client):
         yield search_id
     finally:
         delete_res = rest_client.delete(f"/searches/{search_id}")
-        if delete_res.status_code != 200:
-            return
+        assert delete_res.status_code == 200, delete_res.text
         delete_payload = delete_res.json()
         assert delete_payload["code"] in (0, 109), delete_payload
 
