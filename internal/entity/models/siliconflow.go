@@ -36,6 +36,11 @@ type SiliconflowModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
+func (s *SiliconflowModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewSiliconflowModel creates a new Siliconflow model instance
 func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *SiliconflowModel {
 	return &SiliconflowModel{
@@ -70,14 +75,6 @@ type SiliconflowRerankRequest struct {
 	ReturnDocuments bool     `json:"return_documents"`
 	MaxChunksPerDoc int      `json:"max_chunks_per_doc"`
 	OverlapTokens   int      `json:"overlap_tokens"`
-}
-
-// SiliconflowRerankResponse represents SILICONFLOW rerank response
-type SiliconflowRerankResponse struct {
-	Results []struct {
-		Index          int     `json:"index"`
-		RelevanceScore float64 `json:"relevance_score"`
-	} `json:"results"`
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -376,10 +373,40 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type siliconflowEmbeddingResponse struct {
+	Object []string                   `json:"object"`
+	Model  string                     `json:"model"`
+	Data   []siliconflowEmbeddingData `json:"data"`
+	Usage  siliconflowUsage           `json:"usage"`
+}
+
+type siliconflowEmbeddingData struct {
+	Object    string    `json:"object"`
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+}
+
+type siliconflowUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// siliconflowMaxBatchSize is the per-request input limit documented at
+// https://docs.siliconflow.cn/en/api-reference/embeddings/create-embeddings.
+const siliconflowMaxBatchSize = 32
+
+// Embed embeds a list of texts into embeddings
+func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
+	}
+	if len(texts) > siliconflowMaxBatchSize {
+		return nil, fmt.Errorf("siliconflow supports a maximum of %d inputs per request", siliconflowMaxBatchSize)
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	var region = "default"
@@ -394,79 +421,53 @@ func (s *SiliconflowModel) Encode(modelName *string, texts []string, apiConfig *
 		apiKey = *apiConfig.ApiKey
 	}
 
-	embeddings := make([][]float64, len(texts))
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"input": texts,
+	}
 
-	for i, text := range texts {
-		reqBody := map[string]interface{}{
-			"model": modelName,
-			"input": text,
-		}
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
 
-		jsonData, err := json.Marshal(reqBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 
-		req.Header.Set("Content-Type", "application/json")
-		if apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
 
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to send request: %w", err)
-		}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
 
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
+	}
 
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("SILICONFLOW API error: %s, body: %s", resp.Status, string(body))
-		}
+	var parsed siliconflowEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
 
-		// Parse response
-		var result map[string]interface{}
-		if err = json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		data, ok := result["data"].([]interface{})
-		if !ok || len(data) == 0 {
-			return nil, fmt.Errorf("no data in response")
-		}
-
-		firstData, ok := data[0].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid data format")
-		}
-
-		embeddingSlice, ok := firstData["embedding"].([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid embedding format")
-		}
-
-		embedding := make([]float64, len(embeddingSlice))
-		for j, v := range embeddingSlice {
-			switch val := v.(type) {
-			case float64:
-				embedding[j] = val
-			case float32:
-				embedding[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type")
-			}
-		}
-
-		embeddings[i] = embedding
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
@@ -623,10 +624,36 @@ func (z *SiliconflowModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and texts
-func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+// SiliconflowRerankResponse represents SILICONFLOW rerank response
+type SiliconflowRerankResponse struct {
+	ID      string `json:"id"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Meta struct {
+		Tokens struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+			ImageTokens  int `json:"image_tokens"`
+		} `json:"tokens"`
+		BilledUnits struct {
+			InputTokens     int `json:"input_tokens"`
+			OutputTokens    int `json:"output_tokens"`
+			ImageTokens     int `json:"image_tokens"`
+			SearchUnits     int `json:"search_units"`
+			Classifications int `json:"classifications"`
+		} `json:"billed_units"`
+	} `json:"meta"`
+}
+
+// Rerank calculates similarity scores between query and documents
+func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	var region = "default"
@@ -639,11 +666,16 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 		apiKey = *apiConfig.ApiKey
 	}
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := SiliconflowRerankRequest{
 		Model:           *modelName,
 		Query:           query,
-		Documents:       texts,
-		TopN:            len(texts),
+		Documents:       documents,
+		TopN:            topN,
 		ReturnDocuments: false,
 		MaxChunksPerDoc: 1024,
 		OverlapTokens:   80,
@@ -679,17 +711,40 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, texts []strin
 
 	body, _ := io.ReadAll(resp.Body)
 
-	var rerankResp SiliconflowRerankResponse
-	if err := json.Unmarshal(body, &rerankResp); err != nil {
+	var siliconflowRerankResp SiliconflowRerankResponse
+	if err = json.Unmarshal(body, &siliconflowRerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-	for _, result := range rerankResp.Results {
-		if result.Index >= 0 && result.Index < len(texts) {
-			scores[result.Index] = result.RelevanceScore
-		}
+	var rerankResponse RerankResponse
+	for _, result := range siliconflowRerankResp.Results {
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
+		})
 	}
+	return &rerankResponse, nil
+}
 
-	return scores, nil
+// TranscribeAudio transcribe audio
+func (o *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *SiliconflowModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (o *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *SiliconflowModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

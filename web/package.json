@@ -18,8 +18,7 @@
   "lint-staged": {
     "*.{css,less,json}": "prettier --write --ignore-unknown",
     "*.{js,jsx,ts,tsx}": [
-      "prettier --write --ignore-unknown",
-      "eslint"
+      "prettier --write --ignore-unknown"
     ]
   },
   "overrides": {

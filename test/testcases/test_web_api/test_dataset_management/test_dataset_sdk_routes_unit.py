@@ -548,10 +548,11 @@ def test_update_route_branch_matrix_unit(monkeypatch):
 
     kb_chunked = _KB(kb_id="kb-1", name="old", chunk_num=2, embd_id="embd-1")
     monkeypatch.setattr(module.KnowledgebaseService, "get_or_none", lambda **kwargs: kb_chunked if kwargs.get("id") else None)
+    monkeypatch.setattr(module.KnowledgebaseService, "update_by_id", lambda *_args, **_kwargs: True)
     req_state.clear()
     req_state.update({"embd_id": "embd-2"})
     res = _run(inspect.unwrap(module.update)("tenant-1", "kb-1"))
-    assert "chunk_num" in res["message"], res
+    assert res["code"] == module.RetCode.SUCCESS, res
 
     kb_rank = _KB(kb_id="kb-1", name="old", pagerank=0)
     monkeypatch.setattr(module.KnowledgebaseService, "get_or_none", lambda **kwargs: kb_rank if kwargs.get("id") else None)

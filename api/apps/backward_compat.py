@@ -22,8 +22,15 @@ new API implementation.
 
 Deprecated APIs and their replacements:
 - POST /api/v1/agents/{agent_id}/completions -> POST /api/v1/agents/chat/completion
+- POST /api/v1/agents_openai/{agent_id}/chat/completions -> POST /api/v1/agents/chat/completions
 - POST /api/v1/chats/{chat_id}/completions -> POST /api/v1/chat/completions
 - POST /api/v1/chats_openai/{chat_id}/chat/completions -> POST /api/v1/openai/{chat_id}/chat/completions
+- GET /api/v1/datasets/{dataset_id}/knowledge_graph -> GET /api/v1/datasets/{dataset_id}/graph
+- DELETE /api/v1/datasets/{dataset_id}/knowledge_graph -> DELETE /api/v1/datasets/{dataset_id}/graph
+- POST /api/v1/datasets/{dataset_id}/run_graphrag -> POST /api/v1/datasets/{dataset_id}/index?type=graph
+- GET /api/v1/datasets/{dataset_id}/trace_graphrag -> GET /api/v1/datasets/{dataset_id}/index?type=graph
+- POST /api/v1/datasets/{dataset_id}/run_raptor -> POST /api/v1/datasets/{dataset_id}/index?type=raptor
+- GET /api/v1/datasets/{dataset_id}/trace_raptor -> GET /api/v1/datasets/{dataset_id}/index?type=raptor
 - PUT /api/v1/chats/{chat_id}/sessions/{session_id} -> PATCH /api/v1/chats/{chat_id}/sessions/{session_id}
 - DELETE /api/v1/chats -> DELETE /api/v1/chats/{chat_id} (with body)
 - POST /api/v1/file/convert -> POST /api/v1/files/link-to-datasets
@@ -32,22 +39,48 @@ Deprecated APIs and their replacements:
 - GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
 - GET /api/v1/document/download/{doc_id} -> GET /api/v1/documents/{doc_id}/download
 - GET /v1/document/download/{attachment_id} -> GET /api/v1/documents/{attachment_id}/download
+- GET /v1/system/healthz -> GET /api/v1/system/healthz
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
 """
 import logging
 
-from quart import Blueprint, request
+from quart import Blueprint, jsonify, request
 
 from api.apps import login_required
-from api.apps.restful_apis import chat_api, file_api, file2document_api, chunk_api, openai_api, document_api
-from api.apps.restful_apis import agent_api
-from api.apps.services import file_api_service
-from api.utils.api_utils import get_data_error_result, get_json_result, add_tenant_id_to_kwargs
+from api.apps.restful_apis import agent_api, chat_api, chunk_api, dataset_api, document_api, file2document_api, file_api, openai_api
+from api.apps.restful_apis.system_api import run_health_checks
+from api.apps.services import dataset_api_service, file_api_service
+from api.utils.api_utils import add_tenant_id_to_kwargs, get_data_error_result, get_json_result, get_request_json
 
 manager = Blueprint("backward_compat", __name__)
-document_download_manager = Blueprint("backward_compat_document_download", __name__)
+legacy_v1_manager = Blueprint("backward_compat_legacy_v1", __name__)
 
+
+def _index_result(success, result):
+    if success:
+        return get_json_result(data=result)
+    return get_data_error_result(message=result)
+
+
+# =============================================================================
+# System APIs
+# =============================================================================
+
+@legacy_v1_manager.route("/system/healthz", methods=["GET"])
+async def deprecated_system_healthz():
+    """
+    Deprecated: Use GET /api/v1/system/healthz instead.
+
+    Old path: GET /v1/system/healthz
+    New path: GET /api/v1/system/healthz
+    """
+    logging.warning(
+        "API endpoint /v1/system/healthz is deprecated. "
+        "Please use /api/v1/system/healthz instead."
+    )
+    result, all_ok = run_health_checks()
+    return jsonify(result), (200 if all_ok else 500)
 
 # =============================================================================
 # Chat Completion APIs
@@ -87,6 +120,137 @@ async def deprecated_openai_chat_completions(chat_id):
     )
     # Forward to the new API implementation
     return await openai_api.openai_chat_completions(chat_id)
+
+
+@manager.route("/agents_openai/<agent_id>/chat/completions", methods=["POST"])
+@login_required
+@add_tenant_id_to_kwargs
+async def deprecated_agents_openai_chat_completions(agent_id, tenant_id=None):
+    """
+    Deprecated: Use POST /api/v1/agents/chat/completions with openai-compatible=true instead.
+
+    Old path: POST /api/v1/agents_openai/{agent_id}/chat/completions
+    New path: POST /api/v1/agents/chat/completions
+    """
+    logging.warning(
+        "API endpoint /api/v1/agents_openai/%s/chat/completions is deprecated. "
+        "Please use /api/v1/agents/chat/completions with `openai-compatible` instead.",
+        agent_id,
+    )
+    req = dict(await get_request_json())
+    req["openai-compatible"] = True
+    request._cached_payload = req
+    return await agent_api.agent_chat_completion(tenant_id=tenant_id, agent_id=agent_id)
+
+
+# =============================================================================
+# Dataset Graph and Index APIs
+# =============================================================================
+
+@manager.route("/datasets/<dataset_id>/knowledge_graph", methods=["GET"])
+@login_required
+async def deprecated_get_knowledge_graph(dataset_id):
+    """
+    Deprecated: Use GET /api/v1/datasets/{dataset_id}/graph instead.
+
+    Old path: GET /api/v1/datasets/{dataset_id}/knowledge_graph
+    New path: GET /api/v1/datasets/{dataset_id}/graph
+    """
+    logging.warning(
+        "API endpoint /api/v1/datasets/%s/knowledge_graph is deprecated. "
+        "Please use /api/v1/datasets/%s/graph instead.",
+        dataset_id, dataset_id,
+    )
+    return await dataset_api.get_knowledge_graph(dataset_id=dataset_id)
+
+
+@manager.route("/datasets/<dataset_id>/knowledge_graph", methods=["DELETE"])
+@login_required
+async def deprecated_delete_knowledge_graph(dataset_id):
+    """
+    Deprecated: Use DELETE /api/v1/datasets/{dataset_id}/graph instead.
+
+    Old path: DELETE /api/v1/datasets/{dataset_id}/knowledge_graph
+    New path: DELETE /api/v1/datasets/{dataset_id}/graph
+    """
+    logging.warning(
+        "API endpoint DELETE /api/v1/datasets/%s/knowledge_graph is deprecated. "
+        "Please use DELETE /api/v1/datasets/%s/graph instead.",
+        dataset_id, dataset_id,
+    )
+    return await dataset_api.delete_knowledge_graph(dataset_id=dataset_id)
+
+
+@manager.route("/datasets/<dataset_id>/run_graphrag", methods=["POST"])
+@login_required
+@add_tenant_id_to_kwargs
+async def deprecated_run_graphrag(dataset_id, tenant_id=None):
+    """
+    Deprecated: Use POST /api/v1/datasets/{dataset_id}/index?type=graph instead.
+
+    Old path: POST /api/v1/datasets/{dataset_id}/run_graphrag
+    New path: POST /api/v1/datasets/{dataset_id}/index?type=graph
+    """
+    logging.warning(
+        "API endpoint /api/v1/datasets/%s/run_graphrag is deprecated. "
+        "Please use /api/v1/datasets/%s/index?type=graph instead.",
+        dataset_id, dataset_id,
+    )
+    return _index_result(*dataset_api_service.run_index(dataset_id, tenant_id, "graph"))
+
+
+@manager.route("/datasets/<dataset_id>/trace_graphrag", methods=["GET"])
+@login_required
+@add_tenant_id_to_kwargs
+async def deprecated_trace_graphrag(dataset_id, tenant_id=None):
+    """
+    Deprecated: Use GET /api/v1/datasets/{dataset_id}/index?type=graph instead.
+
+    Old path: GET /api/v1/datasets/{dataset_id}/trace_graphrag
+    New path: GET /api/v1/datasets/{dataset_id}/index?type=graph
+    """
+    logging.warning(
+        "API endpoint /api/v1/datasets/%s/trace_graphrag is deprecated. "
+        "Please use /api/v1/datasets/%s/index?type=graph instead.",
+        dataset_id, dataset_id,
+    )
+    return _index_result(*dataset_api_service.trace_index(dataset_id, tenant_id, "graph"))
+
+
+@manager.route("/datasets/<dataset_id>/run_raptor", methods=["POST"])
+@login_required
+@add_tenant_id_to_kwargs
+async def deprecated_run_raptor(dataset_id, tenant_id=None):
+    """
+    Deprecated: Use POST /api/v1/datasets/{dataset_id}/index?type=raptor instead.
+
+    Old path: POST /api/v1/datasets/{dataset_id}/run_raptor
+    New path: POST /api/v1/datasets/{dataset_id}/index?type=raptor
+    """
+    logging.warning(
+        "API endpoint /api/v1/datasets/%s/run_raptor is deprecated. "
+        "Please use /api/v1/datasets/%s/index?type=raptor instead.",
+        dataset_id, dataset_id,
+    )
+    return _index_result(*dataset_api_service.run_index(dataset_id, tenant_id, "raptor"))
+
+
+@manager.route("/datasets/<dataset_id>/trace_raptor", methods=["GET"])
+@login_required
+@add_tenant_id_to_kwargs
+async def deprecated_trace_raptor(dataset_id, tenant_id=None):
+    """
+    Deprecated: Use GET /api/v1/datasets/{dataset_id}/index?type=raptor instead.
+
+    Old path: GET /api/v1/datasets/{dataset_id}/trace_raptor
+    New path: GET /api/v1/datasets/{dataset_id}/index?type=raptor
+    """
+    logging.warning(
+        "API endpoint /api/v1/datasets/%s/trace_raptor is deprecated. "
+        "Please use /api/v1/datasets/%s/index?type=raptor instead.",
+        dataset_id, dataset_id,
+    )
+    return _index_result(*dataset_api_service.trace_index(dataset_id, tenant_id, "raptor"))
 
 
 # =============================================================================
@@ -455,7 +619,7 @@ async def deprecated_document_download(doc_id):
     return await document_api.download_attachment(doc_id=doc_id)
 
 
-@document_download_manager.route("/document/download/<attachment_id>", methods=["GET"])
+@legacy_v1_manager.route("/document/download/<attachment_id>", methods=["GET"])
 @login_required
 async def document_download_v1(attachment_id):
     """
@@ -497,5 +661,5 @@ def register_backward_compat_routes(app_instance):
     Register all backward compatibility routes with the app.
     """
     app_instance.register_blueprint(manager, url_prefix="/api/v1")
-    app_instance.register_blueprint(document_download_manager, url_prefix="/v1")
+    app_instance.register_blueprint(legacy_v1_manager, url_prefix="/v1")
     logging.info("Backward compatibility routes registered successfully.")

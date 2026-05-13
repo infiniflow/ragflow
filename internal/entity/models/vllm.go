@@ -19,6 +19,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,11 @@ type VllmModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
+}
+
+func (v *VllmModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewVllmModel creates a new Vllm AI model instance
@@ -378,8 +384,93 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 }
 
 // Encode encodes a list of texts into embeddings
-func (z *VllmModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
+type vllmEmbeddingResponse struct {
+	Data []struct {
+		Index     int       `json:"index"`
+		Embedding []float64 `json:"embedding"`
+	} `json:"data"`
+}
+
+// Embed embeds a list of texts into embeddings
+func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("vLLM embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed vllmEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
 }
 
 func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -461,7 +552,30 @@ func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *VllmModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+// Rerank calculates similarity scores between query and documents
+func (z *VllmModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (o *VllmModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *VllmModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (o *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *VllmModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *VllmModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

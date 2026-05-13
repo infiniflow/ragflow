@@ -157,7 +157,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 
 	// Parse response
 	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -362,86 +362,94 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return scanner.Err()
 }
 
+type zhipuEmbeddingResponse struct {
+	Data   []zhipuEmbeddingData `json:"data"`
+	Model  string               `json:"model"`
+	Object string               `json:"object"`
+	Usage  zhipuUsage           `json:"usage"`
+}
+
+type zhipuEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+	Object    string    `json:"object"`
+}
+
+type zhipuUsage struct {
+	CompletionTokens int `json:"completion_tokens"`
+	PromptTokens     int `json:"prompt_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 // Encode encodes a list of texts into embeddings
-func (z *ZhipuAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.BaseURL[region], "/"), z.URLSuffix.Embedding)
 
-	embeddings := make([][]float64, len(texts))
+	reqBody := map[string]interface{}{}
+	reqBody["model"] = modelName
+	reqBody["input"] = texts
+	if embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
 
-	for i, text := range texts {
-		reqBody := map[string]interface{}{
-			"model": modelName,
-			"input": text,
-		}
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
 
-		jsonData, err := json.Marshal(reqBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
-		}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
 
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
 
-		resp, err := z.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to send request: %w", err)
-		}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
 
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
 
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-		}
+	// Parse response
+	var zhipuResp zhipuEmbeddingResponse
+	if err = json.Unmarshal(body, &zhipuResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
 
-		// Parse response
-		var result map[string]interface{}
-		if err = json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
-		}
-
-		data, ok := result["data"].([]interface{})
-		if !ok || len(data) == 0 {
-			return nil, fmt.Errorf("no data in response")
-		}
-
-		firstData, ok := data[0].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid data format")
-		}
-
-		embeddingSlice, ok := firstData["embedding"].([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("invalid embedding format")
-		}
-
-		embedding := make([]float64, len(embeddingSlice))
-		for j, v := range embeddingSlice {
-			switch val := v.(type) {
-			case float64:
-				embedding[j] = val
-			case float32:
-				embedding[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type")
-			}
-		}
-
-		embeddings[i] = embedding
+	var embeddings []EmbeddingData
+	for _, dataElem := range zhipuResp.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
@@ -503,18 +511,26 @@ type zhipuRerankRequest struct {
 // zhipuRerankResponse is the response shape for the ZhipuAI rerank
 // endpoint.
 type zhipuRerankResponse struct {
+	Created   int64  `json:"created"`
+	ID        string `json:"id"`
+	RequestID string `json:"request_id"`
+	Usage     struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 	Results []struct {
 		Index          int     `json:"index"`
 		RelevanceScore float64 `json:"relevance_score"`
 	} `json:"results"`
 }
 
-// Rerank calculates similarity scores between query and texts using
+// Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
-// score per input text, in the same order the texts were given.
-func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	if len(texts) == 0 {
-		return []float64{}, nil
+// score per input text, in the same order the documents were given.
+func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -537,11 +553,16 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, a
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
 
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
 	reqBody := zhipuRerankRequest{
 		Model:           *modelName,
 		Query:           query,
-		Documents:       texts,
-		TopN:            len(texts),
+		Documents:       documents,
+		TopN:            topN,
 		ReturnDocuments: false,
 	}
 
@@ -573,17 +594,42 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, texts []string, a
 		return nil, fmt.Errorf("ZhipuAI rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var rerankResp zhipuRerankResponse
-	if err = json.Unmarshal(body, &rerankResp); err != nil {
+	var zhipuRerankResp zhipuRerankResponse
+	if err = json.Unmarshal(body, &zhipuRerankResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	scores := make([]float64, len(texts))
-	for _, r := range rerankResp.Results {
-		if r.Index >= 0 && r.Index < len(texts) {
-			scores[r.Index] = r.RelevanceScore
+	var rerankResponse RerankResponse
+	for _, result := range zhipuRerankResp.Results {
+		rerankResult := RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
 		}
+		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
 	}
 
-	return scores, nil
+	return &rerankResponse, nil
+}
+
+// TranscribeAudio transcribe audio
+func (o *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (o *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *ZhipuAIModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

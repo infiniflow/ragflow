@@ -21,10 +21,17 @@ export const extractRaptorConfigExt = (
     max_cluster,
     random_seed,
     scope,
+    clustering_method,
+    tree_builder,
     auto_disable_for_structured_data,
     ext,
     ...raptorExt
   } = raptorConfig;
+  const extClusteringMethod = ext?.clustering_method;
+  const normalizedClusteringMethod =
+    clustering_method ?? extClusteringMethod ?? 'gmm';
+  const normalizedTreeBuilder = tree_builder ?? ext?.tree_builder ?? 'raptor';
+
   return {
     use_raptor,
     prompt,
@@ -34,7 +41,12 @@ export const extractRaptorConfigExt = (
     random_seed,
     scope,
     auto_disable_for_structured_data,
-    ext: { ...ext, ...raptorExt },
+    ext: {
+      ...ext,
+      ...raptorExt,
+      clustering_method: normalizedClusteringMethod,
+      tree_builder: normalizedTreeBuilder,
+    },
   };
 };
 

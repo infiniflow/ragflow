@@ -263,6 +263,16 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ChatToModel(cmd)
 	case "think_chat_to_model":
 		return c.ChatToModel(cmd)
+	case "embed_user_text":
+		return c.EmbedUserText(cmd)
+	case "rarank_user_document":
+		return c.RerankUserDocument(cmd)
+	case "tts_user_command":
+		return c.TTSUserCommand(cmd)
+	case "asr_user_command":
+		return c.ASRUserCommand(cmd)
+	case "ocr_user_command":
+		return c.OCRUserCommand(cmd)
 	case "check_provider_connection":
 		return c.CheckProviderConnection(cmd)
 	case "use_model":
