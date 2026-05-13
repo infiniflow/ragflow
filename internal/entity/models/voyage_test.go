@@ -293,6 +293,58 @@ func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
 	}
 }
 
+func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
+	// A duplicate index would silently overwrite an earlier slot, which
+	// is the same failure mode Embed already guards against. Make sure
+	// Rerank fails loudly too.
+	srv := newVoyageServer(t, "/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"relevance_score": 0.9, "index": 0},
+				{"relevance_score": 0.8, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	v := newVoyageForTest(srv.URL)
+	apiKey := "test-key"
+	model := "rerank-2"
+	_, err := v.Rerank(&model, "x", []string{"a", "b"},
+		&APIConfig{ApiKey: &apiKey}, &RerankConfig{TopN: 2})
+	if err == nil || !strings.Contains(err.Error(), "duplicate rerank index 0") {
+		t.Errorf("expected duplicate-index error, got %v", err)
+	}
+}
+
+// TestVoyageEmbedTrimsTrailingSlashInBaseURL guards against a
+// misconfigured baseURL ending in "/" producing a double-slash path
+// (e.g. `.../v1//embeddings`). Rerank already trims, so Embed must
+// trim too; CodeRabbit flagged the inconsistency.
+func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
+	var sawPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawPath = r.URL.Path
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{"embedding": []float64{1}, "index": 0}},
+		})
+	}))
+	defer srv.Close()
+
+	v := NewVoyageModel(
+		map[string]string{"default": srv.URL + "/"}, // trailing slash
+		URLSuffix{Embedding: "embeddings", Rerank: "rerank"},
+	)
+	apiKey := "test-key"
+	model := "voyage-3.5"
+	if _, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if sawPath != "/embeddings" {
+		t.Errorf("path=%q want %q (no double slash)", sawPath, "/embeddings")
+	}
+}
+
 func TestVoyageListModelsReturnsKnownList(t *testing.T) {
 	v := newVoyageForTest("http://unused")
 	apiKey := "test-key"

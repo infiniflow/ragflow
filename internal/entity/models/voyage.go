@@ -143,7 +143,7 @@ func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, v.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -304,11 +304,19 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	// Match Embed's defensive posture: rerank only returns top_k of
+	// len(documents) results, but a duplicate index would still be
+	// a malformed response and should fail loudly.
 	rerankResponse := &RerankResponse{}
+	seen := make(map[int]bool, len(parsed.Data))
 	for _, r := range parsed.Data {
 		if r.Index < 0 || r.Index >= len(documents) {
 			return nil, fmt.Errorf("voyage: rerank result index %d out of range for %d documents", r.Index, len(documents))
 		}
+		if seen[r.Index] {
+			return nil, fmt.Errorf("voyage: duplicate rerank index %d in response", r.Index)
+		}
+		seen[r.Index] = true
 		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
 			Index:          r.Index,
 			RelevanceScore: r.RelevanceScore,
