@@ -45,7 +45,7 @@ func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing
 func newLongCatForTest(baseURL string) *LongCatModel {
 	return NewLongCatModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "chat/completions", Models: "models"},
+		URLSuffix{Chat: "v1/chat/completions"},
 	)
 }
 
@@ -56,7 +56,7 @@ func TestLongCatName(t *testing.T) {
 }
 
 func TestLongCatChatHappyPath(t *testing.T) {
-	srv := newLongCatServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Chat" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -92,7 +92,7 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	// message.reasoning_content (OpenAI o-series shape). Live-probed
 	// against api.longcat.chat; the fixture mimics the actual response
 	// shape captured there.
-	srv := newLongCatServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Thinking" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -124,10 +124,23 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	}
 }
 
-func TestLongCatChatPropagatesReasoningEffort(t *testing.T) {
-	srv := newLongCatServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["reasoning_effort"] != "high" {
-			t.Errorf("reasoning_effort=%v want high", body["reasoning_effort"])
+// TestLongCatChatDropsUndocumentedFields guards against re-introducing
+// stop / reasoning_effort / response_format / tools etc. The LongCat
+// docs only list model, messages, stream, max_tokens, temperature,
+// top_p — anything else is undocumented and must not be sent, since
+// the maintainer specifically flagged this on PR #14809.
+func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
+	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		for _, k := range []string{"stop", "reasoning_effort", "response_format", "tools", "tool_choice", "presence_penalty", "frequency_penalty", "n", "logprobs"} {
+			if _, present := body[k]; present {
+				t.Errorf("undocumented field %q must not be sent: %v", k, body[k])
+			}
+		}
+		// Documented fields, on the other hand, MUST be forwarded when set.
+		for _, k := range []string{"model", "messages", "stream", "max_tokens", "temperature", "top_p"} {
+			if _, present := body[k]; !present {
+				t.Errorf("documented field %q missing from request body", k)
+			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -139,35 +152,16 @@ func TestLongCatChatPropagatesReasoningEffort(t *testing.T) {
 
 	m := newLongCatForTest(srv.URL)
 	apiKey := "test-key"
+	mt := 32
+	temp := 0.7
+	topP := 0.9
+	stop := []string{"END"}
 	effort := "high"
-	_, err := m.ChatWithMessages("LongCat-Flash-Thinking",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{Effort: &effort})
-	if err != nil {
-		t.Fatalf("Chat: %v", err)
-	}
-}
-
-func TestLongCatChatOmitsReasoningEffortWhenUnset(t *testing.T) {
-	srv := newLongCatServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if _, present := body["reasoning_effort"]; present {
-			t.Errorf("reasoning_effort=%v should be absent", body["reasoning_effort"])
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{"content": "ok"},
-			}},
-		})
-	})
-	defer srv.Close()
-
-	m := newLongCatForTest(srv.URL)
-	apiKey := "test-key"
 	_, err := m.ChatWithMessages("LongCat-Flash-Chat",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{})
+		// Deliberately pass Stop/Effort to prove they are filtered out.
+		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort})
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -193,7 +187,7 @@ func TestLongCatChatRequiresMessages(t *testing.T) {
 }
 
 func TestLongCatChatRejectsHTTPError(t *testing.T) {
-	srv := newLongCatServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 	})
@@ -337,26 +331,29 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 	}
 }
 
-func TestLongCatListModelsHappyPath(t *testing.T) {
-	srv := newLongCatServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []map[string]interface{}{
-				{"id": "LongCat-Flash-Chat"},
-				{"id": "LongCat-Flash-Lite"},
-				{"id": "LongCat-Flash-Thinking"},
-			},
-		})
-	})
-	defer srv.Close()
-
-	m := newLongCatForTest(srv.URL)
+// LongCat does not document a /models endpoint, so ListModels returns
+// a shipped catalog rather than hitting the network. This test pins the
+// known names so accidental edits to longcatKnownModels are caught.
+func TestLongCatListModelsReturnsKnownCatalog(t *testing.T) {
 	apiKey := "test-key"
-	ids, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
+	ids, err := newLongCatForTest("http://unused").ListModels(&APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(ids) != 3 {
-		t.Errorf("ids=%v", ids)
+	want := map[string]bool{
+		"LongCat-Flash-Chat":          true,
+		"LongCat-Flash-Lite":          true,
+		"LongCat-Flash-Thinking-2601": true,
+		"LongCat-Flash-Omni-2603":     true,
+		"LongCat-2.0-Preview":         true,
+	}
+	if len(ids) != len(want) {
+		t.Errorf("len(ids)=%d want %d (%v)", len(ids), len(want), ids)
+	}
+	for _, id := range ids {
+		if !want[id] {
+			t.Errorf("unexpected model id %q", id)
+		}
 	}
 }
 
@@ -367,14 +364,56 @@ func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
 	}
 }
 
-func TestLongCatCheckConnectionDelegatesToListModels(t *testing.T) {
-	okSrv := newLongCatServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
+// CheckConnection must hit the documented chat endpoint, not /models,
+// since LongCat does not expose /models. A 1-token chat ping against
+// LongCat-Flash-Lite is what the maintainer asked for.
+func TestLongCatCheckConnectionChatPings(t *testing.T) {
+	var (
+		sawChat   bool
+		sawModel  string
+		sawTokens interface{}
+	)
+	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		sawChat = true
+		if m, ok := body["model"].(string); ok {
+			sawModel = m
+		}
+		sawTokens = body["max_tokens"]
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "ok"},
+			}},
+		})
 	})
-	defer okSrv.Close()
+	defer srv.Close()
 	apiKey := "test-key"
-	if err := newLongCatForTest(okSrv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := newLongCatForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection: %v", err)
+	}
+	if !sawChat {
+		t.Error("CheckConnection did not hit /v1/chat/completions")
+	}
+	if sawModel != "LongCat-Flash-Lite" {
+		t.Errorf("CheckConnection ping model=%q want LongCat-Flash-Lite", sawModel)
+	}
+	if mt, ok := sawTokens.(float64); !ok || mt != 1 {
+		t.Errorf("CheckConnection max_tokens=%v want 1", sawTokens)
+	}
+}
+
+// On 401 (bad key), CheckConnection must surface the upstream error
+// instead of silently returning nil — credentials are exactly what
+// this method exists to validate.
+func TestLongCatCheckConnectionPropagatesAuthError(t *testing.T) {
+	srv := newLongCatServer(t, "/v1/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+	})
+	defer srv.Close()
+	apiKey := "test-key"
+	err := newLongCatForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 

@@ -1,11 +1,10 @@
 {
   "name": "LongCat",
   "url": {
-    "default": "https://api.longcat.chat/openai/v1"
+    "default": "https://api.longcat.chat/openai"
   },
   "url_suffix": {
-    "chat": "chat/completions",
-    "models": "models"
+    "chat": "v1/chat/completions"
   },
   "class": "longcat",
   "models": [
@@ -24,7 +23,21 @@
       ]
     },
     {
-      "name": "LongCat-Flash-Thinking",
+      "name": "LongCat-Flash-Thinking-2601",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "LongCat-Flash-Omni-2603",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "LongCat-2.0-Preview",
       "max_tokens": 131072,
       "model_types": [
         "chat"

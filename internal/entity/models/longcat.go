@@ -30,17 +30,39 @@ import (
 
 // LongCatModel implements ModelDriver for LongCat (Meituan).
 //
-// LongCat exposes an OpenAI-compatible REST API at
-// https://api.longcat.chat/openai/v1 (chat completions at
-// /chat/completions, list models at /models). The wire shape matches
-// the OpenAI o-series convention closely: response/delta carry
-// reasoning_content alongside content for the LongCat-Flash-Thinking
-// model. Embeddings / rerank / audio / OCR are not exposed.
+// LongCat exposes an OpenAI-compatible chat completions endpoint at
+// https://api.longcat.chat/openai/v1/chat/completions. The official
+// docs (https://longcat.chat/platform/docs/APIDocs.html) only describe
+// the chat-completions surface — no /models, /embeddings, /rerank,
+// /audio, or /ocr endpoints are advertised. The wire shape matches the
+// OpenAI convention: response/delta carry reasoning_content alongside
+// content for thinking models.
+//
+// Documented request fields are limited to: model, messages, stream,
+// max_tokens, temperature, top_p. Sending other OpenAI-style fields
+// (stop, reasoning_effort, etc.) is not documented and is therefore
+// omitted to avoid relying on undocumented upstream behavior.
 type LongCatModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
 }
+
+// longcatKnownModels is the set of models the LongCat platform docs
+// list under https://longcat.chat/platform/docs/Models.html. The
+// platform does not expose a /models endpoint, so we ship the catalog
+// instead of probing it.
+var longcatKnownModels = []string{
+	"LongCat-Flash-Chat",
+	"LongCat-Flash-Lite",
+	"LongCat-Flash-Thinking-2601",
+	"LongCat-Flash-Omni-2603",
+	"LongCat-2.0-Preview",
+}
+
+// longcatPingModel is the cheapest documented model; used by
+// CheckConnection to verify credentials with a minimal request.
+const longcatPingModel = "LongCat-Flash-Lite"
 
 // NewLongCatModel creates a new LongCat model instance.
 //
@@ -128,6 +150,11 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 	// Note: do NOT propagate chatModelConfig.Stream into the request body
 	// here. ChatWithMessages parses a single JSON response, so stream must
 	// always be off for this code path.
+	//
+	// Only the fields documented at
+	// https://longcat.chat/platform/docs/APIDocs.html are forwarded.
+	// Other ChatConfig fields (Stop, Effort, ...) are dropped on the
+	// floor because the upstream behavior is undefined.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -137,15 +164,6 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 		}
 		if chatModelConfig.TopP != nil {
 			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		// LongCat-Flash-Thinking accepts reasoning_effort=low|medium|high
-		// to trade latency for chain-of-thought depth, matching the
-		// OpenAI o-series shape. Non-reasoning LongCat models ignore it.
-		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
-			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
 	}
 
@@ -274,6 +292,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
 
+		// Only documented fields are forwarded; see ChatWithMessages.
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -282,12 +301,6 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		}
 		if chatModelConfig.TopP != nil {
 			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
-			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
 	}
 
@@ -396,81 +409,34 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-// ListModels returns the list of model ids visible to the API key.
+// ListModels returns the catalog of LongCat models. The LongCat
+// platform does not document a /models endpoint, so we return the
+// statically shipped list instead of issuing a network call.
+//
+// API key is still required so that misconfigured providers surface
+// the same authentication error here as on the chat path.
 func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := l.baseURLForRegion(region)
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
-
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := l.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid models list format")
-	}
-
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	out := make([]string, len(longcatKnownModels))
+	copy(out, longcatKnownModels)
+	return out, nil
 }
 
-// CheckConnection runs a lightweight ListModels call to verify the API key.
+// CheckConnection verifies credentials by issuing a 1-token chat
+// completion against the cheapest documented model. ListModels can't
+// validate the key (no /models endpoint), so we hit the documented
+// chat endpoint instead.
 func (l *LongCatModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := l.ListModels(apiConfig)
-	if err != nil {
-		return err
-	}
-	return nil
+	maxTokens := 1
+	_, err := l.ChatWithMessages(
+		longcatPingModel,
+		[]Message{{Role: "user", Content: "ping"}},
+		apiConfig,
+		&ChatConfig{MaxTokens: &maxTokens},
+	)
+	return err
 }
 
 // Embed is not exposed by the LongCat API. The /v1/embeddings endpoint
