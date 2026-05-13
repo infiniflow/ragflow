@@ -170,6 +170,25 @@ def get_model_config_from_provider_instance(tenant_id, model_name: str, model_ty
         instance_name = parts[1]
         provider_name = parts[2]
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
+    # Builtin embedding model
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    is_tei_builtin_embedding = (
+            model_type_val == LLMType.EMBEDDING.value
+            and "tei-" in compose_profiles
+            and pure_model_name == os.getenv("TEI_MODEL", "")
+            and (provider_name == "Builtin" or provider_name is None)
+    )
+    if is_tei_builtin_embedding:
+        # configured local embedding model
+        embedding_cfg = settings.EMBEDDING_CFG
+        return {
+            "llm_factory": "Builtin",
+            "api_key": embedding_cfg["api_key"],
+            "llm_name": pure_model_name,
+            "api_base": embedding_cfg["base_url"],
+            "model_type": LLMType.EMBEDDING.value,
+        }
+
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
