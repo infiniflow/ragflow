@@ -79,6 +79,8 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		updates := map[string]interface{}{
 			"name":        name,
 			"user_id":     userID,
+			"update_time": time.Now().UnixMilli(),
+			"update_date": time.Now(),
 		}
 
 		if err := s.chatSessionDAO.UpdateByID(req.SessionID, updates); err != nil {
@@ -116,6 +118,9 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		}
 	}
 
+	now := time.Now().Truncate(time.Second)
+	createTime := time.Now().UnixMilli()
+
 	// Create initial message - store as JSON object with messages array
 	messagesObj := map[string]interface{}{
 		"messages": []map[string]interface{}{
@@ -139,6 +144,10 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		UserID:    &userID,
 		Reference: referenceJSON,
 	}
+	session.CreateTime = &createTime
+	session.CreateDate = &now
+	session.UpdateTime = &createTime
+	session.UpdateDate = &now
 
 	if err := s.chatSessionDAO.Create(session); err != nil {
 		return nil, errors.New("Fail to create a chat session")
@@ -450,6 +459,8 @@ func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, 
 	updates := map[string]interface{}{
 		"message":     messagesJSON,
 		"reference":   referenceJSON,
+		"update_time": time.Now().UnixMilli(),
+		"update_date": time.Now(),
 	}
 	s.chatSessionDAO.UpdateByID(session.ID, updates)
 }

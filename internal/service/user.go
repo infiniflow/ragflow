@@ -150,6 +150,14 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		IsSuperuser:     &isSuperuser,
 	}
 
+	now := time.Now().Unix()
+	user.CreateTime = &now
+	user.UpdateTime = &now
+	nowDate := time.Now().Truncate(time.Second)
+	user.CreateDate = &nowDate
+	user.UpdateDate = &nowDate
+	user.LastLoginTime = &nowDate
+
 	tenantName := req.Nickname + "'s Kingdom"
 
 	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
@@ -184,6 +192,11 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
+	tenant.CreateTime = &now
+	tenant.UpdateTime = &now
+	tenant.CreateDate = &nowDate
+	tenant.UpdateDate = &nowDate
+
 	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
@@ -193,6 +206,11 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		InvitedBy: userID,
 		Status:    &status,
 	}
+	userTenant.CreateTime = &now
+	userTenant.UpdateTime = &now
+	userTenant.CreateDate = &nowDate
+	userTenant.UpdateDate = &nowDate
+
 	fileID := utility.GenerateToken()
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -203,6 +221,11 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		Type:      "folder",
 		Size:      0,
 	}
+	rootFile.CreateTime = &now
+	rootFile.UpdateTime = &now
+	rootFile.CreateDate = &nowDate
+	rootFile.UpdateDate = &nowDate
+
 	tenantDAO := dao.NewTenantDAO()
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
@@ -279,6 +302,9 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 		return nil, common.CodeServerError, fmt.Errorf("failed to update access token: %w", err)
 	}
 
+	// Update timestamp
+	now := time.Now().Unix()
+	user.UpdateTime = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -314,6 +340,10 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	token := utility.GenerateToken()
 	user.AccessToken = &token
 
+	now := time.Now().Unix()
+	user.UpdateTime = &now
+	now_date := time.Now().Truncate(time.Second)
+	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}

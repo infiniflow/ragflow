@@ -36,7 +36,8 @@ type SkillSpace struct {
 	RerankID    string     `gorm:"column:rerank_id;size:128" json:"rerank_id"`
 	TopK        int        `gorm:"column:top_k;default:10" json:"top_k"`
 	Status      string     `gorm:"column:status;size:1;default:1" json:"status"`
-	BaseModel
+	CreateTime  *int64     `gorm:"column:create_time" json:"create_time,omitempty"`
+	UpdateTime  *time.Time `gorm:"column:update_time" json:"update_time,omitempty"`
 }
 
 // TableName returns the table name for SkillSpace model
@@ -82,7 +83,7 @@ func (s *SkillSpace) ToMap() map[string]interface{} {
 		result["create_time"] = s.CreateTime
 	}
 	if s.UpdateTime != nil {
-		result["update_time"] = time.UnixMilli(*s.UpdateTime).Format("2006-01-02 15:04:05")
+		result["update_time"] = s.UpdateTime.Format("2006-01-02 15:04:05")
 	}
 
 	return result

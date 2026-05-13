@@ -19,6 +19,7 @@ package dao
 import (
 	"ragflow/internal/entity"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -100,6 +101,7 @@ func (dao *SkillSpaceDAO) Update(space *entity.SkillSpace) error {
 
 // UpdateByID updates skills space by ID
 func (dao *SkillSpaceDAO) UpdateByID(id string, updates map[string]interface{}) error {
+	updates["update_time"] = time.Now()
 	return DB.Model(&entity.SkillSpace{}).Where("id = ?", id).Updates(updates).Error
 }
 

@@ -213,6 +213,9 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	loginChannel := "password"
 	isSuperuser := role == "admin"
 
+	now := time.Now().Unix()
+	nowDate := time.Now().Truncate(time.Second)
+
 	user := &entity.User{
 		ID:              userID,
 		AccessToken:     &accessToken,
@@ -225,6 +228,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		IsAnonymous:     "0",
 		LoginChannel:    &loginChannel,
 		IsSuperuser:     &isSuperuser,
+		BaseModel: entity.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
 	}
 
 	// Start transaction for creating user and related data
@@ -279,6 +288,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
+		BaseModel: entity.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
 	}
 	if err := tx.Create(tenant).Error; err != nil {
 		rollbackTx()
@@ -294,6 +309,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
+		BaseModel: entity.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
 	}
 	if err := tx.Create(userTenant).Error; err != nil {
 		rollbackTx()
@@ -324,6 +345,12 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Type:      "folder",
 		Size:      0,
 		Location:  &fileLocation,
+		BaseModel: entity.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
 	}
 	if err := tx.Create(file).Error; err != nil {
 		rollbackTx()
@@ -443,6 +470,9 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 			llmName := llm.LLMName
 			modelType := llm.ModelType
+			now := time.Now().Unix()
+			nowDate := time.Now().Truncate(time.Second)
+
 			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
 				LLMFactory: factoryConfig.Factory,
@@ -452,6 +482,12 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				APIBase:    &apiBase,
 				MaxTokens:  maxTokens,
 				Status:     "1",
+				BaseModel: entity.BaseModel{
+					CreateTime: &now,
+					CreateDate: &nowDate,
+					UpdateTime: &now,
+					UpdateDate: &nowDate,
+				},
 			}
 			tenantLLMs = append(tenantLLMs, tenantLLM)
 		}
@@ -732,6 +768,8 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 	}
 
 	user.Password = &hashedPassword
+	now := time.Now().Unix()
+	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -769,6 +807,8 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 	}
 
 	user.IsActive = targetStatus
+	now := time.Now().Unix()
+	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -801,6 +841,8 @@ func (s *Service) GrantAdmin(username string) error {
 
 	isSuperuser := true
 	user.IsSuperuser = &isSuperuser
+	now := time.Now().Unix()
+	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -833,6 +875,8 @@ func (s *Service) RevokeAdmin(username string) error {
 
 	isSuperuser := false
 	user.IsSuperuser = &isSuperuser
+	now := time.Now().Unix()
+	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -915,12 +959,16 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 	// 3. Generate API token
 	key := utility.GenerateAPIToken()
 	beta := utility.GenerateBetaAPIToken(key)
+	now := time.Now()
+	nowUnix := now.Unix()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
 		Token:    key,
 		Beta:     &beta,
 	}
+	apiToken.CreateTime = &nowUnix
+	apiToken.CreateDate = &now
 
 	// 4. Save API token
 	if err := s.apiTokenDAO.Create(apiToken); err != nil {
@@ -1682,6 +1730,8 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
+		now := time.Now().Unix()
+		nowDate := time.Now().Truncate(time.Second)
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
@@ -1708,6 +1758,12 @@ func (s *Service) InitDefaultAdmin() error {
 			IsAnonymous:     "0",
 			LoginChannel:    &loginChannel,
 			IsSuperuser:     &isSuperuser,
+			BaseModel: entity.BaseModel{
+				CreateTime: &now,
+				CreateDate: &nowDate,
+				UpdateTime: &now,
+				UpdateDate: &nowDate,
+			},
 		}
 
 		if err := dao.DB.Create(user).Error; err != nil {
@@ -1750,6 +1806,8 @@ func (s *Service) InitDefaultAdmin() error {
 
 // addTenantForAdmin add tenant for admin user
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
+	now := time.Now().Unix()
+	nowDate := time.Now().Truncate(time.Second)
 	status := "1"
 	role := "owner"
 	tenantName := nickname + "'s Kingdom"
@@ -1757,6 +1815,12 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	tenant := &entity.Tenant{
 		ID:   userID,
 		Name: &tenantName,
+		BaseModel: entity.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
 	}
 
 	if err := dao.DB.Create(tenant).Error; err != nil {
@@ -1769,6 +1833,12 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		InvitedBy: userID,
 		Role:      role,
 		Status:    &status,
+		BaseModel: entity.BaseModel{
+			CreateTime: &now,
+			CreateDate: &nowDate,
+			UpdateTime: &now,
+			UpdateDate: &nowDate,
+		},
 	}
 
 	return dao.DB.Create(userTenant).Error
