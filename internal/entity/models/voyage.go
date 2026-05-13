@@ -37,8 +37,8 @@ import (
 //
 // Wire shape, captured live:
 //
-//   Embed response:  {object, data:[{object,embedding,index,text}], model, usage}
-//   Rerank response: {object, data:[{relevance_score,index}], model, usage}
+//	Embed response:  {object, data:[{object,embedding,index,text}], model, usage}
+//	Rerank response: {object, data:[{relevance_score,index}], model, usage}
 //
 // Rerank uses top_k as the request param name (not top_n like
 // Aliyun/SiliconFlow); the driver translates RerankConfig.TopN to

@@ -218,7 +218,6 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		// addLocalAIReasoningRequestParams.
 		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
 	}
-
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
