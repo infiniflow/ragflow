@@ -91,21 +91,6 @@ func (v *VoyageModel) baseURLForRegion(region string) (string, error) {
 	return base, nil
 }
 
-// voyageKnownModels is the list of models we ship in
-// conf/models/voyage.json. Voyage does not expose a /v1/models
-// endpoint, so ListModels and CheckConnection synthesize the list
-// from this constant.
-var voyageKnownModels = []string{
-	"voyage-3.5",
-	"voyage-3.5-lite",
-	"voyage-3-large",
-	"voyage-code-3",
-	"voyage-law-2",
-	"voyage-finance-2",
-	"rerank-2",
-	"rerank-2-lite",
-}
-
 type voyageEmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Object    string    `json:"object"`
@@ -336,28 +321,22 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 	return rerankResponse, nil
 }
 
-// ListModels returns the static list of supported Voyage models.
-// Voyage does not expose a /v1/models endpoint, so this is sourced
-// from voyageKnownModels rather than the network. A subsequent
-// embed/rerank call will validate that the chosen model actually
-// works for the tenant's API key.
+// ListModels is not exposed by the Voyage AI API. The docs at
+// https://docs.voyageai.com publish embeddings and rerank endpoints
+// only; /v1/models is not documented (live-confirmed: 404). The
+// shipped catalog lives in conf/models/voyage.json; this driver
+// method does not invent a fake one.
 func (v *VoyageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-	models := make([]string, len(voyageKnownModels))
-	copy(models, voyageKnownModels)
-	return models, nil
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-// CheckConnection runs a one-input embedding call against voyage-3.5
-// to verify both the API key and the network path. Without /v1/models,
-// this is the cheapest way to confirm the integration works
-// end-to-end before a tenant tries an actual workload.
+// CheckConnection is not exposed by the Voyage AI API. With no
+// documented /models or /health endpoint, the only way to verify
+// credentials is to burn an embedding or rerank call against the
+// tenant's quota — which is what this method exists to avoid.
+// Return the documented sentinel rather than pretend.
 func (v *VoyageModel) CheckConnection(apiConfig *APIConfig) error {
-	model := "voyage-3.5"
-	_, err := v.Embed(&model, []string{"ping"}, apiConfig, nil)
-	return err
+	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // ChatWithMessages is not exposed by the Voyage AI API.
