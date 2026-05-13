@@ -2145,6 +2145,88 @@ func (c *RAGFlowClient) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *RAGFlowClient) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	var filename string
+	var fileURL string
+	var ok bool
+	var fileContent []byte
+
+	filename, ok = cmd.Params["file"].(string)
+	if ok {
+		// read file and convert to base64
+		var err error
+		fileContent, err = os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
+	} else {
+		fileURL, ok = cmd.Params["url"].(string)
+		if !ok {
+			return nil, fmt.Errorf("file or url not provided")
+		}
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+	}
+
+	if fileContent != nil {
+		payload["content"] = fileContent
+	} else {
+		payload["url"] = fileURL
+	}
+
+	url := "/file/parse"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to PARSE document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to PARSE document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("PARSE document failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")

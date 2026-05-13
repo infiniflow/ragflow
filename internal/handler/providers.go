@@ -1336,11 +1336,85 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 	OCRConfig := models.OCRConfig{}
 
 	// Non-stream response
-	var response *models.OCRResponse
+	var response *models.OCRFileResponse
 	var errorCode common.ErrorCode
 	var err error
 
 	response, errorCode, err = h.modelProviderService.OCRFile(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Content, req.URL, &apiConfig, &OCRConfig)
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    response,
+		"message": "success",
+	})
+}
+
+type ParseFileRequest struct {
+	ProviderName *string `json:"provider_name"`
+	InstanceName *string `json:"instance_name"`
+	ModelName    *string `json:"model_name"`
+	Content      []byte  `json:"content"`
+	URL          *string `json:"url"`
+}
+
+func (h *ProviderHandler) ParseFile(c *gin.Context) {
+	var req ParseFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.ProviderName == nil || *req.ProviderName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	if req.InstanceName == nil || *req.InstanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	if req.ModelName == nil || *req.ModelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	apiConfig := models.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	parseFileConfig := models.ParseFileConfig{}
+
+	// Non-stream response
+	var response *models.ParseFileResponse
+	var errorCode common.ErrorCode
+	var err error
+
+	response, errorCode, err = h.modelProviderService.ParseFile(*req.ProviderName, *req.InstanceName, *req.ModelName, userID, req.Content, req.URL, &apiConfig, &parseFileConfig)
 
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{

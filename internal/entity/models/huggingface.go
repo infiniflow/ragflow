@@ -19,11 +19,6 @@ type HuggingFaceModel struct {
 	httpClient *http.Client
 }
 
-func (h *HuggingFaceModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewHuggingFaceModel creates a new huggingFace model instance
 func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *HuggingFaceModel {
 	return &HuggingFaceModel{
@@ -435,8 +430,13 @@ func (z *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent
 }
 
 // OCRFile OCR file
-func (h *HuggingFaceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (h *HuggingFaceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+// ParseFile parse file
+func (z *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {

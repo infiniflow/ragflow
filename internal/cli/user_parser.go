@@ -2852,6 +2852,45 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseModelParseCommand() (*Command, error) {
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("parse_file_user_command")
+
+	switch p.curToken.Type {
+	case TokenFile:
+		p.nextToken()
+		var file string
+		file, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["file"] = file
+		p.nextToken()
+	case TokenURL:
+		p.nextToken()
+		var url string
+		url, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["url"] = url
+		p.nextToken()
+	default:
+		return nil, fmt.Errorf("expected FILE or URL")
+	}
+
+	cmd.Params["composite_model_name"] = compositeModelName
+
+	return cmd, nil
+}
+
 func (p *Parser) parseCheckCommand() (*Command, error) {
 	p.nextToken() // consume CHECK
 
@@ -2916,11 +2955,14 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 func (p *Parser) parseParseCommand() (*Command, error) {
 	p.nextToken() // consume PARSE
 
-	if p.curToken.Type == TokenDataset {
+	switch p.curToken.Type {
+	case TokenDataset:
 		return p.parseParseDataset()
+	case TokenWith:
+		return p.parseModelParseCommand()
+	default:
+		return p.parseParseDocs()
 	}
-
-	return p.parseParseDocs()
 }
 
 func (p *Parser) parseParseDataset() (*Command, error) {

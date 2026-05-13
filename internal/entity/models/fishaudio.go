@@ -17,11 +17,6 @@ type FishAudioModel struct {
 	httpClient *http.Client
 }
 
-func (f *FishAudioModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudioModel {
 	return &FishAudioModel{
 		BaseURL:   baseURL,
@@ -81,8 +76,13 @@ func (z *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 }
 
 // OCRFile OCR file
-func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
+// ParseFile parse file
+func (z *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {

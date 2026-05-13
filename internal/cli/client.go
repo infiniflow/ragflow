@@ -273,6 +273,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ASRUserCommand(cmd)
 	case "ocr_user_command":
 		return c.OCRUserCommand(cmd)
+	case "parse_file_user_command":
+		return c.ParseFileUserCommand(cmd)
 	case "check_provider_connection":
 		return c.CheckProviderConnection(cmd)
 	case "use_model":

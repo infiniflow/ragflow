@@ -1531,7 +1531,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
-func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, common.ErrorCode, error) {
 	if apiConfig == nil {
 		apiConfig = &modelModule.APIConfig{}
 	}
@@ -1589,7 +1589,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		var response *modelModule.OCRResponse
+		var response *modelModule.OCRFileResponse
 		response, err = providerInfo.ModelDriver.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -1626,8 +1626,118 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		}
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
-		var response *modelModule.OCRResponse
+		var response *modelModule.OCRFileResponse
 		response, err = newProviderInfo.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+
+		return response, common.CodeSuccess, nil
+	}
+
+	return nil, common.CodeServerError, errors.New("model is disabled")
+}
+
+func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, common.ErrorCode, error) {
+	if apiConfig == nil {
+		apiConfig = &modelModule.APIConfig{}
+	}
+	if parseFileConfig == nil {
+		parseFileConfig = &modelModule.ParseFileConfig{}
+	}
+
+	// Get tenant ID from user
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return nil, common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+
+	// Check if provider exists
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	modelInfo, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+	if err != nil {
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		if err != nil {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		if !model.ModelTypeMap["ocr"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a OCR model", providerName, modelName))
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		var response *modelModule.ParseFileResponse
+		response, err = providerInfo.ModelDriver.ParseFile(&modelName, content, url, apiConfig, parseFileConfig)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+
+		return response, common.CodeSuccess, nil
+	}
+
+	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "tts" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an OCR model", modelName, providerName))
+		}
+		// For local deployed models
+		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		if providerInfo == nil {
+			return nil, common.CodeNotFound, errors.New("provider not found")
+		}
+
+		var extra map[string]string
+		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		region := extra["region"]
+		apiConfig.Region = &region
+		apiConfig.ApiKey = &instance.APIKey
+
+		newURL := map[string]string{
+			region: extra["base_url"],
+		}
+		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
+
+		var response *modelModule.ParseFileResponse
+		response, err = newProviderInfo.ParseFile(&modelName, content, url, apiConfig, parseFileConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}

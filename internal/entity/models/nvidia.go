@@ -19,11 +19,6 @@ type NvidiaModel struct {
 	httpClient *http.Client
 }
 
-func (n NvidiaModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewNvidiaModel creates a new Nvidia model instance
 func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel {
 	return &NvidiaModel{
@@ -576,8 +571,13 @@ func (z *NvidiaModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 // OCRFile OCR file
-func (m *NvidiaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *NvidiaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 // ListModels calls /v1/models on the configured NVIDIA NIM base URL

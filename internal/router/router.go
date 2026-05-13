@@ -275,6 +275,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
 				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
 				v1.POST("/file/ocr", r.providerHandler.OCRFile)
+				v1.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")

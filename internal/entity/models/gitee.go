@@ -37,11 +37,6 @@ type GiteeModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (g *GiteeModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewGiteeModel creates a new Gitee model instance
 func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 	return &GiteeModel{
@@ -623,7 +618,7 @@ type giteeOCRResponse struct {
 }
 
 // OCRFile OCR file
-func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	if imageURL == nil && content == nil {
 		return nil, fmt.Errorf("url or content is required")
 	}
@@ -709,11 +704,16 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var ocrResponse = OCRResponse{
+	var ocrResponse = OCRFileResponse{
 		Text: &giteeResponse.Text,
 	}
 
 	return &ocrResponse, nil
+}
+
+// ParseFile parse file
+func (z *GiteeModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {

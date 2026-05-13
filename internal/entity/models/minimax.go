@@ -35,11 +35,6 @@ type MinimaxModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (z *MinimaxModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewMinimaxModel creates a new Minimax model instance
 func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
 	return &MinimaxModel{
@@ -472,6 +467,11 @@ func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *MinimaxModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

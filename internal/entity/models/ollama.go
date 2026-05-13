@@ -20,11 +20,6 @@ type OllamaModel struct {
 	httpClient *http.Client
 }
 
-func (o *OllamaModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewOllamaModel creates a new Ollama AI model instance
 func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel {
 	return &OllamaModel{
@@ -469,8 +464,13 @@ func (z *OllamaModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 // OCRFile OCR file
-func (m *OllamaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *OllamaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *OllamaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {

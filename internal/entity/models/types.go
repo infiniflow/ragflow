@@ -33,7 +33,9 @@ type ModelDriver interface {
 	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error)
 	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error
 	// OCRFile OCR file
-	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error)
+	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error)
+	// ParseFile parse file
+	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
 
@@ -67,8 +69,11 @@ type ASRResponse struct {
 type TTSResponse struct {
 }
 
-type OCRResponse struct {
+type OCRFileResponse struct {
 	Text *string `json:"text"`
+}
+
+type ParseFileResponse struct {
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
@@ -119,6 +124,9 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
+}
+
+type ParseFileConfig struct {
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
