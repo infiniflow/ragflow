@@ -153,3 +153,12 @@ def test_request_timeout_env_var_is_honoured(post_returning, monkeypatch):
     calls = post_returning({"results": [{"markdown": "x"}]})
     _make_crawler("markdown")._fetch_remote("http://crawl4ai:11235", "https://example.com")
     assert calls[0]["timeout"] == 37
+
+
+@pytest.mark.parametrize("bad_value", ["abc", "0", "-5", "", "  "])
+def test_invalid_timeout_env_falls_back_to_default(post_returning, monkeypatch, bad_value):
+    """Non-integer, zero, or negative timeouts must not crash the crawl."""
+    monkeypatch.setenv("CRAWL4AI_REQUEST_TIMEOUT", bad_value)
+    calls = post_returning({"results": [{"markdown": "x"}]})
+    _make_crawler("markdown")._fetch_remote("http://crawl4ai:11235", "https://example.com")
+    assert calls[0]["timeout"] == 120

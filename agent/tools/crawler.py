@@ -15,10 +15,13 @@
 #
 from abc import ABC
 import asyncio
+import logging
 import os
 import requests
 from crawl4ai import AsyncWebCrawler
 from agent.tools.base import ToolParamBase, ToolBase
+
+_DEFAULT_REMOTE_TIMEOUT_S = 120
 
 
 class CrawlerParam(ToolParamBase):
@@ -50,6 +53,7 @@ class Crawler(ToolBase, ABC):
         try:
             server_url = (os.environ.get("CRAWL4AI_SERVER_URL", "") or "").rstrip("/")
             if server_url:
+                logging.info("[Crawler] offloading to remote crawl4ai server: %s", server_url)
                 return Crawler.be_output(self._fetch_remote(server_url, ans))
 
             # pin_dns_global is used (not thread-local) because crawl4ai resolves
@@ -69,15 +73,28 @@ class Crawler(ToolBase, ABC):
         called. The remote server resolves DNS itself, so ``pin_dns_global``
         is not applied here.
         """
+        timeout_raw = os.environ.get("CRAWL4AI_REQUEST_TIMEOUT", str(_DEFAULT_REMOTE_TIMEOUT_S))
+        try:
+            timeout_s = int(timeout_raw)
+            if timeout_s <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            logging.warning(
+                "[Crawler] invalid CRAWL4AI_REQUEST_TIMEOUT=%r, falling back to %ds",
+                timeout_raw, _DEFAULT_REMOTE_TIMEOUT_S,
+            )
+            timeout_s = _DEFAULT_REMOTE_TIMEOUT_S
+
         resp = requests.post(
             f"{server_url}/crawl",
             json={"urls": [url]},
-            timeout=int(os.environ.get("CRAWL4AI_REQUEST_TIMEOUT", 120)),
+            timeout=timeout_s,
         )
         resp.raise_for_status()
         payload = resp.json()
         results = payload.get("results") or []
         if not results:
+            logging.warning("[Crawler] remote crawl4ai server returned no results for %s", url)
             return ""
         r = results[0]
         if self._param.extract_type == "html":

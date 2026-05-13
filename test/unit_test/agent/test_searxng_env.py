@@ -112,3 +112,17 @@ def test_empty_query_skips_http_call(captured_get, monkeypatch):
     result = _make_searxng(per_tool_url="")._invoke(query="")
     assert result == ""
     assert captured_get == []
+
+
+def test_whitespace_per_tool_url_falls_through_to_env(captured_get, monkeypatch):
+    """A whitespace-only per-tool URL must not block the env fallback."""
+    monkeypatch.setenv("SEARXNG_URL", "http://env-searxng:9999")
+    _make_searxng(per_tool_url="   ")._invoke(query="cats")
+    assert captured_get[0]["url"] == "http://env-searxng:9999/search"
+
+
+def test_whitespace_kwargs_url_falls_through_to_env(captured_get, monkeypatch):
+    """A whitespace-only kwargs URL must not block the env fallback."""
+    monkeypatch.setenv("SEARXNG_URL", "http://env-searxng:9999")
+    _make_searxng(per_tool_url="")._invoke(query="cats", searxng_url="   ")
+    assert captured_get[0]["url"] == "http://env-searxng:9999/search"
