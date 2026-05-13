@@ -243,11 +243,13 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     if not instances:
         return True, []
     provider_instance_map: dict = {}
+    provider_info_map = {provider.provider_name: provider for provider in providers}
     for provider_instance_record in instances:
-        if provider_instance_map.get(provider_instance_record.provider_id):
-            provider_instance_map[provider_instance_record.provider_id].append(provider_instance_record)
+        provider_name = provider_info_map[provider_instance_record.provider_id].provider_name if provider_info_map.get(provider_instance_record.provider_id) else ""
+        if provider_instance_map.get(provider_name):
+            provider_instance_map[provider_name].append(provider_instance_record)
         else:
-            provider_instance_map[provider_instance_record.provider_id] = [provider_instance_record]
+            provider_instance_map[provider_name] = [provider_instance_record]
 
     model_records = TenantModelService.get_models_by_provider_ids(provider_ids)
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
@@ -262,7 +264,6 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
             active_model_record_map[instance_model_key] = [model]
 
     added_models = []
-    provider_info_map = {provider.provider_name: provider for provider in providers}
     model_key_in_factory = []
     for factory in FACTORY_LLM_INFOS:
         if factory["name"] not in provider_info_map.keys():

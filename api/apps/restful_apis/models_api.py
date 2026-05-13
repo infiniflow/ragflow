@@ -69,7 +69,7 @@ def get_added_models(tenant_id: str):
                       enable:
                         type: boolean
     """
-    model_type_filter = request.args.get("model_type")
+    model_type_filter = request.args.get("type")
     try:
         success, result = models_api_service.list_tenant_added_models(tenant_id, model_type_filter)
         if success:
