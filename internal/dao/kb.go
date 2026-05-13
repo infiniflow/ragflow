@@ -22,7 +22,6 @@ import (
 
 	"strconv"
 	"strings"
-	"time"
 )
 
 // KnowledgebaseDAO knowledge base data access object
@@ -314,30 +313,22 @@ func splitNameCounter(name string) (string, int) {
 // AtomicIncreaseDocNumByID atomically increments the document count
 // This matches the Python atomic_increase_doc_num_by_id method
 func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
-	now := time.Now().Truncate(time.Second)
-	updateTime := now.UnixMilli()
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
 			"doc_num":     DB.Raw("doc_num + 1"),
-			"update_time": updateTime,
-			"update_date": now,
 		}).Error
 }
 
 // DecreaseDocumentNum decreases document, chunk, and token counts
 // This matches the Python decrease_document_num_in_delete method
 func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, tokenNum int64) error {
-	now := time.Now().Truncate(time.Second)
-	updateTime := now.UnixMilli()
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
 			"doc_num":     DB.Raw("doc_num - ?", docNum),
 			"chunk_num":   DB.Raw("chunk_num - ?", chunkNum),
 			"token_num":   DB.Raw("token_num - ?", tokenNum),
-			"update_time": updateTime,
-			"update_date": now,
 		}).Error
 }
 
