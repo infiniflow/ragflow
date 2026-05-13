@@ -705,7 +705,7 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class User(DataBaseModel, AuthUser):
-    SENSITIVE_FIELDS = {"password", "access_token"}
+    SENSITIVE_FIELDS = {"password", "access_token", "email"}
 
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
@@ -731,9 +731,15 @@ class User(DataBaseModel, AuthUser):
         jwt = Serializer(secret_key=settings.get_secret_key())
         return jwt.dumps(str(self.access_token))
 
-    def to_safe_dict(self):
-        """Return a dict with sensitive fields stripped for API responses."""
+    def to_safe_dict(self, *, for_self: bool = False):
+        """Return a dict with sensitive fields stripped for API responses.
+
+        Email is treated as sensitive in generic serialization. Pass for_self=True
+        when returning the authenticated user's own record (login, profile, etc.).
+        """
         result = {k: v for k, v in self.to_dict().items() if k not in self.SENSITIVE_FIELDS}
+        if for_self:
+            result["email"] = self.email
         logging.debug("User %s serialized safely, filtered fields: %s", self.id, self.SENSITIVE_FIELDS)
         return result
 

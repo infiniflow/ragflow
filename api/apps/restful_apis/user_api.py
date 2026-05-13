@@ -101,7 +101,7 @@ async def login():
 
     users = UserService.query(email=email)
     if not users:
-        logging.warning("Login failed: unregistered email '%s'", email)
+        logging.warning("Login failed: email not registered")
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
@@ -112,13 +112,13 @@ async def login():
     try:
         password = decrypt(password)
     except BaseException:
-        logging.warning("Login failed: password decryption error for email '%s'", email)
+        logging.warning("Login failed: password decryption error")
         return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
 
     if user and hasattr(user, 'is_active') and user.is_active == "0":
-        logging.warning("Login failed: disabled account for email '%s'", email)
+        logging.warning("Login failed: disabled account for user_id=%s", user.id)
         return get_json_result(
             data=False,
             code=RetCode.FORBIDDEN,
@@ -130,12 +130,12 @@ async def login():
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
         user.save()
-        logging.info("Login successful: user_id=%s, email='%s'", user.id, email)
+        logging.info("Login successful: user_id=%s", user.id)
         msg = "Welcome back!"
 
-        return await construct_response(data=user.to_safe_dict(), auth=user.get_id(), message=msg)
+        return await construct_response(data=user.to_safe_dict(for_self=True), auth=user.get_id(), message=msg)
     else:
-        logging.warning("Login failed: wrong credentials for email '%s'", email)
+        logging.warning("Login failed: wrong credentials")
         return get_json_result(
             data=False,
             code=RetCode.AUTHENTICATION_ERROR,
@@ -391,7 +391,7 @@ async def user_profile():
               type: string
               description: User email.
     """
-    return get_json_result(data=current_user.to_safe_dict())
+    return get_json_result(data=current_user.to_safe_dict(for_self=True))
 
 
 def rollback_user_registration(user_id):
@@ -536,7 +536,7 @@ async def user_add():
         user = users[0]
         login_user(user)
         return await construct_response(
-            data=user.to_safe_dict(),
+            data=user.to_safe_dict(for_self=True),
             auth=user.get_id(),
             message=f"{nickname}, welcome aboard!",
         )
@@ -845,6 +845,6 @@ async def forget_reset_password():
         pass
 
     msg = "Password reset successful. Logged in."
-    return await construct_response(data=user.to_safe_dict(), auth=user.get_id(), message=msg)
+    return await construct_response(data=user.to_safe_dict(for_self=True), auth=user.get_id(), message=msg)
 
 
