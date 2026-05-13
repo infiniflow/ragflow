@@ -21,8 +21,10 @@ func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing
 			return
 		}
 		if r.Method == http.MethodPost {
-			if got := r.Header.Get("Content-Type"); got != "application/json" {
-				t.Errorf("expected Content-Type=application/json, got %q", got)
+			// Accept "application/json" with or without a parameter
+			// suffix like "; charset=utf-8" — both are valid JSON.
+			if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+				t.Errorf("expected Content-Type to start with application/json, got %q", got)
 				return
 			}
 			raw, err := io.ReadAll(r.Body)
@@ -47,6 +49,34 @@ func newLongCatForTest(baseURL string) *LongCatModel {
 		map[string]string{"default": baseURL},
 		URLSuffix{Chat: "v1/chat/completions"},
 	)
+}
+
+// newLongCatSSEServer returns an httptest.Server that asserts the
+// request contract (POST + path + Authorization + Content-Type prefix)
+// before writing the supplied SSE payload. Used by the streaming tests
+// so a regression in the wire shape can't slip through unnoticed.
+func newLongCatSSEServer(t *testing.T, expectedPath, ssePayload string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+			return
+		}
+		if r.URL.Path != expectedPath {
+			t.Errorf("expected path=%s, got %s", expectedPath, r.URL.Path)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("expected Authorization=Bearer test-key, got %q", got)
+			return
+		}
+		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Errorf("expected Content-Type to start with application/json, got %q", got)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, ssePayload)
+	}))
 }
 
 func TestLongCatName(t *testing.T) {
@@ -78,6 +108,9 @@ func TestLongCatChatHappyPath(t *testing.T) {
 		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Answer == nil || resp.ReasonContent == nil {
+		t.Fatalf("Answer/ReasonContent must be non-nil pointers, got Answer=%v ReasonContent=%v", resp.Answer, resp.ReasonContent)
 	}
 	if *resp.Answer != "pong" {
 		t.Errorf("answer=%q want pong", *resp.Answer)
@@ -115,6 +148,9 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 		&APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Answer == nil || resp.ReasonContent == nil {
+		t.Fatalf("Answer/ReasonContent must be non-nil pointers, got Answer=%v ReasonContent=%v", resp.Answer, resp.ReasonContent)
 	}
 	if *resp.Answer != "15% of 80 is 12." {
 		t.Errorf("Answer=%q", *resp.Answer)
@@ -204,15 +240,12 @@ func TestLongCatChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestLongCatStreamHappyPath(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w,
-			`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n"+
-				`data: [DONE]`+"\n",
-		)
-	}))
+	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n"+
+			`data: [DONE]`+"\n",
+	)
 	defer srv.Close()
 
 	m := newLongCatForTest(srv.URL)
@@ -248,16 +281,13 @@ func TestLongCatStreamExtractsReasoningContent(t *testing.T) {
 	// Fixture matches the shape captured live from
 	// LongCat-Flash-Thinking against api.longcat.chat: deltas
 	// interleave reasoning_content and content within the stream.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w,
-			`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 1. "}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 2."}}]}`+"\n"+
-				`data: {"choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":"stop"}]}`+"\n"+
-				`data: [DONE]`+"\n",
-		)
-	}))
+	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 1. "}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 2."}}]}`+"\n"+
+			`data: {"choices":[{"index":0,"delta":{"content":"final answer"},"finish_reason":"stop"}]}`+"\n"+
+			`data: [DONE]`+"\n",
+	)
 	defer srv.Close()
 
 	m := newLongCatForTest(srv.URL)
@@ -315,9 +345,9 @@ func TestLongCatStreamRequiresSender(t *testing.T) {
 }
 
 func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"half"}}]}`+"\n")
-	}))
+	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
+	)
 	defer srv.Close()
 
 	m := newLongCatForTest(srv.URL)
@@ -328,6 +358,51 @@ func TestLongCatStreamFailsWithoutTerminal(t *testing.T) {
 		func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "stream ended before") {
 		t.Errorf("expected truncation error, got %v", err)
+	}
+}
+
+// A malformed SSE frame (invalid JSON) used to be silently skipped,
+// which masked truncated or corrupted streams. The driver must now
+// fail hard with a "longcat: invalid SSE event" wrapper.
+func TestLongCatStreamRejectsMalformedFrame(t *testing.T) {
+	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
+			`data: {this is not valid json}`+"\n",
+	)
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil,
+		func(*string, *string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "invalid SSE event") {
+		t.Errorf("expected invalid-SSE error, got %v", err)
+	}
+}
+
+// An upstream {"error": ...} frame mid-stream used to fall through to
+// the "no choices" continue and leave the caller with a generic
+// truncation error. The driver must surface the upstream error verbatim.
+func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
+	srv := newLongCatSSEServer(t, "/v1/chat/completions",
+		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
+			`data: {"error":{"message":"rate limit exceeded","type":"rate_limit_error"}}`+"\n",
+	)
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	err := m.ChatStreamlyWithSender("LongCat-Flash-Chat",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil,
+		func(*string, *string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "upstream stream error") {
+		t.Errorf("expected upstream-error surfacing, got %v", err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "rate limit") {
+		t.Errorf("expected upstream message included, got %v", err)
 	}
 }
 
@@ -361,6 +436,19 @@ func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
 	m := newLongCatForTest("http://unused")
 	if _, err := m.ListModels(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
+	}
+}
+
+// Even though ListModels does not hit the network, a region with no
+// configured base URL is a misconfiguration that the caller deserves
+// to see now instead of on the first chat request.
+func TestLongCatListModelsRejectsUnknownRegion(t *testing.T) {
+	m := newLongCatForTest("http://unused")
+	apiKey := "test-key"
+	region := "atlantis"
+	_, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &region})
+	if err == nil || !strings.Contains(err.Error(), "no base URL configured") {
+		t.Errorf("expected region-not-configured error, got %v", err)
 	}
 }
 

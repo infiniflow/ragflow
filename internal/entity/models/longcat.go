@@ -352,7 +352,18 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 		var event map[string]interface{}
 		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
+			// A malformed frame can mean a truncated SSE event or an
+			// upstream incident; either way, the caller is better
+			// served by a hard failure than by silent partial output.
+			return fmt.Errorf("longcat: invalid SSE event: %w", err)
+		}
+
+		// LongCat (like other OpenAI-compatible upstreams) can emit a
+		// terminal `{"error": ...}` frame instead of a normal choices
+		// chunk when something goes wrong mid-stream. Surface it
+		// instead of falling through to the choices-missing branch.
+		if apiErr, ok := event["error"]; ok {
+			return fmt.Errorf("longcat: upstream stream error: %v", apiErr)
 		}
 
 		choices, ok := event["choices"].([]interface{})
@@ -414,10 +425,20 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 // statically shipped list instead of issuing a network call.
 //
 // API key is still required so that misconfigured providers surface
-// the same authentication error here as on the chat path.
+// the same authentication error here as on the chat path. The
+// region is also validated up-front: without this guard, a tenant
+// who picks a region with no configured base URL would see ListModels
+// succeed but then fail later on the first chat/embed call.
 func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
+	}
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	if _, err := l.baseURLForRegion(region); err != nil {
+		return nil, err
 	}
 	out := make([]string, len(longcatKnownModels))
 	copy(out, longcatKnownModels)
