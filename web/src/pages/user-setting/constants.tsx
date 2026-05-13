@@ -39,6 +39,7 @@ export const LocalLlmFactories = [
   LLMFactory.GPUStack,
   LLMFactory.ModelScope,
   LLMFactory.VLLM,
+  LLMFactory.RAGcon,
 ];
 
 export enum TenantRole {

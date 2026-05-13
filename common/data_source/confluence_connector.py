@@ -920,7 +920,7 @@ def extract_text_from_confluence_html(
         confluence_client (Confluence): Confluence client
         fetched_titles (set[str]): The titles of the pages that have already been fetched
     Returns:
-        str: loaded and formated Confluence page
+        str: loaded and formatted Confluence page
     """
     body = confluence_object["body"]
     object_html = body.get("storage", body.get("view", {})).get("value")
@@ -1310,7 +1310,7 @@ class ConfluenceConnector(
         self._confluence_client: OnyxConfluence | None = None
         self._low_timeout_confluence_client: OnyxConfluence | None = None
         self._fetched_titles: set[str] = set()
-        self.allow_images = False
+        self.allow_images = True
         # Track document names to detect duplicates
         self._document_name_counts: dict[str, int] = {}
         self._document_name_paths: dict[str, list[str]] = {}
@@ -1597,7 +1597,7 @@ class ConfluenceConnector(
                 id=page_url,
                 source=DocumentSource.CONFLUENCE,
                 semantic_identifier=semantic_identifier,
-                extension=".html",  # Confluence pages are HTML
+                extension=".txt",  # Confluence pages are HTML
                 blob=page_content.encode("utf-8"),  # Encode page content as bytes
                 doc_updated_at=datetime_from_string(page["version"]["when"]),
                 size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
@@ -1904,8 +1904,6 @@ class ConfluenceConnector(
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
     ) -> GenerateSlimDocumentOutput:
         """
@@ -1913,16 +1911,12 @@ class ConfluenceConnector(
         Does not fetch actual text. Used primarily for incremental permission sync.
         """
         return self._retrieve_all_slim_docs(
-            start=start,
-            end=end,
             callback=callback,
             include_permissions=True,
         )
 
     def _retrieve_all_slim_docs(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: IndexingHeartbeatInterface | None = None,
         include_permissions: bool = True,
     ) -> GenerateSlimDocumentOutput:

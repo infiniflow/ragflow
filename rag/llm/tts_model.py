@@ -28,6 +28,7 @@ from abc import ABC
 from datetime import datetime
 from time import mktime
 from typing import Annotated, Literal
+import logging
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
 
@@ -115,7 +116,8 @@ class HTTPBasedTTS(Base):
             url,
             headers=self.headers,
             json=payload,
-            stream=stream
+            stream=stream,
+            timeout=60,
         )
         
         if response.status_code != 200:
@@ -450,6 +452,16 @@ class DeerAPITTS(OpenAITTS):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
+class FuturMixTTS(OpenAITTS):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+        logging.info("[FuturMix] TTS initialized with model %s", model_name)
+
+
 class StepFunTTS(OpenAITTS):
     _FACTORY_NAME = "StepFun"
     _SUPPORTED_RESPONSE_FORMATS = {"wav", "mp3", "flac", "opus", "pcm"}
@@ -482,3 +494,52 @@ class StepFunTTS(OpenAITTS):
                 yield chunk
 
         yield num_tokens_from_string(text)
+
+
+class RAGconTTS(Base):
+    """
+    RAGcon TTS Provider - routes through LiteLLM proxy
+    
+    Text-to-speech models routed through LiteLLM.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+        
+        self.base_url = base_url
+        self.api_key = key
+        self.model_name = model_name
+        self.headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+    
+    def tts(self, text, voice="English Female", stream=True):
+        """
+        Uses LiteLLM's /v1/audio/speech endpoint
+        """
+
+        payload = {
+            "model": self.model_name,
+            "input": text,
+            "voice": voice
+        }
+        
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            headers=self.headers,
+            json=payload,
+            stream=stream,
+            timeout=60,
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"**Error**: {response.status_code}, {response.text}")
+        
+        for chunk in response.iter_content(chunk_size=1024):
+            if chunk:
+                yield chunk

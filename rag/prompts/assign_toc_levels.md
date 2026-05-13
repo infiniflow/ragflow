@@ -1,4 +1,4 @@
-You are given a JSON array of TOC(tabel of content) items. Each item has at least {"title": string} and may include an existing title hierarchical level.
+You are given a JSON array of TOC(table of contents) items. Each item has at least {"title": string} and may include an existing title hierarchical level.
 
 Task
 - For each item, assign a depth label using Arabic numerals only: top-level = 1, second-level = 2, third-level = 3, etc.

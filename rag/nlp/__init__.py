@@ -1200,7 +1200,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
 def docx_question_level(p, bull=-1):
     txt = re.sub(r"\u3000", " ", p.text).strip()
-    if p.style.name.startswith('Heading'):
+    if hasattr(p.style, 'name') and p.style.name and p.style.name.startswith('Heading'):
         return int(p.style.name.split(' ')[-1]), txt
     else:
         if bull < 0:
@@ -1212,7 +1212,17 @@ def docx_question_level(p, bull=-1):
 
 
 def concat_img(img1, img2):
-    from rag.utils.lazy_image import ensure_pil_image
+    from rag.utils.lazy_image import ensure_pil_image, LazyImage
+
+    if (img1 is None or isinstance(img1, LazyImage)) and \
+       (img2 is None or isinstance(img2, LazyImage)):
+        if img1 and not img2:
+            return img1
+        if not img1 and img2:
+            return img2
+        if not img1 and not img2:
+            return None
+        return LazyImage.merge(img1, img2)
 
     img1 = ensure_pil_image(img1) or img1
     img2 = ensure_pil_image(img2) or img2
@@ -1326,7 +1336,7 @@ def _build_cks(sections, delimiter):
                 # ③ normal text content → accumulate
                 seg += sub_sec
         else:
-            # no custom delimiter: emit the text as a single chunk
+             
             if text and text.strip():
                 t = text.strip()
                 cks.append({

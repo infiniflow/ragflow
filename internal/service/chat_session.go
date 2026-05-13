@@ -20,28 +20,33 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // ChatSessionService chat session (conversation) service
 type ChatSessionService struct {
-	chatSessionDAO *dao.ChatSessionDAO
-	chatDAO        *dao.ChatDAO
-	userTenantDAO  *dao.UserTenantDAO
+	chatSessionDAO   *dao.ChatSessionDAO
+	chatDAO          *dao.ChatDAO
+	userTenantDAO    *dao.UserTenantDAO
+	modelProviderSvc *ModelProviderService
 }
 
 // NewChatSessionService create chat session service
 func NewChatSessionService() *ChatSessionService {
 	return &ChatSessionService{
-		chatSessionDAO: dao.NewChatSessionDAO(),
-		chatDAO:        dao.NewChatDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
+		chatSessionDAO:   dao.NewChatSessionDAO(),
+		chatDAO:          dao.NewChatDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		modelProviderSvc: NewModelProviderService(),
 	}
 }
 
@@ -55,7 +60,7 @@ type SetChatSessionRequest struct {
 
 // SetChatSessionResponse set chat session response
 type SetChatSessionResponse struct {
-	*model.ChatSession
+	*entity.ChatSession
 }
 
 // SetChatSession create or update a chat session
@@ -113,8 +118,8 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		}
 	}
 
-	now := time.Now()
-	createTime := now.UnixMilli()
+	now := time.Now().Truncate(time.Second)
+	createTime := time.Now().UnixMilli()
 
 	// Create initial message - store as JSON object with messages array
 	messagesObj := map[string]interface{}{
@@ -131,7 +136,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	// Create chat session
-	session := &model.ChatSession{
+	session := &entity.ChatSession{
 		ID:        newID,
 		DialogID:  req.DialogID,
 		Name:      &name,
@@ -139,7 +144,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		UserID:    &userID,
 		Reference: referenceJSON,
 	}
-	session.CreateTime = createTime
+	session.CreateTime = &createTime
 	session.CreateDate = &now
 	session.UpdateTime = &createTime
 	session.UpdateDate = &now
@@ -212,11 +217,11 @@ type ListChatSessionsRequest struct {
 
 // ListChatSessionsResponse list chat sessions response
 type ListChatSessionsResponse struct {
-	Sessions []*model.ChatSession
+	Sessions []*entity.ChatSession
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -226,7 +231,8 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 	// Check if user is the owner of the dialog
 	isOwner := false
 	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, dialogID)
+		var exists bool
+		exists, err = s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +244,8 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 
 	// Also check with userID as tenant
 	if !isOwner {
-		exists, err := s.chatSessionDAO.CheckDialogExists(userID, dialogID)
+		var exists bool
+		exists, err = s.chatSessionDAO.CheckDialogExists(userID, chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -246,11 +253,11 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 	}
 
 	if !isOwner {
-		return nil, errors.New("Only owner of dialog authorized for this operation")
+		return nil, errors.New("only owner of dialog authorized for this operation")
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByDialogID(dialogID)
+	sessions, err := s.chatSessionDAO.ListByChatID(chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +404,7 @@ func (s *ChatSessionService) CompletionStream(userID string, conversationID stri
 
 // Helper methods
 
-func (s *ChatSessionService) buildSessionMessages(session *model.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
+func (s *ChatSessionService) buildSessionMessages(session *entity.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
 	// Deep copy messages to session
 	sessionMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -409,7 +416,7 @@ func (s *ChatSessionService) buildSessionMessages(session *model.ChatSession, me
 	return sessionMessages
 }
 
-func (s *ChatSessionService) initializeReference(session *model.ChatSession) []interface{} {
+func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []interface{} {
 	var reference []interface{}
 	if len(session.Reference) > 0 {
 		json.Unmarshal(session.Reference, &reference)
@@ -433,98 +440,7 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(tenantID, modelName string) (b
 	return true, nil
 }
 
-func (s *ChatSessionService) performChat(dialog *model.Chat, messages []map[string]interface{}, config map[string]interface{}) (string, error) {
-	// Get system prompt from dialog
-	systemPrompt := ""
-	if dialog.PromptConfig != nil {
-		if sys, ok := dialog.PromptConfig["system"].(string); ok {
-			systemPrompt = sys
-		}
-	}
-
-	// Convert messages to history format
-	history := make([]map[string]string, 0)
-	for _, msg := range messages {
-		role, _ := msg["role"].(string)
-		content, _ := msg["content"].(string)
-		if role != "" && content != "" {
-			history = append(history, map[string]string{
-				"role":    role,
-				"content": content,
-			})
-		}
-	}
-
-	// Use ModelBundle to perform chat
-	bundle, err := NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
-	if err != nil {
-		return "", err
-	}
-
-	// Merge dialog's LLM setting with request config
-	genConf := make(map[string]interface{})
-	if dialog.LLMSetting != nil {
-		for k, v := range dialog.LLMSetting {
-			genConf[k] = v
-		}
-	}
-	for k, v := range config {
-		genConf[k] = v
-	}
-
-	response, _, err := bundle.Chat(systemPrompt, history, genConf)
-	return response, err
-}
-
-func (s *ChatSessionService) performChatStream(dialog *model.Chat, messages []map[string]interface{}, config map[string]interface{}) (<-chan string, error) {
-	// Get system prompt from dialog
-	systemPrompt := ""
-	if dialog.PromptConfig != nil {
-		if sys, ok := dialog.PromptConfig["system"].(string); ok {
-			systemPrompt = sys
-		}
-	}
-
-	// Convert messages to history format
-	history := make([]map[string]string, 0)
-	for _, msg := range messages {
-		role, _ := msg["role"].(string)
-		content, _ := msg["content"].(string)
-		if role != "" && content != "" {
-			history = append(history, map[string]string{
-				"role":    role,
-				"content": content,
-			})
-		}
-	}
-
-	// Use ModelBundle to perform streaming chat
-	bundle, err := NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Merge dialog's LLM setting with request config
-	genConf := make(map[string]interface{})
-	if dialog.LLMSetting != nil {
-		for k, v := range dialog.LLMSetting {
-			genConf[k] = v
-		}
-	}
-	for k, v := range config {
-		genConf[k] = v
-	}
-
-	// Get chat model and call ChatStreamly
-	chatModel, ok := bundle.GetModel().(model.ChatModel)
-	if !ok {
-		return nil, fmt.Errorf("model is not a chat model")
-	}
-
-	return chatModel.ChatStreamly(systemPrompt, history, genConf)
-}
-
-func (s *ChatSessionService) structureAnswer(session *model.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {
+func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"answer":          answer,
 		"reference":       reference,
@@ -533,7 +449,7 @@ func (s *ChatSessionService) structureAnswer(session *model.ChatSession, answer 
 	}
 }
 
-func (s *ChatSessionService) updateSessionMessages(session *model.ChatSession, messages []map[string]interface{}, reference []interface{}) {
+func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, messages []map[string]interface{}, reference []interface{}) {
 	// Update session with new messages and reference
 	messagesJSON, _ := json.Marshal(map[string]interface{}{
 		"messages": messages,
@@ -550,7 +466,7 @@ func (s *ChatSessionService) updateSessionMessages(session *model.ChatSession, m
 }
 
 // asyncChat performs chat with RAG support (non-streaming)
-func (s *ChatSessionService) asyncChat(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChat(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
 	// Check if we need RAG (knowledge base or tavily)
 	hasKB := len(dialog.KBIDs) > 0
 	hasTavily := false
@@ -579,7 +495,7 @@ func (s *ChatSessionService) asyncChat(dialog *model.Chat, session *model.ChatSe
 }
 
 // asyncChatStream performs streaming chat with RAG support
-func (s *ChatSessionService) asyncChatStream(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}) (<-chan map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChatStream(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}) (<-chan map[string]interface{}, error) {
 	resultChan := make(chan map[string]interface{})
 
 	go func() {
@@ -609,43 +525,59 @@ func (s *ChatSessionService) asyncChatStream(dialog *model.Chat, session *model.
 }
 
 // asyncChatSolo performs simple chat without RAG (non-streaming)
-func (s *ChatSessionService) asyncChatSolo(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
+	common.Info("asyncChatSolo started",
+		zap.String("tenant_id", dialog.TenantID),
+		zap.String("llm_id", dialog.LLMID),
+		zap.String("dialog_id", dialog.ID),
+		zap.Int("message_count", len(messages)))
+
 	// Get system prompt
 	systemPrompt := s.buildSystemPrompt(dialog)
 
 	// Process messages - handle attachments and image files
 	processedMessages := s.processMessages(messages, dialog)
 
-	// Get LLM type
-	llmType := s.getLLMType(dialog.LLMID)
-
-	// Build generation config
-	genConf := s.buildGenConf(dialog, config)
-
-	// Create ModelBundle for chat
-	var bundle *ModelBundle
-	var err error
-	if llmType == "image2text" {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeImage2Text, dialog.LLMID)
-	} else {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
-	}
+	chatModel, err := s.modelProviderSvc.GetChatModel(dialog.TenantID, dialog.LLMID)
 	if err != nil {
+		common.Error("asyncChatSolo failed to get chat model", err)
 		return nil, err
 	}
 
-	// Convert messages to history format
-	history := s.convertToHistory(processedMessages)
+	// Convert messages to Message format
+	var msgs []modelModule.Message
+	if systemPrompt != "" {
+		msgs = append(msgs, modelModule.Message{Role: "system", Content: systemPrompt})
+	}
+	for _, msg := range processedMessages {
+		role, _ := msg["role"].(string)
+		if role == "" || role == "system" {
+			continue
+		}
+
+		if msg["content"] != nil {
+			msgs = append(msgs, modelModule.Message{Role: role, Content: msg["content"]})
+		}
+	}
+
+	// Get ChatConfig directly from dialog and config
+	chatConfig := s.buildChatConfig(dialog, config)
 
 	// Perform chat
-	response, _, err := bundle.Chat(systemPrompt, history, genConf)
+	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, msgs, chatModel.APIConfig, chatConfig)
 	if err != nil {
+		common.Error("asyncChatSolo chat failed", err)
 		return nil, err
 	}
+
+	common.Info("asyncChatSolo completed",
+		zap.String("tenant_id", dialog.TenantID),
+		zap.String("llm_id", dialog.LLMID),
+		zap.Int("response_length", len(*response.Answer)))
 
 	// Structure the answer
 	ans := map[string]interface{}{
-		"answer":    response,
+		"answer":    *response.Answer,
 		"reference": reference[len(reference)-1],
 		"final":     true,
 	}
@@ -654,62 +586,77 @@ func (s *ChatSessionService) asyncChatSolo(dialog *model.Chat, session *model.Ch
 }
 
 // asyncChatSoloStream performs simple streaming chat without RAG
-func (s *ChatSessionService) asyncChatSoloStream(dialog *model.Chat, session *model.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, resultChan chan<- map[string]interface{}) {
+func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, resultChan chan<- map[string]interface{}) {
+	common.Info("asyncChatSoloStream started",
+		zap.String("tenant_id", dialog.TenantID),
+		zap.String("llm_id", dialog.LLMID),
+		zap.String("dialog_id", dialog.ID),
+		zap.Int("message_count", len(messages)))
+
 	// Get system prompt
 	systemPrompt := s.buildSystemPrompt(dialog)
 
 	// Process messages
 	processedMessages := s.processMessages(messages, dialog)
 
-	// Get LLM type
-	llmType := s.getLLMType(dialog.LLMID)
-
-	// Build generation config
-	genConf := s.buildGenConf(dialog, config)
-
-	// Create ModelBundle
-	var bundle *ModelBundle
-	var err error
-	if llmType == "image2text" {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeImage2Text, dialog.LLMID)
-	} else {
-		bundle, err = NewModelBundle(dialog.TenantID, model.ModelTypeChat, dialog.LLMID)
-	}
+	chatModel, err := s.modelProviderSvc.GetChatModel(dialog.TenantID, dialog.LLMID)
 	if err != nil {
+		common.Error("asyncChatSoloStream failed to get chat model", err)
 		resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
 		return
 	}
 
-	// Convert messages to history
-	history := s.convertToHistory(processedMessages)
-
-	// Get chat model
-	chatModel, ok := bundle.GetModel().(model.ChatModel)
-	if !ok {
-		resultChan <- s.structureAnswer(session, "**ERROR**: model is not a chat model", messageID, session.ID, reference)
-		return
+	// Convert messages to []modelModule.Message for ChatStreamlyWithSender
+	var chatMessages []modelModule.Message
+	if systemPrompt != "" {
+		chatMessages = append(chatMessages, modelModule.Message{
+			Role:    "system",
+			Content: systemPrompt,
+		})
+	}
+	for _, msg := range processedMessages {
+		role, _ := msg["role"].(string)
+		content := msg["content"]
+		if role != "" && content != nil && role != "system" {
+			chatMessages = append(chatMessages, modelModule.Message{
+				Role:    role,
+				Content: content,
+			})
+		}
 	}
 
-	// Perform streaming chat
-	streamChan, err := chatModel.ChatStreamly(systemPrompt, history, genConf)
-	if err != nil {
-		resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
-		return
-	}
+	// Get ChatConfig directly from dialog and config
+	chatConfig := s.buildChatConfig(dialog, config)
 
-	// Stream results
+	// Perform streaming chat using ChatStreamlyWithSender
 	fullAnswer := ""
-	for chunk := range streamChan {
-		fullAnswer += chunk
-		// Clean up reasoning content
-		fullAnswer = s.removeReasoningContent(fullAnswer)
-		ans := s.structureAnswer(session, fullAnswer, messageID, session.ID, reference)
-		resultChan <- ans
+	err = chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, chatMessages, chatModel.APIConfig, chatConfig, func(answer *string, reason *string) error {
+		if reason != nil && *reason != "" {
+			fullAnswer += *reason
+			ans := s.structureAnswer(session, fullAnswer, messageID, session.ID, reference)
+			resultChan <- ans
+		}
+		if answer != nil && *answer != "" {
+			fullAnswer += *answer
+			fullAnswer = s.removeReasoningContent(fullAnswer)
+			ans := s.structureAnswer(session, fullAnswer, messageID, session.ID, reference)
+			resultChan <- ans
+		}
+		return nil
+	})
+	if err != nil {
+		resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
+		return
 	}
+
+	common.Info("asyncChatSoloStream completed",
+		zap.String("tenant_id", dialog.TenantID),
+		zap.String("llm_id", dialog.LLMID),
+		zap.Int("response_length", len(fullAnswer)))
 }
 
 // buildSystemPrompt builds the system prompt from dialog configuration
-func (s *ChatSessionService) buildSystemPrompt(dialog *model.Chat) string {
+func (s *ChatSessionService) buildSystemPrompt(dialog *entity.Chat) string {
 	if dialog.PromptConfig == nil {
 		return ""
 	}
@@ -719,7 +666,7 @@ func (s *ChatSessionService) buildSystemPrompt(dialog *model.Chat) string {
 }
 
 // processMessages processes messages and handles attachments
-func (s *ChatSessionService) processMessages(messages []map[string]interface{}, dialog *model.Chat) []map[string]interface{} {
+func (s *ChatSessionService) processMessages(messages []map[string]interface{}, dialog *entity.Chat) []map[string]interface{} {
 	// Process each message
 	processed := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -745,50 +692,6 @@ func (s *ChatSessionService) cleanContent(content string) string {
 	return content
 }
 
-// convertToHistory converts messages to history format for LLM
-func (s *ChatSessionService) convertToHistory(messages []map[string]interface{}) []map[string]string {
-	history := make([]map[string]string, 0)
-	for _, msg := range messages {
-		role, _ := msg["role"].(string)
-		content, _ := msg["content"].(string)
-		if role != "" && content != "" && role != "system" {
-			history = append(history, map[string]string{
-				"role":    role,
-				"content": content,
-			})
-		}
-	}
-	return history
-}
-
-// buildGenConf builds generation config from dialog and request
-func (s *ChatSessionService) buildGenConf(dialog *model.Chat, config map[string]interface{}) map[string]interface{} {
-	genConf := make(map[string]interface{})
-
-	// Start with dialog's LLM setting
-	if dialog.LLMSetting != nil {
-		for k, v := range dialog.LLMSetting {
-			genConf[k] = v
-		}
-	}
-
-	// Override with request config
-	for k, v := range config {
-		genConf[k] = v
-	}
-
-	return genConf
-}
-
-// getLLMType gets the LLM type from model ID
-func (s *ChatSessionService) getLLMType(llmID string) string {
-	// Simplified - would need to query TenantLLMService
-	if strings.Contains(llmID, "image") || strings.Contains(llmID, "vision") {
-		return "image2text"
-	}
-	return "chat"
-}
-
 // removeReasoningContent removes reasoning/thinking content from answer
 func (s *ChatSessionService) removeReasoningContent(answer string) string {
 	// Remove </think> tags
@@ -799,7 +702,7 @@ func (s *ChatSessionService) removeReasoningContent(answer string) string {
 }
 
 // structureAnswerWithConv structures the answer with conversation update (like Python's structure_answer)
-func (s *ChatSessionService) structureAnswerWithConv(session *model.ChatSession, ans map[string]interface{}, messageID, conversationID string, reference []interface{}) map[string]interface{} {
+func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession, ans map[string]interface{}, messageID, conversationID string, reference []interface{}) map[string]interface{} {
 	// Extract reference from answer
 	ref, _ := ans["reference"].(map[string]interface{})
 	if ref == nil {
@@ -890,4 +793,93 @@ func (s *ChatSessionService) chunksFormat(reference map[string]interface{}) []in
 		formatted[i] = chunk
 	}
 	return formatted
+}
+
+// buildChatConfig builds ChatConfig directly from dialog.LLMSetting and config
+func (s *ChatSessionService) buildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelModule.ChatConfig {
+	cfg := &modelModule.ChatConfig{}
+
+	// Start with dialog's LLM setting
+	if dialog.LLMSetting != nil {
+		if v, ok := dialog.LLMSetting["stream"].(bool); ok {
+			cfg.Stream = &v
+		}
+		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
+			cfg.Thinking = &v
+		}
+		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
+			intVal := int(v)
+			cfg.MaxTokens = &intVal
+		}
+		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
+			cfg.Temperature = &v
+		}
+		if v, ok := dialog.LLMSetting["top_p"].(float64); ok {
+			cfg.TopP = &v
+		}
+		if v, ok := dialog.LLMSetting["do_sample"].(bool); ok {
+			cfg.DoSample = &v
+		}
+		if v, ok := dialog.LLMSetting["stop"].([]interface{}); ok {
+			stopStrs := make([]string, 0, len(v))
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					stopStrs = append(stopStrs, str)
+				}
+			}
+			cfg.Stop = &stopStrs
+		}
+		if v, ok := dialog.LLMSetting["model_class"].(string); ok {
+			cfg.ModelClass = &v
+		}
+		if v, ok := dialog.LLMSetting["effort"].(string); ok {
+			cfg.Effort = &v
+		}
+		if v, ok := dialog.LLMSetting["verbosity"].(string); ok {
+			cfg.Verbosity = &v
+		}
+	}
+
+	// Override with request config
+	if config != nil {
+		if v, ok := config["stream"].(bool); ok {
+			cfg.Stream = &v
+		}
+		if v, ok := config["thinking"].(bool); ok {
+			cfg.Thinking = &v
+		}
+		if v, ok := config["max_tokens"].(float64); ok {
+			intVal := int(v)
+			cfg.MaxTokens = &intVal
+		}
+		if v, ok := config["temperature"].(float64); ok {
+			cfg.Temperature = &v
+		}
+		if v, ok := config["top_p"].(float64); ok {
+			cfg.TopP = &v
+		}
+		if v, ok := config["do_sample"].(bool); ok {
+			cfg.DoSample = &v
+		}
+		if v, ok := config["stop"].([]interface{}); ok {
+			stopStrs := make([]string, 0, len(v))
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					stopStrs = append(stopStrs, str)
+				}
+			}
+			cfg.Stop = &stopStrs
+		}
+		if v, ok := config["model_class"].(string); ok {
+			cfg.ModelClass = &v
+		}
+		if v, ok := config["effort"].(string); ok {
+			cfg.Effort = &v
+		}
+		if v, ok := config["verbosity"].(string); ok {
+			cfg.Verbosity = &v
+		}
+	}
+
+	return cfg
 }

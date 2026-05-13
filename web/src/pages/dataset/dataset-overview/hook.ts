@@ -3,9 +3,9 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from '@/hooks/logic-hooks';
-import kbService, {
+import {
+  getKnowledgeBasicInfo,
   listDataPipelineLogDocument,
-  listPipelineDatasetLogs,
 } from '@/services/knowledge-service';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
@@ -13,16 +13,16 @@ import { useParams, useSearchParams } from 'react-router';
 import { LogTabs } from './dataset-common';
 import { IFileLogList, IOverviewTotal } from './interface';
 
-const useFetchOverviewTital = () => {
+const useFetchOverviewTotal = () => {
   const [searchParams] = useSearchParams();
   const { id } = useParams();
   const knowledgeBaseId = searchParams.get('id') || id;
   const { data } = useQuery<IOverviewTotal>({
     queryKey: ['overviewTotal'],
     queryFn: async () => {
-      const { data: res = {} } = await kbService.getKnowledgeBasicInfo({
-        kb_id: knowledgeBaseId,
-      });
+      const { data: res = {} } = await getKnowledgeBasicInfo(
+        knowledgeBaseId || '',
+      );
       return res.data || [];
     },
   });
@@ -40,10 +40,7 @@ const useFetchFileLogList = () => {
     LogTabs.FILE_LOGS,
   );
   const knowledgeBaseId = searchParams.get('id') || id;
-  const fetchFunc =
-    active === LogTabs.DATASET_LOGS
-      ? listPipelineDatasetLogs
-      : listDataPipelineLogDocument;
+  const logType = active === LogTabs.DATASET_LOGS ? 'dataset' : 'file';
   const { data } = useQuery<IFileLogList>({
     queryKey: [
       'fileLogList',
@@ -61,15 +58,15 @@ const useFetchFileLogList = () => {
     },
     enabled: true,
     queryFn: async () => {
-      const { data: res = {} } = await fetchFunc(
+      const { data: res = {} } = await listDataPipelineLogDocument(
+        knowledgeBaseId || '',
         {
-          kb_id: knowledgeBaseId,
           page: pagination.current,
           page_size: pagination.pageSize,
           keywords: searchString,
-          // order_by: '',
+          log_type: logType,
+          ...filterValue,
         },
-        { ...filterValue },
       );
       return res.data || [];
     },
@@ -95,4 +92,4 @@ const useFetchFileLogList = () => {
   };
 };
 
-export { useFetchFileLogList, useFetchOverviewTital };
+export { useFetchFileLogList, useFetchOverviewTotal };

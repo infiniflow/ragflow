@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 
@@ -50,23 +51,9 @@ func NewChatSessionHandler(chatSessionService *service.ChatSessionService, userS
 // @Success 200 {object} service.SetChatSessionResponse
 // @Router /v1/conversation/set [post]
 func (h *ChatSessionHandler) SetChatSession(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -113,23 +100,9 @@ type RemoveChatSessionsRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/conversation/rm [post]
 func (h *ChatSessionHandler) RemoveChatSessions(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -175,43 +148,29 @@ func (h *ChatSessionHandler) RemoveChatSessions(c *gin.Context) {
 // @Tags chat_session
 // @Accept json
 // @Produce json
-// @Param dialog_id query string true "dialog ID"
+// @Param chat_id query string true "chat ID"
 // @Success 200 {object} service.ListChatSessionsResponse
-// @Router /v1/conversation/list [get]
+// @Router /api/v1/chats/<chat_id>/sessions [get]
 func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
 
-	// Get dialog_id from query parameter
-	dialogID := c.Query("dialog_id")
-	if dialogID == "" {
+	// Get chat_id from query parameter
+	chatID := c.Param("chat_id")
+	if chatID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "dialog_id is required",
+			"message": "chat_id is required",
 		})
 		return
 	}
 
 	// Call service to list chat sessions
-	result, err := h.chatSessionService.ListChatSessions(userID, dialogID)
+	result, err := h.chatSessionService.ListChatSessions(userID, chatID)
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "Only owner of dialog authorized for this operation" {
@@ -241,7 +200,8 @@ type CompletionRequest struct {
 	ConversationID   string                   `json:"conversation_id" binding:"required"`
 	Messages         []map[string]interface{} `json:"messages" binding:"required"`
 	LLMID            string                   `json:"llm_id,omitempty"`
-	Stream           bool                     `json:"stream,omitempty"`
+	Stream           *bool                    `json:"stream,omitempty"`
+	Thinking         *bool                    `json:"thinking,omitempty"`
 	Temperature      float64                  `json:"temperature,omitempty"`
 	TopP             float64                  `json:"top_p,omitempty"`
 	FrequencyPenalty float64                  `json:"frequency_penalty,omitempty"`
@@ -259,23 +219,9 @@ type CompletionRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/conversation/completion [post]
 func (h *ChatSessionHandler) Completion(c *gin.Context) {
-	// Get access token from Authorization header
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Missing Authorization header",
-		})
-		return
-	}
-
-	// Get user by access token
-	user, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "Invalid access token",
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -307,6 +253,12 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	if req.MaxTokens != 0 {
 		chatModelConfig["max_tokens"] = req.MaxTokens
 	}
+	if req.Stream != nil {
+		chatModelConfig["stream"] = *req.Stream
+	}
+	if req.Thinking != nil {
+		chatModelConfig["thinking"] = *req.Thinking
+	}
 
 	// Process messages - filter out system messages and initial assistant messages
 	var processedMessages []map[string]interface{}
@@ -331,7 +283,7 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 	}
 
 	// Call service
-	if req.Stream {
+	if req.Stream != nil && *req.Stream {
 		// Streaming response
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")

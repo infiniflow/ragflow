@@ -8,7 +8,7 @@ import { Link, LinkProps } from 'react-router';
 
 const buttonVariants = cva(
   cn(
-    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-0',
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm transition-colors outline-0',
     'disabled:pointer-events-none disabled:opacity-50 rounded border-0.5 border-transparent',
     '[&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4 shrink-0 [&_svg]:shrink-0',
   ),
@@ -55,6 +55,8 @@ const buttonVariants = cva(
           focus-visible:text-text-primary focus-visible:bg-border-button focus-visible:border-border-button
         `,
 
+        icon: 'bg-transparent text-foreground hover:bg-transparent/80',
+
         transparent: `
           text-text-secondary bg-transparent border-0.5 border-border-button
           hover:text-text-primary hover:bg-border-button
@@ -64,6 +66,13 @@ const buttonVariants = cva(
         danger: `
           bg-transparent border border-state-error text-state-error
           hover:bg-state-error/10 focus-visible:bg-state-error/10
+        `,
+
+        'danger-hover': `
+          bg-bg-input border-border-button
+          hover:bg-state-error/10 focus-visible:bg-state-error/10
+          hover:text-state-error focus-visible:text-state-error
+          hover:border-state-error focus-visible:border-state-error
         `,
 
         // Ghost variant series
@@ -81,15 +90,20 @@ const buttonVariants = cva(
         `,
 
         link: 'text-primary underline-offset-4 hover:underline',
+
+        // Static
+        // Button has no interaction transitions
+        static:
+          'text-text-secondary hover:text-text-primary focus-visible:text-text-primary',
       },
       size: {
-        auto: 'h-full px-1',
+        auto: '',
 
-        xl: 'h-12 rounded-xl px-5',
+        xl: 'h-12 rounded-xl px-5 gap-3',
         lg: 'h-10 rounded-lg px-4',
         default: 'h-8 rounded px-3',
-        sm: 'h-7 rounded-sm px-2',
-        xs: 'h-6 rounded-xs px-1',
+        sm: 'h-7 rounded-sm px-2 gap-1',
+        xs: 'h-6 rounded-xs px-1 gap-0.5',
 
         'icon-xl': 'size-12 rounded-xl',
         'icon-lg': 'size-10 rounded-lg',
@@ -105,6 +119,8 @@ const buttonVariants = cva(
   },
 );
 
+export type ButtonVariants = VariantProps<typeof buttonVariants>;
+
 export type ButtonProps<IsAnchor extends boolean = false> = {
   asChild?: boolean;
   asLink?: boolean;
@@ -112,7 +128,7 @@ export type ButtonProps<IsAnchor extends boolean = false> = {
   block?: boolean;
   disabled?: boolean;
   dot?: boolean;
-} & VariantProps<typeof buttonVariants> &
+} & ButtonVariants &
   (IsAnchor extends true
     ? LinkProps
     : React.ButtonHTMLAttributes<HTMLButtonElement>);
@@ -142,7 +158,7 @@ const Button = React.forwardRef(
       <Comp
         className={cn(
           buttonVariants({ variant, size, className }),
-          { 'block w-full': block },
+          { 'w-full': block },
           { relative: dot },
         )}
         // @ts-ignore

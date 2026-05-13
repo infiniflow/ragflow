@@ -21,7 +21,6 @@ from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
 from docx import Document
-from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
@@ -30,12 +29,11 @@ from markdown import markdown
 from PIL import Image
 from common.token_utils import num_tokens_from_string
 
-from common.constants import LLMType
+from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from rag.utils.lazy_image import LazyDocxImage
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
@@ -85,7 +83,7 @@ def _normalize_section_text_for_rtl_presentation_forms(sections):
     return normalized_sections
 
 
-def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_deepdoc(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
@@ -104,7 +102,7 @@ def by_mineru(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -150,26 +148,77 @@ def by_mineru(
     return None, None, None
 
 
-def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     pdf_parser = DoclingParser()
     parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
-        callback(-1, "Docling not found.")
+        if callback:
+            callback(-1, "Docling not found.")
         return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
         binary=binary,
         callback=callback,
-        output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-        delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        output_dir=os.environ.get("DOCLING_OUTPUT_DIR", ""),
+        delete_output=bool(int(os.environ.get("DOCLING_DELETE_OUTPUT", 1))),
+        docling_server_url=os.environ.get("DOCLING_SERVER_URL", ""),
         parse_method=parse_method,
     )
     return sections, tables, pdf_parser
 
 
-def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+def by_opendataloader(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    opendataloader_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    if tenant_id:
+        if not opendataloader_llm_name:
+            try:
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                env_name = TenantLLMService.ensure_opendataloader_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="OpenDataLoader", model_type=LLMType.OCR)
+                if candidates:
+                    opendataloader_llm_name = candidates[0].llm_name
+                elif env_name:
+                    opendataloader_llm_name = env_name
+            except Exception as e:
+                logging.warning(f"fallback to env opendataloader: {e}")
+
+        if opendataloader_llm_name:
+            try:
+                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    **parse_options,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle OpenDataLoader ({opendataloader_llm_name}): {e}")
+
+    if callback:
+        callback(-1, "OpenDataLoader not found.")
+    return None, None, None
+
+
+def by_tcadp(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
@@ -184,7 +233,7 @@ def by_paddleocr(
     filename,
     binary=None,
     from_page=0,
-    to_page=100000,
+    to_page=MAXIMUM_PAGE_NUMBER,
     lang="Chinese",
     callback=None,
     pdf_cls=None,
@@ -231,7 +280,7 @@ def by_paddleocr(
     return None, None, None
 
 
-def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
         pdf_parser = PlainParser()
@@ -255,6 +304,7 @@ PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
     "docling": by_docling,
+    "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "plaintext": by_plaintext,  # default
@@ -264,40 +314,6 @@ PARSERS = {
 class Docx(DocxParser):
     def __init__(self):
         pass
-
-    def get_picture(self, document, paragraph):
-        imgs = paragraph._element.xpath(".//pic:pic")
-        if not imgs:
-            return None
-        image_blobs = []
-        for img in imgs:
-            embed = img.xpath(".//a:blip/@r:embed")
-            if not embed:
-                continue
-            embed = embed[0]
-            try:
-                related_part = document.part.related_parts[embed]
-                image_blob = related_part.image.blob
-            except UnrecognizedImageError:
-                logging.info("Unrecognized image format. Skipping image.")
-                continue
-            except UnexpectedEndOfFileError:
-                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-                continue
-            except InvalidImageStreamError:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-                continue
-            except UnicodeDecodeError:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-                continue
-            except Exception as e:
-                logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
-                continue
-            image_blobs.append(image_blob)
-
-        if not image_blobs:
-            return None
-        return LazyDocxImage(image_blobs)
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -408,7 +424,7 @@ class Docx(DocxParser):
 
         return ""
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         lines = []
@@ -571,7 +587,7 @@ class Pdf(PdfParser):
     def __init__(self):
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None, separate_tables_figures=False):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None, separate_tables_figures=False):
         start = timer()
         first_start = start
         callback(msg="OCR started")
@@ -760,7 +776,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
     return srels
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, excel, txt.
     This method apply the naive ways to chunk files.
@@ -852,6 +868,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
+        if layout_recognizer == "OpenDataLoader" and parser_model_name:
+            opendataloader_llm_name = parser_model_name
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)
@@ -873,6 +892,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
             paddleocr_llm_name=parser_model_name,
+            opendataloader_llm_name=opendataloader_llm_name,
             **kwargs,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -883,7 +903,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
@@ -925,6 +945,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         sections = TxtParser()(filename, binary, parser_config.get("chunk_token_num", 128), parser_config.get("delimiter", "\n!?;。；！？"))
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+        print("\n", "-"*150, "\n")
+        print(sections)
+        print("\n", "-"*150, "\n")
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
@@ -983,6 +1006,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = HtmlParser()(filename, binary, chunk_token_num)
+        sections = [(_, "") for _ in sections if _]
+        sections = _normalize_section_text_for_rtl_presentation_forms(sections)
+        callback(0.8, "Finish parsing.")
+
+    elif re.search(r"\.epub$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+        sections = EpubParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
         callback(0.8, "Finish parsing.")
@@ -1101,6 +1132,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         res.extend(url_res)
     # if table_context_size or image_context_size:
     #    attach_media_context(res, table_context_size, image_context_size)
+
+    # Attach PDF outline as transient metadata on the first chunk.
+    # task_executor.py will extract and persist it as document metadata.
+    if res and pdf_parser and getattr(pdf_parser, "outlines", None):
+        res[0]["__outline__"] = [
+            {"title": title, "depth": depth}
+            for title, depth, *_ in pdf_parser.outlines
+        ]
+
     return res
 
 

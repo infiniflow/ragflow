@@ -18,14 +18,14 @@ import logging
 import copy
 import re
 
-from common.constants import ParserType
+from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
 from io import BytesIO
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context
+from deepdoc.parser.utils import extract_pdf_outlines
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context, concat_img
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper, vision_figure_parser_docx_wrapper
 from docx import Document
-from PIL import Image
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
@@ -35,7 +35,7 @@ class Pdf(PdfParser):
         self.model_speciess = ParserType.MANUAL.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
@@ -71,46 +71,7 @@ class Docx(DocxParser):
     def __init__(self):
         pass
 
-    def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath(".//pic:pic")
-        if not img:
-            return None
-        try:
-            img = img[0]
-            embed = img.xpath(".//a:blip/@r:embed")[0]
-            related_part = document.part.related_parts[embed]
-            image = related_part.image
-            if image is not None:
-                image = Image.open(BytesIO(image.blob))
-                return image
-            elif related_part.blob is not None:
-                image = Image.open(BytesIO(related_part.blob))
-                return image
-            else:
-                return None
-        except Exception:
-            return None
-
-    def concat_img(self, img1, img2):
-        if img1 and not img2:
-            return img1
-        if not img1 and img2:
-            return img2
-        if not img1 and not img2:
-            return None
-        width1, height1 = img1.size
-        width2, height2 = img2.size
-
-        new_width = max(width1, width2)
-        new_height = height1 + height2
-        new_image = Image.new("RGB", (new_width, new_height))
-
-        new_image.paste(img1, (0, 0))
-        new_image.paste(img2, (0, height1))
-
-        return new_image
-
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None):
         self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
@@ -125,7 +86,7 @@ class Docx(DocxParser):
             if not question_level or question_level > 6:  # not a question
                 last_answer = f"{last_answer}\n{p_text}"
                 current_image = self.get_picture(self.doc, p)
-                last_image = self.concat_img(last_image, current_image)
+                last_image = concat_img(last_image, current_image)
             else:  # is a question
                 if last_answer or last_image:
                     sum_question = "\n".join(question_stack)
@@ -173,7 +134,7 @@ class Docx(DocxParser):
         return ti_list, tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Only pdf is supported.
     """
@@ -222,7 +183,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
             txt, layoutno, poss = section
             if isinstance(poss, str):
-                poss = pdf_parser.extract_positions(poss)
+                poss = (getattr(pdf_parser, "extract_positions", lambda _: [])(poss) or [[0, 0, 0, 0, 0]])
                 if poss:
                     first = poss[0]  # tuple: ([pn], x1, x2, y1, y2)
                     pn = first[0]
@@ -241,13 +202,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             parser_config["chunk_token_num"] = 0
 
         callback(0.8, "Finish parsing.")
+        outlines = extract_pdf_outlines(binary if binary is not None else filename)
 
-        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
-            max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
+        if len(sections) > 0 and len(outlines) / len(sections) > 0.03:
+            max_lvl = max([lvl for _, lvl, _ in outlines])
             most_level = max(0, max_lvl - 1)
             levels = []
             for txt, _, _ in sections:
-                for t, lvl in pdf_parser.outlines:
+                for t, lvl, _ in outlines:
                     tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
                     tks_ = set([txt[i] + txt[i + 1] for i in range(min(len(t), len(txt) - 1))])
                     if len(set(tks & tks_)) / max([len(tks), len(tks_), 1]) > 0.8:
@@ -305,11 +267,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
         if table_ctx or image_ctx:
             attach_media_context(res, table_ctx, image_ctx)
+        if res and pdf_parser and getattr(pdf_parser, "outlines", None):
+            res[0]["__outline__"] = [
+                {"title": title, "depth": depth}
+                for title, depth, *_ in pdf_parser.outlines
+            ]
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
+        ti_list, tbls = docx_parser(filename, binary, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=callback)
         tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:

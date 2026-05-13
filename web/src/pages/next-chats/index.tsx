@@ -5,7 +5,7 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
-import { useFetchDialogList } from '@/hooks/use-chat-request';
+import { useFetchChatList } from '@/hooks/use-chat-request';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
@@ -16,7 +16,7 @@ import { useRenameChat } from './hooks/use-rename-chat';
 
 export default function ChatList() {
   const { data, setPagination, pagination, handleInputChange, searchString } =
-    useFetchDialogList();
+    useFetchChatList();
   const { t } = useTranslation();
   const {
     initialChatName,
@@ -49,70 +49,72 @@ export default function ChatList() {
   }, [isCreate, handleShowCreateModal, searchParams, setSearchParams]);
 
   return (
-    <section className="flex flex-col w-full flex-1" data-testid="chats-list">
-      {data.dialogs?.length <= 0 && !searchString && (
-        <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
-          <EmptyAppCard
-            showIcon
-            size="large"
-            className="w-[480px] p-14"
-            isSearch={!!searchString}
-            type={EmptyCardType.Chat}
-            onClick={() => handleShowCreateModal()}
-            testId="chats-empty-create"
-          />
-        </div>
-      )}
-      {(data.dialogs?.length > 0 || searchString) && (
-        <>
-          <div className="px-8 pt-8">
+    <>
+      {data.chats?.length || searchString ? (
+        <article className="size-full flex flex-col" data-testid="chats-list">
+          <header className="px-5 pt-8 mb-4">
             <ListFilterBar
               title={t('chat.chatApps')}
               icon="chats"
               onSearchChange={handleInputChange}
               searchString={searchString}
             >
-              <Button onClick={handleShowCreateModal} data-testid="create-chat">
-                <Plus className="h-4 w-4" />
+              <Button data-testid="create-chat" onClick={handleShowCreateModal}>
+                <Plus className="size-[1em]" />
                 {t('chat.createChat')}
               </Button>
             </ListFilterBar>
-          </div>
-          {data.dialogs?.length <= 0 && searchString && (
-            <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
-              <EmptyAppCard
-                showIcon
-                size="large"
-                className="w-[480px] p-14"
-                isSearch={!!searchString}
-                type={EmptyCardType.Chat}
-                onClick={() => handleShowCreateModal()}
-                testId="chats-empty-create"
-              />
-            </div>
-          )}
-          <div className="flex-1 overflow-auto">
-            <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
-              {data.dialogs.map((x) => {
-                return (
+          </header>
+
+          {data.chats?.length ? (
+            <>
+              <CardContainer className="flex-1 overflow-auto px-5">
+                {data.chats.map((x) => (
                   <ChatCard
                     key={x.id}
                     data={x}
                     showChatRenameModal={showChatRenameModal}
-                  ></ChatCard>
-                );
-              })}
-            </CardContainer>
-          </div>
-          <div className="mt-8 px-8 pb-8">
-            <RAGFlowPagination
-              {...pick(pagination, 'current', 'pageSize')}
-              total={pagination.total}
-              onChange={handlePageChange}
-            ></RAGFlowPagination>
-          </div>
-        </>
+                  />
+                ))}
+              </CardContainer>
+
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={pagination.total}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <EmptyAppCard
+                showIcon
+                size="large"
+                className="w-[480px] p-14"
+                isSearch
+                type={EmptyCardType.Chat}
+                testId="chats-empty-create"
+              />
+            </div>
+          )}
+        </article>
+      ) : (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
+        >
+          <EmptyAppCard
+            showIcon
+            size="large"
+            className="w-[480px] p-14"
+            type={EmptyCardType.Chat}
+            onClick={() => handleShowCreateModal()}
+            testId="chats-empty-create"
+          />
+        </article>
       )}
+
       {chatRenameVisible && (
         <RenameDialog
           hideModal={hideChatRenameModal}
@@ -122,6 +124,6 @@ export default function ChatList() {
           title={initialChatName || t('chat.createChat')}
         ></RenameDialog>
       )}
-    </section>
+    </>
   );
 }

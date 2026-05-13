@@ -50,25 +50,23 @@ export function DatasetActionCell({
   }, [record, showRenameModal]);
 
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
+    <div
+      className="
+      flex gap-2 items-center opacity-0
+      transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+    >
       <Button
-        variant="transparent"
-        className="border-none hover:bg-bg-card text-text-primary"
-        size={'sm'}
+        size="icon-xs"
+        variant="ghost"
         disabled={isRunning}
         onClick={handleRename}
       >
-        <PenLine />
+        <PenLine className="size-[1em]" />
       </Button>
       <HoverCard>
         <HoverCardTrigger>
-          <Button
-            variant="transparent"
-            className="border-none hover:bg-bg-card text-text-primary"
-            disabled={isRunning}
-            size={'sm'}
-          >
-            <Eye />
+          <Button size="icon-xs" variant="ghost" disabled={isRunning}>
+            <Eye className="size-[1em]" />
           </Button>
         </HoverCardTrigger>
         <HoverCardContent className="w-[40vw] max-h-[40vh] overflow-auto">
@@ -94,26 +92,24 @@ export function DatasetActionCell({
 
       {isVirtualDocument || (
         <Button
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
+          size="icon-xs"
+          variant="ghost"
           onClick={onDownloadDocument}
           disabled={isRunning}
-          size={'sm'}
         >
-          <Download />
+          <Download className="size-[1em]" />
         </Button>
       )}
       <ConfirmDeleteDialog onOk={handleRemove}>
         <Button
           data-testid="document-delete"
-          variant="transparent"
-          className="border-none hover:bg-bg-card text-text-primary"
-          size={'sm'}
+          size="icon-xs"
+          variant="ghost"
           disabled={isRunning}
         >
-          <Trash2 />
+          <Trash2 className="size-[1em]" />
         </Button>
       </ConfirmDeleteDialog>
-    </section>
+    </div>
   );
 }

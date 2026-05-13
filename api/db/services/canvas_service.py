@@ -19,10 +19,11 @@ import time
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import CanvasCategory, TenantPermission
-from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
+from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserCanvasVersion
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
-from common.misc_utils import get_uuid
+from api.db.services.user_canvas_version import UserCanvasVersionService
+from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
@@ -138,10 +139,17 @@ class UserCanvasService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
-                          page_number, items_per_page,
-                          orderby, desc, keywords, canvas_category=None
-                          ):
+    def get_by_tenant_ids(
+        cls,
+        joined_tenant_ids,
+        user_id,
+        page_number,
+        items_per_page,
+        orderby,
+        desc,
+        keywords,
+        canvas_category=None,
+    ):
         fields = [
             cls.model.id,
             cls.model.avatar,
@@ -173,7 +181,23 @@ class UserCanvasService(CommonService):
         count = agents.count()
         if page_number and items_per_page:
             agents = agents.paginate(page_number, items_per_page)
-        return list(agents.dicts()), count
+
+        agents_list = list(agents.dicts())
+
+        # Get latest release time for each canvas
+        if agents_list:
+            canvas_ids = [a['id'] for a in agents_list]
+            release_times = (
+                UserCanvasVersion.select(UserCanvasVersion.user_canvas_id, fn.MAX(UserCanvasVersion.create_time).alias("release_time"))
+                .where((UserCanvasVersion.user_canvas_id.in_(canvas_ids)) & (UserCanvasVersion.release))
+                .group_by(UserCanvasVersion.user_canvas_id)
+            )
+            release_time_map = {r.user_canvas_id: r.release_time for r in release_times}
+
+            for agent in agents_list:
+                agent['release_time'] = release_time_map.get(agent['id'])
+
+        return agents_list, count
 
     @classmethod
     @DB.connection_context()
@@ -184,9 +208,32 @@ class UserCanvasService(CommonService):
             return False
 
         tids = [t.tenant_id for t in UserTenantService.query(user_id=tenant_id)]
-        if c["user_id"] != canvas_id and c["user_id"]  not in tids:
+        if c["user_id"] == tenant_id:
+            return True
+        if c["user_id"] not in tids:
+            return False
+        if c["permission"] != TenantPermission.TEAM.value:
             return False
         return True
+
+    @classmethod
+    def get_agent_dsl_with_release(cls, agent_id, release_mode=False, tenant_id=None):
+        e, cvs = cls.get_by_id(agent_id)
+        if not e:
+            raise LookupError("Agent not found.")
+
+        if release_mode:
+            released_version = UserCanvasVersionService.get_latest_released(agent_id)
+            if not released_version:
+                raise PermissionError("No available published version")
+            dsl = released_version.dsl
+        else:
+            dsl = cvs.dsl
+
+        if not isinstance(dsl, str):
+            dsl = json.dumps(dsl, ensure_ascii=False)
+
+        return cvs, dsl
 
 
 async def completion(tenant_id, agent_id, session_id=None, **kwargs):
@@ -198,7 +245,7 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     release_mode = str(kwargs.get("release", "")).strip().lower()
 
     if session_id:
-        e, conv = API4ConversationService.get_by_id(session_id)
+        e, conv = await thread_pool_exec(API4ConversationService.get_by_id, session_id)
         if not e:
             raise LookupError("Session not found!")
         if not conv.message:
@@ -207,29 +254,15 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
             conv.dsl = json.dumps(conv.dsl, ensure_ascii=False)
         canvas = Canvas(conv.dsl, tenant_id, agent_id, canvas_id=agent_id, custom_header=custom_header)
     else:
-        e, cvs = UserCanvasService.get_by_id(agent_id)
-        if not e:
-            raise LookupError("Agent not found.")
-        if cvs.user_id != tenant_id:
-            raise PermissionError("You do not own the agent.")
-        if release_mode == "true" and not bool(cvs.release):
-            raise PermissionError("No available published version")
-        if not isinstance(cvs.dsl, str):
-            cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+        cvs, dsl = await thread_pool_exec(UserCanvasService.get_agent_dsl_with_release, agent_id, release_mode=release_mode == "true", tenant_id=tenant_id)
 
-        session_id=get_uuid()
-        canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header)
+        session_id = get_uuid()
+        canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header)
         canvas.reset()
-        conv = {
-            "id": session_id,
-            "dialog_id": cvs.id,
-            "user_id": user_id,
-            "message": [],
-            "source": "agent",
-            "dsl": cvs.dsl,
-            "reference": []
-        }
-        API4ConversationService.save(**conv)
+        # Get the version title based on release_mode
+        version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode == "true")
+        conv = {"id": session_id, "dialog_id": cvs.id, "user_id": user_id, "message": [], "source": "agent", "dsl": dsl, "reference": [], "version_title": version_title}
+        await thread_pool_exec(API4ConversationService.save, **conv)
         conv = API4Conversation(**conv)
 
     message_id = str(uuid4())
@@ -255,7 +288,7 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     conv.errors = canvas.error
     conv.dsl = str(canvas)
     conv = conv.to_dict()
-    API4ConversationService.append_message(conv["id"], conv)
+    await thread_pool_exec(API4ConversationService.append_message, conv["id"], conv)
 
 
 async def completion_openai(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):

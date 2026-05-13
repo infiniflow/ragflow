@@ -155,10 +155,6 @@ module.exports = {
           DEFAULT: 'var(--colors-background-inverse-standard)',
           foreground: 'var(--colors-background-inverse-standard-foreground)',
         },
-        'colors-background-inverse-standard': {
-          DEFAULT: 'var(--colors-background-inverse-standard)',
-          foreground: 'var(--background-inverse-standard-foreground)',
-        },
         'colors-background-inverse-strong': {
           DEFAULT: 'var(--colors-background-inverse-strong)',
           foreground: 'var(--background-inverse-standard-foreground)',

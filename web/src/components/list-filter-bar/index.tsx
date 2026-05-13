@@ -16,6 +16,7 @@ interface IProps {
   searchString?: string;
   onSearchChange?: ChangeEventHandler<HTMLInputElement>;
   showFilter?: boolean;
+  showSearch?: boolean;
   leftPanel?: ReactNode;
   preChildren?: ReactNode;
 }
@@ -58,6 +59,7 @@ export default function ListFilterBar({
   searchString,
   onSearchChange,
   showFilter = true,
+  showSearch = true,
   leftPanel,
   value,
   onChange,
@@ -65,10 +67,12 @@ export default function ListFilterBar({
   filters,
   className,
   icon,
+  iconClassName,
   filterGroup,
 }: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>> & {
   className?: string;
   icon?: ReactNode;
+  iconClassName?: string;
   filterGroup?: Record<string, string[]>;
 }) {
   const filterCount = useMemo(() => {
@@ -91,19 +95,23 @@ export default function ListFilterBar({
   }, [value]);
 
   return (
-    <div className={cn('flex justify-between mb-5 items-center', className)}>
-      <div className="text-2xl font-semibold flex items-center gap-2.5">
+    <div className={cn('flex justify-between items-center', className)}>
+      <h1 className="text-2xl font-semibold flex items-center gap-2.5">
         {typeof icon === 'string' ? (
           // <IconFont name={icon} className="size-6"></IconFont>
-          <HomeIcon name={`${icon}`} width={'32'} />
+          <HomeIcon
+            name={`${icon}`}
+            imgClass={cn('size-[1em]', iconClassName)}
+          />
         ) : (
           icon
         )}
         {leftPanel || title}
-      </div>
-      <div className="flex gap-5 items-center">
+      </h1>
+
+      <div className="flex gap-4 items-center" role="toolbar">
         {preChildren}
-        {showFilter && (
+        {filters?.length && showFilter && (
           <FilterPopover
             value={value}
             onChange={onChange}
@@ -115,11 +123,14 @@ export default function ListFilterBar({
           </FilterPopover>
         )}
 
-        <SearchInput
-          value={searchString}
-          onChange={onSearchChange}
-          className="w-32"
-        ></SearchInput>
+        {showSearch && (
+          <SearchInput
+            value={searchString}
+            onChange={onSearchChange}
+            className="w-32"
+            role="searchbox"
+          ></SearchInput>
+        )}
         {children}
       </div>
     </div>

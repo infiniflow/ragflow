@@ -28,14 +28,20 @@ from common.data_source.exceptions import (
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
-from common.data_source.interfaces import CheckpointedConnectorWithPermSyncGH, CheckpointOutput
+from common.data_source.interfaces import (
+    CheckpointedConnectorWithPermSyncGH,
+    CheckpointOutput,
+    CheckpointOutputWrapper,
+)
 from common.data_source.models import (
     ConnectorCheckpoint,
     ConnectorFailure,
     Document,
     DocumentFailure,
     ExternalAccess,
+    GenerateSlimDocumentOutput,
     SecondsSinceUnixEpoch,
+    SlimDocument,
 )
 from common.data_source.connector_runner import ConnectorRunner
 from .models import SerializedRepository
@@ -594,14 +600,8 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
             done_with_prs = False
             num_prs = 0
             pr = None
-            print("start: ", start)
             for pr in pr_batch:
                 num_prs += 1
-                print("-"*40)
-                print("PR name", pr.title)
-                print("updated at", pr.updated_at)
-                print("-"*40)
-                print("\n")
                 # we iterate backwards in time, so at this point we stop processing prs
                 if (
                     start is not None
@@ -732,10 +732,10 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
 
         if checkpoint.cached_repo_ids:
             logging.info(
-                f"{len(checkpoint.cached_repo_ids)} repos remaining (IDs: {checkpoint.cached_repo_ids})"
+                f"{len(checkpoint.cached_repo_ids)} checkpoint repos remaining (IDs: {checkpoint.cached_repo_ids})"
             )
         else:
-            logging.info("No more repos remaining")
+            logging.info("There are no more checkpoint repos left.")
 
         return checkpoint
 
@@ -922,6 +922,51 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
         self, checkpoint_json: str
     ) -> GithubConnectorCheckpoint:
         return GithubConnectorCheckpoint.model_validate_json(checkpoint_json)
+
+    def retrieve_slim_document(
+        self,
+        start: SecondsSinceUnixEpoch | None = None,
+        end: SecondsSinceUnixEpoch | None = None,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        start_value = 0.0 if start is None else start
+        end_value = (
+            datetime.now(timezone.utc).timestamp() if end is None else end
+        )
+        checkpoint = self.build_dummy_checkpoint()
+        slim_batch: list[SlimDocument] = []
+
+        while checkpoint.has_more:
+            wrapper = CheckpointOutputWrapper[GithubConnectorCheckpoint]()
+            for document, failure, next_checkpoint in wrapper(
+                self.load_from_checkpoint(start_value, end_value, checkpoint)
+            ):
+                if failure is not None:
+                    logging.warning(
+                        "GitHub connector failure during slim retrieval: %s",
+                        getattr(failure, "failure_message", failure),
+                    )
+                    continue
+
+                if document is not None:
+                    slim_batch.append(SlimDocument(id=document.id))
+                    if len(slim_batch) >= SLIM_BATCH_SIZE:
+                        yield slim_batch
+                        slim_batch = []
+                        if callback:
+                            callback.progress("github_slim_document", 1)
+
+                if next_checkpoint is not None:
+                    checkpoint = next_checkpoint
+
+        if slim_batch:
+            yield slim_batch
+
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        yield from self.retrieve_slim_document(callback=callback)
 
     def build_dummy_checkpoint(self) -> GithubConnectorCheckpoint:
         return GithubConnectorCheckpoint(

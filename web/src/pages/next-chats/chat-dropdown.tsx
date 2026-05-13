@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useRemoveDialog } from '@/hooks/use-chat-request';
+import { useDeleteChat } from '@/hooks/use-chat-request';
 import { IDialog } from '@/interfaces/database/chat';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
@@ -25,7 +25,7 @@ export function ChatDropdown({
     chat: IDialog;
   }) {
   const { t } = useTranslation();
-  const { removeDialog } = useRemoveDialog();
+  const { deleteChat } = useDeleteChat();
 
   const handleShowChatRenameModal: MouseEventHandler<HTMLDivElement> =
     useCallback(
@@ -37,8 +37,8 @@ export function ChatDropdown({
     );
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    removeDialog([chat.id]);
-  }, [chat.id, removeDialog]);
+    deleteChat(chat.id);
+  }, [chat.id, deleteChat]);
 
   return (
     <DropdownMenu>
