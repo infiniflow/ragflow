@@ -218,7 +218,6 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 		// addLocalAIReasoningRequestParams.
 		addLocalAIReasoningRequestParams(reqBody, chatModelConfig)
 	}
-
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -818,8 +817,7 @@ func (l *LocalAIModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	return fmt.Errorf("%s, no such method", l.Name())
 }
 
-// OCRFile: LocalAI has no OCR pipeline in its OpenAI-compatible surface;
-// document parsing belongs to a different interface entirely.
-func (l *LocalAIModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+// OCRFile OCR file
+func (d *LocalAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
