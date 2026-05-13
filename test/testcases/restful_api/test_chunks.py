@@ -17,6 +17,14 @@
 import pytest
 
 
+def _assert_created_chunk_id(payload):
+    chunk_id = payload["data"]["chunk"].get("id")
+    assert chunk_id, payload
+    assert isinstance(chunk_id, str), payload
+    assert chunk_id.strip(), payload
+    return chunk_id
+
+
 @pytest.mark.p1
 def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_cycle.txt")
@@ -29,7 +37,7 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     assert add_res.status_code == 200
     add_payload = add_res.json()
     assert add_payload["code"] == 0, add_payload
-    chunk_id = add_payload["data"]["chunk"]["id"]
+    chunk_id = _assert_created_chunk_id(add_payload)
 
     list_res = rest_client.get(base_path, params={"id": chunk_id})
     assert list_res.status_code == 200
@@ -62,12 +70,17 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     assert delete_candidate_res.status_code == 200
     delete_candidate_payload = delete_candidate_res.json()
     assert delete_candidate_payload["code"] == 0, delete_candidate_payload
-    delete_candidate_id = delete_candidate_payload["data"]["chunk"]["id"]
+    delete_candidate_id = _assert_created_chunk_id(delete_candidate_payload)
 
     delete_res = rest_client.delete(base_path, json={"chunk_ids": [delete_candidate_id]})
     assert delete_res.status_code == 200
     delete_payload = delete_res.json()
     assert delete_payload["code"] == 0, delete_payload
+
+    deleted_list_res = rest_client.get(base_path, params={"id": delete_candidate_id})
+    assert deleted_list_res.status_code == 200
+    deleted_list_payload = deleted_list_res.json()
+    assert deleted_list_payload["code"] != 0, deleted_list_payload
 
     deleted_get_res = rest_client.get(f"{base_path}/{delete_candidate_id}")
     assert deleted_get_res.status_code == 200
