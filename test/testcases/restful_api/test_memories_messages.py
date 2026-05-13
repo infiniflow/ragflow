@@ -58,10 +58,6 @@ def create_memory_resource(rest_client, clear_memories):
         res = rest_client.post("/memories", json=payload)
         assert res.status_code == 200
         res_payload = res.json()
-        if res_payload["code"] != 0:
-            msg = str(res_payload.get("message", ""))
-            if "Tenant Model" in msg or "not found" in msg:
-                pytest.skip(f"Memory prerequisites unavailable: {msg}")
         assert res_payload["code"] == 0, res_payload
         memory_id = res_payload["data"]["id"]
         created_ids.append(memory_id)
@@ -77,7 +73,7 @@ def create_memory_resource(rest_client, clear_memories):
         assert delete_payload["code"] in (0, 404), delete_payload
 
 
-def _add_message_or_skip(rest_client, memory_id: str, user_input: str, agent_response: str) -> None:
+def _add_message(rest_client, memory_id: str, user_input: str, agent_response: str) -> None:
     add_res = rest_client.post(
         "/messages",
         json={
@@ -91,10 +87,6 @@ def _add_message_or_skip(rest_client, memory_id: str, user_input: str, agent_res
     )
     assert add_res.status_code == 200
     add_payload = add_res.json()
-    if add_payload["code"] != 0:
-        msg = str(add_payload.get("message", ""))
-        if "encode\"" in msg or "encode'" in msg or "NoneType" in msg:
-            pytest.skip(f"Message embedding runtime unavailable in this env: {msg}")
     assert add_payload["code"] == 0, add_payload
 
 
@@ -139,7 +131,7 @@ def test_memory_create_missing_required_fields(rest_client):
 @pytest.mark.p1
 def test_messages_add_list_recent_content_update_forget(rest_client, create_memory_resource):
     memory_id = create_memory_resource("restful_message_memory")
-    _add_message_or_skip(
+    _add_message(
         rest_client,
         memory_id,
         user_input="what is coriander?",
@@ -183,7 +175,7 @@ def test_messages_add_list_recent_content_update_forget(rest_client, create_memo
 @pytest.mark.p2
 def test_message_status_validation_requires_boolean(rest_client, create_memory_resource):
     memory_id = create_memory_resource("restful_message_status_validation")
-    _add_message_or_skip(rest_client, memory_id, user_input="hello", agent_response="hello")
+    _add_message(rest_client, memory_id, user_input="hello", agent_response="hello")
 
     time.sleep(1)
 
@@ -212,7 +204,7 @@ def test_messages_recent_requires_memory_ids(rest_client):
 @pytest.mark.p2
 def test_message_search_route_contract(rest_client, create_memory_resource):
     memory_id = create_memory_resource("restful_message_search")
-    _add_message_or_skip(
+    _add_message(
         rest_client,
         memory_id,
         user_input="what is pineapple?",
@@ -224,9 +216,5 @@ def test_message_search_route_contract(rest_client, create_memory_resource):
     res = rest_client.get("/messages/search", params={"memory_id": memory_id, "query": "pineapple", "top_n": 3})
     assert res.status_code == 200
     payload = res.json()
-    if payload["code"] != 0:
-        msg = str(payload.get("message", ""))
-        if "encode_queries" in msg:
-            pytest.skip(f"Message search embedding runtime unavailable in this env: {msg}")
     assert payload["code"] == 0, payload
     assert isinstance(payload["data"], list), payload

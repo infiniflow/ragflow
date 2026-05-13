@@ -18,7 +18,6 @@ import pytest
 
 
 @pytest.mark.p1
-@pytest.mark.skip(reason="Chunk add/get/update requires embedding services not guaranteed in this test env.")
 def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_cycle.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -53,7 +52,19 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     update_payload = update_res.json()
     assert update_payload["code"] == 0, update_payload
 
-    delete_res = rest_client.delete(base_path, json={"chunk_ids": [chunk_id]})
+    get_updated_res = rest_client.get(f"{base_path}/{chunk_id}")
+    assert get_updated_res.status_code == 200
+    get_updated_payload = get_updated_res.json()
+    assert get_updated_payload["code"] == 0, get_updated_payload
+    assert get_updated_payload["data"]["content_with_weight"] == "batch2 chunk content updated", get_updated_payload
+
+    delete_candidate_res = rest_client.post(base_path, json={"content": "batch2 chunk content to delete"})
+    assert delete_candidate_res.status_code == 200
+    delete_candidate_payload = delete_candidate_res.json()
+    assert delete_candidate_payload["code"] == 0, delete_candidate_payload
+    delete_candidate_id = delete_candidate_payload["data"]["chunk"]["id"]
+
+    delete_res = rest_client.delete(base_path, json={"chunk_ids": [delete_candidate_id]})
     assert delete_res.status_code == 200
     delete_payload = delete_res.json()
     assert delete_payload["code"] == 0, delete_payload

@@ -264,3 +264,66 @@ def test_agent_openai_compatible_mode(rest_client, create_agent_resource):
     assert stream.status_code == 200
     stream_content_type = stream.headers.get("Content-Type", "")
     assert "text/event-stream" in stream_content_type, stream_content_type
+
+
+@pytest.mark.p2
+def test_agent_support_routes_auth_and_contracts(rest_client, rest_client_noauth, create_agent_resource):
+    prompts_unauth = rest_client_noauth.get("/agents/prompts")
+    assert prompts_unauth.status_code == 401
+    assert prompts_unauth.json()["code"] == 401
+
+    prompts = rest_client.get("/agents/prompts")
+    assert prompts.status_code == 200
+    prompts_payload = prompts.json()
+    assert prompts_payload["code"] == 0, prompts_payload
+    assert "task_analysis" in prompts_payload["data"], prompts_payload
+    assert "citation_guidelines" in prompts_payload["data"], prompts_payload
+
+    templates = rest_client.get("/agents/templates")
+    assert templates.status_code == 200
+    templates_payload = templates.json()
+    assert templates_payload["code"] == 0, templates_payload
+    assert isinstance(templates_payload["data"], list), templates_payload
+
+    agent_id = create_agent_resource("restful_agent_support")
+    versions = rest_client.get(f"/agents/{agent_id}/versions")
+    assert versions.status_code == 200
+    versions_payload = versions.json()
+    assert versions_payload["code"] == 0, versions_payload
+    assert isinstance(versions_payload["data"], list), versions_payload
+
+    logs = rest_client.get(f"/agents/{agent_id}/logs/missing_message")
+    assert logs.status_code == 200
+    logs_payload = logs.json()
+    assert logs_payload["code"] == 0, logs_payload
+    assert isinstance(logs_payload["data"], dict), logs_payload
+
+
+@pytest.mark.p2
+def test_agent_webhook_logs_empty_poll_contract(rest_client, create_agent_resource):
+    agent_id = create_agent_resource("restful_agent_webhook_logs")
+    res = rest_client.get(f"/agents/{agent_id}/webhook/logs", params={"since_ts": 0})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 0, payload
+    assert payload["data"]["events"] == [], payload
+    assert payload["data"]["finished"] is False, payload
+    assert "next_since_ts" in payload["data"], payload
+
+
+@pytest.mark.p2
+def test_agent_db_connection_validates_required_fields(rest_client):
+    res = rest_client.post("/agents/test_db_connection", json={"db_type": "mysql"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 101, payload
+    assert "required argument are missing" in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_agent_rerun_requires_required_fields(rest_client):
+    res = rest_client.post("/agents/rerun", json={"id": "flow-1"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 101, payload
+    assert "required argument are missing" in payload["message"], payload

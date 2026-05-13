@@ -28,22 +28,19 @@ def _memory_payload(name: str) -> dict:
     }
 
 
-def _create_memory_or_skip(rest_client, name: str) -> dict:
+def _create_memory(rest_client, name: str) -> dict:
     res = rest_client.post("/memories", json=_memory_payload(name))
     assert res.status_code == 200
     payload = res.json()
     if payload["code"] == 0:
         return payload["data"]
 
-    message = str(payload.get("message", ""))
-    if "Tenant Model" in message or "not found" in message:
-        pytest.skip(f"Memory model prerequisites unavailable in this env: {message}")
     pytest.fail(f"Failed to create memory: {payload}")
 
 
 @pytest.fixture
 def memory_resource(rest_client):
-    memory = _create_memory_or_skip(rest_client, f"restful_memory_{uuid.uuid4().hex[:8]}")
+    memory = _create_memory(rest_client, f"restful_memory_{uuid.uuid4().hex[:8]}")
     memory_id = memory["id"]
     try:
         yield memory
@@ -75,7 +72,7 @@ def test_memory_and_message_routes_require_auth(rest_client_noauth):
 
 @pytest.mark.p2
 def test_memory_crud_and_config(rest_client):
-    memory = _create_memory_or_skip(rest_client, f"restful_memory_crud_{uuid.uuid4().hex[:8]}")
+    memory = _create_memory(rest_client, f"restful_memory_crud_{uuid.uuid4().hex[:8]}")
     memory_id = memory["id"]
 
     config_res = rest_client.get(f"/memories/{memory_id}/config")
@@ -130,10 +127,6 @@ def test_messages_list_and_search_validation_contracts(rest_client, memory_resou
     search_res = rest_client.get("/messages/search", params={"memory_id": memory_id, "query": "coriander"})
     assert search_res.status_code == 200
     search_payload = search_res.json()
-    if search_payload["code"] != 0:
-        message = str(search_payload.get("message", ""))
-        if "encode_queries" in message:
-            pytest.skip(f"Message search embedding runtime unavailable in this env: {message}")
     assert search_payload["code"] == 0, search_payload
     assert isinstance(search_payload["data"], list), search_payload
 

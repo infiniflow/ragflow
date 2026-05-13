@@ -119,3 +119,41 @@ def test_system_stats_auth_and_shape(rest_client, rest_client_noauth):
     for key in ("pv", "uv", "speed", "tokens", "round", "thumb_up"):
         assert key in data, payload
         assert isinstance(data[key], list), payload
+
+
+@pytest.mark.p2
+def test_system_oceanbase_status_auth_contract(rest_client, rest_client_noauth):
+    unauth = rest_client_noauth.get("/system/oceanbase/status")
+    assert unauth.status_code == 401
+    assert unauth.json()["code"] == 401
+
+    res = rest_client.get("/system/oceanbase/status")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] in (0, 500), payload
+    assert "data" in payload, payload
+
+
+@pytest.mark.p2
+def test_system_log_config_routes_auth_and_validation(rest_client, rest_client_noauth):
+    unauth = rest_client_noauth.get("/system/config/log")
+    assert unauth.status_code == 401
+    assert unauth.json()["code"] == 401
+
+    levels = rest_client.get("/system/config/log")
+    assert levels.status_code == 200
+    levels_payload = levels.json()
+    assert levels_payload["code"] == 0, levels_payload
+    assert isinstance(levels_payload["data"], dict), levels_payload
+
+    missing_body = rest_client.put("/system/config/log", json={})
+    assert missing_body.status_code == 200
+    missing_payload = missing_body.json()
+    assert missing_payload["code"] == 102, missing_payload
+    assert "pkg_name and level are required" in missing_payload["message"], missing_payload
+
+    invalid_level = rest_client.put("/system/config/log", json={"pkg_name": "rag", "level": "NOT_A_LEVEL"})
+    assert invalid_level.status_code == 200
+    invalid_payload = invalid_level.json()
+    assert invalid_payload["code"] == 102, invalid_payload
+    assert "Invalid log level" in invalid_payload["message"], invalid_payload

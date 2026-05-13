@@ -108,7 +108,6 @@ def test_dataset_list_ordering_and_pagination(rest_client, clear_datasets):
 
 
 @pytest.mark.p2
-@pytest.mark.skip(reason="Search requires embedding services not guaranteed in this test env.")
 def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(

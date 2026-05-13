@@ -18,7 +18,6 @@ import pytest
 
 
 @pytest.mark.p1
-@pytest.mark.skip(reason="Search requires embedding services not guaranteed in this test env.")
 def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
@@ -32,7 +31,6 @@ def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
 
 
 @pytest.mark.p2
-@pytest.mark.skip(reason="Search requires embedding services not guaranteed in this test env.")
 def test_multi_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
@@ -46,7 +44,6 @@ def test_multi_dataset_search_rest_endpoint(rest_client, ensure_parsed_document)
 
 
 @pytest.mark.p2
-@pytest.mark.skip(reason="Search requires embedding services not guaranteed in this test env.")
 def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_document):
     dataset_id, document_id = ensure_parsed_document()
     meta_res = rest_client.patch(
@@ -80,7 +77,6 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
 
 
 @pytest.mark.p2
-@pytest.mark.skip(reason="Compatibility retrieval requires embedding services not guaranteed in this test env.")
 def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     # /api/v1/retrieval is SDK compatibility endpoint from api/apps/sdk/doc.py.
