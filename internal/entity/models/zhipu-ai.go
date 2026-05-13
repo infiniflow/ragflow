@@ -456,12 +456,22 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
+	region := "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	baseURL := z.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("zhipu-ai: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
