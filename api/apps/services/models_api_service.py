@@ -312,8 +312,12 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
             if not model_records:
                 continue
             provider_id, instance_id, model_name = model_record_key.split("_")
+            model_types = [model.model_type for model in model_records if model.status == ActiveStatusEnum.ACTIVE.value]
+            if not model_types:
+                continue
+
             added_models.append({
-                "model_type": [model.model_type for model in model_records],
+                "model_type": model_types,
                 "name": model_name,
                 "provider_id": provider_id,
                 "provider_name": provider_info_map[provider_id].provider_name if provider_info_map.get(provider_id) else "",
