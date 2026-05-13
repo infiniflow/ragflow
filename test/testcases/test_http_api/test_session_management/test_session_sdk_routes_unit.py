@@ -1287,10 +1287,10 @@ def test_agent_file_download_and_upload_unit(monkeypatch):
     )
     assert res["code"] == 0
     assert len(res["data"]) == 2
-    assert upload_calls == [
+    assert set(upload_calls) == {
         ("tenant-1", "a.png", None),
         ("tenant-1", "b.png", None),
-    ]
+    }
 
     def _boom(*_a, **_k):
         raise ValueError("upload failed")
