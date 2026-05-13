@@ -213,8 +213,8 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	loginChannel := "password"
 	isSuperuser := role == "admin"
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
 
 	user := &entity.User{
 		ID:              userID,
@@ -229,10 +229,10 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		LoginChannel:    &loginChannel,
 		IsSuperuser:     &isSuperuser,
 		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
+			CreateTime: &timestamp,
+			CreateDate: &now,
+			UpdateTime: &timestamp,
+			UpdateDate: &now,
 		},
 	}
 
@@ -289,10 +289,10 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Credit:    512,
 		Status:    &tenantStatus,
 		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
+			CreateTime: &timestamp,
+			CreateDate: &now,
+			UpdateTime: &timestamp,
+			UpdateDate: &now,
 		},
 	}
 	if err := tx.Create(tenant).Error; err != nil {
@@ -310,10 +310,10 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
 		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
+			CreateTime: &timestamp,
+			CreateDate: &now,
+			UpdateTime: &timestamp,
+			UpdateDate: &now,
 		},
 	}
 	if err := tx.Create(userTenant).Error; err != nil {
@@ -346,10 +346,10 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Size:      0,
 		Location:  &fileLocation,
 		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
+			CreateTime: &timestamp,
+			CreateDate: &now,
+			UpdateTime: &timestamp,
+			UpdateDate: &now,
 		},
 	}
 	if err := tx.Create(file).Error; err != nil {
@@ -470,8 +470,8 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 			llmName := llm.LLMName
 			modelType := llm.ModelType
-			now := time.Now().Unix()
-			nowDate := time.Now().Truncate(time.Second)
+			now := time.Now().Truncate(time.Second)
+			timestamp := now.UnixMilli()
 
 			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
@@ -483,10 +483,10 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				MaxTokens:  maxTokens,
 				Status:     "1",
 				BaseModel: entity.BaseModel{
-					CreateTime: &now,
-					CreateDate: &nowDate,
-					UpdateTime: &now,
-					UpdateDate: &nowDate,
+					CreateTime: &timestamp,
+					CreateDate: &now,
+					UpdateTime: &timestamp,
+					UpdateDate: &now,
 				},
 			}
 			tenantLLMs = append(tenantLLMs, tenantLLM)
@@ -768,8 +768,10 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 	}
 
 	user.Password = &hashedPassword
-	now := time.Now().Unix()
-	user.UpdateTime = &now
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.UpdateTime = &timestamp
+	user.UpdateDate = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -807,8 +809,10 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 	}
 
 	user.IsActive = targetStatus
-	now := time.Now().Unix()
-	user.UpdateTime = &now
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.UpdateTime = &timestamp
+	user.UpdateDate = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -841,8 +845,10 @@ func (s *Service) GrantAdmin(username string) error {
 
 	isSuperuser := true
 	user.IsSuperuser = &isSuperuser
-	now := time.Now().Unix()
-	user.UpdateTime = &now
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.UpdateTime = &timestamp
+	user.UpdateDate = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -875,8 +881,10 @@ func (s *Service) RevokeAdmin(username string) error {
 
 	isSuperuser := false
 	user.IsSuperuser = &isSuperuser
-	now := time.Now().Unix()
-	user.UpdateTime = &now
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.UpdateTime = &timestamp
+	user.UpdateDate = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -1730,8 +1738,8 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
-		now := time.Now().Unix()
-		nowDate := time.Now().Truncate(time.Second)
+		now := time.Now().Truncate(time.Second)
+		timestamp := now.UnixMilli()
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
@@ -1759,10 +1767,10 @@ func (s *Service) InitDefaultAdmin() error {
 			LoginChannel:    &loginChannel,
 			IsSuperuser:     &isSuperuser,
 			BaseModel: entity.BaseModel{
-				CreateTime: &now,
-				CreateDate: &nowDate,
-				UpdateTime: &now,
-				UpdateDate: &nowDate,
+				CreateTime: &timestamp,
+				CreateDate: &now,
+				UpdateTime: &timestamp,
+				UpdateDate: &now,
 			},
 		}
 
@@ -1806,8 +1814,8 @@ func (s *Service) InitDefaultAdmin() error {
 
 // addTenantForAdmin add tenant for admin user
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
 	status := "1"
 	role := "owner"
 	tenantName := nickname + "'s Kingdom"
@@ -1816,10 +1824,10 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		ID:   userID,
 		Name: &tenantName,
 		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
+			CreateTime: &timestamp,
+			CreateDate: &now,
+			UpdateTime: &timestamp,
+			UpdateDate: &now,
 		},
 	}
 
@@ -1834,10 +1842,10 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		Role:      role,
 		Status:    &status,
 		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
+			CreateTime: &timestamp,
+			CreateDate: &now,
+			UpdateTime: &timestamp,
+			UpdateDate: &now,
 		},
 	}
 

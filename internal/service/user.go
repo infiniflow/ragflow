@@ -150,13 +150,12 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		IsSuperuser:     &isSuperuser,
 	}
 
-	now := time.Now().Unix()
-	user.CreateTime = &now
-	user.UpdateTime = &now
-	nowDate := time.Now().Truncate(time.Second)
-	user.CreateDate = &nowDate
-	user.UpdateDate = &nowDate
-	user.LastLoginTime = &nowDate
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.CreateTime = &timestamp
+	user.UpdateTime = &timestamp
+	user.CreateDate = &now
+	user.UpdateDate = &now
 
 	tenantName := req.Nickname + "'s Kingdom"
 
@@ -192,10 +191,10 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	tenant.CreateTime = &now
-	tenant.UpdateTime = &now
-	tenant.CreateDate = &nowDate
-	tenant.UpdateDate = &nowDate
+	tenant.CreateTime = &timestamp
+	tenant.UpdateTime = &timestamp
+	tenant.CreateDate = &now
+	tenant.UpdateDate = &now
 
 	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
@@ -206,10 +205,10 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	userTenant.CreateTime = &now
-	userTenant.UpdateTime = &now
-	userTenant.CreateDate = &nowDate
-	userTenant.UpdateDate = &nowDate
+	userTenant.CreateTime = &timestamp
+	userTenant.UpdateTime = &timestamp
+	userTenant.CreateDate = &now
+	userTenant.UpdateDate = &now
 
 	fileID := utility.GenerateToken()
 	rootFile := &entity.File{
@@ -221,10 +220,10 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		Type:      "folder",
 		Size:      0,
 	}
-	rootFile.CreateTime = &now
-	rootFile.UpdateTime = &now
-	rootFile.CreateDate = &nowDate
-	rootFile.UpdateDate = &nowDate
+	rootFile.CreateTime = &timestamp
+	rootFile.UpdateTime = &timestamp
+	rootFile.CreateDate = &now
+	rootFile.UpdateDate = &now
 
 	tenantDAO := dao.NewTenantDAO()
 	userTenantDAO := dao.NewUserTenantDAO()
@@ -303,8 +302,10 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 	}
 
 	// Update timestamp
-	now := time.Now().Unix()
-	user.UpdateTime = &now
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.UpdateTime = &timestamp
+	user.UpdateDate = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -340,10 +341,10 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	token := utility.GenerateToken()
 	user.AccessToken = &token
 
-	now := time.Now().Unix()
-	user.UpdateTime = &now
-	now_date := time.Now().Truncate(time.Second)
-	user.UpdateDate = &now_date
+	now := time.Now().Truncate(time.Second)
+	timestamp := now.UnixMilli()
+	user.UpdateTime = &timestamp
+	user.UpdateDate = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -365,7 +366,7 @@ func (s *UserService) GetUserByID(id uint) (*UserResponse, common.ErrorCode, err
 		Status:   user.Status,
 		CreatedAt: func() string {
 			if user.CreateTime != nil {
-				return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
+				return time.UnixMilli(*user.CreateTime).Format("2006-01-02 15:04:05")
 			}
 			return ""
 		}(),
@@ -389,7 +390,7 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, com
 			Status:   user.Status,
 			CreatedAt: func() string {
 				if user.CreateTime != nil {
-					return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
+					return time.UnixMilli(*user.CreateTime).Format("2006-01-02 15:04:05")
 				}
 				return ""
 			}(),
