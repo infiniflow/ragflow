@@ -79,7 +79,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`  
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`  
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.25.2`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.25.3`. The RAGFlow Docker image does not include embedding models.
 
   
 > [!TIP]  
