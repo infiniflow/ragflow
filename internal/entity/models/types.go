@@ -78,16 +78,17 @@ type ParseFileResponse struct {
 
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat        string `json:"chat"`
-	AsyncChat   string `json:"async_chat"`
-	AsyncResult string `json:"async_result"`
-	Embedding   string `json:"embedding"`
-	Rerank      string `json:"rerank"`
-	OCR         string `json:"ocr"`
-	Models      string `json:"models"`
-	Balance     string `json:"balance"`
-	Files       string `json:"files"`
-	Status      string `json:"status"`
+	Chat          string `json:"chat"`
+	AsyncChat     string `json:"async_chat"`
+	AsyncResult   string `json:"async_result"`
+	Embedding     string `json:"embedding"`
+	Rerank        string `json:"rerank"`
+	OCR           string `json:"ocr"`
+	DocumentParse string `json:"doc_parse"`
+	Models        string `json:"models"`
+	Balance       string `json:"balance"`
+	Files         string `json:"files"`
+	Status        string `json:"status"`
 }
 
 type ChatConfig struct {

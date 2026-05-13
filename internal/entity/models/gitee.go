@@ -712,8 +712,95 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 }
 
 // ParseFile parse file
-func (z *GiteeModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if documentURL == nil && content == nil {
+		return nil, fmt.Errorf("url or content is required")
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := g.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := g.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitee: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.DocumentParse)
+
+	payload := &bytes.Buffer{}
+	writer := multipart.NewWriter(payload)
+
+	if err := writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	if documentURL != nil {
+		if err := writer.WriteField("image", *documentURL); err != nil {
+			return nil, fmt.Errorf("failed to write image URL: %w", err)
+		}
+	} else if content != nil && len(content) > 0 {
+		part, err := writer.CreateFormFile("image", "image")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create image form file: %w", err)
+		}
+		if _, err = part.Write(content); err != nil {
+			return nil, fmt.Errorf("failed to write image content: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("image or image URL is required")
+	}
+
+	writer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitee OCR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var giteeResponse giteeOCRResponse
+	if err = json.Unmarshal(body, &giteeResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var parseFileResponse = ParseFileResponse{}
+
+	return &parseFileResponse, nil
 }
 
 func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
