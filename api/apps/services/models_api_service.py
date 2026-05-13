@@ -243,7 +243,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     if not instances:
         return True, []
     provider_instance_map: dict = {}
-    provider_info_map = {provider.provider_name: provider for provider in providers}
+    provider_info_map = {provider.id: provider for provider in providers}
     for provider_instance_record in instances:
         provider_name = provider_info_map[provider_instance_record.provider_id].provider_name if provider_info_map.get(provider_instance_record.provider_id) else ""
         if provider_instance_map.get(provider_name):
@@ -253,20 +253,19 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
 
     model_records = TenantModelService.get_models_by_provider_ids(provider_ids)
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
-    active_model_record_map = {}
+    model_record_map = {}
     for model in target_type_records:
-        if model.status != ActiveStatusEnum.ACTIVE.value:
-            continue
         instance_model_key = f"{model.provider_id}_{model.instance_id}_{model.model_name}"
-        if active_model_record_map.get(instance_model_key):
-            active_model_record_map[instance_model_key].append(model)
+        if model_record_map.get(instance_model_key):
+            model_record_map[instance_model_key].append(model)
         else:
-            active_model_record_map[instance_model_key] = [model]
+            model_record_map[instance_model_key] = [model]
 
     added_models = []
     model_key_in_factory = []
+    provider_names = [provider.provider_name for provider in providers]
     for factory in FACTORY_LLM_INFOS:
-        if factory["name"] not in provider_info_map.keys():
+        if factory["name"] not in provider_names:
             continue
         factory_instances = provider_instance_map.get(factory["name"])
         if not factory_instances:
@@ -277,24 +276,28 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
 
             for factory_instance in factory_instances:
                 model_record_key = f"{factory_instance.provider_id}_{factory_instance.id}_{llm['llm_name']}"
-                manual_modified_models = active_model_record_map.get(model_record_key, [])
-                added_model_types = [manual_model.model_type for manual_model in manual_modified_models]
+                model_key_in_factory.append(model_record_key)
+                manual_modified_models = model_record_map.get(model_record_key, [])
+                active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
+                inactive_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.INACTIVE.value]
+                model_types = list(set([llm["model_type"]] + active_model_types) - set(inactive_model_types))
+                if not model_types:
+                    continue
 
                 added_models.append({
-                    "model_type": added_model_types,
+                    "model_type": model_types,
                     "name": llm["llm_name"],
                     "provider_id": factory_instance.provider_id,
-                    "provider_name": provider_info_map.get(factory_instance.provider_id, {}).get("provider_name", ""),
+                    "provider_name": provider_info_map[factory_instance.provider_id].provider_name if provider_info_map.get(factory_instance.provider_id) else "",
                     "instance_id": factory_instance.id,
                     "instance_name": factory_instance.instance_name
                 })
-                model_key_in_factory.append(model_record_key)
 
-    manual_added_model_record_keys = list(set(active_model_record_map.keys()) - set(model_key_in_factory))
+    manual_added_model_record_keys = list(set(model_record_map.keys()) - set(model_key_in_factory))
     if manual_added_model_record_keys:
         instance_info_map = {instance.id: instance for instance in instances}
         for model_record_key in manual_added_model_record_keys:
-            model_records = active_model_record_map.get(model_record_key, [])
+            model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
             provider_id, instance_id, model_name = model_record_key.split("_")
@@ -302,9 +305,9 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 "model_type": [model.model_type for model in model_records],
                 "name": model_name,
                 "provider_id": provider_id,
-                "provider_name": provider_info_map.get(provider_id, {}).get("provider_name", ""),
+                "provider_name": provider_info_map[provider_id].provider_name if provider_info_map.get(provider_id) else "",
                 "instance_id": instance_id,
-                "instance_name": instance_info_map.get(instance_id, {}).get("instance_name", "")
+                "instance_name": instance_info_map[instance_id].instance_name if instance_info_map.get(instance_id) else ""
             })
 
     return True, added_models
