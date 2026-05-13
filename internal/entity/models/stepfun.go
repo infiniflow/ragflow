@@ -477,6 +477,6 @@ func (z *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (z *StepFunModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *StepFunModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

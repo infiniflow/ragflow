@@ -2092,22 +2092,36 @@ func (c *RAGFlowClient) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
 	}
 
-	filename, ok := cmd.Params["file"].(string)
-	if !ok {
-		return nil, fmt.Errorf("text not provided")
+	var filename string
+	var fileURL string
+	var ok bool
+	var fileContent []byte
+
+	filename, ok = cmd.Params["file"].(string)
+	if ok {
+		// read file and convert to base64
+		var err error
+		fileContent, err = os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
+	} else {
+		fileURL, ok = cmd.Params["url"].(string)
+		if !ok {
+			return nil, fmt.Errorf("file or url not provided")
+		}
 	}
 
-	// read file and convert to base64
-	text, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-	base64Text := base64.StdEncoding.EncodeToString(text)
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"content":       base64Text,
+	}
+
+	if fileContent != nil {
+		payload["content"] = fileContent
+	} else {
+		payload["url"] = fileURL
 	}
 
 	url := "/file/ocr"
@@ -2119,7 +2133,7 @@ func (c *RAGFlowClient) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to OCR document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result CommonResponse
+	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("OCR document failed: invalid JSON (%w)", err)
 	}
