@@ -15,6 +15,8 @@
 #
 from abc import ABC
 import asyncio
+import os
+import requests
 from crawl4ai import AsyncWebCrawler
 from agent.tools.base import ToolParamBase, ToolBase
 
@@ -46,6 +48,10 @@ class Crawler(ToolBase, ABC):
         except ValueError:
             return Crawler.be_output("URL not valid")
         try:
+            server_url = (os.environ.get("CRAWL4AI_SERVER_URL", "") or "").rstrip("/")
+            if server_url:
+                return Crawler.be_output(self._fetch_remote(server_url, ans))
+
             # pin_dns_global is used (not thread-local) because crawl4ai resolves
             # DNS in asyncio executor threads that don't share thread-local state.
             with pin_dns_global(_ssrf_hostname, _ssrf_ip):
@@ -55,6 +61,35 @@ class Crawler(ToolBase, ABC):
 
         except Exception as e:
             return Crawler.be_output(f"An unexpected error occurred: {str(e)}")
+
+    def _fetch_remote(self, server_url: str, url: str):
+        """Hand the crawl off to a standalone crawl4ai HTTP server.
+
+        SSRF validation has already run locally in ``_run`` before this is
+        called. The remote server resolves DNS itself, so ``pin_dns_global``
+        is not applied here.
+        """
+        resp = requests.post(
+            f"{server_url}/crawl",
+            json={"urls": [url]},
+            timeout=int(os.environ.get("CRAWL4AI_REQUEST_TIMEOUT", 120)),
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        results = payload.get("results") or []
+        if not results:
+            return ""
+        r = results[0]
+        if self._param.extract_type == "html":
+            return r.get("cleaned_html") or ""
+        if self._param.extract_type == "content":
+            return r.get("extracted_content")
+        # markdown (default): newer crawl4ai returns a MarkdownGenerationResult-shaped
+        # dict; fall back to the bare string for older server versions.
+        md = r.get("markdown")
+        if isinstance(md, dict):
+            return md.get("raw_markdown") or md.get("fit_markdown") or ""
+        return md or ""
 
     async def get_web(self, url):
         if self.check_if_canceled("Crawler async operation"):
