@@ -19,7 +19,6 @@ package dao
 import (
 	"errors"
 	"ragflow/internal/entity"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -57,31 +56,18 @@ func (d *SystemSettingsDAO) GetByName(name string) ([]entity.SystemSettings, err
 // UpdateByName update system settings by name
 // Updates the setting with the given name using the provided data
 func (d *SystemSettingsDAO) UpdateByName(name string, setting *entity.SystemSettings) error {
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-
 	return DB.Model(&entity.SystemSettings{}).
 		Where("name = ?", name).
 		Updates(map[string]interface{}{
-			"value":       setting.Value,
-			"source":      setting.Source,
-			"data_type":   setting.DataType,
-			"update_time": timestamp,
-			"update_date": now,
+			"value":     setting.Value,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
 		}).Error
 }
 
 // Create create a new system setting
 // Inserts a new system setting record into database
 func (d *SystemSettingsDAO) Create(setting *entity.SystemSettings) error {
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-
-	setting.CreateTime = &timestamp
-	setting.CreateDate = &now
-	setting.UpdateTime = &timestamp
-	setting.UpdateDate = &now
-
 	return DB.Create(setting).Error
 }
 
@@ -159,29 +145,16 @@ func (d *SystemSettingsDAO) Transaction(fn func(tx *gorm.DB) error) error {
 
 // CreateWithTx create setting within transaction
 func (d *SystemSettingsDAO) CreateWithTx(tx *gorm.DB, setting *entity.SystemSettings) error {
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-
-	setting.CreateTime = &timestamp
-	setting.CreateDate = &now
-	setting.UpdateTime = &timestamp
-	setting.UpdateDate = &now
-
 	return tx.Create(setting).Error
 }
 
 // UpdateByNameWithTx update setting within transaction
 func (d *SystemSettingsDAO) UpdateByNameWithTx(tx *gorm.DB, name string, setting *entity.SystemSettings) error {
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-
 	return tx.Model(&entity.SystemSettings{}).
 		Where("name = ?", name).
 		Updates(map[string]interface{}{
-			"value":       setting.Value,
-			"source":      setting.Source,
-			"data_type":   setting.DataType,
-			"update_time": timestamp,
-			"update_date": now,
+			"value":     setting.Value,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
 		}).Error
 }

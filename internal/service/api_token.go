@@ -20,7 +20,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
-	"time"
 )
 
 // TokenResponse token response
@@ -67,9 +66,6 @@ type CreateAPITokenRequest struct {
 func (s *SystemService) CreateAPIToken(tenantID string, req *CreateAPITokenRequest) (*TokenResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
 
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-
 	// Generate token and beta values
 	// token: "ragflow-" + secrets.token_urlsafe(32)
 	APIToken := utility.GenerateAPIToken()
@@ -81,10 +77,6 @@ func (s *SystemService) CreateAPIToken(tenantID string, req *CreateAPITokenReque
 		Token:    APIToken,
 		Beta:     &betaAPIKey,
 	}
-	APITokenData.CreateDate = &now
-	APITokenData.UpdateDate = &now
-	APITokenData.CreateTime = &timestamp
-	APITokenData.UpdateTime = &timestamp
 
 	if err := APITokenDAO.Create(APITokenData); err != nil {
 		return nil, err

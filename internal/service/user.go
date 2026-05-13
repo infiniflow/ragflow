@@ -150,13 +150,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		IsSuperuser:     &isSuperuser,
 	}
 
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-	user.CreateTime = &timestamp
-	user.UpdateTime = &timestamp
-	user.CreateDate = &now
-	user.UpdateDate = &now
-
 	tenantName := req.Nickname + "'s Kingdom"
 
 	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
@@ -191,11 +184,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	tenant.CreateTime = &timestamp
-	tenant.UpdateTime = &timestamp
-	tenant.CreateDate = &now
-	tenant.UpdateDate = &now
-
 	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
@@ -205,11 +193,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	userTenant.CreateTime = &timestamp
-	userTenant.UpdateTime = &timestamp
-	userTenant.CreateDate = &now
-	userTenant.UpdateDate = &now
-
 	fileID := utility.GenerateToken()
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -220,11 +203,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		Type:      "folder",
 		Size:      0,
 	}
-	rootFile.CreateTime = &timestamp
-	rootFile.UpdateTime = &timestamp
-	rootFile.CreateDate = &now
-	rootFile.UpdateDate = &now
-
 	tenantDAO := dao.NewTenantDAO()
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
@@ -301,11 +279,6 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 		return nil, common.CodeServerError, fmt.Errorf("failed to update access token: %w", err)
 	}
 
-	// Update timestamp
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-	user.UpdateTime = &timestamp
-	user.UpdateDate = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -341,10 +314,6 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	token := utility.GenerateToken()
 	user.AccessToken = &token
 
-	now := time.Now().Truncate(time.Second)
-	timestamp := now.UnixMilli()
-	user.UpdateTime = &timestamp
-	user.UpdateDate = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -366,7 +335,7 @@ func (s *UserService) GetUserByID(id uint) (*UserResponse, common.ErrorCode, err
 		Status:   user.Status,
 		CreatedAt: func() string {
 			if user.CreateTime != nil {
-				return time.UnixMilli(*user.CreateTime).Format("2006-01-02 15:04:05")
+				return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
 			}
 			return ""
 		}(),
@@ -390,7 +359,7 @@ func (s *UserService) ListUsers(page, pageSize int) ([]*UserResponse, int64, com
 			Status:   user.Status,
 			CreatedAt: func() string {
 				if user.CreateTime != nil {
-					return time.UnixMilli(*user.CreateTime).Format("2006-01-02 15:04:05")
+					return time.Unix(*user.CreateTime, 0).Format("2006-01-02 15:04:05")
 				}
 				return ""
 			}(),
