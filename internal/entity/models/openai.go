@@ -574,9 +574,123 @@ func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-// Balance is not exposed by the OpenAI API, so this returns "no such method".
+// openaiCostsResponse is the slim shape of the Organization Costs
+// response we care about. The endpoint returns a bucketed time-series
+// where each bucket holds one or more {amount: {value, currency}}
+// results; we sum value across all buckets and adopt the first
+// non-empty currency we see.
+type openaiCostsResponse struct {
+	Data []struct {
+		Results []struct {
+			Amount struct {
+				Value    float64 `json:"value"`
+				Currency string  `json:"currency"`
+			} `json:"amount"`
+		} `json:"results"`
+	} `json:"data"`
+}
+
+// Balance returns the organization's month-to-date spend on OpenAI by
+// calling GET /v1/organization/costs with the configured admin API
+// key.
+//
+// Return shape: {spend, currency}. Note this deliberately diverges
+// from the {balance, currency} shape used by the DeepSeek and
+// SiliconFlow drivers, because OpenAI does not expose a remaining-
+// balance endpoint to API callers and we refuse to label spend as
+// "balance" — those are opposite quantities and conflating them
+// silently misleads users (raised in review on #14876 by
+// coderabbitai). The legacy /v1/dashboard/billing/credit_grants path
+// is browser-session-only and rejects API keys with 403; the
+// /v1/organization/* surface only exposes costs (consumption). When
+// OpenAI ships a documented remaining-balance endpoint, switch to it
+// and emit "balance" alongside (or instead of) "spend".
+//
+// The /v1/organization/* surface is only accepted by admin keys
+// (sk-admin-...), so we fail fast when a non-admin key is supplied
+// rather than letting the upstream return a confusing 401.
 func (z *OpenAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if !strings.HasPrefix(*apiConfig.ApiKey, "sk-admin-") {
+		return nil, fmt.Errorf("openai: admin api key (sk-admin-...) required for balance")
+	}
+	if z.URLSuffix.Balance == "" {
+		return nil, fmt.Errorf("no such method")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := z.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+
+	// Month-to-date: query from the first second of the current UTC
+	// month. limit=31 covers any calendar month at the default
+	// bucket_width=1d.
+	now := time.Now().UTC()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	url := fmt.Sprintf(
+		"%s/%s?start_time=%d&limit=31",
+		strings.TrimSuffix(baseURL, "/"),
+		z.URLSuffix.Balance,
+		monthStart.Unix(),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenAI balance API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed openaiCostsResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var total float64
+	currency := ""
+	for _, bucket := range parsed.Data {
+		for _, r := range bucket.Results {
+			total += r.Amount.Value
+			if currency == "" && r.Amount.Currency != "" {
+				currency = r.Amount.Currency
+			}
+		}
+	}
+	if currency == "" {
+		currency = "USD"
+	} else {
+		currency = strings.ToUpper(currency)
+	}
+
+	return map[string]interface{}{
+		"spend":    total,
+		"currency": currency,
+	}, nil
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
