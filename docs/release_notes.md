@@ -9,6 +9,34 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.3
+
+Released on May 13, 2026.
+
+## New features
+
+-  Data source and parsing: Added column-level semantic/metadata control for the spreadsheet file parser; introduced ETag optimization for incremental synchronization of S3 data sources to avoid unnecessary file transfers.
+- Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/infiniflow/ragflow/pull/13710)
+
+## Improvements
+
+- API refactoring and security
+  - Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
+  - Binds the `user_id` in `POST /api/v1/messages` to the authenticated JWT principal. [#14745](https://github.com/infiniflow/ragflow/pull/14745)
+  - Secures the sandbox executor against dynamic and indirect code execution bypasses. [#14690](https://github.com/infiniflow/ragflow/pull/14690)
+  - LLM request timeout control
+  - High concurrency blocking call thread pool
+- Reduces ingestion server boot time. [#14894](https://github.com/infiniflow/ragflow/pull/14894)
+
+## Bug fixes
+
+- Images in multi-sheet Excel workbooks were not scoped by sheet, causing images to be incorrectly attributed across different worksheets. [#14120](https://github.com/infiniflow/ragflow/pull/14120)
+- Iteration item alias passing
+- Tool parameter template parsing
+- Code execution attachment output
+- Volcano model addition fix
+
+
 ## v0.25.2
 
 Released on May 11, 2026.

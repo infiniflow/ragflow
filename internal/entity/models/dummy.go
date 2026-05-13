@@ -98,6 +98,6 @@ func (z *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 // OCRFile OCR file
-func (d *DummyModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

@@ -397,4 +397,3 @@ func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
 		t.Errorf("path=%q want %q (no double slash)", sawPath, "/v1/embeddings")
 	}
 }
-

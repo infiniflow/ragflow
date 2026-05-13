@@ -371,6 +371,6 @@ func (v *VoyageModel) AudioSpeechWithSender(modelName *string, audioContent *str
 	return fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (v *VoyageModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (v *VoyageModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
