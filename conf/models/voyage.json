@@ -1,11 +1,11 @@
 {
-  "name": "VoyageAI",
+  "name": "Voyage",
   "url": {
-    "default": "https://api.voyageai.com/v1"
+    "default": "https://api.voyageai.com"
   },
   "url_suffix": {
-    "embedding": "embeddings",
-    "rerank": "rerank"
+    "embedding": "v1/embeddings",
+    "rerank": "v1/rerank"
   },
   "class": "voyage",
   "models": [

@@ -150,6 +150,16 @@ func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		"input": texts,
 	}
 
+	// Voyage's Matryoshka models (voyage-3.5, voyage-3.5-lite,
+	// voyage-3-large, voyage-code-3) accept output_dimension to
+	// truncate the vector. The wire param is output_dimension
+	// (singular) per https://docs.voyageai.com/reference/embeddings-api;
+	// passing "dimensions" or "output_dimensions" gets rejected with
+	// HTTP 400, so it's worth matching the docs spelling exactly.
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["output_dimension"] = embeddingConfig.Dimension
+	}
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)

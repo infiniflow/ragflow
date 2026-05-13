@@ -41,7 +41,7 @@ func newVoyageServer(t *testing.T, expectedPath string, handler func(t *testing.
 func newVoyageForTest(baseURL string) *VoyageModel {
 	return NewVoyageModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Embedding: "embeddings", Rerank: "rerank"},
+		URLSuffix{Embedding: "v1/embeddings", Rerank: "v1/rerank"},
 	)
 }
 
@@ -52,7 +52,7 @@ func TestVoyageName(t *testing.T) {
 }
 
 func TestVoyageEmbedHappyPath(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "voyage-3.5" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -83,8 +83,61 @@ func TestVoyageEmbedHappyPath(t *testing.T) {
 	}
 }
 
+// TestVoyageEmbedPropagatesOutputDimension pins the docs-spelled
+// param name. Voyage 400s on any other key (live-verified — sending
+// "dimensions" returns "Argument 'dimensions' is not supported by our
+// API"), so this name matters and must not regress.
+func TestVoyageEmbedPropagatesOutputDimension(t *testing.T) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if got, ok := body["output_dimension"].(float64); !ok || got != 256 {
+			t.Errorf("output_dimension=%v want 256", body["output_dimension"])
+		}
+		for _, wrong := range []string{"dimensions", "output_dimensions", "dimension"} {
+			if _, present := body[wrong]; present {
+				t.Errorf("must not send %q (Voyage rejects unknown fields)", wrong)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{"embedding": []float64{0.1}, "index": 0}},
+		})
+	})
+	defer srv.Close()
+
+	v := newVoyageForTest(srv.URL)
+	apiKey := "test-key"
+	model := "voyage-3.5"
+	_, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey},
+		&EmbeddingConfig{Dimension: 256})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
+// And when Dimension is zero/unset, the field MUST be absent — Voyage
+// would default the vector length, but only if we don't send the key
+// at all (sending output_dimension: 0 is a 400).
+func TestVoyageEmbedOmitsOutputDimensionWhenUnset(t *testing.T) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if _, present := body["output_dimension"]; present {
+			t.Errorf("output_dimension must be absent when Dimension is unset, got %v", body["output_dimension"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{"embedding": []float64{0.1}, "index": 0}},
+		})
+	})
+	defer srv.Close()
+
+	v := newVoyageForTest(srv.URL)
+	apiKey := "test-key"
+	model := "voyage-3.5"
+	_, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
 func TestVoyageEmbedReordersByIndex(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"embedding": []float64{2}, "index": 2},
@@ -143,7 +196,7 @@ func TestVoyageEmbedRequiresModelName(t *testing.T) {
 }
 
 func TestVoyageEmbedRejectsDuplicateIndex(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"embedding": []float64{1}, "index": 0},
@@ -163,7 +216,7 @@ func TestVoyageEmbedRejectsDuplicateIndex(t *testing.T) {
 }
 
 func TestVoyageEmbedRejectsOutOfRangeIndex(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"embedding": []float64{1}, "index": 7},
@@ -182,7 +235,7 @@ func TestVoyageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestVoyageEmbedRejectsMissingSlot(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"embedding": []float64{1}, "index": 0},
@@ -201,7 +254,7 @@ func TestVoyageEmbedRejectsMissingSlot(t *testing.T) {
 }
 
 func TestVoyageRerankHappyPath(t *testing.T) {
-	srv := newVoyageServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		// Voyage's request key is top_k (not top_n).
 		if body["top_k"] != float64(3) {
 			t.Errorf("top_k=%v want 3", body["top_k"])
@@ -241,7 +294,7 @@ func TestVoyageRerankHappyPath(t *testing.T) {
 }
 
 func TestVoyageRerankTopKDefaultsToLenDocuments(t *testing.T) {
-	srv := newVoyageServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_k"] != float64(4) {
 			t.Errorf("top_k=%v want 4 (len(documents))", body["top_k"])
 		}
@@ -274,7 +327,7 @@ func TestVoyageRerankEmptyDocuments(t *testing.T) {
 }
 
 func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
-	srv := newVoyageServer(t, "/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"relevance_score": 0.9, "index": 7},
@@ -297,7 +350,7 @@ func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
 	// A duplicate index would silently overwrite an earlier slot, which
 	// is the same failure mode Embed already guards against. Make sure
 	// Rerank fails loudly too.
-	srv := newVoyageServer(t, "/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"relevance_score": 0.9, "index": 0},
@@ -333,15 +386,15 @@ func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
 
 	v := NewVoyageModel(
 		map[string]string{"default": srv.URL + "/"}, // trailing slash
-		URLSuffix{Embedding: "embeddings", Rerank: "rerank"},
+		URLSuffix{Embedding: "v1/embeddings", Rerank: "v1/rerank"},
 	)
 	apiKey := "test-key"
 	model := "voyage-3.5"
 	if _, err := v.Embed(&model, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
-	if sawPath != "/embeddings" {
-		t.Errorf("path=%q want %q (no double slash)", sawPath, "/embeddings")
+	if sawPath != "/v1/embeddings" {
+		t.Errorf("path=%q want %q (no double slash)", sawPath, "/v1/embeddings")
 	}
 }
 
@@ -374,7 +427,7 @@ func TestVoyageListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestVoyageCheckConnectionPingsEmbed(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "voyage-3.5" {
 			t.Errorf("CheckConnection should ping voyage-3.5, got %v", body["model"])
 		}
@@ -394,7 +447,7 @@ func TestVoyageCheckConnectionPingsEmbed(t *testing.T) {
 }
 
 func TestVoyageCheckConnectionFailsOnBadKey(t *testing.T) {
-	srv := newVoyageServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"detail":"unauthorized"}`))
 	})
