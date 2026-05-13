@@ -459,6 +459,6 @@ func (l *LongCatModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile is not exposed by the LongCat API.
-func (l *LongCatModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (l *LongCatModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

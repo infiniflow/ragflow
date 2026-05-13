@@ -657,6 +657,7 @@ func (n *NovitaModel) AudioSpeechWithSender(modelName *string, audioContent *str
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *NovitaModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+// OCRFile OCR file
+func (n *NovitaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }

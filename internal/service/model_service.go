@@ -1531,7 +1531,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
-func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, userID string, fileContent *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRResponse, common.ErrorCode, error) {
 	if apiConfig == nil {
 		apiConfig = &modelModule.APIConfig{}
 	}
@@ -1576,7 +1576,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		}
 
 		if !model.ModelTypeMap["ocr"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a TTS model", providerName, modelName))
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a OCR model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1590,7 +1590,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		apiConfig.ApiKey = &instance.APIKey
 
 		var response *modelModule.OCRResponse
-		response, err = providerInfo.ModelDriver.OCRFile(&modelName, fileContent, apiConfig, ocrConfig)
+		response, err = providerInfo.ModelDriver.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1627,7 +1627,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.OCRResponse
-		response, err = newProviderInfo.OCRFile(&modelName, fileContent, apiConfig, ocrConfig)
+		response, err = newProviderInfo.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}

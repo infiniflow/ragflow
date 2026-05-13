@@ -230,8 +230,10 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 			// if the prefix of mode.Name is matched with keys of modelSupportThinking
 			if provider.Class == "" {
 				pos := strings.Index(model.Name, "-")
-				modelClass := model.Name[0:pos]
-				model.Class = &modelClass
+				if pos >= 0 {
+					modelClass := model.Name[0:pos]
+					model.Class = &modelClass
+				}
 			} else {
 				model.Class = &provider.Name
 			}
