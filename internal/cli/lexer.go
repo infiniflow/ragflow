@@ -108,7 +108,7 @@ func (l *Lexer) NextToken() Token {
 		tok.Type = TokenEOF
 		tok.Value = ""
 	default:
-		if isLetter(l.ch) {
+		if isLetter(l.ch) || l.ch == '_' {
 			ident := l.readIdentifier()
 			return l.lookupIdent(ident)
 		} else if isDigit(l.ch) {
@@ -301,6 +301,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChats, Value: ident}
 	case "CHAT":
 		return Token{Type: TokenChat, Value: ident}
+	case "MESSAGE":
+		return Token{Type: TokenMessage, Value: ident}
+	case "IMAGE":
+		return Token{Type: TokenImage, Value: ident}
+	case "VIDEO":
+		return Token{Type: TokenVideo, Value: ident}
+	case "AUDIO":
+		return Token{Type: TokenAudio, Value: ident}
 	case "THINK":
 		return Token{Type: TokenThink, Value: ident}
 	case "EFFORT":
@@ -355,6 +363,16 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenASR, Value: ident}
 	case "TTS":
 		return Token{Type: TokenTTS, Value: ident}
+	case "EMBED":
+		return Token{Type: TokenEmbed, Value: ident}
+	case "TEXT":
+		return Token{Type: TokenText, Value: ident}
+	case "QUERY":
+		return Token{Type: TokenQuery, Value: ident}
+	case "TOP":
+		return Token{Type: TokenTop, Value: ident}
+	case "DIMENSION":
+		return Token{Type: TokenDimension, Value: ident}
 	case "OCR":
 		return Token{Type: TokenOCR, Value: ident}
 	case "ASYNC":
@@ -415,6 +433,12 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDocument, Value: ident}
 	case "TAGS":
 		return Token{Type: TokenTag, Value: ident}
+	case "REGION":
+		return Token{Type: TokenRegion, Value: ident}
+	case "URL":
+		return Token{Type: TokenURL, Value: ident}
+	case "TASKS":
+		return Token{Type: TokenTasks, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

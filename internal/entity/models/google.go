@@ -19,15 +19,67 @@ package models
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/logger"
+	"ragflow/internal/common"
+	"strings"
 
 	"google.golang.org/genai"
 )
 
-// GoogleModel implements ModelDriver for Dummy AI
+type googleModelPage struct {
+	items         []string
+	nextPageToken string
+}
+
+func collectGoogleModelNames(ctx context.Context, listPage func(context.Context, string) (googleModelPage, error)) ([]string, error) {
+	var modelNames []string
+	pageToken := ""
+
+	for {
+		page, err := listPage(ctx, pageToken)
+		if err != nil {
+			return nil, err
+		}
+
+		modelNames = append(modelNames, page.items...)
+		if page.nextPageToken == "" {
+			return modelNames, nil
+		}
+		pageToken = page.nextPageToken
+	}
+}
+
+var googleListModels = func(ctx context.Context, apiKey string) ([]string, error) {
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return collectGoogleModelNames(ctx, func(ctx context.Context, pageToken string) (googleModelPage, error) {
+		models, err := client.Models.List(ctx, &genai.ListModelsConfig{PageToken: pageToken})
+		if err != nil {
+			return googleModelPage{}, err
+		}
+
+		var modelNames []string
+		for _, m := range models.Items {
+			modelNames = append(modelNames, m.Name)
+		}
+		return googleModelPage{items: modelNames, nextPageToken: models.NextPageToken}, nil
+	})
+}
+
+// GoogleModel implements ModelDriver for Google AI
 type GoogleModel struct {
 	BaseURL   map[string]string
 	URLSuffix URLSuffix
+}
+
+func (g *GoogleModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewGoogleModel creates a new Google AI model instance
@@ -38,12 +90,23 @@ func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel
 	}
 }
 
-func (z *GoogleModel) Name() string {
+func (g *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return nil
+}
+
+func (g *GoogleModel) Name() string {
 	return "google"
 }
 
-// Chat sends a message and returns response
-func (z *GoogleModel) Chat(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is nil or empty")
+	}
+
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  *apiConfig.ApiKey,
@@ -53,43 +116,67 @@ func (z *GoogleModel) Chat(modelName, message *string, apiConfig *APIConfig, cha
 		return nil, err
 	}
 
-	contents := []*genai.Content{
-		genai.NewContentFromText(*message, genai.RoleUser),
+	// Convert messages to Google SDK format
+	var contents []*genai.Content
+	for _, msg := range messages {
+		var role genai.Role
+		switch msg.Role {
+		case "user":
+			role = genai.RoleUser
+		case "model", "assistant":
+			role = genai.RoleModel
+		default:
+			role = genai.RoleUser
+		}
+
+		// Handle content based on type
+		switch c := msg.Content.(type) {
+		case string:
+			contents = append(contents, genai.NewContentFromText(c, role))
+		case []interface{}:
+			// Multimodal content - group parts within a single content
+			var parts []*genai.Part
+			for _, item := range c {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					contentType, _ := itemMap["type"].(string)
+					switch contentType {
+					case "text":
+						if text, ok := itemMap["text"].(string); ok {
+							parts = append(parts, genai.NewPartFromText(text))
+						}
+					case "image_url":
+						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
+							if url, ok := imgMap["url"].(string); ok {
+								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
+							}
+						}
+					}
+				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, genai.NewContentFromParts(parts, role))
+			}
+		}
 	}
 
-	generateContentConfig := &genai.GenerateContentConfig{}
-	generateContentConfig.ThinkingConfig = &genai.ThinkingConfig{}
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		generateContentConfig.ThinkingConfig.IncludeThoughts = true
-	} else {
-		generateContentConfig.ThinkingConfig.IncludeThoughts = false
-	}
-
-	response, err := client.Models.GenerateContent(ctx, *modelName, contents, generateContentConfig)
+	// Generate content (non-streaming)
+	response, err := client.Models.GenerateContent(ctx, modelName, contents, nil)
 	if err != nil {
 		return nil, err
 	}
-	content := response.Text()
 
-	var responseContent string
-	if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		responseContent = response.Candidates[0].Content.Parts[0].Text
-	}
+	// Extract text from response
+	answer := response.Text()
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &responseContent,
-	}
-	return chatResponse, nil
+	return &ChatResponse{Answer: &answer}, nil
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
-func (z *GoogleModel) ChatWithMessages(modelName string, apiKey *string, messages []Message, modelConfig *ChatConfig) (string, error) {
-	return "", fmt.Errorf("not implemented")
-}
+// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
+func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
 
-// ChatStreamlyWithSender sends a message and streams response via sender function (best performance, no channel)
-func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  *apiConfig.ApiKey,
@@ -98,12 +185,53 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	if err != nil {
 		return err
 	}
-	contents := []*genai.Content{
-		genai.NewContentFromText(*message, genai.RoleUser),
+
+	// Convert messages to Google SDK format
+	var contents []*genai.Content
+	for _, msg := range messages {
+		var role genai.Role
+		switch msg.Role {
+		case "user":
+			role = genai.RoleUser
+		case "model", "assistant":
+			role = genai.RoleModel
+		default:
+			role = genai.RoleUser
+		}
+
+		// Handle content based on type
+		switch c := msg.Content.(type) {
+		case string:
+			contents = append(contents, genai.NewContentFromText(c, role))
+		case []interface{}:
+			// Multimodal content - group parts within a single content
+			var parts []*genai.Part
+			for _, item := range c {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					contentType, _ := itemMap["type"].(string)
+					switch contentType {
+					case "text":
+						if text, ok := itemMap["text"].(string); ok {
+							parts = append(parts, genai.NewPartFromText(text))
+						}
+					case "image_url":
+						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
+							if url, ok := imgMap["url"].(string); ok {
+								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
+							}
+						}
+					}
+				}
+			}
+			if len(parts) > 0 {
+				contents = append(contents, genai.NewContentFromParts(parts, role))
+			}
+		}
 	}
+
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
-		*modelName,
+		modelName,
 		contents,
 		nil,
 	) {
@@ -114,19 +242,19 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 		content := response.Text()
 
 		var responseContent string
-		if chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
 			responseContent = response.Candidates[0].Content.Parts[0].Text
 		}
 
 		if responseContent != "" {
-			logger.Info(fmt.Sprintf("Thinking: %s", responseContent))
+			common.Info(fmt.Sprintf("Thinking: %s", responseContent))
 			if err = sender(nil, &responseContent); err != nil {
 				return err
 			}
 		}
 
 		if content != "" {
-			logger.Info(fmt.Sprintf("Answer: %s", responseContent))
+			common.Info(fmt.Sprintf("Answer: %s", content))
 			if err = sender(&content, nil); err != nil {
 				return err
 			}
@@ -136,43 +264,106 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName, message *string, apiConf
 	return err
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("not implemented")
-}
+// Embed generates embeddings for a batch of texts using the Gemini embeddings API.
+// The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
+func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if len(texts) == 0 {
+		return nil, fmt.Errorf("texts is empty")
+	}
 
-func (z *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  *apiConfig.ApiKey,
 		Backend: genai.BackendGeminiAPI,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
 
-	// Retrieve the list of models.
-	models, err := client.Models.List(ctx, &genai.ListModelsConfig{})
+	contents := make([]*genai.Content, len(texts))
+	for i, text := range texts {
+		contents[i] = genai.NewContentFromText(text, genai.RoleUser)
+	}
+
+	var cfg *genai.EmbedContentConfig
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		dim := int32(embeddingConfig.Dimension)
+		cfg = &genai.EmbedContentConfig{OutputDimensionality: &dim}
+	}
+
+	resp, err := client.Models.EmbedContent(ctx, *modelName, contents, cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to embed content: %w", err)
 	}
 
-	var modelNames []string
-	for _, m := range models.Items {
-		modelNames = append(modelNames, m.Name)
+	if len(resp.Embeddings) != len(texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Embeddings))
 	}
-	return modelNames, nil
+
+	result := make([]EmbeddingData, len(resp.Embeddings))
+	for i, emb := range resp.Embeddings {
+		vec := make([]float64, len(emb.Values))
+		for j, v := range emb.Values {
+			vec[j] = float64(v)
+		}
+		result[i] = EmbeddingData{
+			Embedding: vec,
+			Index:     i,
+		}
+	}
+
+	return result, nil
 }
 
-func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	return googleListModels(context.Background(), *apiConfig.ApiKey)
+}
+
+func (g *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (z *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+func (g *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := g.ListModels(apiConfig)
+	return err
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *GoogleModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+// Rerank calculates similarity scores between query and documents
+func (g *GoogleModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", g.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (g *GoogleModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (z *GoogleModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (g *GoogleModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (z *GoogleModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (g *GoogleModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
 }

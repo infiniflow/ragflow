@@ -54,14 +54,31 @@ type DataSourceFeatureVisibility = {
 
 type DataSourceFormValues = Record<string, any>;
 
-export const DataSourceFeatureVisibilityMap = {
+export const DataSourceFeatureVisibilityMap: Partial<
+  Record<DataSourceKey, DataSourceFeatureVisibility>
+> = {
   [DataSourceKey.GITHUB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GITLAB]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.GMAIL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.IMAP]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.CONFLUENCE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.BOX]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DROPBOX]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.S3]: {
@@ -79,10 +96,43 @@ export const DataSourceFeatureVisibilityMap = {
   [DataSourceKey.NOTION]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.DISCORD]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.JIRA]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.BITBUCKET]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.AIRTABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.DINGTALK_AI_TABLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.WEBDAV]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ZENDESK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SEAFILE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ASANA]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.RSS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.MYSQL]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.POSTGRESQL]: {
     syncDeletedFiles: true,
   },
 };

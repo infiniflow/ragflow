@@ -298,7 +298,7 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
 
 # DATASET GRAPH AND TASKS
 def knowledge_graph(auth, dataset_id, params=None):
-    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph/search"
+    url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/graph"
     res = requests.get(url=url, headers=HEADERS, auth=auth, params=params)
     return res.json()
 
@@ -383,7 +383,7 @@ def delete_all_agent_sessions(auth, agent_id, *, page_size=1000):
 
 
 def agent_completions(auth, agent_id, payload=None):
-    url = f"{HOST_ADDRESS}{AGENT_API_URL}/chat/completion"
+    url = f"{HOST_ADDRESS}{AGENT_API_URL}/chat/completions"
     body = {"agent_id": agent_id}
     if payload:
         body.update(payload)

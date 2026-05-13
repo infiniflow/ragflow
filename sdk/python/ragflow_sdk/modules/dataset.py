@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from typing import Any
+
 from .base import Base
 from .document import Document
 
@@ -79,7 +80,7 @@ class DataSet(Base):
         # Validate that id and ids are not used together
         if id and ids:
             raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
-        
+
         params = {
             "id": id,
             "name": name,
@@ -109,8 +110,7 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
-        
-    
+
     def _get_documents_status(self, document_ids):
         import time
         terminal_states = {"DONE", "FAIL", "CANCEL"}

@@ -379,8 +379,10 @@ class Canvas(Graph):
         self.message_id = get_uuid()
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
+        path_set = set(self.path)
         for k, cpn in self.components.items():
-            self.components[k]["obj"].reset(True)
+            if k in path_set:
+                self.components[k]["obj"].reset(True)
 
         if kwargs.get("webhook_payload"):
             for k, cpn in self.components.items():

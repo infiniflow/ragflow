@@ -277,6 +277,48 @@ func (r *KeyValueResponse) PrintOut() {
 	}
 }
 
+type EmbeddingData struct {
+	Index     int       `json:"index"`
+	Embedding []float64 `json:"embedding"`
+}
+
+type EmbeddingsResponse struct {
+	Code         int             `json:"code"`
+	Data         []EmbeddingData `json:"data"`
+	Message      string          `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *EmbeddingsResponse) Type() string {
+	return "common"
+}
+
+func (r *EmbeddingsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *EmbeddingsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *EmbeddingsResponse) PrintOut() {
+	var data []map[string]interface{}
+	for _, embedding := range r.Data {
+		data = append(data, map[string]interface{}{
+			"index":     formatValue(embedding.Index),
+			"dimension": len(embedding.Embedding),
+		})
+	}
+
+	if r.Code == 0 {
+		PrintTableSimpleByFormat(data, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 // ==================== ContextEngine Commands ====================
 
 // ContextListResponse represents the response for ls command
@@ -317,6 +359,27 @@ func (r *ContextSearchResponse) PrintOut() {
 	if r.Code == 0 {
 		fmt.Printf("Found %d results:\n", r.Total)
 		PrintTableSimpleByFormat(r.Data, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+// ContextCatResponse represents the response for cat command
+type ContextCatResponse struct {
+	Code         int    `json:"code"`
+	Content      string `json:"content"`
+	Message      string `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ContextCatResponse) Type() string                        { return "ce_cat" }
+func (r *ContextCatResponse) TimeCost() float64                   { return r.Duration }
+func (r *ContextCatResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *ContextCatResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Content)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)

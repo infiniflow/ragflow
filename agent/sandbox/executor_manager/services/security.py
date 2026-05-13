@@ -26,7 +26,7 @@ class SecurePythonAnalyzer(ast.NodeVisitor):
     An AST-based analyzer for detecting unsafe Python code patterns.
     """
 
-    DANGEROUS_IMPORTS = {"os", "subprocess", "sys", "shutil", "socket", "ctypes", "pickle", "threading", "multiprocessing", "asyncio", "http.client", "ftplib", "telnetlib"}
+    DANGEROUS_IMPORTS = {"os", "subprocess", "sys", "shutil", "socket", "ctypes", "pickle", "threading", "multiprocessing", "asyncio", "http.client", "ftplib", "telnetlib", "builtins"}
 
     DANGEROUS_CALLS = {
         "eval",
@@ -77,6 +77,16 @@ class SecurePythonAnalyzer(ast.NodeVisitor):
         """Check for dangerous function calls."""
         if isinstance(node.func, ast.Name) and node.func.id in self.DANGEROUS_CALLS:
             self.unsafe_items.append((f"Call: {node.func.id}", node.lineno))
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in self.DANGEROUS_CALLS:
+            # Surface the attribute-style match in the analyzer log so that
+            # incident response can grep for it just like the other unsafe-item
+            # findings; the bare append is invisible to operators.
+            logger.warning(
+                "[SafeCheck] Attribute-style dangerous call detected: %s (line %s)",
+                node.func.attr,
+                node.lineno,
+            )
+            self.unsafe_items.append((f"Call: {node.func.attr}", node.lineno))
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute):
@@ -154,9 +164,9 @@ class SecurePythonAnalyzer(ast.NodeVisitor):
 
 class SecureJavaScriptAnalyzer:
     DANGEROUS_PATTERNS = [
-        (re.compile(r"""require\s*\(\s*['"]child_process['"]\s*\)"""), "Require: child_process"),
-        (re.compile(r"""require\s*\(\s*['"]fs['"]\s*\)"""), "Require: fs"),
-        (re.compile(r"""require\s*\(\s*['"]worker_threads['"]\s*\)"""), "Require: worker_threads"),
+        (re.compile(r"""require\s*\(\s*['"`]child_process['"`]\s*\)"""), "Require: child_process"),
+        (re.compile(r"""require\s*\(\s*['"`]fs['"`]\s*\)"""), "Require: fs"),
+        (re.compile(r"""require\s*\(\s*['"`]worker_threads['"`]\s*\)"""), "Require: worker_threads"),
         (re.compile(r"""\beval\s*\("""), "Call: eval"),
         (re.compile(r"""\bFunction\s*\("""), "Call: Function"),
         (re.compile(r"""\bprocess\s*\.\s*binding\s*\("""), "Call: process.binding"),

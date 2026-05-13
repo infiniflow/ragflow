@@ -2,14 +2,14 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType } from '@/interfaces/database/base';
-import { IDataset, IDatasetListResult } from '@/interfaces/database/dataset';
 import {
-  IKnowledge,
+  IDataset,
+  IDatasetListResult,
   IKnowledgeGraph,
   INextTestingResult,
   IRenameTag,
   ITestingResult,
-} from '@/interfaces/database/knowledge';
+} from '@/interfaces/database/dataset';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
@@ -48,6 +48,7 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
   FetchMetadata = 'fetchMetadata',
+  FetchMetadataKeys = 'fetchMetadataKeys',
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
 }
@@ -328,9 +329,9 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id') || id;
 
-  const { data, isFetching: loading } = useQuery<IKnowledge>({
+  const { data, isFetching: loading } = useQuery<IDataset>({
     queryKey: [KnowledgeApiAction.FetchKnowledgeDetail, knowledgeBaseId],
-    initialData: {} as IKnowledge,
+    initialData: {} as IDataset,
     gcTime: 0,
     enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
@@ -378,6 +379,24 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   return { data, loading };
 }
 
+export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
+  const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
+  const { data, isFetching: loading } = useQuery<string[]>({
+    queryKey: [KnowledgeApiAction.FetchMetadataKeys, sortedKbIds],
+    initialData: [],
+    enabled: sortedKbIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.getMetaKeys({
+        kb_ids: sortedKbIds.join(','),
+      });
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+}
+
 export const useRemoveKnowledgeGraph = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
 
@@ -405,16 +424,29 @@ export const useRemoveKnowledgeGraph = () => {
 
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
 ): {
   list: IDataset[];
   loading: boolean;
 } => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+    queryKey: [
+      KnowledgeApiAction.FetchKnowledgeList,
+      shouldFilterListWithoutDocument,
+      keywords,
+    ],
     initialData: [],
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
     queryFn: async () => {
-      const { data } = await listDataset();
+      const { data } = await listDataset(
+        keywords
+          ? {
+              ext: {
+                keywords,
+              },
+            }
+          : undefined,
+      );
       const list = data?.data ?? [];
       return shouldFilterListWithoutDocument
         ? list.filter((x: IDataset) => x.chunk_count > 0)

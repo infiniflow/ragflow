@@ -122,9 +122,29 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 	return result, nil
 }
 
+// GetByIDs retrieves documents by multiple IDs
+func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	var documents []*entity.Document
+	err := DB.Where("id IN ?", ids).Find(&documents).Error
+	if err != nil {
+		return nil, err
+	}
+	return documents, nil
+}
+
 // CountByTenantID counts documents by tenant ID
 func (dao *DocumentDAO) CountByTenantID(tenantID string) (int64, error) {
 	var count int64
 	err := DB.Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
 	return count, err
+}
+
+// SumSizeByDatasetID returns the total document size for a dataset.
+func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
+	var total int64
+	err := DB.Model(&entity.Document{}).
+		Select("COALESCE(SUM(size), 0)").
+		Where("kb_id = ?", datasetID).
+		Scan(&total).Error
+	return total, err
 }

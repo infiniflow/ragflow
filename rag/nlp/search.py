@@ -60,6 +60,63 @@ class Dealer:
         vector_column_name = f"q_{len(embedding_data)}_vec"
         return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
+    async def _existing_doc_ids(self, doc_ids: list[str]) -> set[str]:
+        if not doc_ids:
+            return set()
+
+        unique_doc_ids = list(dict.fromkeys(doc_ids))
+
+        def _load():
+            from api.db.services.document_service import DocumentService
+
+            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+
+        return await thread_pool_exec(_load)
+
+    async def _prune_deleted_chunks(self, sres: SearchResult) -> SearchResult:
+        # Temporary safety net:
+        # Some delete paths can leave stale chunks in the doc store if the DB row
+        # is removed but the vector record is not fully cleaned up. We filter those
+        # chunks here so chat/retrieval does not surface content from deleted docs.
+        # Keep this as a fallback, not as the primary delete mechanism.
+        chunk_doc_ids = [chunk.get("doc_id") for chunk in sres.field.values() if chunk and chunk.get("doc_id")]
+        if not chunk_doc_ids:
+            return sres
+
+        existing_doc_ids = await self._existing_doc_ids(chunk_doc_ids)
+        if len(existing_doc_ids) == len(set(chunk_doc_ids)):
+            return sres
+
+        filtered_ids = []
+        filtered_field = {}
+        filtered_highlight = {} if sres.highlight else sres.highlight
+        removed = 0
+
+        for chunk_id in sres.ids:
+            chunk = sres.field.get(chunk_id)
+            if not chunk or chunk.get("doc_id") not in existing_doc_ids:
+                removed += 1
+                continue
+
+            filtered_ids.append(chunk_id)
+            filtered_field[chunk_id] = chunk
+            if sres.highlight and chunk_id in sres.highlight:
+                filtered_highlight[chunk_id] = sres.highlight[chunk_id]
+
+        if removed:
+            logging.warning("Pruned %s stale chunks whose documents no longer exist.", removed)
+
+        return self.SearchResult(
+            total=len(filtered_ids),
+            ids=filtered_ids,
+            query_vector=sres.query_vector,
+            field=filtered_field,
+            highlight=filtered_highlight,
+            aggregation=sres.aggregation,
+            keywords=sres.keywords,
+            group_docs=sres.group_docs,
+        )
+
     def get_filters(self, req):
         condition = dict()
         for key, field in {"kb_ids": "kb_id", "doc_ids": "doc_id"}.items():
@@ -436,6 +493,12 @@ class Dealer:
 
         sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
+        # Temporary retrieval-side guard: prune chunks whose parent document no
+        # longer exists before reranking and returning results.
+        sres = await self._prune_deleted_chunks(sres)
+        if sres.total == 0:
+            ranks["doc_aggs"] = []
+            return ranks
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
@@ -472,11 +535,6 @@ class Dealer:
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold
-
-        # When doc_ids is explicitly provided (metadata or document filtering), bypass threshold
-        # User wants those specific documents regardless of their relevance score
-        if doc_ids:
-            post_threshold = 0.0
 
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= post_threshold]
         filtered_count = len(valid_idx)
@@ -723,6 +781,13 @@ class Dealer:
         vector_size = 1024
         for id, cks in mom_chunks.items():
             chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
+            if chunk is None:
+                logging.warning(
+                    "Parent chunk '%s' not found in the index; falling back to %d child chunk(s).",
+                    id, len(cks),
+                )
+                chunks.extend(cks)
+                continue
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),

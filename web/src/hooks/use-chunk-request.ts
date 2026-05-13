@@ -1,7 +1,7 @@
 import message from '@/components/ui/message';
 import { PaginationProps } from '@/interfaces/antd-compat';
 import { ResponseGetType, ResponseType } from '@/interfaces/database/base';
-import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';

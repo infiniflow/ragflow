@@ -27,6 +27,32 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ---
 
+## Deprecated API Aliases
+
+The following v0.24.0 REST API paths are deprecated. They remain available through the backward compatibility layer, but new integrations should use the replacement endpoints.
+
+| Deprecated endpoint | Replacement endpoint |
+|---------------------|----------------------|
+| **POST** `/api/v1/chats_openai/{chat_id}/chat/completions` | **POST** `/api/v1/openai/{chat_id}/chat/completions` |
+| **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}` | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}` |
+| **POST** `/api/v1/chats/{chat_id}/completions` | **POST** `/api/v1/chat/completions` |
+| **POST** `/api/v1/sessions/related_questions` | **POST** `/api/v1/chat/recommandation` |
+| **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
+| **GET** `/v1/system/healthz` | **GET** `/api/v1/system/healthz` |
+| **POST** `/api/v1/file/upload` | **POST** `/api/v1/files` |
+| **POST** `/api/v1/file/create` | **POST** `/api/v1/files` |
+| **GET** `/api/v1/file/list` | **GET** `/api/v1/files` |
+| **GET** `/api/v1/file/root_folder` | **GET** `/api/v1/files` |
+| **GET** `/api/v1/file/parent_folder` | **GET** `/api/v1/files/{file_id}/parent` |
+| **GET** `/api/v1/file/all_parent_folder` | **GET** `/api/v1/files/{file_id}/ancestors` |
+| **POST** `/api/v1/file/rm` | **DELETE** `/api/v1/files` |
+| **POST** `/api/v1/file/rename` | **POST** `/api/v1/files/move` |
+| **GET** `/api/v1/file/get/{file_id}` | **GET** `/api/v1/files/{file_id}` |
+| **POST** `/api/v1/file/mv` | **POST** `/api/v1/files/move` |
+| **POST** `/api/v1/file/convert` | **POST** `/api/v1/files/link-to-datasets` |
+
+---
+
 ## OpenAI-Compatible API
 
 ---
@@ -36,6 +62,10 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 **POST** `/api/v1/openai/{chat_id}/chat/completions`
 
 Creates a model response for a given chat conversation.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/chats_openai/{chat_id}/chat/completions` is deprecated. Please use this endpoint instead.
+:::
 
 This API follows the same request and response format as OpenAI's API. It allows you to interact with the model in a manner similar to how you would with [OpenAI's API](https://platform.openai.com/docs/api-reference/chat/create).
 
@@ -2369,6 +2399,10 @@ Failure:
 
 Updates content or configurations for a specified chunk.
 
+:::caution DEPRECATED
+The previous endpoint `PUT /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
 - Method: PATCH
@@ -2908,11 +2942,11 @@ curl --request POST \
   - `"temperature"`: `float`
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.
   - `"top_p"`: `float`
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
+    Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
   - `"presence_penalty"`: `float`
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
   - `"frequency penalty"`: `float`
-    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+    Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
   Instructions for the LLM to follow. A `prompt_config` object may contain the following attributes:
   - `"system"`: `string` The prompt content.
@@ -3071,11 +3105,11 @@ curl --request PUT \
   - `"temperature"`: `float`
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.
   - `"top_p"`: `float`
-    Also known as “nucleus sampling”, this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
+    Also known as "nucleus sampling", this parameter sets a threshold to select a smaller set of words to sample from. It focuses on the most likely words, cutting off the less probable ones. Defaults to `0.3`
   - `"presence_penalty"`: `float`
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
   - `"frequency penalty"`: `float`
-    Similar to the presence penalty, this reduces the model’s tendency to repeat the same words frequently. Defaults to `0.7`.
+    Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
@@ -3325,6 +3359,10 @@ Failure:
 **DELETE** `/api/v1/chats`
 
 Deletes chat assistants by ID.
+
+:::caution DEPRECATED
+The `chat_id` in the request body is deprecated, please use `ids` list.
+:::
 
 #### Request
 
@@ -3583,6 +3621,10 @@ Failure:
 **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}`
 
 Updates a session of a specified chat assistant.
+
+:::caution DEPRECATED
+The previous endpoint `PUT /api/v1/chats/{chat_id}/sessions/{session_id}` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -4008,6 +4050,10 @@ Failure:
 **POST** `/api/v1/chat/completions`
 
 Starts a chat completion request. The same endpoint supports three modes:
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. Please use this endpoint instead.
+:::
 
 - No `chat_id`: talk directly with the tenant's default chat model.
 - With `chat_id` but no `session_id`: use that chat's configuration and automatically create a new session.
@@ -4466,21 +4512,14 @@ Asks a specified agent a question to start an AI-powered conversation.
 
 Uses a single completion endpoint for all agent conversations.
 
-- Standard mode: send `agent_id` with `query`.
-- OpenAI-compatible mode: send the same endpoint with `"openai-compatible": true`.
-
-:::tip NOTE
-
-- Older agent completion routes have been removed. Use only `/api/v1/agents/chat/completion`.
-- In standard streaming mode, not all responses include a reference, as this depends on the workflow result.
-- In streaming mode, the server terminates the stream with `[DONE]`.
-
+:::caution DEPRECATED
+The API is deprecated. Please use `POST /api/v1/agents/chat/completions` instead.
 :::
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/agents/chat/completion`
+- URL: `/api/v1/agents/chat/completions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -4521,7 +4560,7 @@ If the **Begin** component does not take parameters:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4536,7 +4575,7 @@ curl --request POST \
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4573,7 +4612,7 @@ To continue an existing session:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4679,7 +4718,7 @@ Streaming request:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -4700,7 +4739,7 @@ Non-stream request with existing session:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/agents/chat/completion \
+     --url http://{address}/api/v1/agents/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
@@ -5214,6 +5253,10 @@ Failure:
 **POST** `/api/v1/chat/recommandation`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/sessions/related_questions` is deprecated. Please use this endpoint instead.
+:::
 
 This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
 
@@ -6441,7 +6484,7 @@ Success
     "data": [
         {
             "agent_id": "8db9c8eddfcc11f0b5da84ba59bc53c7",
-            "content": "User Input: who am I?\nAgent Response: To address the question \"who am I?\", let's follow the logical steps outlined in the instructions:\n\n1. **Understand the User’s Request**: The user is asking for a clarification or identification of their own self. This is a fundamental question about personal identity.\n\n2. **Decompose the Request**: The request is quite simple and doesn't require complex decomposition. The core task is to provide an answer that identifies the user in some capacity.\n\n3. **Execute the Subtask**:\n   - **Identify the nature of the question**: The user is seeking to understand their own existence or their sense of self.\n   - **Assess the context**: The context is not explicitly given, so the response will be general.\n   - **Provide a response**: The answer should acknowledge the user's inquiry into their identity.\n\n4. **Validate Accuracy and Consistency**: The response should be consistent with the general understanding of the question. Since the user has not provided specific details about their identity, the response should be broad and open-ended.\n\n5. **Summarize the Final Result**: The user is asking \"who am I?\" which is an inquiry into their own identity. The answer is that the user is the individual who is asking the question. Without more specific information, a detailed description of their identity cannot be provided.\n\nSo, the final summary would be:\n\nThe user is asking the question \"who am I?\" to seek an understanding of their own identity. The response to this question is that the user is the individual who is posing the question. Without additional context or details, a more comprehensive description of the user's identity cannot be given.",
+            "content": "User Input: who am I?\nAgent Response: To address the question \"who am I?\", let's follow the logical steps outlined in the instructions:\n\n1. **Understand the User's Request**: The user is asking for a clarification or identification of their own self. This is a fundamental question about personal identity.\n\n2. **Decompose the Request**: The request is quite simple and doesn't require complex decomposition. The core task is to provide an answer that identifies the user in some capacity.\n\n3. **Execute the Subtask**:\n   - **Identify the nature of the question**: The user is seeking to understand their own existence or their sense of self.\n   - **Assess the context**: The context is not explicitly given, so the response will be general.\n   - **Provide a response**: The answer should acknowledge the user's inquiry into their identity.\n\n4. **Validate Accuracy and Consistency**: The response should be consistent with the general understanding of the question. Since the user has not provided specific details about their identity, the response should be broad and open-ended.\n\n5. **Summarize the Final Result**: The user is asking \"who am I?\" which is an inquiry into their own identity. The answer is that the user is the individual who is asking the question. Without more specific information, a detailed description of their identity cannot be provided.\n\nSo, the final summary would be:\n\nThe user is asking the question \"who am I?\" to seek an understanding of their own identity. The response to this question is that the user is the individual who is posing the question. Without additional context or details, a more comprehensive description of the user's identity cannot be given.",
             "forget_at": "None",
             "invalid_at": "None",
             "memory_id": "6c8983badede11f083f184ba59bc53c7",
@@ -6632,7 +6675,11 @@ Failure
 
 **GET** `/api/v1/system/healthz`
 
-Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
+Check the health status of RAGFlow's dependencies (database, Redis, document engine, object storage).
+
+:::caution DEPRECATED
+The previous endpoint `GET /v1/system/healthz` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -6712,6 +6759,10 @@ Explanation:
 **POST** `/api/v1/files`
 
 Uploads one or multiple files to the system.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/upload` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -6854,14 +6905,18 @@ Failure:
 
 ### Download attachment
 
-**GET** `/v1/document/download/{attachment_id}`
+**GET** `/api/v1/documents/{doc_id}/download`
+
+:::caution DEPRECATED
+The previous endpoint `GET /v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
+:::
 
 Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/document/download/{attachment_id}`
+- URL: `/api/v1/documents/{doc_id}/download`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query parameter:
@@ -6871,15 +6926,15 @@ Downloads a runtime attachment previously uploaded via the [Upload document](#up
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/v1/document/download/{attachment_id}?ext=pdf' \
+     --url 'http://{address}/api/v1/documents/{doc_id}/download?ext=pdf' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_attachment.pdf
 ```
 
 ##### Request parameters
 
-- `attachment_id`: (*Path parameter*), `string`, *Required*
-  The `id` value returned by the [Upload document](#upload-document) method.
+- `doc_id`: (*Path parameter*), `string`, *Required*
+  The document ID whose attachment should be downloaded.
 - `ext`: (*Query parameter*), `string`, *Optional*
   A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
   - `"markdown"`
@@ -6911,6 +6966,10 @@ Failure:
 **POST** `/api/v1/files`
 
 Creates a new file or folder in the system.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/create` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -6983,6 +7042,10 @@ Failure:
 **GET** `/api/v1/files?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
 
 Lists files and folders under a specific folder.
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/list` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -7059,6 +7122,10 @@ Failure:
 
 Retrieves the immediate parent folder information of a specified file.
 
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/parent_folder?file_id=...` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
 - Method: GET
@@ -7111,6 +7178,10 @@ Failure:
 **GET** `/api/v1/files/{file_id}/ancestors`
 
 Retrieves all parent folders of a specified file in the folder hierarchy.
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/all_parent_folder?file_id=...` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -7171,6 +7242,10 @@ Failure:
 
 Deletes one or multiple files or folders.
 
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/rm` is deprecated. Please use this endpoint instead.
+:::
+
 #### Request
 
 - Method: DELETE
@@ -7205,7 +7280,9 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "data": {
+        "success_count": 2
+    }
 }
 ```
 
@@ -7213,8 +7290,14 @@ Failure:
 
 ```json
 {
-    "code": 404,
-    "message": "File or Folder not found!"
+    "code": 102,
+    "message": "Partially deleted 1 files with 1 errors",
+    "data": {
+        "success_count": 1,
+        "errors": [
+            "No authorization for file file1"
+        ]
+    }
 }
 ```
 
@@ -7225,6 +7308,10 @@ Failure:
 **GET** `/api/v1/files/{file_id}`
 
 Downloads a file from the system.
+
+:::caution DEPRECATED
+The previous endpoint `GET /api/v1/file/get/{file_id}` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -7269,6 +7356,10 @@ Failure:
 **POST** `/api/v1/files/move`
 
 Moves and/or renames files or folders. Follows Linux `mv` semantics: at least one of `dest_file_id` or `new_name` must be provided.
+
+:::caution DEPRECATED
+The previous endpoints `POST /api/v1/file/mv` and `POST /api/v1/file/rename` are deprecated. Please use this endpoint instead.
+:::
 
 - `dest_file_id` only: move files to a new folder, names unchanged.
 - `new_name` only: rename a single file or folder in place, no storage operation.
@@ -7368,6 +7459,10 @@ or
 **POST** `/api/v1/files/link-to-datasets`
 
 Converts files to documents and links them to specified datasets.
+
+:::caution DEPRECATED
+The previous endpoint `POST /api/v1/file/convert` is deprecated. Please use this endpoint instead.
+:::
 
 #### Request
 
@@ -7741,14 +7836,14 @@ Failure:
 
 ### Search completion
 
-**POST** `/api/v1/searches/{search_id}/completion`
+**POST** `/api/v1/searches/{search_id}/completions`
 
 Generates an answer using the saved search app configuration and returns the result as a Server-Sent Events stream.
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/searches/{search_id}/completion`
+- URL: `/api/v1/searches/{search_id}/completions`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
@@ -7760,7 +7855,7 @@ Generates an answer using the saved search app configuration and returns the res
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/searches/{search_id}/completion \
+     --url http://{address}/api/v1/searches/{search_id}/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '{

@@ -61,6 +61,8 @@ var (
 // DatasetsService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetsService struct {
 	kbDAO        *dao.KnowledgebaseDAO
+	documentDAO  *dao.DocumentDAO
+	connectorDAO *dao.ConnectorDAO
 	tenantDAO    *dao.TenantDAO
 	tenantLLMDAO *dao.TenantLLMDAO
 }
@@ -69,6 +71,8 @@ type DatasetsService struct {
 func NewDatasetsService() *DatasetsService {
 	return &DatasetsService{
 		kbDAO:        dao.NewKnowledgebaseDAO(),
+		documentDAO:  dao.NewDocumentDAO(),
+		connectorDAO: dao.NewConnectorDAO(),
 		tenantDAO:    dao.NewTenantDAO(),
 		tenantLLMDAO: dao.NewTenantLLMDAO(),
 	}
@@ -392,8 +396,8 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
+	now := time.Now().Truncate(time.Second)
+	createTime := now.UnixMilli()
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
@@ -416,10 +420,10 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		EmbdID:       embdID,
 		Status:       &status,
 	}
-	kb.CreateTime = &now
-	kb.UpdateTime = &now
-	kb.CreateDate = &nowDate
-	kb.UpdateDate = &nowDate
+	kb.CreateTime = &createTime
+	kb.UpdateTime = &createTime
+	kb.CreateDate = &now
+	kb.UpdateDate = &now
 
 	if description != nil {
 		kb.Description = description
@@ -521,6 +525,45 @@ func (s *DatasetsService) DeleteDatasets(ids []string, deleteAll bool, tenantID 
 		"success_count": successCount,
 		"errors":        limitStrings(errorsList, 5),
 	}, common.CodeSuccess, nil
+}
+
+// GetDataset gets a single dataset with its size and linked connectors.
+func (s *DatasetsService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	normalizedID, err := normalizeDatasetUUID1(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	datasetID = normalizedID
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+
+	data := datasetToMap(kb)
+
+	size, err := s.documentDAO.SumSizeByDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	data["size"] = size
+
+	connectors, err := s.connectorDAO.ListByDatasetID(datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	data["connectors"] = connectors
+
+	return data, common.CodeSuccess, nil
 }
 
 func (s *DatasetsService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
@@ -671,7 +714,7 @@ func normalizeDatasetUUID1(id string) (string, error) {
 }
 
 func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	modelName, provider, err := parseModelName(embdID)
+	modelName, _, provider, err := parseModelName(embdID)
 	if err != nil {
 		return false, "Embedding model identifier must follow <model_name>@<provider> format"
 	}
