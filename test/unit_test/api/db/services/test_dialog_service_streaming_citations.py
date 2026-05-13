@@ -16,7 +16,6 @@
 import asyncio
 import sys
 import types
-import warnings
 from copy import deepcopy
 from types import SimpleNamespace
 
