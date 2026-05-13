@@ -29,9 +29,12 @@ export const TypeOptions = [
   'String',
   'Number',
   'Boolean',
+  'Object',
   'Array<String>',
   'Array<Number>',
-  'Object',
+  'Array<Any>',
+  'Array<Object>',
+  'Any',
 ].map((x) => ({ label: x, value: x }));
 
 export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {

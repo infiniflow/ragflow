@@ -348,7 +348,8 @@ export default {
       tagCloud: 'Đám mây',
       graphRagMethod: 'Phương pháp',
       graphRagMethodTip: `Light: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - HKUDS/LightRAG: "LightRAG: Tạo sinh tăng cường truy xuất đơn giản và nhanh chóng".
-      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.`,
+      General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.
+      NER: Sử dụng spaCy NER và trích xuất từ khóa dựa trên quy tắc để trích xuất thực thể và quan hệ. Không cần LLM cho việc trích xuất, giúp nhanh chóng và tiết kiệm tài nguyên.`,
       useGraphRagTip:
         'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',
@@ -393,6 +394,9 @@ export default {
         'Nếu có những câu hỏi được đưa ra, việc nhúng phần đó sẽ dựa trên những câu hỏi đó.',
     },
     chat: {
+      chatSupport: 'Hỗ trợ trò chuyện',
+      replyInstantly: 'Chúng tôi thường phản hồi ngay lập tức',
+      typeYourMessage: 'Nhập tin nhắn của bạn...',
       newConversation: 'Cuộc trò chuyện mới',
       createAssistant: 'Tạo trợ lý',
       assistantSetting: 'Cài đặt trợ lý',
@@ -411,7 +415,7 @@ export default {
       assistantAvatar: 'Avatar trợ lý',
       language: 'Ngôn ngữ',
       emptyResponse: 'Phản hồi trống',
-      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến ​​riêng của mình khi không tìm thấy gì, hãy để trống.`,
+      emptyResponseTip: `Nếu không tìm thấy gì với câu hỏi của người dùng trong cơ sở kiến thức, nó sẽ sử dụng điều này làm câu trả lời. Nếu bạn muốn LLM đưa ra ý kiến riêng của mình khi không tìm thấy gì, hãy để trống.`,
       setAnOpener: 'Đặt lời mở đầu',
       setAnOpenerInitial: `Xin chào! Tôi là trợ lý của bạn, tôi có thể giúp gì cho bạn?`,
       setAnOpenerTip: 'Bạn muốn chào đón khách hàng của mình như thế nào?',
@@ -852,10 +856,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Một thành phần tìm kiếm thông qua URL phiên bản SearXNG bạn cung cấp. Chỉ định TopN và URL phiên bản.',
-      pdfGenerator: 'Trình tạo Tài liệu',
-      pDFGenerator: 'Trình tạo Tài liệu',
-      pdfGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
-      pDFGeneratorDescription: `Một thành phần tạo tài liệu (PDF, DOCX, TXT) từ nội dung định dạng markdown với kiểu tùy chỉnh, hình ảnh và bảng. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, bảng với cú pháp |.`,
+      docGenerator: 'Trình tạo Tài liệu',
+      docGeneratorDescription: `Tạo tệp từ nội dung Markdown.`,
       subtitle: 'Phụ đề',
       logoImage: 'Hình ảnh Logo',
       logoPosition: 'Vị trí Logo',

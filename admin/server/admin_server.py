@@ -21,7 +21,6 @@ import os
 import signal
 import logging
 import threading
-import traceback
 import faulthandler
 
 from flask import Flask
@@ -75,10 +74,10 @@ if __name__ == '__main__':
             application=app,
             threaded=True,
             use_reloader=False,
-            use_debugger=True,
+            use_debugger=False,
         )
-    except Exception:
-        traceback.print_exc()
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         time.sleep(1)
         os.kill(os.getpid(), signal.SIGKILL)

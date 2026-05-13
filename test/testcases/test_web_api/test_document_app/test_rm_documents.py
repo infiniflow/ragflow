@@ -17,7 +17,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents, delete_document, list_documents
+from test_common import bulk_upload_documents, delete_document, list_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -36,7 +36,7 @@ class TestAuthorization:
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
-        res = delete_document(invalid_auth)
+        res = delete_document(invalid_auth, "kb_id")
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
 
@@ -46,22 +46,23 @@ class TestDocumentsDeletion:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message, remaining",
         [
-            (None, 101, "required argument are missing: doc_id; ", 3),
-            ({"doc_id": ""}, 109, "No authorization.", 3),
-            ({"doc_id": "invalid_id"}, 109, "No authorization.", 3),
-            ({"doc_id": "\n!?。；！？\"'"}, 109, "No authorization.", 3),
-            ("not json", 101, "required argument are missing: doc_id; ", 3),
-            (lambda r: {"doc_id": r[0]}, 0, "", 2),
+            ({}, 102, "should either provide doc ids or set delete_all(true), dataset:", 3),
+            ({"invalid_key":[]}, 101, "Field: <invalid_key> - Message: <Extra inputs are not permitted> - Value: <[]>", 3),
+            ({"ids": ""}, 101, "Field: <ids> - Message: <Input should be a valid list> - Value: <>", 3),
+            ({"ids": ["invalid_id"]}, 102, "These documents do not belong to dataset", 3),
+            ("not json", 101, "Invalid request payload: expected object, got str", 3),
+            (lambda r: {"ids": r[0]}, 101, "Field: <ids> - Message: <Input should be a valid list> - Value", 3),
+            (lambda r: {"ids": r}, 0, "", 0),
         ],
     )
     def test_basic_scenarios(self, WebApiAuth, add_documents_func, payload, expected_code, expected_message, remaining):
         kb_id, document_ids = add_documents_func
         if callable(payload):
             payload = payload(document_ids)
-        res = delete_document(WebApiAuth, payload)
+        res = delete_document(WebApiAuth, kb_id, payload)
         assert res["code"] == expected_code, res
         if res["code"] != 0:
-            assert res["message"] == expected_message, res
+            assert expected_message in res["message"], res
 
         res = list_documents(WebApiAuth, {"kb_id": kb_id})
         assert len(res["data"]["docs"]) == remaining, res
@@ -69,57 +70,46 @@ class TestDocumentsDeletion:
 
     @pytest.mark.p2
     def test_repeated_deletion(self, WebApiAuth, add_documents_func):
-        _, document_ids = add_documents_func
+        kb_id, document_ids = add_documents_func
         for doc_id in document_ids:
-            res = delete_document(WebApiAuth, {"doc_id": doc_id})
+            res = delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
             assert res["code"] == 0, res
 
         for doc_id in document_ids:
-            res = delete_document(WebApiAuth, {"doc_id": doc_id})
-            assert res["code"] == 109, res
-            assert res["message"] == "No authorization.", res
+            res = delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
+            assert res["code"] == 102, res
+            assert "Document not found" in res["message"], res
+
+    @pytest.mark.p2
+    def test_delete_all(self, WebApiAuth, add_documents_func):
+        kb_id, document_ids = add_documents_func
+
+        res = delete_document(WebApiAuth, kb_id, {"delete_all": True})
+        assert res["code"] == 0, res
+
+        res = list_documents(WebApiAuth, {"kb_id": kb_id})
+        assert len(res["data"]["docs"]) == 0, res
+        assert res["data"]["total"] == 0, res
 
 
 @pytest.mark.p2
-class TestDocumentsDeletionUnit:
-    def test_rm_string_doc_id_normalization_success_unit(self, document_app_module, monkeypatch):
-        module = document_app_module
-        captured = {}
-
-        async def fake_request_json():
-            return {"doc_id": "doc1"}
-
-        async def fake_thread_pool_exec(func, doc_ids, user_id):
-            captured["func"] = func
-            captured["doc_ids"] = doc_ids
-            captured["user_id"] = user_id
-            return None
-
-        monkeypatch.setattr(module, "get_request_json", fake_request_json)
-        monkeypatch.setattr(module.DocumentService, "accessible4deletion", lambda *_args, **_kwargs: True)
-        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
-        res = _run(module.rm.__wrapped__())
-        assert res["code"] == 0
-        assert res["data"] is True
-        assert captured["func"] == module.FileService.delete_docs
-        assert captured["doc_ids"] == ["doc1"]
-        assert captured["user_id"] == module.current_user.id
-
-
-@pytest.mark.p3
 def test_concurrent_deletion(WebApiAuth, add_dataset, tmp_path):
     count = 100
     kb_id = add_dataset
     document_ids = bulk_upload_documents(WebApiAuth, kb_id, count, tmp_path)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(delete_document, WebApiAuth, {"doc_id": document_ids[i]}) for i in range(count)]
+        futures = [executor.submit(delete_document, WebApiAuth, kb_id, {"ids": [document_ids[i]]}) for i in range(count)]
     responses = list(as_completed(futures))
     assert len(responses) == count, responses
     assert all(future.result()["code"] == 0 for future in futures), responses
 
+    res = list_documents(WebApiAuth, {"kb_id": kb_id})
+    assert len(res["data"]["docs"]) == 0, res
+    assert res["data"]["total"] == 0, res
 
-@pytest.mark.p3
+
+@pytest.mark.p2
 def test_delete_100(WebApiAuth, add_dataset, tmp_path):
     documents_num = 100
     kb_id = add_dataset
@@ -128,7 +118,7 @@ def test_delete_100(WebApiAuth, add_dataset, tmp_path):
     assert res["data"]["total"] == documents_num, res
 
     for doc_id in document_ids:
-        res = delete_document(WebApiAuth, {"doc_id": doc_id})
+        res = delete_document(WebApiAuth, kb_id, {"ids": [doc_id]})
         assert res["code"] == 0, res
 
     res = list_documents(WebApiAuth, {"kb_id": kb_id})

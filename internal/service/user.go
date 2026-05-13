@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"hash"
 	"os"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
@@ -104,23 +105,23 @@ type UserResponse struct {
 // Register user registration
 func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
-	if cfg.RegisterEnabled == 0 {
-		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
+	if !cfg.Authentication.RegisterEnabled {
+		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(req.Email) {
-		return nil, common.CodeOperatingError, fmt.Errorf("Invalid email address: %s!", req.Email)
+		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
 
 	existUser, _ := s.userDAO.GetByEmail(req.Email)
 	if existUser != nil {
-		return nil, common.CodeOperatingError, fmt.Errorf("Email: %s has already registered!", req.Email)
+		return nil, common.CodeOperatingError, fmt.Errorf("email: %s has already registered", req.Email)
 	}
 
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("Fail to decrypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
 	}
 
 	var hashedPassword string
@@ -152,10 +153,10 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	now := time.Now().Unix()
 	user.CreateTime = &now
 	user.UpdateTime = &now
-	now_date := time.Now().Truncate(time.Second)
-	user.CreateDate = &now_date
-	user.UpdateDate = &now_date
-	user.LastLoginTime = &now_date
+	nowDate := time.Now().Truncate(time.Second)
+	user.CreateDate = &nowDate
+	user.UpdateDate = &nowDate
+	user.LastLoginTime = &nowDate
 
 	tenantName := req.Nickname + "'s Kingdom"
 
@@ -193,8 +194,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 	tenant.CreateTime = &now
 	tenant.UpdateTime = &now
-	tenant.CreateDate = &now_date
-	tenant.UpdateDate = &now_date
+	tenant.CreateDate = &nowDate
+	tenant.UpdateDate = &nowDate
 
 	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
@@ -207,8 +208,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 	userTenant.CreateTime = &now
 	userTenant.UpdateTime = &now
-	userTenant.CreateDate = &now_date
-	userTenant.UpdateDate = &now_date
+	userTenant.CreateDate = &nowDate
+	userTenant.UpdateDate = &nowDate
 
 	fileID := utility.GenerateToken()
 	rootFile := &entity.File{
@@ -222,8 +223,8 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 	rootFile.CreateTime = &now
 	rootFile.UpdateTime = &now
-	rootFile.CreateDate = &now_date
-	rootFile.UpdateDate = &now_date
+	rootFile.CreateDate = &nowDate
+	rootFile.UpdateDate = &nowDate
 
 	tenantDAO := dao.NewTenantDAO()
 	userTenantDAO := dao.NewUserTenantDAO()
@@ -319,16 +320,16 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(req.Email)
 	if err != nil {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("Email: %s is not registered!", req.Email)
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered!", req.Email)
 	}
 
 	decryptedPassword, err := s.decryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("Fail to crypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("Email and password do not match!")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match!")
 	}
 
 	if user.IsActive == "0" {
@@ -567,7 +568,7 @@ func (s *UserService) constantTimeCompare(a, b []byte) bool {
 }
 
 // loadPrivateKey loads and decrypts the RSA private key from conf/private.pem
-// nolint:staticcheck // DecryptPEMBlock is deprecated but still works for traditional PEM encryption
+// nolint:static check // DecryptPEMBlock is deprecated but still works for traditional PEM encryption
 func (s *UserService) loadPrivateKey() (*rsa.PrivateKey, error) {
 	// Read private key file
 	keyData, err := os.ReadFile("conf/private.pem")
@@ -642,8 +643,10 @@ func (s *UserService) decryptPassword(encryptedPassword string) (string, error) 
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
 
 	// Extract access token from authorization header
 	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python

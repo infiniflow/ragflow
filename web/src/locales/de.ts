@@ -687,8 +687,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
         'Erstellen Sie einen Wissensgraph über Dateiabschnitte der aktuellen Wissensbasis, um die Beantwortung von Fragen mit mehreren Schritten und verschachtelter Logik zu verbessern. Weitere Informationen finden Sie unter https://ragflow.io/docs/dev/construct_knowledge_graph.',
       graphRagMethod: 'Methode',
       graphRagMethodTip: `
-      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
-      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehungen zu extrahieren`,
+      Light: (Standard) Verwendet von github.com/HKUDS/LightRAG bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren. Diese Option verbraucht weniger Tokens, weniger Speicher und weniger Rechenressourcen.</br>
+      General: Verwendet von github.com/microsoft/graphrag bereitgestellte Prompts, um Entitäten und Beziehierungen zu extrahieren.</br>
+      NER: Verwendet spaCy NER und regelbasierte Schlüsselwortextraktion, um Entitäten und Beziehungen zu extrahieren. Für die Extraktion selbst ist kein LLM erforderlich, was es schnell und ressourceneffizient macht.`,
       resolution: 'Entitätsauflösung',
       resolutionTip: `Ein Entitäts-Deduplizierungsschalter. Wenn aktiviert, wird das LLM ähnliche Entitäten kombinieren - z.B. '2025' und 'das Jahr 2025' oder 'IT' und 'Informationstechnologie' - um einen genaueren Graphen zu konstruieren`,
       community: 'Generierung von Gemeinschaftsberichten',
@@ -736,6 +737,9 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       delete: 'Löschen',
     },
     chat: {
+      chatSupport: 'Chat-Support',
+      replyInstantly: 'Wir antworten in der Regel sofort',
+      typeYourMessage: 'Nachricht eingeben...',
       messagePlaceholder: 'Geben Sie hier Ihre Nachricht ein...',
       exit: 'Verlassen',
       multipleModels: 'Mehrere Modelle',
@@ -1011,6 +1015,7 @@ Beispiel: Virtual Hosted Style`,
         'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
       connectorNameTip:
         'Geben Sie einen aussagekräftigen Namen für den Connector an',
+      syncDeletedFiles: 'Gelöschte Dateien synchronisieren',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
@@ -1623,10 +1628,8 @@ Beispiel: Virtual Hosted Style`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
-      pdfGenerator: 'Dokumentengenerator',
-      pDFGenerator: 'Dokumentengenerator',
-      pdfGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
-      pDFGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      docGenerator: 'Dokumentengenerator',
+      docGeneratorDescription: `Erzeugt eine Datei aus Markdown-Inhalten.`,
       subtitle: 'Untertitel',
       logoImage: 'Logo-Bild',
       logoPosition: 'Logo-Position',
@@ -2176,12 +2179,10 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
       tokenizerRequired: 'Bitte fügen Sie zuerst den Indexer-Knoten hinzu',
       tokenizerDescription:
         'Transformiert Text in die erforderliche Datenstruktur (z.B. Vektoreinbettungen für die Embedding-Suche) abhängig von der gewählten Suchmethode.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunkerDescription:
         'Teilt Text in Chunks nach Token-Länge mit optionalen Trennzeichen und Überlappung.',
-      hierarchicalMergerDescription:
+      titleChunkerDescription:
         'Teilt Dokumente in Abschnitte nach Titelhierarchie mit Regex-Regeln für feinere Kontrolle.',
-      hierarchicalMerger: 'Titel',
       extractor: 'Transformer',
       extractorDescription:
         'Verwendet ein LLM, um strukturierte Erkenntnisse aus Dokument-Chunks zu extrahieren – wie Zusammenfassungen, Klassifizierungen usw.',
@@ -2193,6 +2194,8 @@ Dieser Prozess aggregiert Variablen aus mehreren Zweigen in eine einzelne Variab
         image: 'Bild',
         email: 'E-Mail',
         'text&markdown': 'Text & Markup',
+        code: 'Code',
+        html: 'HTML',
         word: 'Word',
         slides: 'PPTX',
         audio: 'Audio',

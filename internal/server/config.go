@@ -36,6 +36,7 @@ const DefaultConnectTimeout = 5 * time.Second
 // Config application configuration
 type Config struct {
 	Server           ServerConfig           `mapstructure:"server"`
+	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
 	Log              LogConfig              `mapstructure:"log"`
@@ -53,6 +54,11 @@ type Config struct {
 type AdminConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"http_port"`
+}
+
+type AuthenticationConfig struct {
+	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
+	RegisterEnabled      bool `mapstructure:"register_enabled"`
 }
 
 type DefaultSuperUser struct {
@@ -91,8 +97,9 @@ type OAuthConfig struct {
 
 // ServerConfig server configuration
 type ServerConfig struct {
-	Mode string `mapstructure:"mode"` // debug, release
-	Port int    `mapstructure:"port"`
+	Mode      string  `mapstructure:"mode"` // debug, release
+	Port      int     `mapstructure:"port"`
+	SecretKey *string `mapstructure:"secret_key"`
 }
 
 // DatabaseConfig database configuration
@@ -179,6 +186,7 @@ type MinioConfig struct {
 	Password   string `mapstructure:"password"`    // Secret key
 	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
 	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
+	Region     string `mapstructure:"region"`      // optional
 	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
 	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
 }
@@ -371,6 +379,31 @@ func Init(configPath string) error {
 }
 
 func FromEnvironments() error {
+	// Secret key
+	if envVal := os.Getenv("RAGFLOW_SECRET_KEY"); envVal != "" {
+		globalConfig.Server.SecretKey = &envVal
+	}
+
+	// Load REGISTER_ENABLED from environment variable (default: true)
+	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
+		str := strings.ToLower(envVal)
+		if str == "true" || str == "1" || str == "yes" {
+			globalConfig.Authentication.RegisterEnabled = true
+		} else {
+			globalConfig.Authentication.RegisterEnabled = false
+		}
+	}
+
+	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
+	if envVal := os.Getenv("DISABLE_PASSWORD_LOGIN"); envVal != "" {
+		str := strings.ToLower(envVal)
+		if str == "true" || str == "1" || str == "yes" {
+			globalConfig.Authentication.DisablePasswordLogin = true
+		} else {
+			globalConfig.Authentication.DisablePasswordLogin = false
+		}
+	}
+
 	// Doc engine
 	docEngine := strings.ToLower(os.Getenv("DOC_ENGINE"))
 	switch docEngine {
@@ -448,6 +481,9 @@ func FromEnvironments() error {
 	// Minio
 	minioIP := strings.ToLower(os.Getenv("MINIO_IP"))
 	if minioIP != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
 		_, port, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
 		if err != nil {
 			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
@@ -458,11 +494,22 @@ func FromEnvironments() error {
 	minioPort := strings.ToLower(os.Getenv("MINIO_PORT"))
 	// println(fmt.Sprintf("MINIO ip and port from env: %s:%s", minioIP, minioPort))
 	if minioPort != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
 		ip, _, err := net.SplitHostPort(globalConfig.StorageEngine.Minio.Host)
 		if err != nil {
 			return fmt.Errorf("Error parsing host address %s: %v\n", globalConfig.StorageEngine.Minio.Host, err)
 		}
 		globalConfig.StorageEngine.Minio.Host = fmt.Sprintf("%s:%s", ip, minioPort)
+	}
+
+	minioRegion := strings.ToLower(os.Getenv("MINIO_REGION"))
+	if minioRegion != "" {
+		if globalConfig.StorageEngine.Minio == nil {
+			return fmt.Errorf("Minio config not found")
+		}
+		globalConfig.StorageEngine.Minio.Region = minioRegion
 	}
 
 	// Language
@@ -520,14 +567,23 @@ func FromConfigFile(configPath string) error {
 		globalConfig.Admin.Port += 2
 	}
 
-	// Load REGISTER_ENABLED from environment variable (default: 1)
-	registerEnabled := 1
-	if envVal := os.Getenv("REGISTER_ENABLED"); envVal != "" {
-		if parsed, err := strconv.Atoi(envVal); err == nil {
-			registerEnabled = parsed
+	// authentication section
+	if globalConfig != nil {
+		// Try to map from mysql section
+		globalConfig.Authentication.DisablePasswordLogin = false
+		globalConfig.Authentication.RegisterEnabled = true
+		if v.IsSet("authentication") {
+			authenticationConfig := v.Sub("authentication")
+			if authenticationConfig != nil {
+				if authenticationConfig.IsSet("disable_password_login") {
+					globalConfig.Authentication.DisablePasswordLogin = authenticationConfig.GetBool("disable_password_login")
+				}
+				if authenticationConfig.IsSet("enable_register") {
+					globalConfig.Authentication.RegisterEnabled = authenticationConfig.GetBool("enable_register")
+				}
+			}
 		}
 	}
-	globalConfig.RegisterEnabled = registerEnabled
 
 	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
 	if globalConfig != nil && globalConfig.Database.Host == "" {
@@ -557,6 +613,10 @@ func FromConfigFile(configPath string) error {
 				// If mode is not set, default to debug
 				if globalConfig.Server.Mode == "" {
 					globalConfig.Server.Mode = "release"
+				}
+				secretKey := ragflowConfig.GetString("secret_key")
+				if secretKey != "" {
+					globalConfig.Server.SecretKey = &secretKey
 				}
 			}
 		}
@@ -591,20 +651,26 @@ func FromConfigFile(configPath string) error {
 	}
 
 	// Map doc_engine section to DocEngineConfig
-	if globalConfig != nil && globalConfig.DocEngine.Type == "" {
-		if v.IsSet("doc_engine") {
-			docEngineConfig := v.Sub("doc_engine")
-			if docEngineConfig != nil {
-				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+	if globalConfig != nil {
+		// First, ensure engine type is set
+		if globalConfig.DocEngine.Type == "" {
+			if v.IsSet("doc_engine") {
+				docEngineConfig := v.Sub("doc_engine")
+				if docEngineConfig != nil {
+					globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+				}
 			}
 		}
-		// Also check legacy es section for backward compatibility
+
+		// Map es section from top-level (service_conf.yaml format)
 		if v.IsSet("es") {
 			esConfig := v.Sub("es")
 			if esConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineElasticsearch
 				}
+				// Always populate ES config if es section exists
 				if globalConfig.DocEngine.ES == nil {
 					globalConfig.DocEngine.ES = &ElasticsearchConfig{
 						Hosts:    esConfig.GetString("hosts"),
@@ -614,17 +680,23 @@ func FromConfigFile(configPath string) error {
 				}
 			}
 		}
+
+		// Map infinity section from top-level (service_conf.yaml format)
 		if v.IsSet("infinity") {
 			infConfig := v.Sub("infinity")
 			if infConfig != nil {
+				// Set default engine type if not set
 				if globalConfig.DocEngine.Type == "" {
 					globalConfig.DocEngine.Type = EngineInfinity
 				}
+				// Always populate Infinity config if infinity section exists
 				if globalConfig.DocEngine.Infinity == nil {
 					globalConfig.DocEngine.Infinity = &InfinityConfig{
-						URI:          infConfig.GetString("uri"),
-						PostgresPort: infConfig.GetInt("postgres_port"),
-						DBName:       infConfig.GetString("db_name"),
+						URI:                    infConfig.GetString("uri"),
+						PostgresPort:           infConfig.GetInt("postgres_port"),
+						DBName:                 infConfig.GetString("db_name"),
+						MappingFileName:        infConfig.GetString("mapping_file_name"),
+						DocMetaMappingFileName: infConfig.GetString("doc_meta_mapping_file_name"),
 					}
 				}
 			}
@@ -644,6 +716,7 @@ func FromConfigFile(configPath string) error {
 						Secure:     minioConfig.GetBool("secure"),
 						PrefixPath: minioConfig.GetString("prefix_path"),
 						Verify:     minioConfig.GetBool("verify"),
+						Region:     minioConfig.GetString("region"),
 						Bucket:     minioConfig.GetString("bucket"),
 					}
 				}

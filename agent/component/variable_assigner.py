@@ -141,20 +141,18 @@ class VariableAssigner(ComponentBase,ABC):
             return variable + parameter
 
     def _remove_first(self,variable):
-        if len(variable)==0:
-            return variable
         if not isinstance(variable,list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[1:]
+        if len(variable)==0:
+            return variable
+        return variable[1:]
 
     def _remove_last(self,variable):
-        if len(variable)==0:
-            return variable
         if not isinstance(variable,list):
             return "ERROR:VARIABLE_NOT_LIST"
-        else:
-            return variable[:-1]
+        if len(variable)==0:
+            return variable
+        return variable[:-1]
 
     def is_number(self, value):
         if isinstance(value, bool):

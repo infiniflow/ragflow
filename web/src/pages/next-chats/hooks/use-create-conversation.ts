@@ -12,7 +12,7 @@ export const useCreateConversationBeforeUploadDocument = () => {
     async (message: string) => {
       const isNew = getIsNew();
       if (isNew === 'true') {
-        const data = await setConversation(message, true);
+        const data = await setConversation(message);
 
         return data;
       }

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import { IConnector } from '@/interfaces/database/knowledge';
+import { IConnector } from '@/interfaces/database/dataset';
 import { useListDataSource } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { t } from 'i18next';

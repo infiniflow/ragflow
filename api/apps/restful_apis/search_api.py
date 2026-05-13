@@ -14,7 +14,11 @@
 #  limitations under the License.
 #
 
-from quart import request
+import json
+import logging
+
+from quart import Response, request
+from api.db.services.dialog_service import async_ask
 from api.apps import current_user, login_required
 
 from api.constants import DATASET_NAME_LIMIT
@@ -72,15 +76,31 @@ def list_searches():
     owner_ids = request.args.getlist("owner_ids")
 
     try:
-        if not owner_ids:
-            tenants = []
-            search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, page_number, items_per_page, orderby, desc, keywords)
+        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+        authorized_owner_ids = {member["tenant_id"] for member in tenants}
+        authorized_owner_ids.add(current_user.id)
+
+        if owner_ids:
+            requested_owner_ids = set(owner_ids)
+            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
+            if unauthorized_owner_ids:
+                logging.warning(
+                    "Rejected list_searches request: user=%s attempted unauthorized owner_ids=%s",
+                    current_user.id,
+                    sorted(unauthorized_owner_ids),
+                )
+                return get_json_result(
+                    data=False,
+                    message="Only authorized owner_ids can be queried.",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            effective_owner_ids = list(requested_owner_ids)
         else:
-            search_apps, total = SearchService.get_by_tenant_ids(owner_ids, current_user.id, 0, 0, orderby, desc, keywords)
-            search_apps = [s for s in search_apps if s["tenant_id"] in owner_ids]
-            total = len(search_apps)
-            if page_number and items_per_page:
-                search_apps = search_apps[(page_number - 1) * items_per_page: page_number * items_per_page]
+            effective_owner_ids = list(authorized_owner_ids)
+
+        search_apps, total = SearchService.get_by_tenant_ids(
+            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords
+        )
         return get_json_result(data={"search_apps": search_apps, "total": total})
     except Exception as e:
         return server_error_response(e)
@@ -168,3 +188,46 @@ def delete_search(search_id):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/searches/<search_id>/completion", methods=["POST"])  # noqa: F821
+@manager.route("/searches/<search_id>/completions", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("question")
+async def completion(search_id):
+    if not SearchService.accessible4deletion(search_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="No authorization.",
+            code=RetCode.AUTHENTICATION_ERROR,
+        )
+
+    req = await get_request_json()
+    uid = current_user.id
+    search_app = SearchService.get_detail(search_id)
+    if not search_app:
+        return get_data_error_result(message=f"Cannot find search {search_id}")
+
+    search_config = search_app.get("search_config", {})
+    kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
+    if not kb_ids:
+        return get_data_error_result(message="`kb_ids` is required.")
+
+    async def stream():
+        nonlocal req, uid, kb_ids, search_config
+        try:
+            async for ans in async_ask(req["question"], kb_ids, uid, search_config=search_config):
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+        except Exception as ex:
+            yield "data:" + json.dumps(
+                {"code": 500, "message": str(ex), "data": {"answer": "**ERROR**: " + str(ex), "reference": []}},
+                ensure_ascii=False,
+            ) + "\n\n"
+        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(stream(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp

@@ -18,6 +18,7 @@ package engine
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"sync"
 
@@ -25,11 +26,11 @@ import (
 
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
-	"ragflow/internal/logger"
 )
 
 var (
 	globalEngine DocEngine
+	engineType   EngineType
 	once         sync.Once
 )
 
@@ -37,8 +38,9 @@ var (
 func Init(cfg *server.DocEngineConfig) error {
 	var initErr error
 	once.Do(func() {
+		engineType = EngineType(cfg.Type)
 		var err error
-		switch EngineType(cfg.Type) {
+		switch engineType {
 		case EngineElasticsearch:
 			globalEngine, err = elasticsearch.NewEngine(cfg.ES)
 		case EngineInfinity:
@@ -51,9 +53,14 @@ func Init(cfg *server.DocEngineConfig) error {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return
 		}
-		logger.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
+		common.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
 	})
 	return initErr
+}
+
+// GetEngineType returns the document engine type
+func GetEngineType() EngineType {
+	return engineType
 }
 
 // Get gets global document engine instance

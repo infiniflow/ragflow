@@ -16,7 +16,7 @@
 import logging
 from datetime import datetime
 import os
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 from anthropic import BaseModel
 from peewee import SQL, fn
@@ -26,8 +26,10 @@ from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.document_service import DocMetadataService
+from api.utils.common import hash128
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
+from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
 
 class ConnectorService(CommonService):
@@ -78,6 +80,64 @@ class ConnectorService(CommonService):
         SyncLogsService.schedule(connector_id, kb_id, reindex=True)
         return err
 
+    @classmethod
+    def cleanup_stale_documents_for_task(
+        cls,
+        task_id: str,
+        connector_id: str,
+        kb_id: str,
+        tenant_id: str,
+        file_list,
+        delete_batch_size: int = 100,
+    ):
+        from api.db.services.file_service import FileService
+
+        if not Connector2KbService.query(connector_id=connector_id, kb_id=kb_id):
+            return 0, []
+
+        e, conn = cls.get_by_id(connector_id)
+        if not e:
+            return 0, []
+
+        source_type = f"{conn.source}/{conn.id}"
+        retain_doc_ids = {hash128(f"{connector_id}:{file.id}") for file in file_list}
+        existing_docs = DocumentService.list_doc_headers_by_kb_and_source_type(
+            kb_id,
+            source_type,
+        )
+        stale_doc_ids = [
+            doc["id"] for doc in existing_docs if doc["id"] not in retain_doc_ids
+        ]
+        if not stale_doc_ids:
+            return 0, []
+
+        stale_doc_id_set = set(stale_doc_ids)
+        errors = []
+        for offset in range(0, len(stale_doc_ids), delete_batch_size):
+            err = FileService.delete_docs(
+                stale_doc_ids[offset : offset + delete_batch_size],
+                tenant_id,
+            )
+            if err:
+                errors.append(err)
+
+        remaining_doc_ids = {
+            doc["id"]
+            for doc in DocumentService.list_doc_headers_by_kb_and_source_type(
+                kb_id,
+                source_type,
+            )
+            if doc["id"] in stale_doc_id_set
+        }
+        removed_count = len(stale_doc_id_set) - len(remaining_doc_ids)
+        SyncLogsService.increase_removed_docs(
+            task_id,
+            removed_count,
+            "\n".join(errors),
+            len(errors),
+        )
+        return removed_count, errors
+
 
 class SyncLogsService(CommonService):
     model = SyncLogs
@@ -120,14 +180,14 @@ class SyncLogsService(CommonService):
         else:
             database_type = os.getenv("DB_TYPE", "mysql")
             if "postgres" in database_type.lower():
-                interval_expr = SQL("make_interval(mins => t2.refresh_freq)")
+                expr = SQL(f"NOW() AT TIME ZONE '{TIMEZONE}' - make_interval(mins => t2.refresh_freq)")
             else:
-                interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
+                expr = SQL("NOW() - INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,
                 cls.model.status == TaskStatus.SCHEDULE,
-                cls.model.update_date < (fn.NOW() - interval_expr)
+                cls.model.update_date < expr
             )
 
         query = query.distinct().order_by(cls.model.update_time.desc())
@@ -197,6 +257,16 @@ class SyncLogsService(CommonService):
             .where(cls.model.id == id).execute()
 
     @classmethod
+    def increase_removed_docs(cls, id, removed_count, err_msg="", error_count=0):
+        cls.model.update(
+            docs_removed_from_index=cls.model.docs_removed_from_index + removed_count,
+            error_msg=cls.model.error_msg + err_msg,
+            error_count=cls.model.error_count + error_count,
+            update_time=current_timestamp(),
+            update_date=timestamp_to_date(current_timestamp()),
+        ).where(cls.model.id == id).execute()
+
+    @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
         from api.db.services.file_service import FileService
         if not docs:
@@ -206,12 +276,13 @@ class SyncLogsService(CommonService):
             id: str
             filename: str
             blob: bytes
+            fingerprint: Optional[str] = None
 
             def read(self) -> bytes:
                 return self.blob
 
         errs = []
-        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(id=d["id"], filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"], fingerprint=d.get("fingerprint")) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
@@ -299,6 +370,4 @@ class Connector2KbService(CommonService):
                         cls.model.kb_id==kb_id
                     ).dicts()
         )
-
-
 
