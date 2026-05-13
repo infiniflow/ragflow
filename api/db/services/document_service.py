@@ -622,6 +622,15 @@ class DocumentService(CommonService):
                 .execute()
             )
             if num == 0:
+                logging.error(
+                    "increment_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    kb_id,
+                    doc_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
                 raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
@@ -650,6 +659,15 @@ class DocumentService(CommonService):
                 .execute()
             )
             if num == 0:
+                logging.error(
+                    "decrement_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    kb_id,
+                    doc_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
                 raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
