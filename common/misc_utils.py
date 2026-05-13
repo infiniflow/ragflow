@@ -71,7 +71,7 @@ async def download_img(url):
         try:
             hostname, pin_ip = assert_url_is_safe(current_url)
         except ValueError as exc:
-            logging.warning("download_img rejected URL (SSRF guard): %s", exc)
+            logger.warning("download_img rejected URL (SSRF guard): %s", exc)
             return ""
 
         import httpx
@@ -113,8 +113,9 @@ async def download_img(url):
                         body = bytearray()
                         async for chunk in response.aiter_bytes():
                             if len(body) + len(chunk) > _OAUTH_AVATAR_MAX_BYTES:
-                                logging.warning(
-                                    "download_img response exceeded max size (%s bytes); URL rejected",
+                                logger.warning(
+                                    "download_img response exceeded max size: url=%r max_bytes=%s",
+                                    current_url,
                                     _OAUTH_AVATAR_MAX_BYTES,
                                 )
                                 await response.aclose()
@@ -140,7 +141,12 @@ async def download_img(url):
             )
             return ""
         except Exception as exc:
-            logging.warning("download_img request failed: %s", exc)
+            logger.warning(
+                "download_img request failed: url=%r redirect_hops=%s err=%s",
+                current_url,
+                redirect_hops,
+                exc,
+            )
             return ""
 
         if kind == "redirect":
