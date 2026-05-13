@@ -198,20 +198,25 @@ def get_model_config_from_provider_instance(tenant_id, model_name: str, model_ty
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     import json
-    api_key, _, _ = TenantLLMService._decode_api_key_config(instance_obj.api_key)
+    api_key, is_tool, api_key_payload = TenantLLMService._decode_api_key_config(instance_obj.api_key)
     extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
 
     if model_obj:
         if model_obj.status == ActiveStatusEnum.INACTIVE.value:
             raise LookupError(f"Model {model_name} is disabled.")
 
-        return {
+        model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
-            "model_type": model_obj.model_type
+            "model_type": model_obj.model_type,
+            "is_tool": extra_fields.get("is_tool", is_tool)
         }
+        if api_key_payload is not None:
+            model_config["api_key_payload"] = api_key_payload
+
+        return model_config
     else:
         fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
         if not fac_list:
@@ -225,5 +230,6 @@ def get_model_config_from_provider_instance(tenant_id, model_name: str, model_ty
             "api_key": api_key,
             "llm_name": llm_config["llm_name"],
             "api_base": extra_fields.get("base_url", ""),
-            "model_type": llm_config["model_type"]
+            "model_type": llm_config["model_type"],
+            "is_tool": llm_config.get("is_tool", is_tool)
         }
