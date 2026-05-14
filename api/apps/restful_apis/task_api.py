@@ -16,9 +16,11 @@
 import logging
 from datetime import datetime
 
-from api.apps import login_required
+from api.apps import current_user, login_required
+from api.db.services.document_service import DocumentService
 from api.db.services.task_service import TaskService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils.api_utils import (
+    get_data_error_result,
     get_json_result,
     get_request_json,
     validate_request,
@@ -56,6 +58,13 @@ async def _cancel_task(task_id):
     Sets a Redis cancel flag, updates the task progress to -1 (cancelled),
         and marks the associated document's run status as CANCEL if applicable.
     """
+    exists, task = TaskService.get_by_id(task_id)
+    if not exists:
+        return get_json_result(data=True)
+
+    if not DocumentService.accessible(task.doc_id, current_user.id):
+        return get_data_error_result(message="No authorization.")
+
     try:
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
@@ -64,10 +73,6 @@ async def _cancel_task(task_id):
             code=RetCode.CONNECTION_ERROR,
             message="Failed to stop task",
         )
-
-    exists, task = TaskService.get_by_id(task_id)
-    if not exists:
-        return get_json_result(data=True)
 
     # Append a cancellation message so the user can see it in progress_msg.
     try:
@@ -88,7 +93,6 @@ async def _cancel_task(task_id):
     # If the task belongs to a document, also mark the document's run status as
     # cancelled so that the UI reflects the state correctly.
     try:
-        from api.db.services.document_service import DocumentService
         doc_id = task.doc_id
         if doc_id and doc_id not in (CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID):
             _, doc = DocumentService.get_by_id(doc_id)
