@@ -17,12 +17,11 @@ type ModelDriver interface {
 
 	Name() string
 
-	// ChatWithMessages sends multiple messages with role and content
+	// ChatWithMessages sends multiple messages synchronously
 	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error)
-	// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-	// messages accepts []Message which supports multimodal content (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
+	// ChatStreamlyWithSender sends multiple messages asynchronously
 	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
-	// Encode encodes a list of texts into embeddings
+	// Embed a list of texts into embeddings
 	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
 	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
@@ -67,6 +66,7 @@ type ASRResponse struct {
 }
 
 type TTSResponse struct {
+	Audio []byte `json:"audio"`
 }
 
 type OCRFileResponse struct {
@@ -83,6 +83,7 @@ type URLSuffix struct {
 	AsyncResult   string `json:"async_result"`
 	Embedding     string `json:"embedding"`
 	Rerank        string `json:"rerank"`
+	TTS           string `json:"tts"`
 	OCR           string `json:"ocr"`
 	DocumentParse string `json:"doc_parse"`
 	Models        string `json:"models"`
@@ -122,6 +123,7 @@ type ASRConfig struct {
 }
 
 type TTSConfig struct {
+	Params map[string]interface{}
 }
 
 type OCRConfig struct {

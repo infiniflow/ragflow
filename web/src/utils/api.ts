@@ -126,6 +126,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
+  getDatasetDocumentFileDownload: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentThumbnails: `${restAPIv1}/thumbnails`,
   getDocumentFile: `${restAPIv1}/documents`,
   getDocumentFileDownload: (docId: string) =>
@@ -190,8 +192,7 @@ export default {
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
   listAgentTags: `${restAPIv1}/agents/tags`,
-  updateAgentTags: (agentId: string) =>
-    `${restAPIv1}/agents/${agentId}/tags`,
+  updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,

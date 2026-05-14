@@ -105,6 +105,10 @@ const (
 	TokenEmbed
 	TokenText
 	TokenQuery
+	TokenFormat
+	TokenParam
+	TokenPlay
+	TokenSave
 	TokenTop
 	TokenDimension
 	TokenAsync
