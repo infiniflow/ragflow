@@ -287,6 +287,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ResetDefaultModel(cmd)
 	case "list_user_default_models":
 		return c.ListDefaultModels(cmd)
+	case "list_tasks_user_command":
+		return c.ListTasksUserCommand(cmd)
+	case "show_task_user_command":
+		return c.ShowTaskUserCommand(cmd)
 	// Dataset, metadata commands
 	case "create_dataset_table":
 		return c.CreateDatasetInDocEngine(cmd)
