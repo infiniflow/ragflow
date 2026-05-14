@@ -133,6 +133,54 @@ def rm_connector(connector_id):
     return get_json_result(data=True)
 
 
+@manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
+@login_required
+async def test_connector(connector_id):
+    """Validate connector configuration without persisting changes or triggering sync.
+
+    For the REST API connector, this uses `RestAPIConnector.validate_config`
+    against the existing saved configuration.
+    """
+    from common.data_source.rest_api_connector import RestAPIConnector
+    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
+
+    ok, conn = ConnectorService.get_by_id(connector_id)
+    if not ok:
+        return get_data_error_result(message="Can't find this Connector!")
+
+    if conn.source != DocumentSource.REST_API:
+        return get_json_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="Test endpoint currently supports only REST API connectors.",
+            data=False,
+        )
+
+    config = conn.config or {}
+    credentials = config.get("credentials") or {}
+
+    try:
+        await asyncio.to_thread(
+            RestAPIConnector.validate_config,
+            config=config,
+            credentials=credentials,
+        )
+    except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
+        return get_json_result(
+            code=RetCode.DATA_ERROR,
+            message=str(exc),
+            data=False,
+        )
+    except Exception as exc:
+        logging.exception("REST API connector validation failed: %s", exc)
+        return get_json_result(
+            code=RetCode.SERVER_ERROR,
+            message="REST API connector validation failed, please check logs.",
+            data=False,
+        )
+
+    return get_json_result(data=True)
+
+
 WEB_FLOW_TTL_SECS = 15 * 60
 
 

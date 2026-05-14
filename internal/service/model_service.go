@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"strings"
-	"time"
 )
 
 // parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
@@ -88,17 +87,11 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 		return common.CodeServerError, errors.New("fail to get UUID")
 	}
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
 	tenantModelProvider := &entity.TenantModelProvider{
 		ID:           providerID,
 		ProviderName: providerName,
 		TenantID:     tenantID,
 	}
-	tenantModelProvider.CreateTime = &now
-	tenantModelProvider.UpdateTime = &now
-	tenantModelProvider.CreateDate = &nowDate
-	tenantModelProvider.UpdateDate = &nowDate
 	err = m.modelProviderDAO.Create(tenantModelProvider)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
@@ -247,8 +240,6 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 	}
 	extraStr := string(extraByte)
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
 	tenantModelProvider := &entity.TenantModelInstance{
 		ID:           instanceID,
 		InstanceName: instanceName,
@@ -257,10 +248,6 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		Status:       "enable",
 		Extra:        extraStr,
 	}
-	tenantModelProvider.CreateTime = &now
-	tenantModelProvider.UpdateTime = &now
-	tenantModelProvider.CreateDate = &nowDate
-	tenantModelProvider.UpdateDate = &nowDate
 	err = m.modelInstanceDAO.Create(tenantModelProvider)
 
 	if err != nil {
@@ -738,6 +725,10 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
 		}
 
+		if !model.ModelTypeMap["chat"] && !model.ModelTypeMap["vision"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", modelName, providerName))
+		}
+
 		modelConfig.ModelClass = model.Class
 
 		var extra map[string]string
@@ -763,6 +754,9 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "chat" && modelInfo.ModelType != "vision" {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -833,9 +827,14 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 			return common.CodeNotFound, err
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, err
+		}
+
+		if !model.ModelTypeMap["chat"] && !model.ModelTypeMap["vision"] {
+			return common.CodeNotFound, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", modelName, providerName))
 		}
 
 		var extra map[string]string
@@ -857,6 +856,9 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "chat" && modelInfo.ModelType != "vision" {
+			return common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is a chat or multimodal model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -962,6 +964,9 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "embedding" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an embedding model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1044,7 +1049,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 		}
 
 		if !model.ModelTypeMap["rerank"] {
-			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an embedding model", providerName, modelName))
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a rerank model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1067,6 +1072,9 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "rerank" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is a rerank model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1139,9 +1147,14 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		if !model.ModelTypeMap["asr"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an ASR model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1167,6 +1180,9 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "asr" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an ASR model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1235,9 +1251,13 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 			return common.CodeNotFound, err
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, err
+		}
+		if !model.ModelTypeMap["asr"] {
+			return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not an ASR model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1259,6 +1279,9 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "asr" {
+			return common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an ASR model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1329,9 +1352,14 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		if !model.ModelTypeMap["tts"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a TTS model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1357,6 +1385,9 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "tts" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is a TTS model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1424,9 +1455,14 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 			return common.CodeNotFound, err
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return common.CodeNotFound, err
+		}
+
+		if !model.ModelTypeMap["tts"] {
+			return common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a TTS model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1448,6 +1484,9 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "tts" {
+			return common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is a TTS model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1479,7 +1518,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 	return common.CodeServerError, errors.New("model is disabled")
 }
 
-func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, userID string, fileContent *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig) (*modelModule.OCRResponse, common.ErrorCode, error) {
 	if apiConfig == nil {
 		apiConfig = &modelModule.APIConfig{}
 	}
@@ -1517,9 +1556,14 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 			return nil, common.CodeNotFound, errors.New("provider not found")
 		}
 
-		_, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+		var model *entity.Model = nil
+		model, err = dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 		if err != nil {
 			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s not found", providerName, modelName))
+		}
+
+		if !model.ModelTypeMap["ocr"] {
+			return nil, common.CodeNotFound, errors.New(fmt.Sprintf("provider %s model %s is not a OCR model", providerName, modelName))
 		}
 
 		var extra map[string]string
@@ -1533,7 +1577,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		apiConfig.ApiKey = &instance.APIKey
 
 		var response *modelModule.OCRResponse
-		response, err = providerInfo.ModelDriver.OCRFile(&modelName, fileContent, apiConfig, ocrConfig)
+		response, err = providerInfo.ModelDriver.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1545,6 +1589,9 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 	}
 
 	if modelInfo.Status == "active" {
+		if modelInfo.ModelType != "tts" {
+			return nil, common.CodeServerError, errors.New(fmt.Sprintf("expect model %s@%s is an OCR model", modelName, providerName))
+		}
 		// For local deployed models
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo == nil {
@@ -1567,7 +1614,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.OCRResponse
-		response, err = newProviderInfo.OCRFile(&modelName, fileContent, apiConfig, ocrConfig)
+		response, err = newProviderInfo.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}

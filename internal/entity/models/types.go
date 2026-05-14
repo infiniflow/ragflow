@@ -33,7 +33,7 @@ type ModelDriver interface {
 	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error)
 	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error
 	// OCRFile OCR file
-	OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error)
+	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
 
@@ -65,9 +65,11 @@ type ASRResponse struct {
 }
 
 type TTSResponse struct {
+	Audio []byte `json:"audio"`
 }
 
 type OCRResponse struct {
+	Text *string `json:"text"`
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
@@ -77,10 +79,12 @@ type URLSuffix struct {
 	AsyncResult string `json:"async_result"`
 	Embedding   string `json:"embedding"`
 	Rerank      string `json:"rerank"`
+	OCR         string `json:"ocr"`
 	Models      string `json:"models"`
 	Balance     string `json:"balance"`
 	Files       string `json:"files"`
 	Status      string `json:"status"`
+	TTS         string `json:"tts"`
 }
 
 type ChatConfig struct {
@@ -114,6 +118,7 @@ type ASRConfig struct {
 }
 
 type TTSConfig struct {
+	Params map[string]interface{}
 }
 
 type OCRConfig struct {

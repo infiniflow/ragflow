@@ -11,9 +11,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
-import { Copy, PenLine, Trash2 } from 'lucide-react';
-import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
+import { Copy, PenLine, Tag, Trash2 } from 'lucide-react';
+import {
+  MouseEventHandler,
+  PropsWithChildren,
+  useCallback,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
+import { AgentTagEditor } from './agent-tag-editor';
 import { useDuplicateAgent } from './use-duplicate-agent';
 import { useRenameAgent } from './use-rename-agent';
 
@@ -28,6 +34,7 @@ export function AgentDropdown({
   const { t } = useTranslation();
   const { deleteAgent } = useDeleteAgent();
   const { duplicateAgent, loading: duplicating } = useDuplicateAgent();
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
 
   const handleShowAgentRenameModal: MouseEventHandler<HTMLDivElement> =
     useCallback(
@@ -50,50 +57,65 @@ export function AgentDropdown({
     [agent.id, agent.title, agent.canvas_category, duplicateAgent],
   );
 
+  const handleEditTags: MouseEventHandler<HTMLDivElement> = useCallback((e) => {
+    e.stopPropagation();
+    setTagEditorOpen(true);
+  }, []);
+
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
     deleteAgent(agent.id);
   }, [agent.id, deleteAgent]);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <DropdownMenuItem onClick={handleShowAgentRenameModal}>
-          {t('common.rename')} <PenLine />
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={handleDuplicate}
-          disabled={duplicating}
-          data-testid="agent-duplicate"
-        >
-          {t('flow.duplicate')} <Copy />
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <ConfirmDeleteDialog
-          onOk={handleDelete}
-          title={t('deleteModal.delAgent')}
-          content={{
-            node: (
-              <ConfirmDeleteDialogNode
-                avatar={{ avatar: agent.avatar, name: agent.title }}
-                name={agent.title}
-              />
-            ),
-          }}
-        >
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onClick={handleShowAgentRenameModal}>
+            {t('common.rename')} <PenLine />
+          </DropdownMenuItem>
           <DropdownMenuItem
-            className="text-state-error"
-            onSelect={(e) => {
-              e.preventDefault();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={handleDuplicate}
+            disabled={duplicating}
+            data-testid="agent-duplicate"
+          >
+            {t('flow.duplicate')} <Copy />
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleEditTags}>
+            {t('flow.editTags')} <Tag />
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <ConfirmDeleteDialog
+            onOk={handleDelete}
+            title={t('deleteModal.delAgent')}
+            content={{
+              node: (
+                <ConfirmDeleteDialogNode
+                  avatar={{ avatar: agent.avatar, name: agent.title }}
+                  name={agent.title}
+                />
+              ),
             }}
           >
-            {t('common.delete')} <Trash2 />
-          </DropdownMenuItem>
-        </ConfirmDeleteDialog>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <DropdownMenuItem
+              className="text-state-error"
+              onSelect={(e) => {
+                e.preventDefault();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              {t('common.delete')} <Trash2 />
+            </DropdownMenuItem>
+          </ConfirmDeleteDialog>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AgentTagEditor
+        agent={agent}
+        open={tagEditorOpen}
+        onOpenChange={setTagEditorOpen}
+      />
+    </>
   );
 }

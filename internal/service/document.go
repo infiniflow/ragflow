@@ -223,7 +223,12 @@ func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 	}
 	updatedAt := ""
 	if doc.UpdateTime != nil {
-		updatedAt = time.Unix(*doc.UpdateTime, 0).Format("2006-01-02 15:04:05")
+		// Accept both historical second-based values and current millisecond-based values.
+		ts := *doc.UpdateTime
+		if ts > 1000000000000 {
+			ts /= 1000
+		}
+		updatedAt = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
 	}
 	return &DocumentResponse{
 		ID:              doc.ID,

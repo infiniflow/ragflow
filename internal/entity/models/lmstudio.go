@@ -471,7 +471,7 @@ func (z *LmStudioModel) AudioSpeechWithSender(modelName *string, audioContent *s
 }
 
 // OCRFile OCR file
-func (l *LmStudioModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (l *LmStudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
