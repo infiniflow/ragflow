@@ -463,20 +463,6 @@ func (z *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *MinimaxModel) buildTTSPayload(modelName string, text string, ttsConfig *TTSConfig) map[string]interface{} {
-	payload := map[string]interface{}{
-		"model": modelName,
-		"text":  text,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			payload[key] = value
-		}
-	}
-	return payload
-}
-
 // AudioSpeech convert audio to text
 func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -492,8 +478,16 @@ func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.TTS)
-
-	reqBody := z.buildTTSPayload(*modelName, *audioContent, asrConfig)
+	
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"text":  audioContent,
+	}
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+			reqBody[key] = value
+		}
+	}
 	reqBody["stream"] = false
 
 	jsonData, err := json.Marshal(reqBody)
@@ -577,7 +571,16 @@ func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
-	reqBody := z.buildTTSPayload(*modelName, *audioContent, ttsConfig)
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"text":  audioContent,
+	}
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	reqBody["stream"] = false
 	reqBody["stream"] = true
 
 	jsonData, err := json.Marshal(reqBody)
