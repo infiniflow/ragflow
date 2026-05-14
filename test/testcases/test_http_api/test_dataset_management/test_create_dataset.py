@@ -358,8 +358,9 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
+            ("external", "external"),
         ],
-        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "external"],
     )
     def test_chunk_method(self, HttpApiAuth, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
@@ -381,7 +382,7 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
+        assert "Input should be in ['book', 'email', 'external', 'laws', 'manual', 'naive', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table', 'tag']" in res["message"], res
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, HttpApiAuth):
@@ -395,7 +396,7 @@ class TestDatasetCreate:
         payload = {"name": "chunk_method_none", "chunk_method": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
+        assert "Input should be in ['book', 'email', 'external', 'laws', 'manual', 'naive', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table', 'tag']" in res["message"], res
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
