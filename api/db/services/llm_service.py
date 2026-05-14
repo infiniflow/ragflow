@@ -98,6 +98,16 @@ class LLMBundle(LLM4Tenant):
 
         safe_texts = []
         for text in texts:
+            # Embedding APIs (OpenAI-compatible, Zhipu, etc.) reject empty or
+            # whitespace-only inputs with errors like "Input at index N cannot
+            # be empty or whitespace only". Upstream parsers can produce such
+            # chunks — e.g. when OCR/vision on an embedded DOCX image returns
+            # nothing, or a table has only empty cells — so coerce to a safe
+            # placeholder here, at the single boundary every embedding path
+            # funnels through.
+            if text is None or not str(text).strip():
+                safe_texts.append("None")
+                continue
             token_size = num_tokens_from_string(text)
             if token_size > self.max_length:
                 target_len = int(self.max_length * 0.95)
@@ -121,6 +131,8 @@ class LLMBundle(LLM4Tenant):
         if self.langfuse:
             generation = self.langfuse.start_observation(trace_context=self.trace_context, as_type="generation", name="encode_queries", model=self.model_config["llm_name"], input={"query": query})
 
+        if query is None or not str(query).strip():
+            query = "None"
         emd, used_tokens = self.mdl.encode_queries(query)
         if self.model_config["llm_factory"] == "Builtin":
             logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
