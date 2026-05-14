@@ -313,7 +313,7 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
         dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat"
     )
     monkeypatch.setattr(
-        dialog_service.TenantLLMService, "get_model_config",
+        dialog_service, "get_model_config_from_provider_instance",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(
