@@ -690,7 +690,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
             langfuse_generation.update(
                 output=langfuse_output,
-                usage={
+                usage_details={
                     "input": used_token_count,
                     "output": tk_num,
                     "total": used_token_count + tk_num,
