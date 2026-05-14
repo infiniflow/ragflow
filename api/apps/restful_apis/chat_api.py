@@ -171,37 +171,40 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
-
-    if not await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        await thread_pool_exec(
+            get_model_config_from_provider_instance,
+            tenant_id=tenant_id,
+            model_name=llm_id,
+            model_type=model_type,
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {llm_id}: {e}")
         return f"`llm_id` {llm_id} doesn't exist"
-    return None
 
+    return None
 
 async def _validate_rerank_id(rerank_id, tenant_id):
     if not rerank_id:
         return None
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(rerank_id)
+    parts = rerank_id.split('@')
+    llm_name = parts[0]
     if llm_name in _DEFAULT_RERANK_MODELS:
         return None
-    if await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type="rerank",
-    ):
-        return None
-    return f"`rerank_id` {rerank_id} doesn't exist"
+    try:
+        await thread_pool_exec(
+            get_model_config_from_provider_instance,
+            tenant_id=tenant_id,
+            model_name=rerank_id,
+            model_type="rerank",
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {rerank_id}: {e}")
+        return f"`rerank_id` {rerank_id} doesn't exist"
+    return None
 
 
 # def _validate_prompt_config(prompt_config):

@@ -255,4 +255,3 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
         return model_config
-
