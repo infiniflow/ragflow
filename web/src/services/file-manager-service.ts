@@ -12,6 +12,7 @@ const {
   getDocumentFile,
   getFile,
   moveFile,
+  getDatasetDocumentFileDownload,
   getDocumentFileDownload,
 } = api;
 
@@ -66,5 +67,19 @@ export const downloadFile = (data: { docId: string; ext: string }) => {
     params: { ext: data.ext },
     responseType: 'blob',
   });
+};
+
+export const downloadDatasetDocument = (data: {
+  datasetId: string;
+  docId: string;
+  ext: string;
+}) => {
+  return request.get(
+    getDatasetDocumentFileDownload(data.datasetId, data.docId),
+    {
+      params: { ext: data.ext },
+      responseType: 'blob',
+    },
+  );
 };
 export default fileManagerService;

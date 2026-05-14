@@ -275,8 +275,8 @@ python db_schema_sync.py [OPTIONS]
 ### Version Format
 
 Version must be in format `vxx.xx.xx` where `xx` are digits:
-- Valid: `v0.25.3`, `v1.0.0`, `v10.20.30`
-- Invalid: `0.25.3`, `v0.25`, `v0.25.3.1`
+- Valid: `v0.25.4`, `v1.0.0`, `v10.20.30`
+- Invalid: `0.25.4`, `v0.25`, `v0.25.4.1`
 
 ### Migration File Location
 
@@ -287,7 +287,7 @@ tools/migrate/{version_dir}/
 
 Where `{version_dir}` is the version with `.` replaced by `_`.
 
-Example: Version `v0.25.3` → Directory `tools/migrate/v0_25_3/`
+Example: Version `v0.25.4` → Directory `tools/migrate/v0_25_3/`
 
 ### Examples
 
@@ -295,32 +295,32 @@ Example: Version `v0.25.3` → Directory `tools/migrate/v0_25_3/`
 # List all migrations
 python db_schema_sync.py --list \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.25.3
+    --version v0.25.4
 
 # Create a new auto-detected migration (new tables, new fields, type changes only)
 python db_schema_sync.py --create \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.25.3
+    --version v0.25.4
 
 # Create a migration including dropped fields (destructive!)
 python db_schema_sync.py --create --drop \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.25.3
+    --version v0.25.4
 
 # Create a named migration
 python db_schema_sync.py --create --name add_user_table \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.25.3
+    --version v0.25.4
 
 # Run all pending migrations
 python db_schema_sync.py --migrate \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.25.3
+    --version v0.25.4
 
 # Show schema differences (including removed fields)
 python db_schema_sync.py --diff \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.25.3
+    --version v0.25.4
 ```
 
 ## How It Works
