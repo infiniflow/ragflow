@@ -275,10 +275,9 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 
 	// Generate new access token
 	token := utility.GenerateToken()
-	if err := s.UpdateUserAccessToken(user, token); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to update access token: %w", err)
-	}
-
+	user.AccessToken = &token
+	now := time.Now().Truncate(time.Second)
+	user.LastLoginTime = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -313,6 +312,8 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	// Generate new access token
 	token := utility.GenerateToken()
 	user.AccessToken = &token
+	now := time.Now().Truncate(time.Second)
+	user.LastLoginTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
@@ -773,15 +774,19 @@ func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsR
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently
 		// For now, just update if field exists
+		user.Avatar = req.Avatar
 	}
 	if req.Language != nil {
 		// Store language preference
+		user.Language = req.Language
 	}
 	if req.ColorSchema != nil {
 		// Store color schema preference
+		user.ColorSchema = req.ColorSchema
 	}
 	if req.Timezone != nil {
 		// Store timezone preference
+		user.Timezone = req.Timezone
 	}
 
 	// Save updated user
