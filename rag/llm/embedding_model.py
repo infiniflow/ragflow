@@ -806,6 +806,7 @@ class OMLXEmbed(LocalAIEmbed):
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key or "omlx", base_url=base_url)
         self.model_name = model_name
+        logging.info("[oMLX] Embedding initialized with model %s at %s", model_name, base_url)
 
 
 class OpenAI_APIEmbed(OpenAIEmbed):
