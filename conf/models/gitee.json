@@ -11,7 +11,9 @@
     "embedding": "embedding",
     "rerank": "rerank",
     "ocr": "images/ocr",
-    "doc_parse": "async/documents/parse"
+    "doc_parse": "async/documents/parse",
+    "tasks": "tasks",
+    "task": "task"
   },
   "models": [
     {

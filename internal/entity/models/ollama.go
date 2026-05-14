@@ -551,3 +551,11 @@ func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := o.ListModels(apiConfig)
 	return err
 }
+
+func (z *OllamaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OllamaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

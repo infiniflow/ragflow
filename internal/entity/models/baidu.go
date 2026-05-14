@@ -693,3 +693,11 @@ func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := b.ListModels(apiConfig)
 	return err
 }
+
+func (z *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

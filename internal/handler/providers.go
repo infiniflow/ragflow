@@ -423,6 +423,91 @@ func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
 	})
 }
 
+func (h *ProviderHandler) ListTasks(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	listTaskResponse, errorCode, err := h.modelProviderService.ListTasks(providerName, instanceName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    listTaskResponse,
+	})
+}
+
+func (h *ProviderHandler) ShowTask(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	instanceName := c.Param("instance_name")
+	if instanceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Instance name is required",
+		})
+		return
+	}
+
+	taskID := c.Param("task_id")
+	if taskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Task id is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	// Get tenant ID from user
+	taskResponse, errorCode, err := h.modelProviderService.ShowTask(providerName, instanceName, taskID, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errorCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    taskResponse,
+	})
+}
+
 type AlterProviderInstanceRequest struct {
 	LLMName string `json:"llm_name" binding:"required"`
 }

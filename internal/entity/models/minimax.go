@@ -473,7 +473,7 @@ func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.TTS)
-	
+
 	reqBody := map[string]interface{}{
 		"model": modelName,
 		"text":  audioContent,
@@ -657,5 +657,13 @@ func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, a
 
 // ParseFile parse file
 func (z *MinimaxModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

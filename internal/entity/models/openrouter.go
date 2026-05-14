@@ -669,3 +669,11 @@ func (o *OpenRouterModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := o.Balance(apiConfig)
 	return err
 }
+
+func (z *OpenRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OpenRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

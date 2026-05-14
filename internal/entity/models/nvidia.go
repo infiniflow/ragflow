@@ -662,3 +662,11 @@ func (n NvidiaModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := n.ListModels(apiConfig)
 	return err
 }
+
+func (z *NvidiaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *NvidiaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

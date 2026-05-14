@@ -419,3 +419,11 @@ func (b *BaichuanModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 func (b *BaichuanModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("no such method")
 }
+
+func (z *BaichuanModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *BaichuanModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

@@ -632,3 +632,11 @@ func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 
 	return nil
 }
+
+func (z *VolcEngine) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VolcEngine) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

@@ -578,3 +578,11 @@ func (c *CoHereModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := c.ListModels(apiConfig)
 	return err
 }
+
+func (z *CoHereModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *CoHereModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

@@ -319,6 +319,44 @@ func (r *EmbeddingsResponse) PrintOut() {
 	}
 }
 
+type SegmentResponse struct {
+	Segments []map[string]interface{} `json:"segments"`
+}
+
+type TaskResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *TaskResponse) Type() string {
+	return "task"
+}
+
+func (r *TaskResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *TaskResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *TaskResponse) PrintOut() {
+	if r.Code == 0 {
+		segmentsRaw := r.Data["segments"].([]interface{})
+		segments := make([]map[string]interface{}, len(segmentsRaw))
+		for i, v := range segmentsRaw {
+			segments[i] = v.(map[string]interface{})
+		}
+		PrintTableSimpleByFormat(segments, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 // ==================== ContextEngine Commands ====================
 
 // ContextListResponse represents the response for ls command

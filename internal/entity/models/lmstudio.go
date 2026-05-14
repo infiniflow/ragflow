@@ -553,3 +553,11 @@ func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := l.ListModels(apiConfig)
 	return err
 }
+
+func (z *LmStudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *LmStudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

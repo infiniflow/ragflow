@@ -502,3 +502,11 @@ func (h *HuggingFaceModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := h.ListModels(apiConfig)
 	return err
 }
+
+func (z *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

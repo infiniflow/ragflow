@@ -670,3 +670,11 @@ func (z *AliyunModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 	return nil
 }
+
+func (z *AliyunModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *AliyunModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

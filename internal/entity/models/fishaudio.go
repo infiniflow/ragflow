@@ -185,3 +185,11 @@ func (f *FishAudioModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := f.ListModels(apiConfig)
 	return err
 }
+
+func (z *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}

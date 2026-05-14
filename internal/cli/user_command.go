@@ -2056,7 +2056,6 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	shouldSave, _ := cmd.Params["save"].(bool)
 	saveDir, _ := cmd.Params["save_path"].(string)
 
-
 	fileName := fmt.Sprintf("%s_output.%s", modelName, explicitFormat)
 
 	cwd, err := os.Getwd()
@@ -2376,7 +2375,7 @@ func (c *RAGFlowClient) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to list tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result CommonDataResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list tasks failed: invalid JSON (%w)", err)
 	}
@@ -2424,7 +2423,7 @@ func (c *RAGFlowClient) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to get task: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result CommonResponse
+	var result TaskResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("get task failed: invalid JSON (%w)", err)
 	}

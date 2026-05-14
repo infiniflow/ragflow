@@ -41,6 +41,10 @@ type ModelDriver interface {
 	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
 
 	CheckConnection(apiConfig *APIConfig) error
+
+	ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error)
+
+	ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error)
 }
 
 type ChatResponse struct {
@@ -76,6 +80,20 @@ type OCRFileResponse struct {
 type ParseFileResponse struct {
 }
 
+type ListTaskStatus struct {
+	TaskID string `json:"task_id"`
+	Status string `json:"status"`
+}
+
+type TaskSegment struct {
+	Index   int    `json:"index"`
+	Content string `json:"content"`
+}
+
+type TaskResponse struct {
+	Segments []TaskSegment `json:"segments"`
+}
+
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
 	Chat          string `json:"chat"`
@@ -90,6 +108,8 @@ type URLSuffix struct {
 	Balance       string `json:"balance"`
 	Files         string `json:"files"`
 	Status        string `json:"status"`
+	Tasks         string `json:"tasks"`
+	Task          string `json:"task"`
 }
 
 type ChatConfig struct {
