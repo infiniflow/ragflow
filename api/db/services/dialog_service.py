@@ -509,11 +509,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return
 
     chat_start_ts = timer()
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
-    if llm_type == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    if dialog.llm_id:
+        llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+        if llm_type == "image2text":
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+        else:
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
     max_tokens = llm_model_config.get("max_tokens", 8192)
