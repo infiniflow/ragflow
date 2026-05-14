@@ -86,6 +86,24 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         logging.warning(f"Instance '{instance_name}' not found for provider '{provider_name}'")
         return None
 
+    # Check if model is enabled (no TenantModel record or status != inactive means enabled)
+    model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
+        provider_obj.id, instance_obj.id, model_type, model_name
+    )
+    enable = model_entity is None or model_entity.status != ActiveStatusEnum.INACTIVE.value
+
+    if not enable:
+        return None
+
+    if model_entity:
+        return {
+        "model_provider": provider_name,
+        "model_instance": instance_name,
+        "model_name": model_name,
+        "model_type": model_type,
+        "enable": enable,
+    }
+
     # Check if model is in the LLM factory info
     factory_info = [f for f in (FACTORY_LLM_INFOS or []) if f["name"] == provider_name]
     if not factory_info:
@@ -102,12 +120,6 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     if target_llm[0].get("model_type") != model_type:
         logging.warning(f"Model '{model_name}' isn't a {model_type} model")
         return None
-
-    # Check if model is enabled (no TenantModel record or status != inactive means enabled)
-    model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(
-        provider_obj.id, instance_obj.id, model_name
-    )
-    enable = model_entity is None or model_entity.status != ActiveStatusEnum.INACTIVE.value
 
     return {
         "model_provider": provider_name,
