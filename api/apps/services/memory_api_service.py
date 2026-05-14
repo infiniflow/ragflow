@@ -21,12 +21,12 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
+from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
 from common.constants import MemoryType, ForgettingPolicy, LLMType
 from common.exceptions import ArgumentException, NotFoundException
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from common.time_utils import current_timestamp, timestamp_to_date
 
 
@@ -166,6 +166,10 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
             raise ArgumentException(
                 f"Tenant Model with name {merged['llm_id']} and type {LLMType.CHAT.value} not found"
             )
+        if new_memory_setting.get("embd_id") and not merged.get("tenant_embd_id"):
+            raise ArgumentException(
+                f"Tenant Model with name {merged['embd_id']} and type {LLMType.EMBEDDING.value} not found"
+            )
         if new_memory_setting.get("llm_id"):
             update_dict["llm_id"] = merged["llm_id"]
         if new_memory_setting.get("embd_id"):
@@ -198,6 +202,7 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
     for field in ["avatar", "description", "system_prompt", "user_prompt"]:
         if field in new_memory_setting:
             update_dict[field] = new_memory_setting[field]
+
     memory_dict = current_memory.to_dict()
     memory_dict.update({"memory_type": get_memory_type_human(current_memory.memory_type)})
     to_update = {}
