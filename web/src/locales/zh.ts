@@ -1425,6 +1425,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         author: '作者',
         sectionTitle: '章节标题',
       },
+      editTags: '编辑标签',
+      editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
+      tagsPlaceholder: '输入标签后按回车',
+      tagSuggestionsLabel: '现有标签',
+      removeTagAriaLabel: '删除 {{tag}}',
       includeHeadingContent: '分离上级标题正文',
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',

@@ -55,7 +55,6 @@ export interface TimelineDataFlowProps {
 const TimelineDataFlow = ({
   activeFunc,
   activeId,
-  data,
   timelineNodes,
 }: TimelineDataFlowProps) => {
   // const [timelineNodeArr,setTimelineNodeArr] = useState<ITimelineNodeObj & {id: number | string}>()
