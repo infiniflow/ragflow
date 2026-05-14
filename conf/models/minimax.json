@@ -99,6 +99,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "speech-2.8-hd",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
     }
   ]
 }

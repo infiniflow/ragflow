@@ -455,6 +455,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFatal, Value: ident}
 	case "PANIC":
 		return Token{Type: TokenPanic, Value: ident}
+	case "PARAM":
+		return Token{Type: TokenParam, Value: ident}
+	case "PLAY":
+		return Token{Type: TokenPlay, Value: ident}
+	case "FORMAT":
+		return Token{Type: TokenFormat, Value: ident}
+	case "SAVE":
+		return Token{Type: TokenSave, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

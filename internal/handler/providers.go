@@ -1166,14 +1166,12 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 }
 
 type AudioSpeechRequest struct {
-	ProviderName *string  `json:"provider_name"`
-	InstanceName *string  `json:"instance_name"`
-	ModelName    *string  `json:"model_name"`
-	Text         *string  `json:"text"`
-	Language     []string `json:"language"`
-	Voice        int      `json:"voice"`
-	Stream       bool     `json:"stream"`
-	Volume       bool     `json:"volume"`
+	ProviderName *string           `json:"provider_name"`
+	InstanceName *string           `json:"instance_name"`
+	ModelName    *string           `json:"model_name"`
+	Text         *string           `json:"text"`
+	Stream       bool              `json:"stream"`
+	TTSConfig    *models.TTSConfig `json:"tts_config"`
 }
 
 func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
@@ -1219,6 +1217,9 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	}
 
 	ttsConfig := models.TTSConfig{}
+	if req.TTSConfig != nil {
+		ttsConfig = *req.TTSConfig
+	}
 
 	// Check if it's a stream request
 	if req.Stream {

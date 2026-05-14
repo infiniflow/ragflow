@@ -27,6 +27,7 @@ import (
 	"net"
 	netUrl "net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	ce "ragflow/internal/cli/filesystem"
 	"strings"
@@ -1973,6 +1974,52 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 		"text":          text,
 	}
 
+	ttsConfigPayload := make(map[string]interface{})
+
+	explicitFormat, hasExplicitFormat := cmd.Params["format"].(string)
+
+	if paramStr, ok := cmd.Params["param_str"].(string); ok && paramStr != "" {
+		var dynamicParams map[string]interface{}
+		if err := json.Unmarshal([]byte(paramStr), &dynamicParams); err != nil {
+			return nil, fmt.Errorf("param string must be valid JSON. Error: %w", err)
+		}
+
+		ttsConfigPayload["params"] = dynamicParams
+
+		if !hasExplicitFormat {
+			var findFormat func(map[string]interface{}) string
+			findFormat = func(m map[string]interface{}) string {
+				if val, ok := m["format"]; ok {
+					return fmt.Sprintf("%v", val)
+				}
+				if val, ok := m["response_format"]; ok {
+					return fmt.Sprintf("%v", val)
+				}
+				for _, v := range m {
+					if subMap, ok := v.(map[string]interface{}); ok {
+						if res := findFormat(subMap); res != "" {
+							return res
+						}
+					}
+				}
+				return ""
+			}
+			if ext := findFormat(dynamicParams); ext != "" {
+				explicitFormat = ext
+			}
+		}
+	}
+
+	if explicitFormat != "" {
+		ttsConfigPayload["format"] = explicitFormat
+	} else {
+		explicitFormat = "mp3"
+	}
+
+	if len(ttsConfigPayload) > 0 {
+		payload["tts_config"] = ttsConfigPayload
+	}
+
 	url := "/audio/speech"
 
 	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
@@ -1982,21 +2029,91 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to TTS document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
+
+	var ttsResult struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Audio string `json:"audio"`
+		} `json:"data"`
+	}
+
+	if err = json.Unmarshal(resp.Body, &ttsResult); err != nil {
 		return nil, fmt.Errorf("TTS document failed: invalid JSON (%w)", err)
 	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-	result.Duration = resp.Duration
 
-	// save file
-	//err = os.WriteFile(fileToSave, resp.Body, 0644)
-	//if err != nil {
-	//	result.Message += fmt.Sprintf("failed to save file: %s", err.Error())
-	//	result.Code = 1
-	//}
+	if ttsResult.Code != 0 {
+		return nil, fmt.Errorf("%s", ttsResult.Message)
+	}
+
+	// Convert Base64 back to the original audio byte stream
+	audioBytes, err := base64.StdEncoding.DecodeString(ttsResult.Data.Audio)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode audio base64: %w", err)
+	}
+
+	shouldPlay, _ := cmd.Params["play"].(bool)
+	shouldSave, _ := cmd.Params["save"].(bool)
+	saveDir, _ := cmd.Params["save_path"].(string)
+
+
+	fileName := fmt.Sprintf("%s_output.%s", modelName, explicitFormat)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	localPath := filepath.Join(cwd, fileName)
+
+	if err := os.WriteFile(localPath, audioBytes, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write local audio file: %w", err)
+	}
+
+	if shouldPlay {
+		cmdExec := exec.Command("aplay", localPath)
+		if err := cmdExec.Run(); err != nil {
+			fmt.Printf("Play error: %v (Hint: did you use 'format: wav' in your params?)\n", err)
+		}
+	}
+
+	var finalMessage string
+	if shouldSave {
+		if saveDir == "" {
+			saveDir = cwd
+		} else {
+			absSaveDir, err := filepath.Abs(saveDir)
+			if err == nil {
+				saveDir = absSaveDir
+			}
+
+			if err := os.MkdirAll(saveDir, 0755); err != nil {
+				return nil, fmt.Errorf("failed to create save directory: %w", err)
+			}
+
+			finalPath := filepath.Join(saveDir, fileName)
+			if err := os.WriteFile(finalPath, audioBytes, 0644); err != nil {
+				return nil, fmt.Errorf("failed to save file to target directory: %w", err)
+			}
+
+			if saveDir != cwd {
+				os.Remove(localPath)
+			}
+
+			finalMessage = fmt.Sprintf("Saved to directory: %s", finalPath)
+		}
+	} else {
+		defer os.Remove(localPath)
+		finalMessage = "TTS Task Completed (Audio not saved)"
+	}
+
+	if finalMessage != "" && shouldSave {
+		fmt.Println(finalMessage)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "SUCCESS"
+	result.Duration = resp.Duration
 
 	return &result, nil
 }
