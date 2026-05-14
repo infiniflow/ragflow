@@ -245,10 +245,12 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
 
 
 @manager.route("/agents/download", methods=["GET"])  # noqa: F821
-async def download_agent_file():
+@login_required
+@add_tenant_id_to_kwargs
+async def download_agent_file(tenant_id):
     id = request.args.get("id")
-    created_by = request.args.get("created_by")
-    blob = FileService.get_blob(created_by, id)
+    logging.info("Agent file download requested: tenant_id=%s file_id=%s", tenant_id, id)
+    blob = await thread_pool_exec(FileService.get_blob, tenant_id, id)
     return Response(blob)
 
 
@@ -482,22 +484,34 @@ async def create_agent(tenant_id):
 
 
 @manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
-async def upload_agent_file(agent_id):
-    exists, canvas = UserCanvasService.get_by_canvas_id(agent_id)
-    if not exists:
-        return get_data_error_result(message="canvas not found.")
-
-    user_id = canvas["user_id"]
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def upload_agent_file(agent_id, tenant_id):
     files = await request.files
     file_objs = files.getlist("file") if files and files.get("file") else []
+    logging.info(
+        "Agent file upload requested: tenant_id=%s agent_id=%s file_count=%s",
+        tenant_id,
+        agent_id,
+        len(file_objs),
+    )
     try:
         if len(file_objs) == 1:
-            return get_json_result(
-                data=FileService.upload_info(user_id, file_objs[0], request.args.get("url"))
+            uploaded = await thread_pool_exec(
+                FileService.upload_info, tenant_id, file_objs[0], request.args.get("url")
             )
-        results = [FileService.upload_info(user_id, file_obj) for file_obj in file_objs]
+            return get_json_result(data=uploaded)
+        results = await asyncio.gather(
+            *(thread_pool_exec(FileService.upload_info, tenant_id, file_obj) for file_obj in file_objs)
+        )
         return get_json_result(data=results)
     except Exception as exc:
+        logging.exception(
+            "Agent file upload failed: tenant_id=%s agent_id=%s",
+            tenant_id,
+            agent_id,
+        )
         return server_error_response(exc)
 
 
@@ -777,6 +791,8 @@ async def test_db_connection():
                 port=req["port"],
                 password=req["password"],
             )
+            with db.connection_context():
+                db.execute_sql("SELECT 1")
         elif req["db_type"] == "oceanbase":
             db = MySQLDatabase(
                 req["database"],
@@ -786,6 +802,8 @@ async def test_db_connection():
                 password=req["password"],
                 charset="utf8mb4",
             )
+            with db.connection_context():
+                db.execute_sql("SELECT 1")
         elif req["db_type"] == "postgres":
             db = PostgresqlDatabase(
                 req["database"],
@@ -794,6 +812,8 @@ async def test_db_connection():
                 port=req["port"],
                 password=req["password"],
             )
+            with db.connection_context():
+                db.execute_sql("SELECT 1")
         elif req["db_type"] == "mssql":
             import pyodbc
 
@@ -805,9 +825,14 @@ async def test_db_connection():
                 f"PWD={req['password']};"
             )
             db = pyodbc.connect(connection_string)
-            cursor = db.cursor()
-            cursor.execute("SELECT 1")
-            cursor.close()
+            try:
+                cursor = db.cursor()
+                try:
+                    cursor.execute("SELECT 1")
+                finally:
+                    cursor.close()
+            finally:
+                db.close()
         elif req["db_type"] == "IBM DB2":
             import ibm_db
 
@@ -830,7 +855,6 @@ async def test_db_connection():
             stmt = ibm_db.exec_immediate(conn, "SELECT 1 FROM sysibm.sysdummy1")
             ibm_db.fetch_assoc(stmt)
             ibm_db.close(conn)
-            return get_json_result(data="Database Connection Successful!")
         elif req["db_type"] == "trino":
             import os
             import trino
@@ -857,18 +881,18 @@ async def test_db_connection():
                 http_scheme=http_scheme,
                 auth=auth,
             )
-            cur = conn.cursor()
-            cur.execute("SELECT 1")
-            cur.fetchall()
-            cur.close()
-            conn.close()
-            return get_json_result(data="Database Connection Successful!")
+            try:
+                cur = conn.cursor()
+                try:
+                    cur.execute("SELECT 1")
+                    cur.fetchall()
+                finally:
+                    cur.close()
+            finally:
+                conn.close()
         else:
             return server_error_response("Unsupported database type.")
 
-        if req["db_type"] != "mssql":
-            db.connect()
-        db.close()
         return get_json_result(data="Database Connection Successful!")
     except Exception as exc:
         return server_error_response(exc)
