@@ -2486,7 +2486,7 @@ This process aggregates variables from multiple branches into a single variable 
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
       duplicate: 'Duplicate',
-      copyOfAgentName: '{{name}} (Copy)',
+      copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',

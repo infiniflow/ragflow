@@ -261,31 +261,44 @@ export const useDuplicateAgent = () => {
   } = useMutation({
     mutationKey: [AgentApiAction.SetAgent, 'duplicate'],
     mutationFn: async (agent: Pick<IFlow, 'id' | 'title'>) => {
-      const { data: detail } = await agentService.getAgent(agent.id);
-      const source = detail?.data;
-      if (!source) {
+      try {
+        const { data: detail } = await agentService.getAgent(agent.id);
+        const source = detail?.data;
+        if (!source) {
+          message.error(i18n.t('message.requestError'));
+          return null;
+        }
+
+        const sourceTitle = agent.title ?? source.title ?? '';
+        const { data } = await agentService.createAgent({
+          title: i18n.t('flow.copyOfAgentName', {
+            name: sourceTitle,
+            defaultValue: `${sourceTitle} (Copy)`,
+          }),
+          dsl: source.dsl,
+          avatar: source.avatar,
+          description: source.description,
+          canvas_category: source.canvas_category,
+        });
+
+        if (data?.code === 0) {
+          message.success(i18n.t('message.created'));
+          queryClient.invalidateQueries({
+            queryKey: [AgentApiAction.FetchAgentListByPage],
+          });
+          return data;
+        }
+
+        message.error(data?.message ?? i18n.t('message.requestError'));
+        return null;
+      } catch (error) {
+        console.error('useDuplicateAgent failed:', error);
+        message.error(
+          (error as { message?: string })?.message ??
+            i18n.t('message.requestError'),
+        );
         return null;
       }
-
-      const sourceTitle = agent.title ?? source.title ?? '';
-      const { data } = await agentService.createAgent({
-        title: i18n.t('flow.copyOfAgentName', {
-          name: sourceTitle,
-          defaultValue: `${sourceTitle} (Copy)`,
-        }),
-        dsl: source.dsl,
-        avatar: source.avatar,
-        description: source.description,
-        canvas_category: source.canvas_category,
-      });
-
-      if (data?.code === 0) {
-        message.success(i18n.t('message.created'));
-        queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchAgentListByPage],
-        });
-      }
-      return data;
     },
   });
 
