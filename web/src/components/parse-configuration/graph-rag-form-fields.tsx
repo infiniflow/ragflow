@@ -35,6 +35,7 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const enum MethodValue {
   General = 'general',
   Light = 'light',
+  NER = 'ner',
 }
 
 export const excludedParseMethods = [
@@ -122,10 +123,12 @@ const GraphRagItems = ({
   });
 
   const methodOptions = useMemo(() => {
-    return [MethodValue.Light, MethodValue.General].map((x) => ({
-      value: x,
-      label: upperFirst(x),
-    }));
+    return [MethodValue.Light, MethodValue.General /*, MethodValue.NER*/].map(
+      (x) => ({
+        value: x,
+        label: x === MethodValue.NER ? 'NER' : upperFirst(x),
+      }),
+    );
   }, []);
 
   const renderWideTooltip = useCallback(

@@ -18,6 +18,11 @@ type BaiduModel struct {
 	httpClient *http.Client
 }
 
+func (b *BaiduModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (b *BaiduModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &BaiduModel{
 		BaseURL:   baseURL,
@@ -385,14 +390,14 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -412,9 +417,35 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-func (b *BaiduModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type baiduEmbeddingResponse struct {
+	ID      string               `json:"id"`
+	Object  string               `json:"object"`
+	Created int64                `json:"created"`
+	Data    []baiduEmbeddingData `json:"data"`
+	Model   string               `json:"model"`
+	Usage   baiduUsage           `json:"usage"`
+}
+
+type baiduEmbeddingData struct {
+	Object    string    `json:"object"`
+	Embedding []float64 `json:"embedding"`
+	Index     *int      `json:"index"`
+}
+
+type baiduUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	var region = "default"
@@ -427,6 +458,9 @@ func (b *BaiduModel) Encode(modelName *string, texts []string, apiConfig *APICon
 	reqBody := map[string]interface{}{
 		"model": *modelName,
 		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -457,52 +491,42 @@ func (b *BaiduModel) Encode(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("Baidu embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	var parsed baiduEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	dataObj, ok := result["data"].([]interface{})
-	if !ok || len(dataObj) == 0 {
-		return nil, fmt.Errorf("Baidu embedding response contains no data: %s", string(body))
+	if len(parsed.Data) != len(texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(parsed.Data))
 	}
 
-	embeddings := make([][]float64, len(texts))
+	embeddings := make([]EmbeddingData, len(texts))
+	seen := make([]bool, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index == nil {
+			return nil, fmt.Errorf("missing index field in embedding item")
+		}
+		idx := *item.Index
+		if idx < 0 || idx >= len(texts) {
+			return nil, fmt.Errorf("embedding index %d out of range", idx)
+		}
+		if seen[idx] {
+			return nil, fmt.Errorf("duplicate embedding index %d", idx)
+		}
+		if len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("empty embedding at index %d", idx)
+		}
+		seen[idx] = true
+		embeddings[idx] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     idx,
+		}
+	}
 
-	for _, item := range dataObj {
-		dataMap, ok := item.(map[string]interface{})
+	for i, ok := range seen {
 		if !ok {
-			continue
+			return nil, fmt.Errorf("missing embedding index %d", i)
 		}
-
-		indexFloat, ok := dataMap["index"].(float64)
-		if !ok {
-			continue
-		}
-		index := int(indexFloat)
-
-		if index < 0 || index >= len(texts) {
-			continue
-		}
-
-		embeddingSlice, ok := dataMap["embedding"].([]interface{})
-		if !ok {
-			continue
-		}
-
-		embedding := make([]float64, len(embeddingSlice))
-		for j, v := range embeddingSlice {
-			switch val := v.(type) {
-			case float64:
-				embedding[j] = val
-			case float32:
-				embedding[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type")
-			}
-		}
-
-		embeddings[index] = embedding
 	}
 
 	return embeddings, nil
@@ -567,7 +591,7 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 		} `json:"results"`
 	}
 
-	if err := json.Unmarshal(body, &rerankResp); err != nil {
+	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -581,6 +605,29 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 	}
 
 	return &rerankResponse, nil
+}
+
+// TranscribeAudio transcribe audio
+func (b *BaiduModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
+func (z *BaiduModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (b *BaiduModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
+func (z *BaiduModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (b *BaiduModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {

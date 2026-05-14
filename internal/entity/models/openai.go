@@ -37,6 +37,11 @@ type OpenAIModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
+func (o *OpenAIModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewOpenAIModel creates a new OpenAI model instance.
 //
 // We clone http.DefaultTransport so we keep Go's defaults for
@@ -403,24 +408,31 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return nil
 }
 
-// openaiEmbeddingResponse is the response shape returned by
-// /v1/embeddings. The "index" field gives the position of the embedding
-// in the input array, which we use to keep the output order stable
-// even if the API returns items in a different order.
 type openaiEmbeddingResponse struct {
-	Data []struct {
-		Index     int           `json:"index"`
-		Embedding []interface{} `json:"embedding"`
-	} `json:"data"`
+	Data   []openrouterEmbeddingData `json:"data"`
+	Model  string                    `json:"model"`
+	Object string                    `json:"object"`
+	Usage  openrouterUsage           `json:"usage"`
 }
 
-// Encode turns a list of texts into embedding vectors using the
+type openaiEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type openaiUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// Embed turns a list of texts into embedding vectors using the
 // OpenAI /v1/embeddings endpoint (e.g. text-embedding-3-small,
 // text-embedding-3-large, text-embedding-ada-002). The output has
 // one vector per input, in the same order the inputs were given.
-func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (z *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -486,29 +498,12 @@ func (z *OpenAIModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([][]float64, len(texts))
-	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			continue
-		}
-		vec := make([]float64, len(item.Embedding))
-		for j, v := range item.Embedding {
-			switch val := v.(type) {
-			case float64:
-				vec[j] = val
-			case float32:
-				vec[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
-			}
-		}
-		embeddings[item.Index] = vec
-	}
-
-	for i, vec := range embeddings {
-		if vec == nil {
-			return nil, fmt.Errorf("missing embedding for input at index %d", i)
-		}
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
@@ -602,4 +597,27 @@ func (z *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
 // not expose a rerank API, so this is left unimplemented.
 func (z *OpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *OpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

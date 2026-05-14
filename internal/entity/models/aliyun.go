@@ -36,6 +36,11 @@ type AliyunModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
+func (z *AliyunModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewAliyunModel creates a new Aliyun model instance
 func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel {
 	return &AliyunModel{
@@ -71,7 +76,12 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -207,7 +217,12 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return fmt.Errorf("aliyun: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -352,16 +367,28 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 }
 
 type aliyunEmbeddingResponse struct {
-	Data []struct {
-		Index     int           `json:"index"`
-		Embedding []interface{} `json:"embedding"`
-	} `json:"data"`
+	Data   []EmbeddingData `json:"data"`
+	Model  string          `json:"model"`
+	Object string          `json:"object"`
+	Usage  aliyunUsage     `json:"usage"`
+	ID     string          `json:"id"`
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type aliyunEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
+	Object    string    `json:"object"`
+}
+
+type aliyunUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// Embed embeds a list of texts into embeddings
+func (z *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -430,29 +457,12 @@ func (z *AliyunModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([][]float64, len(texts))
-	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("unexpected embedding index %d for %d inputs", item.Index, len(texts))
-		}
-		vec := make([]float64, len(item.Embedding))
-		for j, v := range item.Embedding {
-			switch val := v.(type) {
-			case float64:
-				vec[j] = val
-			case float32:
-				vec[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
-			}
-		}
-		embeddings[item.Index] = vec
-	}
-
-	for i, vec := range embeddings {
-		if vec == nil {
-			return nil, fmt.Errorf("missing embedding for input at index %d", i)
-		}
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
@@ -550,6 +560,29 @@ func (z *AliyunModel) Rerank(modelName *string, query string, documents []string
 	return &rerankResponse, nil
 }
 
+// TranscribeAudio transcribe audio
+func (z *AliyunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *AliyunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (z *AliyunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *AliyunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (z *AliyunModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
 type AliyunModelItem struct {
 	ModelName    string `json:"model_name"`
 	BaseCapacity int    `json:"base_capacity"`
@@ -573,7 +606,12 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}

@@ -19,6 +19,11 @@ type OpenRouterModel struct {
 	httpClient *http.Client
 }
 
+func (o *OpenRouterModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewOpenRouterModel creates a new OpenRouter AI model instance
 func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRouterModel {
 	return &OpenRouterModel{
@@ -351,9 +356,30 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	return scanner.Err()
 }
 
-func (o *OpenRouterModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type openrouterEmbeddingResponse struct {
+	Data   []openrouterEmbeddingData `json:"data"`
+	Model  string                    `json:"model"`
+	Object string                    `json:"object"`
+	Usage  openrouterUsage           `json:"usage"`
+}
+
+type openrouterEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+	Index     int       `json:"index"`
+}
+
+type openrouterUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	var region = "default"
@@ -366,6 +392,10 @@ func (o *OpenRouterModel) Encode(modelName *string, texts []string, apiConfig *A
 	reqBody := map[string]interface{}{
 		"model": *modelName,
 		"input": texts,
+	}
+
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -398,52 +428,17 @@ func (o *OpenRouterModel) Encode(modelName *string, texts []string, apiConfig *A
 		return nil, fmt.Errorf("OpenRouter embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	var parsed openrouterEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	dataObj, ok := result["data"].([]interface{})
-	if !ok || len(dataObj) == 0 {
-		return nil, fmt.Errorf("OpenRouter embedding response contains no data: %s", string(body))
-	}
-
-	embeddings := make([][]float64, len(texts))
-
-	for _, item := range dataObj {
-		dataMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		indexFloat, ok := dataMap["index"].(float64)
-		if !ok {
-			continue
-		}
-		index := int(indexFloat)
-
-		if index < 0 || index >= len(texts) {
-			continue
-		}
-
-		embeddingSlice, ok := dataMap["embedding"].([]interface{})
-		if !ok {
-			continue
-		}
-
-		embedding := make([]float64, len(embeddingSlice))
-		for j, v := range embeddingSlice {
-			switch val := v.(type) {
-			case float64:
-				embedding[j] = val
-			case float32:
-				embedding[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type")
-			}
-		}
-
-		embeddings[index] = embedding
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
@@ -537,6 +532,29 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 	}
 
 	return &rerankResponse, nil
+}
+
+// TranscribeAudio transcribe audio
+func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OpenRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OpenRouterModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
