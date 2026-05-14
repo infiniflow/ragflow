@@ -23,7 +23,6 @@ from typing import Tuple
 from jinja2.sandbox import SandboxedEnvironment
 import json_repair
 
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
@@ -247,6 +246,7 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 
     if not chat_mdl:
         if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
@@ -282,7 +282,7 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
     from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_tenant_default_model_by_type
 
     if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
         chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
