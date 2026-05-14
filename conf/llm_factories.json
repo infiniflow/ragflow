@@ -2550,6 +2550,13 @@
             "llm": []
         },
         {
+            "name": "oMLX",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Cohere",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",

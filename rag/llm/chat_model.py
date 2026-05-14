@@ -882,6 +882,18 @@ class LmStudioChat(Base):
         self.model_name = model_name
 
 
+class OMLXChat(Base):
+    _FACTORY_NAME = "oMLX"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("Local llm url cannot be None")
+        base_url = urljoin(base_url, "v1")
+        super().__init__(key, model_name, base_url, **kwargs)
+        self.client = OpenAI(api_key=key or "omlx", base_url=base_url)
+        self.model_name = model_name
+
+
 class OpenAI_APIChat(Base):
     _FACTORY_NAME = ["VLLM", "OpenAI-API-Compatible"]
 
