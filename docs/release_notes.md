@@ -13,13 +13,13 @@ Key features, improvements and bug fixes in the latest releases.
 
 Released on May 13, 2026.
 
-## New features
+### New features
 
 -  Data source and parsing: Added column-level semantic/metadata control for the spreadsheet file parser; introduced ETag optimization for incremental synchronization of S3 data sources to avoid unnecessary file transfers.
 - Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/infiniflow/ragflow/pull/13710)
 
 
-## Improvements
+### Improvements
 
 - API refactoring and security
   - Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
@@ -30,7 +30,7 @@ Released on May 13, 2026.
 - Agent: Enables the **Code** component to output and display file-based attachments, such as charts and images, directly in the chat. [#14787](https://github.com/infiniflow/ragflow/pull/14787)
 - Reduces ingestion server boot time. [#14894](https://github.com/infiniflow/ragflow/pull/14894)
 
-## Bug fixes
+### Bug fixes
 
 - Images in multi-sheet Excel workbooks were not scoped by sheet, causing images to be incorrectly attributed across different worksheets. [#14120](https://github.com/infiniflow/ragflow/pull/14120)
 - Agent: Splits the **Message** component output into distinct 'waiting' and 'message' states when nested inside a **Iteration** component alongside a **Wait** component. [#14839](https://github.com/infiniflow/ragflow/pull/14839)
