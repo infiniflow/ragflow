@@ -67,6 +67,7 @@ type RerankResponse struct {
 }
 
 type ASRResponse struct {
+	Text string `json:"text"`
 }
 
 type TTSResponse struct {
@@ -102,6 +103,7 @@ type URLSuffix struct {
 	Embedding     string `json:"embedding"`
 	Rerank        string `json:"rerank"`
 	TTS           string `json:"tts"`
+	ASR           string `json:"asr"`
 	OCR           string `json:"ocr"`
 	DocumentParse string `json:"doc_parse"`
 	Models        string `json:"models"`
@@ -140,10 +142,12 @@ type RerankConfig struct {
 }
 
 type ASRConfig struct {
+	Params map[string]interface{} `json:"params"`
 }
 
 type TTSConfig struct {
-	Params map[string]interface{}
+	Format string                 `json:"format"`
+	Params map[string]interface{} `json:"params"`
 }
 
 type OCRConfig struct {
