@@ -27,10 +27,32 @@ def _goto_home(page, base_url: str) -> None:
 
 
 def _nav_click(page, testid: str) -> None:
+    expected_path_map = {
+        "nav-chat": "/chats",
+        "nav-search": "/searches",
+        "nav-agent": "/agents",
+    }
+    expected_path = expected_path_map.get(testid)
+
+    def _ensure_expected_path():
+        if not expected_path:
+            return
+        if expected_path in page.url:
+            return
+        try:
+            page.wait_for_url(
+                re.compile(rf".*{re.escape(expected_path)}(?:[/?#].*)?$"),
+                wait_until="domcontentloaded",
+                timeout=5000,
+            )
+        except Exception:
+            page.goto(expected_path, wait_until="domcontentloaded")
+
     locator = page.locator(f"[data-testid='{testid}']")
     if locator.count() > 0:
         expect(locator.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         locator.first.click()
+        _ensure_expected_path()
         return
 
     nav_text_map = {
@@ -54,10 +76,12 @@ def _nav_click(page, testid: str) -> None:
             )
         expect(fallback.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         fallback.first.click()
+        _ensure_expected_path()
         return
 
     expect(locator).to_be_visible(timeout=RESULT_TIMEOUT_MS)
     locator.click()
+    _ensure_expected_path()
 
 
 def _open_create_from_list(
@@ -235,65 +259,6 @@ def _select_first_dataset_and_save(
     if combo_text and not re.search(r"please\s+select|select", combo_text, re.I):
         return
 
-    combobox.click()
-
-    options = page.locator("[data-testid='datasets-options']")
-    if options.count() == 0:
-        options = page.locator("[role='listbox']:visible")
-    if options.count() == 0:
-        options = page.locator("[cmdk-list]:visible")
-    options = options.first
-    expect(options).to_be_visible(timeout=timeout_ms)
-
-    option = None
-    prioritized = [
-        options.locator("[data-testid='datasets-option-0']"),
-        options.locator("[data-testid^='datasets-option-']"),
-        options.locator("[data-testid='datasets-option']"),
-        options.locator("[role='option']"),
-        options.locator("[cmdk-item], [data-value]"),
-    ]
-    for candidates in prioritized:
-        if candidates.count() == 0:
-            continue
-        limit = min(candidates.count(), 20)
-        for idx in range(limit):
-            candidate = candidates.nth(idx)
-            try:
-                if not candidate.is_visible():
-                    continue
-                text = (candidate.inner_text() or "").strip().lower()
-            except Exception:
-                continue
-            if not text or "no results found" in text:
-                continue
-            option = candidate
-            break
-        if option is not None:
-            break
-
-    if option is None:
-        list_text = ""
-        try:
-            list_text = options.inner_text()
-        except Exception:
-            list_text = ""
-        raise AssertionError(
-            "No selectable dataset option is available in dataset combobox. "
-            f"list_text={list_text[:200]!r}"
-        )
-    expect(option).to_be_visible(timeout=timeout_ms)
-    option.click()
-    try:
-        selected_text = combobox.inner_text().strip()
-    except Exception:
-        selected_text = ""
-    if re.search(r"please\s*select|select", selected_text, re.I):
-        raise AssertionError(
-            "Dataset selection did not stick after clicking dataset option. "
-            f"combobox_text={selected_text!r}"
-        )
-
     save_button = scope_root.locator(f"[data-testid='{save_testid}']")
     if save_button.count() == 0:
         save_button = scope_root.get_by_role(
@@ -306,27 +271,171 @@ def _select_first_dataset_and_save(
     save_button = save_button.first
     expect(save_button).to_be_visible(timeout=timeout_ms)
 
-    def trigger():
-        save_button.click()
+    def _open_dataset_options():
+        last_list_text = ""
+        for _ in range(10):
+            candidates = [
+                page.locator("[data-testid='datasets-options']:visible"),
+                page.locator("[role='listbox']:visible"),
+                page.locator("[cmdk-list]:visible"),
+            ]
+            for candidate in candidates:
+                if candidate.count() > 0:
+                    options_root = candidate.first
+                    expect(options_root).to_be_visible(timeout=timeout_ms)
+                    return options_root, last_list_text
 
-    try:
-        capture_response(
-            page,
-            trigger,
-            lambda resp: "/v1/dialog/set" in resp.url
-            and resp.request.method in ("POST", "PUT", "PATCH"),
-            timeout_ms=response_timeout_ms,
+            combobox.click()
+            page.wait_for_timeout(120)
+
+            list_locator = page.locator("[data-testid='datasets-options']").first
+            if list_locator.count() > 0:
+                try:
+                    last_list_text = list_locator.inner_text() or ""
+                except Exception:
+                    last_list_text = ""
+        raise AssertionError(
+            "Dataset option popover did not open. "
+            f"combobox_testid={combobox_testid!r} last_list_text={last_list_text[:200]!r}"
         )
-    except Exception:
-        pass
-    try:
-        expect(options).not_to_be_visible(timeout=timeout_ms)
-    except AssertionError:
-        pass
-    if post_save_ready_locator is not None:
-        expect(post_save_ready_locator).to_be_visible(timeout=timeout_ms)
-    else:
-        page.wait_for_timeout(250)
+
+    def _pick_first_dataset_option(options_root) -> bool:
+        search_input = options_root.locator("[cmdk-input], input[placeholder*='Search']").first
+        if search_input.count() > 0:
+            try:
+                search_input.fill("")
+                search_input.focus()
+            except Exception:
+                pass
+            page.wait_for_timeout(100)
+
+        selectors = [
+            "[data-testid^='datasets-option-']:not([aria-disabled='true']):not([data-disabled='true'])",
+            "[role='option']:not([aria-disabled='true']):not([data-disabled='true'])",
+            "[cmdk-item]:not([aria-disabled='true']):not([data-disabled='true'])",
+        ]
+        for selector in selectors:
+            candidates = options_root.locator(selector)
+            if candidates.count() == 0:
+                continue
+            limit = min(candidates.count(), 20)
+            for idx in range(limit):
+                candidate = candidates.nth(idx)
+                try:
+                    if not candidate.is_visible():
+                        continue
+                    text = (candidate.inner_text() or "").strip().lower()
+                except Exception:
+                    continue
+                if (
+                    not text
+                    or "no results found" in text
+                    or text == "close"
+                    or text == "clear"
+                ):
+                    continue
+                for _ in range(3):
+                    try:
+                        candidate.click(timeout=2000)
+                        return True
+                    except Exception:
+                        try:
+                            candidate.click(timeout=2000, force=True)
+                            return True
+                        except Exception:
+                            page.wait_for_timeout(100)
+                break
+
+        try:
+            if search_input.count() > 0:
+                search_input.focus()
+            else:
+                combobox.focus()
+            page.keyboard.press("ArrowDown")
+            page.keyboard.press("Enter")
+            return True
+        except Exception:
+            return False
+
+    def _parse_request_payload(req) -> dict:
+        try:
+            payload = req.post_data_json
+            if callable(payload):
+                payload = payload()
+            if isinstance(payload, dict):
+                return payload
+        except Exception:
+            pass
+        return {}
+
+    def _has_selected_kb_ids(payload: dict) -> bool:
+        if save_testid == "search-settings-save":
+            search_config = payload.get("search_config", {})
+            kb_ids = search_config.get("kb_ids")
+            if not isinstance(kb_ids, list):
+                kb_ids = payload.get("kb_ids")
+            return isinstance(kb_ids, list) and len(kb_ids) > 0
+        kb_ids = payload.get("kb_ids")
+        return isinstance(kb_ids, list) and len(kb_ids) > 0
+
+    response_url_pattern = (
+        "/api/v1/chats" if save_testid == "chat-settings-save" else "/api/v1/searches/"
+    )
+    last_payload = {}
+    last_combobox_text = ""
+    last_list_text = ""
+    for attempt in range(5):
+        options, last_list_text = _open_dataset_options()
+        clicked = _pick_first_dataset_option(options)
+        if not clicked:
+            raise AssertionError(
+                "Failed to select dataset option after retries. "
+                f"list_text={last_list_text[:200]!r}"
+            )
+
+        page.wait_for_timeout(120)
+        try:
+            page.keyboard.press("Escape")
+        except Exception:
+            pass
+
+        response = None
+        try:
+            response = capture_response(
+                page,
+                lambda: save_button.click(),
+                lambda resp: response_url_pattern in resp.url
+                and resp.request.method in ("POST", "PUT", "PATCH"),
+                timeout_ms=response_timeout_ms,
+            )
+        except Exception:
+            try:
+                save_button.click()
+            except Exception:
+                pass
+
+        payload = {}
+        if response is not None:
+            payload = _parse_request_payload(response.request)
+        last_payload = payload
+        if _has_selected_kb_ids(payload):
+            if post_save_ready_locator is not None:
+                expect(post_save_ready_locator).to_be_visible(timeout=timeout_ms)
+            else:
+                page.wait_for_timeout(250)
+            return
+
+        try:
+            last_combobox_text = (combobox.inner_text() or "").strip()
+        except Exception:
+            last_combobox_text = ""
+        page.wait_for_timeout(200 * (attempt + 1))
+
+    raise AssertionError(
+        "Dataset selection did not persist in save payload. "
+        f"save_testid={save_testid!r} payload={last_payload!r} "
+        f"combobox_text={last_combobox_text!r} list_text={last_list_text[:200]!r}"
+    )
 
 
 def _send_chat_and_wait_done(

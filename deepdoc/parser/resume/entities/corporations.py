@@ -29,11 +29,12 @@ GOODS = pd.read_csv(
 ).fillna(0)
 GOODS["cid"] = GOODS["cid"].astype(str)
 GOODS = GOODS.set_index(["cid"])
-CORP_TKS = json.load(
-    open(os.path.join(current_file_path, "res/corp.tks.freq.json"), "r",encoding="utf-8")
-)
-GOOD_CORP = json.load(open(os.path.join(current_file_path, "res/good_corp.json"), "r",encoding="utf-8"))
-CORP_TAG = json.load(open(os.path.join(current_file_path, "res/corp_tag.json"), "r",encoding="utf-8"))
+with open(os.path.join(current_file_path, "res/corp.tks.freq.json"), "r", encoding="utf-8") as f:
+    CORP_TKS = json.load(f)
+with open(os.path.join(current_file_path, "res/good_corp.json"), "r", encoding="utf-8") as f:
+    GOOD_CORP = json.load(f)
+with open(os.path.join(current_file_path, "res/corp_tag.json"), "r", encoding="utf-8") as f:
+    CORP_TAG = json.load(f)
 
 
 def baike(cid, default_v=0):

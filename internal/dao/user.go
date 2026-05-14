@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // UserDAO user data access object
@@ -29,13 +29,13 @@ func NewUserDAO() *UserDAO {
 }
 
 // Create create user
-func (dao *UserDAO) Create(user *model.User) error {
+func (dao *UserDAO) Create(user *entity.User) error {
 	return DB.Create(user).Error
 }
 
 // GetByID get user by ID
-func (dao *UserDAO) GetByID(id uint) (*model.User, error) {
-	var user model.User
+func (dao *UserDAO) GetByID(id uint) (*entity.User, error) {
+	var user entity.User
 	err := DB.First(&user, id).Error
 	if err != nil {
 		return nil, err
@@ -43,10 +43,9 @@ func (dao *UserDAO) GetByID(id uint) (*model.User, error) {
 	return &user, nil
 }
 
-// GetByUsername get user by username
-func (dao *UserDAO) GetByUsername(username string) (*model.User, error) {
-	var user model.User
-	err := DB.Where("username = ?", username).First(&user).Error
+func (dao *UserDAO) GetByTenantID(tenantID string) (*entity.User, error) {
+	var user entity.User
+	err := DB.Where("id = ?", tenantID).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +53,8 @@ func (dao *UserDAO) GetByUsername(username string) (*model.User, error) {
 }
 
 // GetByEmail get user by email
-func (dao *UserDAO) GetByEmail(email string) (*model.User, error) {
-	var user model.User
+func (dao *UserDAO) GetByEmail(email string) (*entity.User, error) {
+	var user entity.User
 	query := DB.Where("email = ?", email)
 	err := query.First(&user).Error
 	if err != nil {
@@ -65,8 +64,8 @@ func (dao *UserDAO) GetByEmail(email string) (*model.User, error) {
 }
 
 // GetByAccessToken get user by access token
-func (dao *UserDAO) GetByAccessToken(token string) (*model.User, error) {
-	var user model.User
+func (dao *UserDAO) GetByAccessToken(token string) (*entity.User, error) {
+	var user entity.User
 	err := DB.Where("access_token = ?", token).First(&user).Error
 	if err != nil {
 		return nil, err
@@ -75,26 +74,26 @@ func (dao *UserDAO) GetByAccessToken(token string) (*model.User, error) {
 }
 
 // Update update user
-func (dao *UserDAO) Update(user *model.User) error {
+func (dao *UserDAO) Update(user *entity.User) error {
 	return DB.Save(user).Error
 }
 
 // UpdateAccessToken update user's access token
-func (dao *UserDAO) UpdateAccessToken(user *model.User, token string) error {
+func (dao *UserDAO) UpdateAccessToken(user *entity.User, token string) error {
 	return DB.Model(user).Update("access_token", token).Error
 }
 
 // List list users (only active users with status != "0")
-func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
-	var users []*model.User
+func (dao *UserDAO) List(offset, limit int) ([]*entity.User, int64, error) {
+	var users []*entity.User
 	var total int64
 
 	// Only count users with status != "0" (not deleted)
-	if err := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0").Count(&total).Error; err != nil {
+	if err := DB.Model(&entity.User{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := DB.Model(&model.User{}).Where("status != ? OR status IS NULL", "0")
+	query := DB.Model(&entity.User{})
 	if offset > 0 {
 		query = query.Offset(offset)
 	}
@@ -107,18 +106,23 @@ func (dao *UserDAO) List(offset, limit int) ([]*model.User, int64, error) {
 
 // Delete delete user
 func (dao *UserDAO) Delete(id uint) error {
-	return DB.Delete(&model.User{}, id).Error
+	return DB.Delete(&entity.User{}, id).Error
 }
 
 // DeleteByID delete user by string ID (soft delete - set status to 0)
 func (dao *UserDAO) DeleteByID(id string) error {
-	return DB.Model(&model.User{}).Where("id = ?", id).Update("status", "0").Error
+	return DB.Model(&entity.User{}).Where("id = ?", id).Update("status", "0").Error
+}
+
+// HardDelete hard delete user by string ID
+func (dao *UserDAO) HardDelete(id string) error {
+	return DB.Unscoped().Where("id = ?", id).Delete(&entity.User{}).Error
 }
 
 // ListByEmail list users by email (only active users with status != "0")
 // Returns all users matching the given email address
-func (dao *UserDAO) ListByEmail(email string) ([]*model.User, error) {
-	var users []*model.User
-	err := DB.Where("email = ? AND (status != ? OR status IS NULL)", email, "0").Find(&users).Error
+func (dao *UserDAO) ListByEmail(email string) ([]*entity.User, error) {
+	var users []*entity.User
+	err := DB.Where("email = ?", email).Find(&users).Error
 	return users, err
 }

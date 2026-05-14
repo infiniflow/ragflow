@@ -20,6 +20,7 @@ import os
 import re
 from abc import ABC
 import tempfile
+import logging
 
 import requests
 from openai import OpenAI
@@ -66,6 +67,16 @@ class StepFunSeq2txt(GPTSeq2txt):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+
+
+class FuturMixSeq2txt(GPTSeq2txt):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name="whisper-1", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
 
 
 class QWenSeq2txt(Base):
@@ -184,7 +195,7 @@ class XinferenceSeq2txt(Base):
         files = {"file": (audio_file_name, audio_data, "audio/wav")}
 
         try:
-            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload)
+            response = requests.post(f"{self.base_url}/v1/audio/transcriptions", files=files, data=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
 
@@ -366,6 +377,7 @@ class ZhipuSeq2txt(Base):
                     data=payload,
                     files=files,
                     headers=headers,
+                    timeout=60,
                 )
                 body = response.json()
                 if response.status_code == 200:

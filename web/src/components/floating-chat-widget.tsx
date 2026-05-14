@@ -1,3 +1,4 @@
+import CopyToClipboard from '@/components/copy-to-clipboard';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
@@ -7,13 +8,84 @@ import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
 } from '../pages/next-chats/hooks/use-send-shared-message';
 import FloatingChatWidgetMarkdown from './floating-chat-widget-markdown';
 
+/**
+ * Normalizes a hex color input and falls back to a safe default when invalid.
+ */
+const normalizeHexColor = (value: string | null, fallback: string) => {
+  return value && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)
+    ? value
+    : fallback;
+};
+
+/**
+ * Darkens a hex color to derive hover and gradient variants for the widget chrome.
+ */
+const darkenHexColor = (hexColor: string, amount = 0.12) => {
+  const normalizedHex = hexColor.replace('#', '');
+  const expandedHex =
+    normalizedHex.length === 3
+      ? normalizedHex
+          .split('')
+          .map((char) => `${char}${char}`)
+          .join('')
+      : normalizedHex;
+  const channels = expandedHex.match(/.{2}/g);
+
+  if (!channels) {
+    return hexColor;
+  }
+
+  return `#${channels
+    .map((channel) => {
+      const value = parseInt(channel, 16);
+      const adjustedValue = Math.max(
+        0,
+        Math.min(255, Math.round(value * (1 - amount))),
+      );
+      return adjustedValue.toString(16).padStart(2, '0');
+    })
+    .join('')}`;
+};
+
+/**
+ * Accepts a footer link from the widget query string and returns a safe HTTP(S) URL.
+ */
+const normalizeWidgetFooterLink = (value: string | null) => {
+  const normalizedValue = value?.trim();
+
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  const candidate = /^[a-z][a-z\d+.-]*:/i.test(normalizedValue)
+    ? normalizedValue
+    : `https://${normalizedValue}`;
+
+  try {
+    const url = new URL(candidate);
+
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url.toString();
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+};
+
+/**
+ * Renders the embeddable floating chat widget and applies URL-driven widget settings.
+ */
 const FloatingChatWidget = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputValue, setInputValue] = useState('');
@@ -34,6 +106,34 @@ const FloatingChatWidget = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const mode = urlParams.get('mode') || 'full'; // 'button', 'window', or 'full'
   const enableStreaming = urlParams.get('streaming') === 'true'; // Only enable if explicitly set to true
+  const isMuted = urlParams.get('muted') === 'true';
+  const widgetTitle = urlParams.get('widget_title')?.trim();
+  const widgetSubtitle = urlParams.get('widget_subtitle')?.trim();
+  const widgetFooter = urlParams.get('widget_footer')?.trim();
+  const widgetFooterLink = normalizeWidgetFooterLink(
+    urlParams.get('widget_footer_link'),
+  );
+  const widgetAccentColor = normalizeHexColor(
+    urlParams.get('widget_accent_color'),
+    '#2563eb',
+  );
+  const widgetAccentColorStrong = darkenHexColor(widgetAccentColor);
+  const widgetBackgroundColor = normalizeHexColor(
+    urlParams.get('widget_background_color'),
+    '#ffffff',
+  );
+  const widgetTextColor = normalizeHexColor(
+    urlParams.get('widget_text_color'),
+    '#111827',
+  );
+  const widgetHeaderTextColor = normalizeHexColor(
+    urlParams.get('widget_header_text_color'),
+    '#ffffff',
+  );
+  const widgetFooterTextColor = normalizeHexColor(
+    urlParams.get('widget_footer_text_color'),
+    '#111827',
+  );
 
   const {
     handlePressEnter,
@@ -56,6 +156,49 @@ const FloatingChatWidget = () => {
   )();
 
   const title = data.title;
+  const displayTitle = widgetTitle || title || t('chat.chatSupport');
+  const displaySubtitle = widgetSubtitle || t('chat.replyInstantly');
+  const displayFooter = widgetFooter || '';
+  const renderFooter = () => {
+    if (!displayFooter) {
+      return null;
+    }
+
+    return (
+      <div
+        className="mt-3 -mx-4 -mb-4 px-4 py-3 text-center text-xs"
+        style={{
+          backgroundColor: widgetAccentColor,
+          color: widgetFooterTextColor,
+        }}
+      >
+        {widgetFooterLink ? (
+          <a
+            href={widgetFooterLink}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:opacity-90"
+            style={{ color: widgetFooterTextColor }}
+          >
+            {displayFooter}
+          </a>
+        ) : (
+          displayFooter
+        )}
+      </div>
+    );
+  };
+  const bodyContainerStyle: React.CSSProperties = {
+    borderRadius: '0 0 16px 16px',
+    backgroundColor: widgetBackgroundColor,
+    color: widgetTextColor,
+  };
+  const inputStyle: React.CSSProperties = {
+    minHeight: '44px',
+    maxHeight: '120px',
+    color: widgetTextColor,
+    backgroundColor: widgetBackgroundColor,
+  };
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -67,6 +210,10 @@ const FloatingChatWidget = () => {
 
   // Play sound when opening
   const playNotificationSound = useCallback(() => {
+    if (isMuted) {
+      return;
+    }
+
     try {
       const audioContext = new (
         window.AudioContext || (window as any).webkitAudioContext
@@ -89,12 +236,17 @@ const FloatingChatWidget = () => {
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.3);
     } catch (error) {
+      console.warn(error);
       // Silent fail if audio not supported
     }
-  }, []);
+  }, [isMuted]);
 
   // Play sound for AI responses (Intercom-style)
   const playResponseSound = useCallback(() => {
+    if (isMuted) {
+      return;
+    }
+
     try {
       const audioContext = new (
         window.AudioContext || (window as any).webkitAudioContext
@@ -117,9 +269,11 @@ const FloatingChatWidget = () => {
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.2);
     } catch (error) {
+      console.warn(error);
+
       // Silent fail if audio not supported
     }
-  }, []);
+  }, [isMuted]);
 
   // Set loaded state and locale
   useEffect(() => {
@@ -178,9 +332,11 @@ const FloatingChatWidget = () => {
   // Master mode - handles everything and creates second iframe dynamically
   useEffect(() => {
     if (mode !== 'master') return;
-    // Create the chat window iframe dynamically when needed
-    const createChatWindow = () => {
-      // Check if iframe already exists in parent document
+
+    const isInIframe = window.self !== window.top;
+
+    if (isInIframe) {
+      // Embedded: tell parent to create chat window iframe
       window.parent.postMessage(
         {
           type: 'CREATE_CHAT_WINDOW',
@@ -188,19 +344,29 @@ const FloatingChatWidget = () => {
         },
         '*',
       );
-    };
+    } else {
+      // Standalone: create chat window iframe ourselves
+      if (!document.getElementById('chat-win')) {
+        const i = document.createElement('iframe');
+        i.id = 'chat-win';
+        i.src = window.location.href.replace('mode=master', 'mode=window');
+        i.style.cssText =
+          'position:fixed;bottom:104px;right:24px;width:380px;height:500px;border:none;background:transparent;z-index:9998;display:none';
+        i.frameBorder = '0';
+        i.allow = 'microphone;camera';
+        document.body.appendChild(i);
+      }
+    }
 
-    createChatWindow();
-
-    // Listen for our own toggle events to show/hide the dynamic iframe
+    // Listen for toggle messages to show/hide the chat window iframe
     const handleToggle = (e: MessageEvent) => {
-      if (e.source === window) return; // Ignore our own messages
-
-      const chatWindow = document.getElementById(
-        'dynamic-chat-window',
-      ) as HTMLIFrameElement;
-      if (chatWindow && e.data.type === 'TOGGLE_CHAT') {
-        chatWindow.style.display = e.data.isOpen ? 'block' : 'none';
+      if (e.data.type === 'TOGGLE_CHAT') {
+        const chatWindow = document.getElementById(
+          'chat-win',
+        ) as HTMLIFrameElement;
+        if (chatWindow) {
+          chatWindow.style.display = e.data.isOpen ? 'block' : 'none';
+        }
       }
     };
 
@@ -311,8 +477,9 @@ const FloatingChatWidget = () => {
             setIsOpen(newIsOpen);
             if (newIsOpen) playNotificationSound();
 
-            // Tell the parent to show/hide the dynamic iframe
-            window.parent.postMessage(
+            // Send toggle message to parent (if embedded) or self (if standalone)
+            const target = window.self !== window.top ? window.parent : window;
+            target.postMessage(
               {
                 type: 'TOGGLE_CHAT',
                 isOpen: newIsOpen,
@@ -320,9 +487,10 @@ const FloatingChatWidget = () => {
               '*',
             );
           }}
-          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
+          className={`w-14 h-14 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
             isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
           }`}
+          style={{ backgroundColor: widgetAccentColor }}
         >
           <div
             className={`transition-transform duration-300 ${isOpen ? 'rotate-45' : 'rotate-0'}`}
@@ -350,9 +518,10 @@ const FloatingChatWidget = () => {
         <button
           type="button"
           onClick={toggleChat}
-          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
+          className={`w-14 h-14 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
             isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
           }`}
+          style={{ backgroundColor: widgetAccentColor }}
         >
           <div
             className={`transition-transform duration-300 ${isOpen ? 'rotate-45' : 'rotate-0'}`}
@@ -376,30 +545,36 @@ const FloatingChatWidget = () => {
     return (
       <>
         <div
-          className={`fixed top-0 left-0 z-50 bg-blue-600 rounded-2xl transition-all duration-300 ease-out h-[500px] w-[380px] overflow-hidden ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+          className={`fixed top-0 left-0 z-50 rounded-2xl transition-all duration-300 ease-out h-[500px] w-[380px] overflow-hidden ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+          style={{ backgroundColor: widgetAccentColor }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-2xl">
+          <div
+            className="flex items-center justify-between p-4 text-white rounded-t-2xl"
+            style={{
+              background: `linear-gradient(to right, ${widgetAccentColor}, ${widgetAccentColorStrong})`,
+            }}
+          >
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
                 <MessageCircle size={18} />
               </div>
               <div>
-                <h3 className="font-semibold text-sm">
-                  {title || 'Chat Support'}
+                <h3
+                  className="font-semibold text-sm"
+                  style={{ color: widgetHeaderTextColor }}
+                >
+                  {displayTitle}
                 </h3>
-                <p className="text-xs text-blue-100">
-                  We typically reply instantly
+                <p className="text-xs" style={{ color: widgetHeaderTextColor }}>
+                  {displaySubtitle}
                 </p>
               </div>
             </div>
           </div>
 
           {/* Messages and Input */}
-          <div
-            className="flex flex-col h-[436px] bg-white"
-            style={{ borderRadius: '0 0 16px 16px' }}
-          >
+          <div className="flex flex-col h-[436px]" style={bodyContainerStyle}>
             <div
               className="flex-1 overflow-y-auto p-4 space-y-4"
               onWheel={(e) => {
@@ -429,29 +604,49 @@ const FloatingChatWidget = () => {
                   className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[280px] px-4 py-2 rounded-2xl ${
+                    className={`group max-w-[280px] px-4 py-2 rounded-2xl ${
                       message.role === MessageType.User
-                        ? 'bg-blue-600 text-white rounded-br-md'
-                        : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                        ? 'text-white rounded-br-md'
+                        : 'rounded-bl-md'
                     }`}
+                    style={
+                      message.role === MessageType.User
+                        ? { backgroundColor: widgetAccentColor }
+                        : {
+                            backgroundColor: 'rgba(148, 163, 184, 0.14)',
+                            color: widgetTextColor,
+                          }
+                    }
                   >
                     {message.role === MessageType.User ? (
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">
                         {message.content}
                       </p>
                     ) : (
-                      <FloatingChatWidgetMarkdown
-                        loading={false}
-                        content={message.content}
-                        reference={
-                          message.reference || {
-                            doc_aggs: [],
-                            chunks: [],
-                            total: 0,
+                      <div className="space-y-2">
+                        <FloatingChatWidgetMarkdown
+                          loading={false}
+                          content={message.content}
+                          reference={
+                            message.reference || {
+                              doc_aggs: [],
+                              chunks: [],
+                              total: 0,
+                            }
                           }
-                        }
-                        clickDocumentButton={clickDocumentButton}
-                      />
+                          clickDocumentButton={clickDocumentButton}
+                        />
+                        <div
+                          className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100"
+                          role="toolbar"
+                        >
+                          <CopyToClipboard
+                            text={message.content}
+                            className="border-0"
+                            size="icon-xs"
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -461,14 +656,23 @@ const FloatingChatWidget = () => {
               {sendLoading && !enableStreaming && (
                 <div className="flex justify-start pl-4">
                   <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
                     <div
-                      className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                      style={{ animationDelay: '0.1s' }}
+                      className="w-2 h-2 rounded-full animate-bounce"
+                      style={{ backgroundColor: widgetAccentColor }}
                     ></div>
                     <div
-                      className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
-                      style={{ animationDelay: '0.2s' }}
+                      className="w-2 h-2 rounded-full animate-bounce"
+                      style={{
+                        backgroundColor: widgetAccentColor,
+                        animationDelay: '0.1s',
+                      }}
+                    ></div>
+                    <div
+                      className="w-2 h-2 rounded-full animate-bounce"
+                      style={{
+                        backgroundColor: widgetAccentColor,
+                        animationDelay: '0.2s',
+                      }}
                     ></div>
                   </div>
                 </div>
@@ -478,7 +682,10 @@ const FloatingChatWidget = () => {
             </div>
 
             {/* Input Area */}
-            <div className="border-t border-gray-200 p-4">
+            <div
+              className="border-t border-gray-200 p-4"
+              style={bodyContainerStyle}
+            >
               <div className="flex items-end space-x-3">
                 <div className="flex-1">
                   <textarea
@@ -489,10 +696,10 @@ const FloatingChatWidget = () => {
                       handleInputChange(e);
                     }}
                     onKeyPress={handleKeyPress}
-                    placeholder="Type your message..."
+                    placeholder={t('chat.typeYourMessage')}
                     rows={1}
-                    className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
-                    style={{ minHeight: '44px', maxHeight: '120px' }}
+                    className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                    style={inputStyle}
                     disabled={hasError || sendLoading}
                   />
                 </div>
@@ -500,11 +707,13 @@ const FloatingChatWidget = () => {
                   type="button"
                   onClick={handleSendMessage}
                   disabled={!inputValue.trim() || sendLoading}
-                  className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="p-3 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  style={{ backgroundColor: widgetAccentColor }}
                 >
                   <Send size={18} />
                 </button>
               </div>
+              {renderFooter()}
             </div>
           </div>
         </div>
@@ -528,22 +737,31 @@ const FloatingChatWidget = () => {
       {/* Chat Widget Container */}
       {isOpen && (
         <div
-          className={`fixed bottom-24 right-6 z-50 bg-blue-600 rounded-2xl transition-all duration-300 ease-out ${
+          className={`fixed bottom-24 right-6 z-50 rounded-2xl transition-all duration-300 ease-out ${
             isMinimized ? 'h-16' : 'h-[500px]'
           } w-[380px] overflow-hidden`}
+          style={{ backgroundColor: widgetAccentColor }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-t-2xl">
+          <div
+            className="flex items-center justify-between p-4 text-white rounded-t-2xl"
+            style={{
+              background: `linear-gradient(to right, ${widgetAccentColor}, ${widgetAccentColorStrong})`,
+            }}
+          >
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
                 <MessageCircle size={18} />
               </div>
               <div>
-                <h3 className="font-semibold text-sm">
-                  {title || 'Chat Support'}
+                <h3
+                  className="font-semibold text-sm"
+                  style={{ color: widgetHeaderTextColor }}
+                >
+                  {displayTitle}
                 </h3>
-                <p className="text-xs text-blue-100">
-                  We typically reply instantly
+                <p className="text-xs" style={{ color: widgetHeaderTextColor }}>
+                  {displaySubtitle}
                 </p>
               </div>
             </div>
@@ -567,10 +785,7 @@ const FloatingChatWidget = () => {
 
           {/* Messages Container */}
           {!isMinimized && (
-            <div
-              className="flex flex-col h-[436px] bg-white"
-              style={{ borderRadius: '0 0 16px 16px' }}
-            >
+            <div className="flex flex-col h-[436px]" style={bodyContainerStyle}>
               <div
                 className="flex-1 overflow-y-auto p-4 space-y-4"
                 onWheel={(e) => {
@@ -603,29 +818,49 @@ const FloatingChatWidget = () => {
                     className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[280px] px-4 py-2 rounded-2xl ${
+                      className={`group max-w-[280px] px-4 py-2 rounded-2xl ${
                         message.role === MessageType.User
-                          ? 'bg-blue-600 text-white rounded-br-md'
-                          : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                          ? 'text-white rounded-br-md'
+                          : 'rounded-bl-md'
                       }`}
+                      style={
+                        message.role === MessageType.User
+                          ? { backgroundColor: widgetAccentColor }
+                          : {
+                              backgroundColor: 'rgba(148, 163, 184, 0.14)',
+                              color: widgetTextColor,
+                            }
+                      }
                     >
                       {message.role === MessageType.User ? (
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
                           {message.content}
                         </p>
                       ) : (
-                        <FloatingChatWidgetMarkdown
-                          loading={false}
-                          content={message.content}
-                          reference={
-                            message.reference || {
-                              doc_aggs: [],
-                              chunks: [],
-                              total: 0,
+                        <div className="space-y-2">
+                          <FloatingChatWidgetMarkdown
+                            loading={false}
+                            content={message.content}
+                            reference={
+                              message.reference || {
+                                doc_aggs: [],
+                                chunks: [],
+                                total: 0,
+                              }
                             }
-                          }
-                          clickDocumentButton={clickDocumentButton}
-                        />
+                            clickDocumentButton={clickDocumentButton}
+                          />
+                          <div
+                            className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100"
+                            role="toolbar"
+                          >
+                            <CopyToClipboard
+                              text={message.content}
+                              className="border-0"
+                              size="icon-xs"
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -666,10 +901,10 @@ const FloatingChatWidget = () => {
                         handleInputChange(e);
                       }}
                       onKeyPress={handleKeyPress}
-                      placeholder="Type your message..."
+                      placeholder={t('chat.typeYourMessage')}
                       rows={1}
-                      className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-black"
-                      style={{ minHeight: '44px', maxHeight: '120px' }}
+                      className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                      style={inputStyle}
                       disabled={hasError || sendLoading}
                     />
                   </div>
@@ -677,11 +912,13 @@ const FloatingChatWidget = () => {
                     type="button"
                     onClick={handleSendMessage}
                     disabled={!inputValue.trim() || sendLoading}
-                    className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="p-3 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    style={{ backgroundColor: widgetAccentColor }}
                   >
                     <Send size={18} />
                   </button>
                 </div>
+                {renderFooter()}
               </div>
             </div>
           )}
@@ -693,9 +930,10 @@ const FloatingChatWidget = () => {
         <button
           type="button"
           onClick={toggleChat}
-          className={`w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
+          className={`w-14 h-14 text-white rounded-full transition-all duration-300 flex items-center justify-center group ${
             isOpen ? 'scale-95' : 'scale-100 hover:scale-105'
           }`}
+          style={{ backgroundColor: widgetAccentColor }}
         >
           <div
             className={`transition-transform duration-300 ${isOpen ? 'rotate-45' : 'rotate-0'}`}

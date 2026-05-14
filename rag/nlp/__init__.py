@@ -1212,18 +1212,17 @@ def docx_question_level(p, bull=-1):
 
 
 def concat_img(img1, img2):
-    from rag.utils.lazy_image import ensure_pil_image, LazyDocxImage
+    from rag.utils.lazy_image import ensure_pil_image, LazyImage
 
-    # Fast path: preserve laziness when both sides are LazyDocxImage or None.
-    if (img1 is None or isinstance(img1, LazyDocxImage)) and \
-       (img2 is None or isinstance(img2, LazyDocxImage)):
+    if (img1 is None or isinstance(img1, LazyImage)) and \
+       (img2 is None or isinstance(img2, LazyImage)):
         if img1 and not img2:
             return img1
         if not img1 and img2:
             return img2
         if not img1 and not img2:
             return None
-        return LazyDocxImage.merge(img1, img2)
+        return LazyImage.merge(img1, img2)
 
     img1 = ensure_pil_image(img1) or img1
     img2 = ensure_pil_image(img2) or img2
@@ -1337,7 +1336,7 @@ def _build_cks(sections, delimiter):
                 # ③ normal text content → accumulate
                 seg += sub_sec
         else:
-            # no custom delimiter: emit the text as a single chunk
+             
             if text and text.strip():
                 t = text.strip()
                 cks.append({

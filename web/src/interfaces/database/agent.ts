@@ -33,6 +33,7 @@ export interface ISwitchForm {
 import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
+import { IDataset } from './dataset';
 
 export type DSLComponents = Record<string, IOperator>;
 
@@ -80,11 +81,14 @@ export declare interface IFlow {
   release?: boolean;
   release_time?: number;
   last_publish_time?: number;
+  datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
+  tags?: string;
 }
 
 export interface IFlowTemplate {
   avatar: string;
   canvas_type: string;
+  canvas_types?: string[];
   create_date: string;
   create_time: number;
   canvas_category?: string;
@@ -95,10 +99,12 @@ export interface IFlowTemplate {
   description: {
     en: string;
     zh: string;
+    de: string;
   };
   title: {
     en: string;
     zh: string;
+    de: string;
   };
 }
 
@@ -156,7 +162,7 @@ export interface ICodeForm {
   arguments: Record<string, string>;
   lang: string;
   script?: string;
-  outputs: Record<string, { value: string; type: string }>;
+  outputs: Record<string, { value: unknown; type: string }>;
 }
 
 export interface IAgentForm {
@@ -188,7 +194,7 @@ export interface IAgentForm {
   };
 }
 
-export type BaseNodeData<TForm extends any> = {
+export type BaseNodeData<TForm = any> = {
   label: string; // operator type
   name: string; // operator name
   color?: string;
@@ -262,6 +268,7 @@ export interface IAgentLogResponse {
   dsl: string;
   reference: IReference;
   name: string;
+  version_title: string;
 }
 export interface IAgentLogsResponse {
   total: number;
@@ -291,6 +298,7 @@ export interface IPipeLineListRequest {
   orderby?: string;
   desc?: boolean;
   canvas_category?: AgentCategory;
+  ext?: string;
 }
 
 export interface GlobalVariableType {

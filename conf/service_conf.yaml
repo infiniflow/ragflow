@@ -9,7 +9,7 @@ mysql:
   user: 'root'
   password: 'infini_rag_flow'
   host: 'localhost'
-  port: 5455
+  port: 3306
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
@@ -49,6 +49,8 @@ task_executor:
 user_default_llm:
   default_models:
     embedding_model:
+      name: 'bge-m3'
+      factory: 'xxxx'
       api_key: 'xxx'
       base_url: 'http://localhost:6380'
 # postgres:

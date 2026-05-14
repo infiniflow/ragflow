@@ -1,13 +1,18 @@
+import { LanguageAbbreviation } from '@/constants/common';
+import storage from '@/utils/authorization-util';
+import dayjs from 'dayjs';
 import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
+import { upperFirst } from 'lodash';
 import { initReactI18next } from 'react-i18next';
-
-import { LanguageAbbreviation } from '@/constants/common';
-import { createTranslationTable, flattenObject } from './until';
-
 import translation_en from './en';
 
+//The language is based on the .ng file stored in the client's local storage.
+// The language stored in the database is for agent template resources, as these resources reside on the server.
+// When a user logs in from a different machine, the login page language is the language configured by VITE_DEFAULT_LANGUAGE_CODE.
+
 const languageImports: Record<string, () => Promise<{ default: any }>> = {
+  [LanguageAbbreviation.En]: () => import('./en'),
   [LanguageAbbreviation.Zh]: () => import('./zh'),
   [LanguageAbbreviation.ZhTraditional]: () => import('./zh-traditional'),
   [LanguageAbbreviation.Id]: () => import('./id'),
@@ -21,25 +26,35 @@ const languageImports: Record<string, () => Promise<{ default: any }>> = {
   [LanguageAbbreviation.It]: () => import('./it'),
   [LanguageAbbreviation.Bg]: () => import('./bg'),
   [LanguageAbbreviation.Ar]: () => import('./ar'),
+  [LanguageAbbreviation.Tr]: () => import('./tr'),
 };
 
-const languageAliases: Record<string, string> = {
-  'pt-br': LanguageAbbreviation.PtBr,
-};
+const supportedLanguageCodes: Intl.UnicodeBCP47LocaleIdentifier[] =
+  Object.keys(languageImports);
 
-const normalizeLanguageCode = (lng: string): string => {
-  return languageAliases[lng] ?? lng;
-};
+export const supportedLanguages = supportedLanguageCodes.map((code) => {
+  const locale = new Intl.Locale(code);
 
-const enFlattened = flattenObject(translation_en);
+  return {
+    code,
+    locale,
+    displayName: upperFirst(
+      new Intl.DisplayNames(locale, { type: 'language' }).of(code)!,
+    ),
+  };
+});
 
-export const translationTable = createTranslationTable(
-  [enFlattened],
-  ['English'],
-);
+export const DEFAULT_LANGUAGE_CODE =
+  import.meta.env.VITE_DEFAULT_LANGUAGE_CODE || LanguageAbbreviation.En;
 
 const resources = {
   [LanguageAbbreviation.En]: translation_en,
+};
+
+const updateDocumentLocale = (lng: string) => {
+  document.documentElement.lang = lng;
+  document.documentElement.dir = 'ltr';
+  dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
 };
 
 i18n
@@ -48,17 +63,19 @@ i18n
   .init({
     detection: {
       lookupLocalStorage: 'lng',
+      order: ['localStorage'],
+      caches: [],
     },
-    supportedLngs: Object.values(LanguageAbbreviation),
+    supportedLngs: supportedLanguageCodes,
     resources,
-    fallbackLng: 'en',
+    fallbackLng: DEFAULT_LANGUAGE_CODE,
     interpolation: {
       escapeValue: false,
     },
   });
 
 export const loadLanguageAsync = async (lng: string): Promise<void> => {
-  const normalizedLng = normalizeLanguageCode(lng);
+  const normalizedLng = lng;
 
   if (i18n.hasResourceBundle(normalizedLng, 'translation')) {
     return;
@@ -74,34 +91,32 @@ export const loadLanguageAsync = async (lng: string): Promise<void> => {
     const module = await importFn();
     const translationData = module.default?.translation || module.default;
     i18n.addResourceBundle(normalizedLng, 'translation', translationData);
-
-    const flattened = flattenObject({ translation: translationData });
-    translationTable.push(flattened);
   } catch (error) {
     console.error(`Failed to load language ${lng}:`, error);
   }
 };
 
 export const changeLanguageAsync = async (lng: string): Promise<void> => {
-  const normalizedLng = normalizeLanguageCode(lng);
+  const normalizedLng = lng;
+
   if (
     normalizedLng !== LanguageAbbreviation.En &&
     !i18n.hasResourceBundle(normalizedLng, 'translation')
   ) {
     await loadLanguageAsync(normalizedLng);
   }
+
+  storage.setLanguage(lng);
+
+  updateDocumentLocale(lng);
+
   await i18n.changeLanguage(normalizedLng);
 };
 
 export const initLanguage = async (): Promise<void> => {
-  const currentLng = normalizeLanguageCode(
-    i18n.language || localStorage.getItem('lng') || LanguageAbbreviation.En,
-  );
+  const currentLng = storage.getLanguage() || DEFAULT_LANGUAGE_CODE;
 
-  if (currentLng !== LanguageAbbreviation.En && languageImports[currentLng]) {
-    await loadLanguageAsync(currentLng);
-    await i18n.changeLanguage(currentLng);
-  }
+  await changeLanguageAsync(currentLng);
 };
 
 export default i18n;

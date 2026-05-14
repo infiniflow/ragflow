@@ -54,10 +54,10 @@ export const transformBase64ToFile = (
   dataUrl: string,
   filename: string = 'file',
 ) => {
-  let arr = dataUrl.split(','),
-    bstr = atob(arr[1]),
-    n = bstr.length,
-    u8arr = new Uint8Array(n);
+  const arr = dataUrl.split(','),
+    bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
 
   const mime = arr[0].match(/:(.*?);/);
   const mimeType = mime ? mime[1] : 'image/png';
@@ -101,8 +101,15 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
   return '';
 };
 
-async function fetchDocumentBlob(id: string, mimeType?: FileMimeType) {
-  const response = await fileManagerService.getDocumentFile({}, id);
+async function fetchPreviewBlob(
+  id: string,
+  resource: 'document' | 'files',
+  mimeType?: FileMimeType,
+) {
+  const response =
+    resource === 'files'
+      ? await fileManagerService.getFile({}, id)
+      : await fileManagerService.getDocumentFile({}, id);
   const blob = new Blob([response.data], {
     type: mimeType || response.data.type,
   });
@@ -110,8 +117,11 @@ async function fetchDocumentBlob(id: string, mimeType?: FileMimeType) {
   return blob;
 }
 
-export async function previewHtmlFile(id: string) {
-  const blob = await fetchDocumentBlob(id, FileMimeType.Html);
+export async function previewHtmlFile(
+  id: string,
+  resource: 'document' | 'files' = 'document',
+) {
+  const blob = await fetchPreviewBlob(id, resource, FileMimeType.Html);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -137,7 +147,7 @@ export const downloadDocument = async ({
   id: string;
   filename?: string;
 }) => {
-  const blob = await fetchDocumentBlob(id);
+  const blob = await fetchPreviewBlob(id, 'document');
   downloadFileFromBlob(blob, filename);
 };
 

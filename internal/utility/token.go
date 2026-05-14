@@ -37,6 +37,9 @@ func ExtractAccessToken(authorization, secretKey string) (string, error) {
 		return "", errors.New("empty authorization")
 	}
 
+	// Strip "Bearer " prefix if present
+	token := strings.TrimPrefix(authorization, "Bearer ")
+
 	// Create URLSafeTimedSerializer with correct configuration
 	// Matching Python itsdangerous configuration:
 	// - salt: "itsdangerous"
@@ -53,7 +56,7 @@ func ExtractAccessToken(authorization, secretKey string) (string, error) {
 	)
 
 	// Unsign the token (verifies signature and extracts payload)
-	encodedValue, err := signer.Unsign(authorization, 0)
+	encodedValue, err := signer.Unsign(token, 0)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode token: %w", err)
 	}
@@ -137,4 +140,30 @@ func GenerateSecretKey() (string, error) {
 
 func GenerateToken() string {
 	return strings.ReplaceAll(uuid.New().String(), "-", "")
+}
+
+// GenerateAPIToken generates a secure random access key
+// Equivalent to Python's generate_confirmation_token():
+// return "ragflow-" + secrets.token_urlsafe(32)
+func GenerateAPIToken() string {
+	// Generate 32 random bytes
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to UUID if random generation fails
+		return "ragflow-" + strings.ReplaceAll(uuid.New().String(), "-", "")
+	}
+	// Use URL-safe base64 encoding (same as Python's token_urlsafe)
+	return "ragflow-" + base64.RawURLEncoding.EncodeToString(bytes)
+}
+
+// GenerateBetaAPIToken generates a beta access key
+// Equivalent to Python's: generate_confirmation_token().replace("ragflow-", "")[:32]
+func GenerateBetaAPIToken(accessKey string) string {
+	// Remove "ragflow-" prefix
+	withoutPrefix := strings.TrimPrefix(accessKey, "ragflow-")
+	// Take first 32 characters
+	if len(withoutPrefix) > 32 {
+		return withoutPrefix[:32]
+	}
+	return withoutPrefix
 }

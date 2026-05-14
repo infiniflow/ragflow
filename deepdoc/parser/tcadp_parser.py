@@ -39,6 +39,7 @@ from tencentcloud.lkeap.v20240522 import lkeap_client, models
 
 from common.config_utils import get_base_config
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+from deepdoc.parser.utils import extract_pdf_outlines
 
 
 class TencentCloudAPIClient:
@@ -392,6 +393,7 @@ class TCADPParser(RAGFlowPdfParser):
     ) -> tuple:
         """Parse PDF document"""
 
+        self.outlines = extract_pdf_outlines(binary if binary else filepath)
         temp_file = None
         created_tmp_dir = False
 

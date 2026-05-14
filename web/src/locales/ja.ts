@@ -350,6 +350,9 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      chatSupport: 'チャットサポート',
+      replyInstantly: '通常、即座に返信します',
+      typeYourMessage: 'メッセージを入力...',
       messagePlaceholder: 'メッセージを入力してください...',
       exit: '終了',
       multipleModels: '複数モデル',
@@ -625,8 +628,8 @@ export default {
       FishAudioLink: 'FishAudioの使用方法',
       TencentCloudLink: 'TencentCloud ASRの使用方法',
       volcModelNameMessage: 'モデル名を入力してください！',
-      addEndpointID: 'モデルのエンドポイントID',
-      endpointIDMessage: 'モデルのエンドポイントIDを入力してください',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'モデルのModel IDを入力してください',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'ARK_API_KEYを入力してください',
       bedrockModelNameMessage: 'モデル名を入力してください！',
@@ -744,13 +747,13 @@ export default {
       directory: 'ディレクトリ',
       uploadTitle: 'クリックまたはドラッグしてファイルをアップロード',
       uploadDescription:
-        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
+        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。cloud.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       local: 'ローカルアップロード',
       s3: 'S3アップロード',
       preview: 'プレビュー',
       fileError: 'ファイルエラー',
       uploadLimit:
-        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
+        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。cloud.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       destinationFolder: '保存先フォルダ',
     },
     flow: {
@@ -820,10 +823,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
-      pdfGenerator: 'ドキュメント生成',
-      pDFGenerator: 'ドキュメント生成',
-      pdfGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
-      pDFGeneratorDescription: `マークダウン形式のコンテンツからドキュメント（PDF、DOCX、TXT）を生成するコンポーネント。カスタムスタイル、画像、テーブルをサポート。サポート：**太字**、*斜体*、# 見出し、- リスト、| 構文のテーブル。`,
+      docGenerator: 'ドキュメント生成',
+      docGeneratorDescription: `Markdown コンテンツからファイルを生成します。`,
       subtitle: 'サブタイトル',
       logoImage: 'ロゴ画像',
       logoPosition: 'ロゴ位置',
@@ -1207,6 +1208,7 @@ export default {
       russian: 'ロシア語',
       bulgarian: 'ブルガリア語',
       arabic: 'アラビア語',
+      turkish: 'トルコ語',
     },
   },
 };

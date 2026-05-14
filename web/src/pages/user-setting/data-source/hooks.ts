@@ -4,9 +4,11 @@ import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import dataSourceService, {
   dataSourceRebuild,
   dataSourceResume,
+  dataSourceUpdate,
   deleteDataSource,
   featchDataSourceDetail,
   getDataSourceLogs,
+  testDataSource,
 } from '@/services/data-source-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
@@ -46,7 +48,7 @@ export const useListDataSource = () => {
 
   const updatedDataSourceTemplates = useMemo(() => {
     const categorizedData = categorizeDataBySource(list || []);
-    let sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
+    const sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
       [];
     Object.keys(categorizedData).forEach((key: string) => {
       const k = key as DataSourceKey;
@@ -68,7 +70,7 @@ export const useListDataSource = () => {
   return { list, categorizedList: updatedDataSourceTemplates, isFetching };
 };
 
-export const useAddDataSource = () => {
+export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
   const [addSource, setAddSource] = useState<IDataSorceInfo | undefined>(
     undefined,
   );
@@ -90,7 +92,9 @@ export const useAddDataSource = () => {
   const handleAddOk = useCallback(
     async (data: any) => {
       setAddLoading(true);
-      const { data: res } = await dataSourceService.dataSourceSet(data);
+      const { data: res } = isEdit
+        ? await dataSourceUpdate(data.id, data)
+        : await dataSourceService.dataSourceSet(data);
       console.log('🚀 ~ handleAddOk ~ code:', res.code);
       if (res.code === 0) {
         queryClient.invalidateQueries({ queryKey: ['data-source'] });
@@ -209,4 +213,29 @@ export const useDataSourceRebuild = () => {
     [id],
   );
   return { handleRebuild };
+};
+
+export const useTestDataSource = () => {
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
+  const [loading, setLoading] = useState(false);
+
+  const handleTest = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const { data } = await testDataSource(id);
+      if (data.code === 0) {
+        message.success(t('setting.restApiTestSuccess'));
+      } else {
+        message.error(data.message || t('setting.restApiTestFailed'));
+      }
+    } catch {
+      message.error(t('setting.restApiTestFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  return { loading, handleTest };
 };

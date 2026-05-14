@@ -1,0 +1,84 @@
+{
+  "name": "Moonshot",
+  "url": {
+    "default": "https://api.moonshot.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "balance": "users/me/balance"
+  },
+  "class": "kimi",
+  "models": [
+    {
+      "name": "kimi-k2.6",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "kimi-k2.5",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshot-v1-8k",
+      "max_tokens": 8000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "moonshot-v1-32k",
+      "max_tokens": 32000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "moonshot-v1-128k",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "moonshot-v1-8k-vision-preview",
+      "max_tokens": 8000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "moonshot-v1-32k-vision-preview",
+      "max_tokens": 32000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "moonshot-v1-128k-vision-preview",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    }
+  ]
+}

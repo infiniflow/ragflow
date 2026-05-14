@@ -42,8 +42,8 @@ export function Banner() {
 export function NextBanner() {
   const { t, i18n } = useTranslation();
   return (
-    <h1 
-      className="text-5xl leading-normal text-left" 
+    <h1
+      className="text-5xl leading-normal text-left"
       dir={i18n.language?.startsWith('ar') ? 'rtl' : 'ltr'}
     >
       <span className="font-semibold text-text-primary">

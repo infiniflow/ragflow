@@ -1,4 +1,5 @@
 import { ButtonLoading } from '@/components/ui/button';
+import { ParseType } from '@/constants/knowledge';
 import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
@@ -16,7 +17,7 @@ export function GeneralSavingButton() {
     () => form.formState.defaultValues ?? {},
     [form.formState.defaultValues],
   );
-  const parser_id = defaultValues['parser_id'];
+  const chunk_method = defaultValues['chunk_method'];
 
   return (
     <ButtonLoading
@@ -25,13 +26,13 @@ export function GeneralSavingButton() {
       data-testid="ds-settings-basic-save-btn"
       onClick={() => {
         (async () => {
-          let isValidate = await form.trigger('name');
+          const isValidate = await form.trigger('name');
           const { name, description, permission, avatar } = form.getValues();
 
           if (isValidate) {
             saveKnowledgeConfiguration({
               kb_id,
-              parser_id,
+              chunk_method,
               name,
               description,
               avatar,
@@ -60,16 +61,20 @@ export function SavingButton() {
       onClick={() => {
         (async () => {
           try {
-            let beValid = await form.trigger();
+            const beValid = await form.trigger();
             if (!beValid) {
               const errors = form.formState.errors;
               console.error('Validation errors:', errors);
             }
             if (beValid) {
-              form.handleSubmit(async (values) => {
-                console.log('saveKnowledgeConfiguration: ', values);
-                delete values['parseType'];
-                // delete values['avatar'];
+              form.handleSubmit(async (originalValues) => {
+                const values = originalValues;
+                if (originalValues.parse_type === ParseType.BuiltIn) {
+                  values.pipeline_id = null;
+                } else {
+                  values.chunk_method = null;
+                }
+
                 await saveKnowledgeConfiguration({
                   kb_id,
                   ...values,
@@ -91,7 +96,6 @@ export function SavingButton() {
             }
           } catch (e) {
             console.log(e);
-          } finally {
           }
         })();
       }}

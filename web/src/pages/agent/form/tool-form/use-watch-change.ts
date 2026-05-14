@@ -3,7 +3,7 @@ import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../../store';
 
 export function useWatchFormChange(form?: UseFormReturn<any>) {
-  let values = useWatch({ control: form?.control });
+  const values = useWatch({ control: form?.control });
 
   const {
     clickedToolId,

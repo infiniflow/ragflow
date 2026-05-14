@@ -128,7 +128,8 @@ export function SideBar() {
 
       <footer className="p-6 mt-auto">
         <div className="flex items-center gap-2 mb-6 justify-between">
-          <span className="text-accent-primary">{version}</span>
+          <span className="text-xs text-accent-primary">{version}</span>
+
           <ThemeSwitch />
         </div>
 

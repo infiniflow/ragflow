@@ -349,6 +349,9 @@ export default {
       questionTip: `Se houver perguntas fornecidas, a incorporação do fragmento será baseada nelas.`,
     },
     chat: {
+      chatSupport: 'Suporte por chat',
+      replyInstantly: 'Normalmente respondemos instantaneamente',
+      typeYourMessage: 'Digite sua mensagem...',
       newConversation: 'Nova conversa',
       createAssistant: 'Criar um Assistente',
       assistantSetting: 'Configuração do Assistente',
@@ -581,8 +584,8 @@ export default {
       FishAudioLink: 'Como usar FishAudio',
       TencentCloudLink: 'Como usar TencentCloud ASR',
       volcModelNameMessage: 'Por favor, insira o nome do seu modelo!',
-      addEndpointID: 'EndpointID do modelo',
-      endpointIDMessage: 'Por favor, insira o EndpointID do modelo',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Por favor, insira o Model ID do modelo',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Por favor, insira sua ARK_API_KEY',
       bedrockModelNameMessage: 'Por favor, insira o nome do seu modelo!',
@@ -693,13 +696,13 @@ export default {
       uploadTitle:
         'Clique ou arraste o arquivo para esta área para fazer o upload',
       uploadDescription:
-        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o demo.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
+        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o cloud.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
       local: 'Uploads locais',
       s3: 'Uploads S3',
       preview: 'Pré-visualização',
       fileError: 'Erro no arquivo',
       uploadLimit:
-        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o demo.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
+        'O RAGFlow suporta o upload de arquivos de forma individual ou em lote. Para o RAGFlow implantado localmente: o limite total de tamanho de arquivo por upload é de 1GB, com um limite de upload em lote de 32 arquivos. Não há limite para o número total de arquivos por conta. Para o cloud.ragflow.io: o limite total de tamanho de arquivo por upload é de 10MB, com cada arquivo não excedendo 10MB e um máximo de 128 arquivos por conta.',
       destinationFolder: 'Pasta de destino',
     },
     flow: {
@@ -768,10 +771,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Um componente que realiza buscas via URL da instância SearXNG que você fornece. Especifique TopN e URL da instância.',
-      pdfGenerator: 'Gerador de Documentos',
-      pDFGenerator: 'Gerador de Documentos',
-      pdfGeneratorDescription: `Um componente que gera documentos (PDF, DOCX, TXT) de conteúdo formatado em markdown com estilo personalizável, imagens e tabelas. Suporta: **negrito**, *itálico*, # títulos, - listas, tabelas com sintaxe |.`,
-      pDFGeneratorDescription: `Um componente que gera documentos (PDF, DOCX, TXT) de conteúdo formatado em markdown com estilo personalizável, imagens e tabelas. Suporta: **negrito**, *itálico*, # títulos, - listas, tabelas com sintaxe |.`,
+      docGenerator: 'Gerador de Documentos',
+      docGeneratorDescription: `Gera um arquivo a partir de conteúdo Markdown.`,
       subtitle: 'Subtítulo',
       logoImage: 'Imagem Logo',
       logoPosition: 'Posição Logo',
@@ -1207,6 +1208,7 @@ export default {
       russian: 'Russo',
       bulgarian: 'Búlgaro',
       arabic: 'Árabe',
+      turkish: 'Turco',
     },
   },
 };

@@ -83,8 +83,10 @@ export const EmptyAppCard = (props: {
   size?: 'small' | 'large';
   children?: React.ReactNode;
   testId?: string;
+  tabIndex?: number;
 }) => {
-  const { type, showIcon, className, isSearch, children, testId } = props;
+  const { type, showIcon, className, isSearch, children, testId, tabIndex } =
+    props;
   const { t } = useTranslation();
   let defaultClass = '';
   let style = {};
@@ -110,10 +112,10 @@ export const EmptyAppCard = (props: {
       <EmptyCard
         onClick={isSearch ? undefined : props.onClick}
         data-testid={testId}
-        tabIndex={isSearch ? undefined : 0}
+        tabIndex={tabIndex ?? (isSearch ? undefined : 0)}
         icon={showIcon ? cardData.icon : undefined}
         title={isSearch ? notFound : title}
-        className={cn('cursor-pointer', className)}
+        className={cn(!isSearch && 'cursor-pointer', className)}
         style={style}
         // description={EmptyCardData[type].description}
       >

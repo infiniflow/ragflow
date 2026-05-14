@@ -18,7 +18,10 @@ import binascii
 import logging
 import re
 import time
+import uuid
 from copy import deepcopy
+
+logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
@@ -33,6 +36,10 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
+from api.utils.reference_metadata_utils import (
+    enrich_chunks_with_document_metadata,
+    resolve_reference_metadata_preferences,
+)
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from common.time_utils import current_timestamp, datetime_format
@@ -41,12 +48,51 @@ from rag.graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
-from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
-    PROMPT_JINJA_ENV, ASK_SUMMARY
+from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
 from common import settings
+
+def _resolve_reference_metadata(request_payload=None, config=None):
+    return resolve_reference_metadata_preferences(request_payload or {}, config)
+
+def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
+
+def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
+    if len(kb_ids or []) == 1:
+        return kb_ids[0]
+    return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
+
+def _normalize_internet_flag(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    return None
+
+
+def _should_use_web_search(prompt_config, internet=None):
+    if not prompt_config.get("tavily_api_key"):
+        return False
+    normalized = _normalize_internet_flag(internet)
+    return normalized is True
+
+
+def _resolve_reference_metadata(config, request_payload=None):
+    return resolve_reference_metadata_preferences(request_payload or {}, config)
+
+
+def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+    enrich_chunks_with_document_metadata(chunks, metadata_fields)
+
 
 
 class DialogService(CommonService):
@@ -105,7 +151,18 @@ class DialogService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_ids(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, keywords, parser_id=None):
+    def get_by_tenant_ids(
+        cls,
+        joined_tenant_ids,
+        user_id,
+        page_number,
+        items_per_page,
+        orderby,
+        desc,
+        keywords,
+        id=None,
+        name=None,
+    ):
         from api.db.db_models import User
 
         fields = [
@@ -132,25 +189,19 @@ class DialogService(CommonService):
             cls.model.update_time,
             cls.model.create_time,
         ]
+        dialogs = (
+            cls.model.select(*fields)
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(
+                (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
+            )
+        )
+        if id:
+            dialogs = dialogs.where(cls.model.id == id)
+        if name:
+            dialogs = dialogs.where(cls.model.name == name)
         if keywords:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                    (fn.LOWER(cls.model.name).contains(keywords.lower())),
-                )
-            )
-        else:
-            dialogs = (
-                cls.model.select(*fields)
-                .join(User, on=(cls.model.tenant_id == User.id))
-                .where(
-                    (cls.model.tenant_id.in_(joined_tenant_ids) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value),
-                )
-            )
-        if parser_id:
-            dialogs = dialogs.where(cls.model.parser_id == parser_id)
+            dialogs = dialogs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
         if desc:
             dialogs = dialogs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -183,22 +234,14 @@ class DialogService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_null_tenant_llm_id_row(cls):
-        fields = [
-            cls.model.id,
-            cls.model.tenant_id,
-            cls.model.llm_id
-        ]
+        fields = [cls.model.id, cls.model.tenant_id, cls.model.llm_id]
         objs = cls.model.select(*fields).where(cls.model.tenant_llm_id.is_null())
         return list(objs)
 
     @classmethod
     @DB.connection_context()
     def get_null_tenant_rerank_id_row(cls):
-        fields = [
-            cls.model.id,
-            cls.model.tenant_id,
-            cls.model.rerank_id
-        ]
+        fields = [cls.model.id, cls.model.tenant_id, cls.model.rerank_id]
         objs = cls.model.select(*fields).where(cls.model.tenant_rerank_id.is_null())
         return list(objs)
 
@@ -214,7 +257,14 @@ async def async_chat_solo(dialog, messages, stream=True):
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
-    model_config = get_model_config_by_id(dialog.tenant_llm_id)
+
+    if dialog.llm_id:
+        model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        model_config = get_model_config_by_id(dialog.tenant_llm_id)
+    else:
+        model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
+
     chat_mdl = LLMBundle(dialog.tenant_id, model_config)
     factory = model_config.get("llm_factory", "") if model_config else ""
 
@@ -257,15 +307,16 @@ def get_models(dialog):
         raise Exception("**ERROR**: Knowledge bases use different embedding models.")
 
     if embedding_list:
-        embd_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.EMBEDDING, embedding_list[0])
-        embd_mdl = LLMBundle(dialog.tenant_id, embd_model_config)
+        embd_owner_tenant_id = kbs[0].tenant_id
+        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
-    if dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
-    elif dialog.llm_id:
+    if dialog.llm_id:
         chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+    elif dialog.tenant_llm_id:
+        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -425,11 +476,11 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
         parts = []
         last_idx = 0
         for match in matches:
-            parts.append(answer[last_idx:match.start()])
+            parts.append(answer[last_idx : match.start()])
             try:
                 i = int(match.group(group_index))
             except Exception:
-                parts.append(answer[match.start():match.end()])
+                parts.append(answer[match.start() : match.end()])
                 last_idx = match.end()
                 continue
 
@@ -438,7 +489,7 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
                 digits_original = answer[digit_start:digit_end]
                 parts.append(f"[{repl(digits_original)}]")
             else:
-                parts.append(answer[match.start():match.end()])
+                parts.append(answer[match.start() : match.end()])
             last_idx = match.end()
 
         parts.append(answer[last_idx:])
@@ -454,7 +505,9 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 async def async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
+    use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
+    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    if not dialog.kb_ids and not use_web_search:
         async for ans in async_chat_solo(dialog, messages, stream):
             yield ans
         return
@@ -497,7 +550,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     attachments = None
     if "doc_ids" in kwargs:
         attachments = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
-    attachments_= ""
+    attachments_ = ""
     image_attachments = []
     image_files = []
     if "doc_ids" in messages[-1]:
@@ -510,6 +563,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         attachments_ = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
+    include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
@@ -518,15 +572,27 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
+            if include_reference_metadata and ans.get("reference", {}).get("chunks"):
+                if len(dialog.kb_ids) != 1 and any(not c.get("kb_id") for c in ans["reference"]["chunks"]):
+                    logging.warning(
+                        "Skipping some _enrich_chunks_with_document_metadata results because "
+                        "dialog.kb_ids has %d entries and use_sql returned chunks without kb_id.",
+                        len(dialog.kb_ids),
+                    )
+                _enrich_chunks_with_document_metadata(ans["reference"]["chunks"], metadata_fields)
             yield ans
             return
         else:
             logging.debug("SQL failed or returned no results, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
+    if dialog.kb_ids and "knowledge" not in param_keys and "{knowledge}" in prompt_config.get("system", ""):
+        logging.warning("prompt_config['parameters'] is missing 'knowledge' entry despite kb_ids being set; auto-fixing.")
+        prompt_config.setdefault("parameters", []).append({"key": "knowledge", "optional": False})
+        param_keys.append("knowledge")
     logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
-    for p in prompt_config["parameters"]:
+    for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
             continue
         if p["key"] not in kwargs and not p["optional"]:
@@ -543,18 +609,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids)
         attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
-            metas,
+            None,
             questions[-1],
             chat_mdl,
             attachments,
+            kb_ids=dialog.kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
         )
 
     if prompt_config.get("keyword", False):
-        questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
-
+        questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
     refine_question_ts = timer()
 
     thought = ""
@@ -580,9 +646,11 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     vector_similarity_weight=0.3,
                     doc_ids=attachments,
                 ),
+                internet_enabled=use_web_search,
             )
             queue = asyncio.Queue()
-            async def callback(msg:str):
+
+            async def callback(msg: str):
                 nonlocal queue
                 await queue.put(msg + "<br/>")
 
@@ -591,9 +659,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             while True:
                 msg = await queue.get()
                 if msg.find("<START_DEEP_RESEARCH>") == 0:
-                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+                    yield {"answer": "<retrieving>", "reference": {}, "audio_binary": None, "final": False}
                 elif msg.find("<END_DEEP_RESEARCH>") == 0:
-                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                    yield {"answer": "</retrieving>", "reference": {}, "audio_binary": None, "final": False}
                     break
                 else:
                     yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
@@ -622,17 +690,24 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     if cks:
                         kbinfos["chunks"] = cks
                 kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
-            if prompt_config.get("tavily_api_key"):
+            if use_web_search:
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
-                                                       LLMBundle(dialog.tenant_id, default_chat_model))
+                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl, LLMBundle(dialog.tenant_id, default_chat_model))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
+
+    if include_reference_metadata:
+        logging.debug(
+            "reference_metadata enrichment enabled for async_chat: chunk_count=%d metadata_fields=%s",
+            len(kbinfos.get("chunks", [])),
+            metadata_fields,
+        )
+        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
@@ -640,14 +715,13 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
-        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions),
-               "audio_binary": tts(tts_mdl, empty_res), "final": True}
+        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)+attachments_}]
+    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -735,15 +809,21 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if langfuse_tracer and "langfuse_generation" in locals():
             langfuse_output = "\n" + re.sub(r"^.*?(### Query:.*)", r"\1", prompt, flags=re.DOTALL)
             langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
-            langfuse_generation.update(output=langfuse_output)
+            langfuse_generation.update(
+                output=langfuse_output,
+                usage_details={
+                    "input": used_token_count,
+                    "output": tk_num,
+                    "total": used_token_count + tk_num,
+                },
+            )
             langfuse_generation.end()
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
         langfuse_generation = langfuse_tracer.start_generation(
-            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"],
-            input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
+            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
         )
 
     if stream:
@@ -761,10 +841,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
-            final = decorate_answer(thought + full_answer)
+            final = decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
-            final["answer"] = ""
             yield final
     else:
         if llm_type == "chat":
@@ -781,6 +860,25 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
 
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
+    """Answer a natural-language question by generating and executing SQL against the document index.
+
+    Detects the active document engine (Infinity, OceanBase, or Elasticsearch), asks the
+    chat model to produce the appropriate SQL, injects a validated kb_id filter, executes
+    the query, and returns formatted results with optional source citations.
+
+    Args:
+        question: Natural-language question from the user.
+        field_map: Mapping of field names to types describing the indexed document schema.
+        tenant_id: Tenant identifier used to derive the target index/table name.
+        chat_mdl: LLM bundle used to generate SQL from the question.
+        quota: Whether to enforce token-quota checks (default True).
+        kb_ids: Optional list of knowledge-base UUIDs to restrict the query scope.
+
+    Returns:
+        A dict with keys ``answer`` (formatted response string), ``reference``
+        (dict of supporting document chunks and doc_aggs), and ``prompt``
+        (the system prompt used), or ``None`` if SQL generation or execution fails.
+    """
     logging.debug(f"use_sql: Question: {question}")
 
     # Determine which document engine we're using
@@ -791,12 +889,20 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     else:
         doc_engine = "es"
 
+    def _assert_valid_uuid(value: str, label: str = "id") -> None:
+        try:
+            uuid.UUID(str(value))
+        except (ValueError, AttributeError, TypeError):
+            logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
+            raise ValueError(f"Invalid {label} format: {value!r}")
+
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
     # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
     base_table = index_name(tenant_id)
     if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
-        # Infinity: append kb_id to table name
+        # Infinity: append kb_id to table name — validate before interpolating
+        _assert_valid_uuid(kb_ids[0], "kb_id")
         table_name = f"{base_table}_{kb_ids[0]}"
         logging.debug(f"use_sql: Using Infinity table name: {table_name}")
     else:
@@ -807,13 +913,20 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     expected_doc_name_column = "docnm" if doc_engine == "infinity" else "docnm_kwd"
 
     def has_source_columns(columns):
+        """Return True if the result set contains the columns needed to build source citations."""
         normalized_names = {str(col.get("name", "")).lower() for col in columns}
         return "doc_id" in normalized_names and bool({"docnm_kwd", "docnm"} & normalized_names)
 
     def is_aggregate_sql(sql_text):
+        """Return True if *sql_text* contains an aggregate function (COUNT, SUM, AVG, MAX, MIN, DISTINCT)."""
         return bool(re.search(r"(count|sum|avg|max|min|distinct)\s*\(", (sql_text or "").lower()))
 
     def normalize_sql(sql):
+        """Strip LLM artefacts from *sql* and return a clean, executable SQL string.
+
+        Removes ``<think>`` reasoning blocks, Chinese reasoning markers, markdown
+        code fences, and trailing semicolons that some engines reject.
+        """
         logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
         # Remove think blocks if present (format: </think>...)
         sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
@@ -822,18 +935,28 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
         sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
         # Remove trailing semicolon that ES SQL parser doesn't like
-        return sql.rstrip().rstrip(';').strip()
+        return sql.rstrip().rstrip(";").strip()
 
     def add_kb_filter(sql):
+        """Inject a validated kb_id WHERE filter into *sql* for ES/OceanBase engines.
+
+        Infinity encodes the knowledge-base scope in the table name, so this
+        function is a no-op for that engine.  All kb_id values are validated as
+        canonical UUIDs before interpolation to prevent SQL injection.
+        """
         # Add kb_id filter for ES/OS only (Infinity already has it in table name)
         if doc_engine == "infinity" or not kb_ids:
             return sql
+
+        # Validate all kb_ids are UUIDs before interpolating into SQL
+        for kid in kb_ids:
+            _assert_valid_uuid(kid, "kb_id")
 
         # Build kb_filter: single KB or multiple KBs with OR
         if len(kb_ids) == 1:
             kb_filter = f"kb_id = '{kb_ids[0]}'"
         else:
-            kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
+            kb_filter = "(" + " OR ".join([f"kb_id = '{kid}'" for kid in kb_ids]) + ")"
 
         if "where " not in sql.lower():
             o = sql.lower().split("order by")
@@ -846,6 +969,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         return sql
 
     def is_row_count_question(q: str) -> bool:
+        """Return True if *q* is asking for a total row count of a dataset or table."""
         q = (q or "").lower()
         if not re.search(r"\bhow many rows\b|\bnumber of rows\b|\brow count\b", q):
             return False
@@ -855,11 +979,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
     if doc_engine == "infinity":
         # Build Infinity prompts with JSON extraction context
         json_field_names = list(field_map.keys())
-        row_count_override = (
-            f"SELECT COUNT(*) AS rows FROM {table_name}"
-            if is_row_count_question(question)
-            else None
-        )
+        row_count_override = f"SELECT COUNT(*) AS rows FROM {table_name}" if is_row_count_question(question) else None
         sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
@@ -883,19 +1003,12 @@ Fields (EXACT case): {}
 {}
 Question: {}
 Write SQL using json_extract_string() with exact field names. Include doc_id, docnm for data queries. Only SQL.""".format(
-            table_name,
-            ", ".join(json_field_names),
-            "\n".join([f"  - {field}" for field in json_field_names]),
-            question
+            table_name, ", ".join(json_field_names), "\n".join([f"  - {field}" for field in json_field_names]), question
         )
     elif doc_engine == "oceanbase":
         # Build OceanBase prompts with JSON extraction context
         json_field_names = list(field_map.keys())
-        row_count_override = (
-            f"SELECT COUNT(*) AS rows FROM {table_name}"
-            if is_row_count_question(question)
-            else None
-        )
+        row_count_override = f"SELECT COUNT(*) AS rows FROM {table_name}" if is_row_count_question(question) else None
         sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
@@ -919,10 +1032,7 @@ Fields (EXACT case): {}
 {}
 Question: {}
 Write SQL using json_extract_string() with exact field names. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
-            table_name,
-            ", ".join(json_field_names),
-            "\n".join([f"  - {field}" for field in json_field_names]),
-            question
+            table_name, ", ".join(json_field_names), "\n".join([f"  - {field}" for field in json_field_names]), question
         )
     else:
         # Build ES/OS prompts with direct field access
@@ -940,11 +1050,7 @@ RULES:
 Available fields:
 {}
 Question: {}
-Write SQL using exact field names above. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
-            table_name,
-            "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]),
-            question
-        )
+Write SQL using exact field names above. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(table_name, "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]), question)
 
     tried_times = 0
 
@@ -982,13 +1088,7 @@ Previous SQL:
 The previous SQL result is missing required source columns for citations.
 Rewrite SQL to keep the same query intent and include doc_id and {} in the SELECT list.
 For extracted JSON fields, use json_extract_string(chunk_data, '$.field_name').
-Return ONLY SQL.""".format(
-                table_name,
-                "\n".join([f"  - {field}" for field in json_field_names]),
-                question,
-                previous_sql,
-                expected_doc_name_column
-            )
+Return ONLY SQL.""".format(table_name, "\n".join([f"  - {field}" for field in json_field_names]), question, previous_sql, expected_doc_name_column)
         else:
             repair_prompt = """Table name: {}
 Available fields:
@@ -1000,12 +1100,7 @@ Previous SQL:
 
 The previous SQL result is missing required source columns for citations.
 Rewrite SQL to keep the same query intent and include doc_id and docnm_kwd in the SELECT list.
-Return ONLY SQL.""".format(
-                table_name,
-                "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]),
-                question,
-                previous_sql
-            )
+Return ONLY SQL.""".format(table_name, "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]), question, previous_sql)
         return await get_table(custom_user_prompt=repair_prompt)
 
     try:
@@ -1065,11 +1160,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         logging.warning(f"use_sql: Non-aggregate SQL missing required source columns; retrying once. SQL: {sql}")
         try:
             repaired_tbl, repaired_sql = await repair_table_for_missing_source_columns(sql)
-            if (
-                repaired_tbl
-                and len(repaired_tbl.get("rows", [])) > 0
-                and has_source_columns(repaired_tbl.get("columns", []))
-            ):
+            if repaired_tbl and len(repaired_tbl.get("rows", [])) > 0 and has_source_columns(repaired_tbl.get("columns", [])):
                 tbl, sql = repaired_tbl, repaired_sql
                 logging.info(f"use_sql: Source-column SQL repair succeeded. SQL: {sql}")
             else:
@@ -1081,11 +1172,12 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
 
     docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() == "doc_id"])
     doc_name_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]])
+    kb_id_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() in ["kb_id", "kb_id_kwd"]])
 
     logging.debug(f"use_sql: All columns: {[(i, c['name']) for i, c in enumerate(tbl['columns'])]}")
-    logging.debug(f"use_sql: docid_idx={docid_idx}, doc_name_idx={doc_name_idx}")
+    logging.debug(f"use_sql: docid_idx={docid_idx}, doc_name_idx={doc_name_idx}, kb_id_idx={kb_id_idx}")
 
-    column_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | doc_name_idx)]
+    column_idx = [ii for ii in range(len(tbl["columns"])) if ii not in (docid_idx | doc_name_idx | kb_id_idx)]
 
     logging.debug(f"use_sql: column_idx={column_idx}")
     logging.debug(f"use_sql: field_map={field_map}")
@@ -1097,9 +1189,9 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
 
         # First, try to extract AS alias from any expression (aggregate functions, json_extract_string, etc.)
         # Pattern: anything AS alias_name
-        as_match = re.search(r'\s+AS\s+([^\s,)]+)', col_name, re.IGNORECASE)
+        as_match = re.search(r"\s+AS\s+([^\s,)]+)", col_name, re.IGNORECASE)
         if as_match:
-            alias = as_match.group(1).strip('"\'')
+            alias = as_match.group(1).strip("\"'")
 
             # Use the alias for display name lookup
             if alias in field_map:
@@ -1136,11 +1228,7 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         return result
 
     # compose Markdown table
-    columns = (
-            "|" + "|".join(
-        [map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + (
-                "|Source|" if docid_idx and doc_name_idx else "|")
-    )
+    columns = "|" + "|".join([map_column_name(tbl["columns"][i]["name"]) for i in column_idx]) + ("|Source|" if docid_idx and doc_name_idx else "|")
 
     line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
 
@@ -1181,8 +1269,11 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
             where_match = re.search(r"\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)", sql, re.IGNORECASE)
             if where_match:
                 where_clause = where_match.group(1).strip()
-                # Build a query to get doc_id and docnm_kwd with the same WHERE clause
-                chunks_sql = f"select doc_id, docnm_kwd from {table_name} where {where_clause}"
+                # Build a query to get source fields with the same WHERE clause.
+                # Single-KB queries can derive kb_id from the dialog, while multi-KB
+                # ES/OS queries need the row value for metadata enrichment.
+                chunks_kb_column = ", kb_id" if not (kb_ids and len(kb_ids) == 1) else ""
+                chunks_sql = f"select doc_id, {expected_doc_name_column}{chunks_kb_column} from {table_name} where {where_clause}"
                 # Add LIMIT to avoid fetching too many chunks
                 if "limit" not in chunks_sql.lower():
                     chunks_sql += " limit 20"
@@ -1193,8 +1284,18 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
                         # Build chunks reference - use case-insensitive matching
                         chunks_did_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() == "doc_id"), None)
                         chunks_dn_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]), None)
+                        chunks_kb_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() in ["kb_id", "kb_id_kwd"]), None)
                         if chunks_did_idx is not None and chunks_dn_idx is not None:
-                            chunks = [{"doc_id": r[chunks_did_idx], "docnm_kwd": r[chunks_dn_idx]} for r in chunks_tbl["rows"]]
+                            chunks = []
+                            for r in chunks_tbl["rows"]:
+                                chunk = {"doc_id": r[chunks_did_idx], "docnm_kwd": r[chunks_dn_idx]}
+                                row_dict = {chunks_tbl["columns"][i]["name"]: r[i] for i in range(len(chunks_tbl["columns"])) if i < len(r)}
+                                kb_id = _chunk_kb_id_for_doc(row_dict, kb_ids, chunk["doc_id"])
+                                if kb_id:
+                                    chunk["kb_id"] = kb_id
+                                elif chunks_kb_idx is not None:
+                                    chunk["kb_id"] = r[chunks_kb_idx]
+                                chunks.append(chunk)
                             # Build doc_aggs
                             doc_aggs = {}
                             for r in chunks_tbl["rows"]:
@@ -1224,13 +1325,29 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
     result = {
         "answer": "\n".join([columns, line, rows]),
         "reference": {
-            "chunks": [{"doc_id": r[docid_idx], "docnm_kwd": r[doc_name_idx]} for r in tbl["rows"]],
+            "chunks": [
+                {
+                    key: value
+                    for key, value in {
+                        "doc_id": r[docid_idx],
+                        "docnm_kwd": r[doc_name_idx],
+                        "kb_id": _chunk_kb_id_for_doc(
+                            {tbl["columns"][i]["name"]: r[i] for i in range(len(tbl["columns"])) if i < len(r)},
+                            kb_ids,
+                            r[docid_idx],
+                        ),
+                    }.items()
+                    if value
+                }
+                for r in tbl["rows"]
+            ],
             "doc_aggs": [{"doc_id": did, "doc_name": d["doc_name"], "count": d["count"]} for did, d in doc_aggs.items()],
         },
         "prompt": sys_prompt,
     }
     logging.debug(f"use_sql: Returning answer with {len(result['reference']['chunks'])} chunks from {len(doc_aggs)} documents")
     return result
+
 
 def clean_tts_text(text: str) -> str:
     if not text:
@@ -1241,15 +1358,7 @@ def clean_tts_text(text: str) -> str:
     text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
 
     emoji_pattern = re.compile(
-        "[\U0001F600-\U0001F64F"
-        "\U0001F300-\U0001F5FF"
-        "\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF"
-        "\U00002700-\U000027BF"
-        "\U0001F900-\U0001F9FF"
-        "\U0001FA70-\U0001FAFF"
-        "\U0001FAD0-\U0001FAFF]+",
-        flags=re.UNICODE
+        "[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+", flags=re.UNICODE
     )
     text = emoji_pattern.sub("", text)
 
@@ -1260,6 +1369,7 @@ def clean_tts_text(text: str) -> str:
         text = text[:MAX_LEN]
 
     return text
+
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
@@ -1288,18 +1398,31 @@ class _ThinkStreamState:
         self.buffer = ""
 
 
+def _extract_visible_answer(text: str) -> str:
+    text = text or ""
+    if "</think>" not in text:
+        return re.sub(r"</?think>", "", text)
+
+    thought, answer = text.rsplit("</think>", 1)
+    thought = re.sub(r"</?think>", "", thought).strip()
+    answer = re.sub(r"</?think>", "", answer)
+    if not thought:
+        return answer
+    return f"<think>{thought}</think>{answer}"
+
+
 def _next_think_delta(state: _ThinkStreamState) -> str:
     full_text = state.full_text
     if full_text == state.last_full:
         return ""
     state.last_full = full_text
-    delta_ans = full_text[state.last_idx:]
+    delta_ans = full_text[state.last_idx :]
 
     if delta_ans.find("<think>") == 0:
         state.last_idx += len("<think>")
         return "<think>"
     if delta_ans.find("<think>") > 0:
-        delta_text = full_text[state.last_idx:state.last_idx + delta_ans.find("<think>")]
+        delta_text = full_text[state.last_idx : state.last_idx + delta_ans.find("<think>")]
         state.last_idx += delta_ans.find("<think>")
         return delta_text
     if delta_ans.endswith("</think>"):
@@ -1320,7 +1443,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         if not chunk:
             continue
         if chunk.startswith(state.last_model_full):
-            new_part = chunk[len(state.last_model_full):]
+            new_part = chunk[len(state.last_model_full) :]
             state.last_model_full = chunk
         else:
             new_part = chunk
@@ -1354,6 +1477,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     if state.endswith_think:
         yield ("marker", "</think>", state)
 
+
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
@@ -1361,14 +1485,16 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     chat_llm_name = search_config.get("chat_id", chat_llm_name)
     rerank_id = search_config.get("rerank_id", "")
     meta_data_filter = search_config.get("meta_data_filter")
+    include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
-    embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embedding_list[0])
-    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+    embd_owner_tenant_id = kbs[0].tenant_id
+    embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
@@ -1378,8 +1504,15 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
 
     if meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+        doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            doc_ids,
+            kb_ids=kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
 
     kbinfos = await retriever.retrieval(
         question=question,
@@ -1394,8 +1527,15 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
-        rank_feature=label_question(question, kbs)
+        rank_feature=label_question(question, kbs),
     )
+    if include_reference_metadata:
+        logging.debug(
+            "reference_metadata enrichment enabled for async_ask: chunk_count=%d metadata_fields=%s",
+            len(kbinfos.get("chunks", [])),
+            metadata_fields,
+        )
+        _enrich_chunks_with_document_metadata(kbinfos.get("chunks", []), metadata_fields)
 
     knowledges = kb_prompt(kbinfos, max_tokens)
     sys_prompt = PROMPT_JINJA_ENV.from_string(ASK_SUMMARY).render(knowledge="\n".join(knowledges))
@@ -1404,8 +1544,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, sys_prompt
-        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]],
-                                                 embd_mdl, tkweight=0.7, vtweight=0.3)
+        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
         if not recall_docs:
@@ -1431,9 +1570,8 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             continue
         yield {"answer": value, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
-    final = decorate_answer(full_answer)
+    final = decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
-    final["answer"] = ""
     yield final
 
 
@@ -1449,9 +1587,11 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     if tenant_embedding_list[0]:
         embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
+        embd_owner_tenant_id = kbs[0].tenant_id
     else:
-        embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
-    embd_mdl = LLMBundle(tenant_id, embd_model_config)
+        embd_owner_tenant_id = kbs[0].tenant_id
+        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
+    embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
         chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
@@ -1463,8 +1603,15 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
     if meta_data_filter:
-        metas = DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
-        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+        doc_ids = await apply_meta_data_filter(
+            meta_data_filter,
+            None,
+            question,
+            chat_mdl,
+            doc_ids,
+            kb_ids=kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
+        )
 
     ranks = await settings.retriever.retrieval(
         question=question,

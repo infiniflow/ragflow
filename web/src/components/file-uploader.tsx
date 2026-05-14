@@ -382,7 +382,7 @@ export function FileUploader(props: FileUploaderProps) {
     <div className="relative flex flex-col gap-4 overflow-hidden">
       {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
         <Tabs defaultValue="file" className="w-full">
-          <TabsList className="w-full justify-start">
+          <TabsList className="w-fit justify-start">
             <TabsTrigger value="file" className="gap-2">
               <FileText className="size-4" />
               {t('fileManager.files', 'Files')}

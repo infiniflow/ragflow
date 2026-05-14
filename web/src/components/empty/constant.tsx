@@ -11,6 +11,7 @@ export enum EmptyCardType {
   Chat = 'chat',
   Search = 'search',
   Memory = 'memory',
+  Skills = 'skills',
 }
 
 export const EmptyCardData = {
@@ -38,5 +39,10 @@ export const EmptyCardData = {
     icon: <HomeIcon name="memory" width={'24'} />,
     titleKey: 'empty.memoryTitle',
     notFoundKey: 'empty.notFoundMemory',
+  },
+  [EmptyCardType.Skills]: {
+    icon: <HomeIcon name="skills" width={'24'} />,
+    titleKey: 'empty.skillsTitle',
+    notFoundKey: 'empty.notFoundSkills',
   },
 };

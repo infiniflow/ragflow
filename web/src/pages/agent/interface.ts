@@ -1,5 +1,5 @@
 import { FormInstance } from '@/interfaces/antd-compat';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 
 export interface IOperatorForm {
   onValuesChange?(changedValues: any, values: any): void;
