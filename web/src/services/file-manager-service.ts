@@ -1,6 +1,7 @@
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
+export { downloadFileFromBlob } from '@/utils/file-util';
 
 const {
   listFile,
@@ -12,6 +13,7 @@ const {
   getDocumentFile,
   getFile,
   moveFile,
+  getDatasetDocumentFileDownload,
   getDocumentFileDownload,
 } = api;
 
@@ -66,5 +68,19 @@ export const downloadFile = (data: { docId: string; ext: string }) => {
     params: { ext: data.ext },
     responseType: 'blob',
   });
+};
+
+export const downloadDatasetDocument = (data: {
+  datasetId: string;
+  docId: string;
+  ext: string;
+}) => {
+  return request.get(
+    getDatasetDocumentFileDownload(data.datasetId, data.docId),
+    {
+      params: { ext: data.ext },
+      responseType: 'blob',
+    },
+  );
 };
 export default fileManagerService;
