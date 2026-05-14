@@ -2753,7 +2753,7 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 	if p.curToken.Type != TokenAudio {
 		return nil, fmt.Errorf("expected AUDIO to ASR")
 	}
-	p.nextToken() // consume FILE
+	p.nextToken() // consume AUDIO
 
 	audioFile, err := p.parseQuotedString()
 	if err != nil {
@@ -2761,14 +2761,29 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 	}
 	p.nextToken()
 
+	cmd := NewCommand("asr_user_command")
+	cmd.Params["composite_model_name"] = compositeModelName
+	cmd.Params["audio_file"] = audioFile
+
+	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
+		switch p.curToken.Type {
+		case TokenParam:
+			p.nextToken()
+			if p.curToken.Type != TokenQuotedString {
+				return nil, fmt.Errorf("expect quoted string after 'param'")
+			}
+			cmd.Params["param_str"] = strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		default:
+			return nil, fmt.Errorf("unexpected token in asr command: %s", p.curToken.Value)
+		}
+	}
+
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("asr_user_command")
-	cmd.Params["composite_model_name"] = compositeModelName
-	cmd.Params["audio_file"] = audioFile
 	return cmd, nil
 }
 

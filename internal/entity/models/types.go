@@ -62,6 +62,7 @@ type RerankResponse struct {
 }
 
 type ASRResponse struct {
+	Text string `json:"text"`
 }
 
 type TTSResponse struct {
@@ -85,6 +86,7 @@ type URLSuffix struct {
 	Files       string `json:"files"`
 	Status      string `json:"status"`
 	TTS         string `json:"tts"`
+	ASR         string `json:"asr"`
 }
 
 type ChatConfig struct {
@@ -115,10 +117,12 @@ type RerankConfig struct {
 }
 
 type ASRConfig struct {
+	Params map[string]interface{} `json:"params"`
 }
 
 type TTSConfig struct {
-	Params map[string]interface{}
+	Format string                 `json:"format"`
+	Params map[string]interface{} `json:"params"`
 }
 
 type OCRConfig struct {

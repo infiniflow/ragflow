@@ -2013,7 +2013,7 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	if explicitFormat != "" {
 		ttsConfigPayload["format"] = explicitFormat
 	} else {
-		explicitFormat = "mp3"
+		ttsConfigPayload["format"] = "mp3"
 	}
 
 	if len(ttsConfigPayload) > 0 {
@@ -2055,7 +2055,6 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	shouldPlay, _ := cmd.Params["play"].(bool)
 	shouldSave, _ := cmd.Params["save"].(bool)
 	saveDir, _ := cmd.Params["save_path"].(string)
-
 
 	fileName := fmt.Sprintf("%s_output.%s", modelName, explicitFormat)
 
@@ -2149,14 +2148,27 @@ func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 
 	audioFile, ok := cmd.Params["audio_file"].(string)
 	if !ok {
-		return nil, fmt.Errorf("text not provided")
+		return nil, fmt.Errorf("audio file not provided")
 	}
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
 		"model_name":    modelName,
-		"audio_file":    audioFile,
+		"file":          audioFile,
+	}
+
+	asrConfigPayload := make(map[string]interface{})
+	if paramStr, ok := cmd.Params["param_str"].(string); ok && paramStr != "" {
+		var dynamicParams map[string]interface{}
+		if err := json.Unmarshal([]byte(paramStr), &dynamicParams); err != nil {
+			return nil, fmt.Errorf("param string must be valid JSON. Error: %w", err)
+		}
+		asrConfigPayload["params"] = dynamicParams
+	}
+
+	if len(asrConfigPayload) > 0 {
+		payload["asr_config"] = asrConfigPayload
 	}
 
 	url := "/audio/transcriptions"
@@ -2168,13 +2180,23 @@ func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to ASR document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
+	var rawResult struct {
+		Code    int                    `json:"code"`
+		Message string                 `json:"message"`
+		Data    map[string]interface{} `json:"data"`
+	}
+
+	if err = json.Unmarshal(resp.Body, &rawResult); err != nil {
 		return nil, fmt.Errorf("ASR document failed: invalid JSON (%w)", err)
 	}
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
+
+	if rawResult.Code != 0 {
+		return nil, fmt.Errorf("%s", rawResult.Message)
 	}
+
+	var result CommonResponse
+	result.Code = rawResult.Code
+	result.Message = rawResult.Data["text"].(string) // TODO
 	result.Duration = resp.Duration
 
 	return &result, nil
