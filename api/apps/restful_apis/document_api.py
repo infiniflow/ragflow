@@ -1362,6 +1362,7 @@ def _run_sync(user_id:str, req):
             info["progress_msg"] = ""
             info["chunk_num"] = 0
             info["token_num"] = 0
+            info["llm_token_num"] = 0
 
         doc_tenant_id = DocumentService.get_tenant_id(doc_id)
         if not doc_tenant_id:
@@ -1489,6 +1490,7 @@ async def parse_documents(tenant_id, dataset_id):
                     info["progress_msg"] = ""
                     info["chunk_num"] = 0
                     info["token_num"] = 0
+                    info["llm_token_num"] = 0
 
                 DocumentService.update_by_id(doc_id, info)
                 TaskService.filter_delete([Task.doc_id == doc_id])

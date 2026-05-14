@@ -745,6 +745,7 @@ async def rerun_agent(tenant_id):
     doc["progress_msg"] = ""
     doc["chunk_num"] = 0
     doc["token_num"] = 0
+    doc["llm_token_num"] = 0
     DocumentService.clear_chunk_num_when_rerun(doc["id"])
     DocumentService.update_by_id(doc["id"], doc)
     TaskService.filter_delete([Task.doc_id == doc["id"]])

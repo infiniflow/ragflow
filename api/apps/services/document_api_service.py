@@ -109,6 +109,7 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
         "progress": 0,
         "progress_msg": "",
         "run": TaskStatus.UNSTART.value,
+        "llm_token_num": 0,
     }
     if parser_id is not None:
         update_fields["parser_id"] = parser_id
@@ -261,6 +262,7 @@ def _process_key_mappings(doc):
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
         "token_num": "token_count",
+        "llm_token_num": "llm_token_count",
         "parser_id": "chunk_method",
     }
 

@@ -381,6 +381,8 @@ async def build_chunks(task, progress_callback):
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
 
+    llm_token_consumption = 0
+
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
@@ -413,6 +415,7 @@ async def build_chunks(task, progress_callback):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        llm_token_consumption += chat_mdl.cumulated_tokens
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
@@ -446,6 +449,7 @@ async def build_chunks(task, progress_callback):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        llm_token_consumption += chat_mdl.cumulated_tokens
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("enable_metadata", False) and (task["parser_config"].get("metadata") or task["parser_config"].get("built_in_metadata")):
@@ -507,7 +511,8 @@ async def build_chunks(task, progress_callback):
             existing_meta = existing_meta if isinstance(existing_meta, dict) else {}
             metadata = update_metadata_to(metadata, existing_meta)
             DocMetadataService.update_document_metadata(task["doc_id"], metadata)
-        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        llm_token_consumption += chat_mdl.cumulated_tokens
+        progress_callback(msg="Metadata generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
@@ -531,7 +536,7 @@ async def build_chunks(task, progress_callback):
             task_canceled = has_canceled(task["id"])
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
-                return None
+                return None, llm_token_consumption
             if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(
                     d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
@@ -572,9 +577,10 @@ async def build_chunks(task, progress_callback):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
+        llm_token_consumption += chat_mdl.cumulated_tokens
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
-    return docs
+    return docs, llm_token_consumption
 
 
 def build_TOC(task, docs, progress_callback):
@@ -1428,8 +1434,8 @@ async def do_handle_task(task):
         # Standard chunking methods
         task['llm_id'] = doc_task_llm_id
         start_ts = timer()
-        chunks = await build_chunks(task, progress_callback)
-        logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
+        chunks, llm_token_count = await build_chunks(task, progress_callback)
+        logging.info("Build document {}: {:.2f}s, llm_tokens: {}".format(task_document_name, timer() - start_ts, llm_token_count))
         if not chunks:
             progress_callback(1., msg=f"No chunk built from {task_document_name}")
             return
@@ -1486,7 +1492,8 @@ async def do_handle_task(task):
             )
         )
 
-        DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+        DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0,
+                                             llm_token_num=llm_token_count)
 
         # Table parser (manual): push metadata/both column values to document-level metadata for UI / chat filters
         if task.get("parser_id", "").lower() == "table":

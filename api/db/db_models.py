@@ -906,6 +906,7 @@ class Document(DataBaseModel):
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
     process_duration = FloatField(default=0)
+    llm_token_num = IntegerField(default=0, help_text="LLM tokens consumed during parsing (keywords, questions, metadata generation)")
     suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     content_hash = CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True)
@@ -1650,6 +1651,7 @@ def migrate_db():
     alter_db_add_column(migrator, "user_canvas_version", "release", BooleanField(null=False, help_text="is released", default=False, index=True))
     alter_db_add_column(migrator, "user_canvas", "tags", CharField(max_length=512, null=False, default="", help_text="Comma-separated tags for organizing agents", index=True))
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
+    alter_db_add_column(migrator, "document", "llm_token_num", IntegerField(default=0, help_text="LLM tokens consumed during parsing (keywords, questions, metadata generation)"))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     logging.disable(logging.NOTSET)

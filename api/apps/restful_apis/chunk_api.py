@@ -73,6 +73,7 @@ def _map_doc(doc):
         "chunk_num": "chunk_count",
         "kb_id": "dataset_id",
         "token_num": "token_count",
+        "llm_token_num": "llm_token_count",
         "parser_id": "chunk_method",
     }
     run_mapping = {
