@@ -41,6 +41,61 @@ type CometAPIModel struct {
 	httpClient *http.Client
 }
 
+type cometapiChatRequest struct {
+	Model       string               `json:"model"`
+	Messages    []cometapiAPIMessage `json:"messages"`
+	Stream      bool                 `json:"stream"`
+	MaxTokens   *int                 `json:"max_tokens,omitempty"`
+	Temperature *float64             `json:"temperature,omitempty"`
+	TopP        *float64             `json:"top_p,omitempty"`
+	Stop        *[]string            `json:"stop,omitempty"`
+}
+
+type cometapiAPIMessage struct {
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
+}
+
+type cometapiChatResponsePayload struct {
+	Choices []cometapiChatChoice `json:"choices"`
+}
+
+type cometapiChatChoice struct {
+	Message      cometapiChatMessage `json:"message"`
+	Delta        cometapiChatDelta   `json:"delta"`
+	FinishReason string              `json:"finish_reason"`
+}
+
+type cometapiChatMessage struct {
+	Content          *string `json:"content"`
+	ReasoningContent string  `json:"reasoning_content"`
+}
+
+type cometapiChatDelta struct {
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content"`
+}
+
+type cometapiEmbeddingRequest struct {
+	Model      string   `json:"model"`
+	Input      []string `json:"input"`
+	Dimensions int      `json:"dimensions,omitempty"`
+}
+
+type cometapiModelCatalogResponse struct {
+	Data []cometapiModelCatalogItem `json:"data"`
+}
+
+type cometapiModelCatalogItem struct {
+	ID string `json:"id"`
+}
+
+type cometapiHTTPResponse struct {
+	StatusCode int
+	Status     string
+	Body       []byte
+}
+
 // NewCometAPIModel creates a new CometAPI model instance.
 //
 // We clone http.DefaultTransport so we keep Go's defaults for
@@ -75,6 +130,27 @@ func (m *CometAPIModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (m *CometAPIModel) Name() string {
 	return "cometapi"
+}
+
+func validateCometAPIAPIKey(apiConfig *APIConfig) (string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return "", fmt.Errorf("api key is required")
+	}
+	return *apiConfig.ApiKey, nil
+}
+
+func validateCometAPIModelName(modelName string) error {
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is required")
+	}
+	return nil
+}
+
+func cometapiRegion(apiConfig *APIConfig) string {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		return *apiConfig.Region
+	}
+	return "default"
 }
 
 // baseURLForRegion returns the base URL for the given region, or an
@@ -112,78 +188,47 @@ func (m *CometAPIModel) balanceURL(apiKey string) string {
 	return parsed.String()
 }
 
-// ChatWithMessages sends multiple messages with roles and returns the response.
-func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-
-	if strings.TrimSpace(modelName) == "" {
-		return nil, fmt.Errorf("model name is required")
-	}
-
-	if len(messages) == 0 {
-		return nil, fmt.Errorf("messages is empty")
-	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url, err := m.endpointURL(region, m.URLSuffix.Chat)
-	if err != nil {
-		return nil, err
-	}
-
-	apiMessages := make([]map[string]interface{}, len(messages))
+func buildCometAPIChatRequest(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) cometapiChatRequest {
+	apiMessages := make([]cometapiAPIMessage, len(messages))
 	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
+		apiMessages[i] = cometapiAPIMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
 		}
 	}
 
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   false,
+	reqBody := cometapiChatRequest{
+		Model:    modelName,
+		Messages: apiMessages,
+		Stream:   stream,
 	}
-
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
+		reqBody.MaxTokens = chatModelConfig.MaxTokens
+		reqBody.Temperature = chatModelConfig.Temperature
+		reqBody.TopP = chatModelConfig.TopP
+		reqBody.Stop = chatModelConfig.Stop
 	}
+	return reqBody
+}
 
-	jsonData, err := json.Marshal(reqBody)
+func newCometAPIJSONRequest(ctx context.Context, method string, endpoint string, payload interface{}, apiKey string) (*http.Request, error) {
+	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	}
+	return req, nil
+}
 
+func (m *CometAPIModel) doCometAPIRequest(req *http.Request) (*cometapiHTTPResponse, error) {
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
@@ -195,43 +240,100 @@ func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
+	return &cometapiHTTPResponse{
+		StatusCode: resp.StatusCode,
+		Status:     resp.Status,
+		Body:       body,
+	}, nil
+}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+func parseCometAPIChatResponse(body []byte) (*ChatResponse, error) {
+	var parsed cometapiChatResponsePayload
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
+	if len(parsed.Choices) == 0 {
 		return nil, fmt.Errorf("no choices in response")
 	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
+	if parsed.Choices[0].Message.Content == nil {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	var reasonContent string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = strings.TrimLeft(rc, "\n")
-	}
+	content := *parsed.Choices[0].Message.Content
+	reasonContent := strings.TrimLeft(parsed.Choices[0].Message.ReasoningContent, "\n")
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
 	}, nil
+}
+
+func parseCometAPIStreamEvent(data string) (content string, reasonContent string, terminal bool, ok bool) {
+	var event cometapiChatResponsePayload
+	if err := json.Unmarshal([]byte(data), &event); err != nil {
+		return "", "", false, false
+	}
+	if len(event.Choices) == 0 {
+		return "", "", false, false
+	}
+	choice := event.Choices[0]
+	return choice.Delta.Content, choice.Delta.ReasoningContent, choice.FinishReason != "", true
+}
+
+func parseCometAPIModelCatalog(body []byte) ([]string, error) {
+	var parsed cometapiModelCatalogResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	models := make([]string, 0, len(parsed.Data))
+	for _, model := range parsed.Data {
+		if model.ID != "" {
+			models = append(models, model.ID)
+		}
+	}
+	return models, nil
+}
+
+// ChatWithMessages sends multiple messages with roles and returns the response.
+func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	apiKey, err := validateCometAPIAPIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateCometAPIModelName(modelName); err != nil {
+		return nil, err
+	}
+
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
+	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Chat)
+	if err != nil {
+		return nil, err
+	}
+
+	// Note: do NOT propagate chatModelConfig.Stream into the request body
+	// here. ChatWithMessages parses a single JSON response, so stream must
+	// always be off for this code path.
+	reqBody := buildCometAPIChatRequest(modelName, messages, false, chatModelConfig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := newCometAPIJSONRequest(ctx, "POST", url, reqBody, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := m.doCometAPIRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(resp.Body))
+	}
+	return parseCometAPIChatResponse(resp.Body)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
@@ -242,40 +344,22 @@ func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("sender is required")
 	}
 
-	if strings.TrimSpace(modelName) == "" {
-		return fmt.Errorf("model name is required")
+	if err := validateCometAPIModelName(modelName); err != nil {
+		return err
 	}
 
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url, err := m.endpointURL(region, m.URLSuffix.Chat)
+	apiKey, err := validateCometAPIAPIKey(apiConfig)
 	if err != nil {
 		return err
 	}
 
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
+	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Chat)
+	if err != nil {
+		return err
 	}
 
 	if chatModelConfig != nil {
@@ -286,37 +370,16 @@ func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody := buildCometAPIChatRequest(modelName, messages, true, chatModelConfig)
 
 	// Use an explicit background context. SSE streams are long-lived
 	// so we do not attach a hard deadline here; the transport's
 	// ResponseHeaderTimeout caps the connection-establishment phase.
-	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
+	req, err := newCometAPIJSONRequest(context.Background(), "POST", url, reqBody, apiKey)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
@@ -347,42 +410,24 @@ func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 			break
 		}
 
-		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
-			continue
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
+		content, reasoningContent, terminal, ok := parseCometAPIStreamEvent(data)
 		if !ok {
 			continue
 		}
 
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
+		if reasoningContent != "" {
 			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
+		if content != "" {
 			if err := sender(&content, nil); err != nil {
 				return err
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
+		if terminal {
 			sawTerminal = true
 			break
 		}
@@ -423,65 +468,47 @@ func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-
-	if modelName == nil || *modelName == "" {
-		return nil, fmt.Errorf("model name is required")
-	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url, err := m.endpointURL(region, m.URLSuffix.Embedding)
+	apiKey, err := validateCometAPIAPIKey(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": texts,
-	}
-	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
-		reqBody["dimensions"] = embeddingConfig.Dimension
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Embedding)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
+	}
+
+	reqBody := cometapiEmbeddingRequest{
+		Model: *modelName,
+		Input: texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody.Dimensions = embeddingConfig.Dimension
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := newCometAPIJSONRequest(ctx, "POST", url, reqBody, apiKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.doCometAPIRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("CometAPI embeddings API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("CometAPI embeddings API error: %s, body: %s", resp.Status, string(resp.Body))
 	}
 
 	var parsed cometapiEmbeddingResponse
-	if err = json.Unmarshal(body, &parsed); err != nil {
+	if err = json.Unmarshal(resp.Body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -518,12 +545,7 @@ func (m *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 
 // ListModels returns the public CometAPI model catalog.
 func (m *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url, err := m.endpointURL(region, m.URLSuffix.Models)
+	url, err := m.endpointURL(cometapiRegion(apiConfig), m.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -536,45 +558,15 @@ func (m *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.doCometAPIRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(resp.Body))
 	}
-
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	data, ok := result["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid models list format")
-	}
-
-	models := make([]string, 0)
-	for _, model := range data {
-		modelMap, ok := model.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		modelName, ok := modelMap["id"].(string)
-		if !ok {
-			continue
-		}
-		models = append(models, modelName)
-	}
-
-	return models, nil
+	return parseCometAPIModelCatalog(resp.Body)
 }
 
 // Balance queries CometAPI's quota service. Unlike model requests, this
@@ -595,23 +587,17 @@ func (m *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.doCometAPIRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("CometAPI quota API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("CometAPI quota API error: %s, body: %s", resp.Status, string(resp.Body))
 	}
 
 	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
