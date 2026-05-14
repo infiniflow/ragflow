@@ -90,10 +90,13 @@ const MarkdownContent = ({
       chunk: IReferenceChunk,
       isPdf: boolean = false,
       documentUrl?: string,
-    ) =>
-      () => {
+    ) => {
+      void isPdf;
+      void documentUrl;
+      return () => {
         clickDocumentButton?.(documentId, chunk);
-      },
+      };
+    },
     [clickDocumentButton],
   );
 
@@ -250,9 +253,7 @@ const MarkdownContent = ({
         remarkPlugins={[remarkGfm, remarkMath]}
         components={
           {
-            p: ({ children, node, ...props }: any) => (
-              <p {...props}>{children}</p>
-            ),
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {

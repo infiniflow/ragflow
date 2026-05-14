@@ -1,0 +1,47 @@
+{
+  "name": "LongCat",
+  "url": {
+    "default": "https://api.longcat.chat"
+  },
+  "url_suffix": {
+    "chat": "openai/v1/chat/completions"
+  },
+  "class": "longcat",
+  "models": [
+    {
+      "name": "LongCat-Flash-Chat",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "LongCat-Flash-Lite",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "LongCat-Flash-Thinking-2601",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "LongCat-Flash-Omni-2603",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "LongCat-2.0-Preview",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
