@@ -512,7 +512,7 @@ async def chat_to_model(tenant_id: str, provider_name: str, instance_name: str, 
     # Get model config
     composite_name = f"{model_name}@{instance_name}@{provider_name}"
     try:
-        model_config = get_model_config_from_provider_instance(tenant_id, composite_name, LLMType.CHAT.value)
+        model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT.value, composite_name)
     except LookupError:
         return False, f"Model '{composite_name}' not authorized"
 

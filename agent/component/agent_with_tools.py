@@ -27,7 +27,7 @@ import json_repair
 
 from agent.component.llm import LLM, LLMParam
 from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -81,7 +81,7 @@ class Agent(LLM, ToolBase):
             original_name = cpn.get_meta()["function"]["name"]
             indexed_name = f"{original_name}_{idx}"
             self.tools[indexed_name] = cpn
-        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
+        chat_model_config = get_model_config_from_provider_instance(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
         self.chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
             chat_model_config,

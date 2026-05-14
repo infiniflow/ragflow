@@ -26,8 +26,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_type_and_name,
-    get_tenant_default_model_by_type,
+    get_tenant_default_model_by_type, get_model_config_from_provider_instance,
 )
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -1020,7 +1019,7 @@ async def recommendation():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
+        chat_model_config = get_model_config_from_provider_instance(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)

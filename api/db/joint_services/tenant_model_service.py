@@ -170,10 +170,10 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
             raise Exception(f"Unknown model type {model_type}")
     if not model_name:
         raise Exception(f"No default {model_type} model is set.")
-    return get_model_config_by_type_and_name(tenant_id, model_type, model_name)
+    return get_model_config_from_provider_instance(tenant_id, model_type, model_name)
 
 
-def get_model_config_from_provider_instance(tenant_id, model_name: str, model_type: str|enum.Enum):
+def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
     # Parse model_name: {model_name} or {model_name}@{factory_name} or {model_name}@{instance_name}@{factory_name}
     parts = model_name.split("@")
     if len(parts) == 1:
@@ -243,12 +243,16 @@ def get_model_config_from_provider_instance(tenant_id, model_name: str, model_ty
         llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
         if not llm_list:
             raise LookupError(f"Model config not found: {model_name}")
-        llm_config = llm_list[0]
-        return {
+        llm_info = llm_list[0]
+        model_config = {
             "llm_factory": provider_obj.provider_name,
             "api_key": api_key,
-            "llm_name": llm_config["llm_name"],
+            "llm_name": llm_info["llm_name"],
             "api_base": extra_fields.get("base_url", ""),
-            "model_type": llm_config["model_type"],
-            "is_tool": llm_config.get("is_tool", is_tool)
+            "model_type": llm_info["model_type"],
+            "is_tool": llm_info.get("is_tool", is_tool)
         }
+        if api_key_payload is not None:
+            model_config["api_key_payload"] = api_key_payload
+        return model_config
+

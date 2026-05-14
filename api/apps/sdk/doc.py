@@ -19,7 +19,7 @@ from io import BytesIO
 from quart import request, send_file
 
 from api.db.db_models import APIToken, Document, Task
-from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
@@ -484,23 +484,12 @@ async def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        if kb.tenant_embd_id:
-            embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-        else:
-            embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if req.get("tenant_rerank_id"):
-            allowed_rerank_tenant_ids = {tenant_id, *[dataset.tenant_id for dataset in kbs]}
-            rerank_model_config = get_model_config_by_id(
-                req["tenant_rerank_id"],
-                allowed_tenant_ids=allowed_rerank_tenant_ids,
-                requester_tenant_id=tenant_id,
-            )
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-        elif req.get("rerank_id"):
-            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+        if req.get("rerank_id"):
+            rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:

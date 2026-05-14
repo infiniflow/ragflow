@@ -22,10 +22,7 @@ from pydantic import BaseModel, Field, validator
 from quart import request
 
 from api.apps import login_required
-from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_id,
-    get_model_config_by_type_and_name,
-)
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -265,12 +262,8 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
-    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
-    if tenant_embd_id:
-        model_config = get_model_config_by_id(tenant_embd_id)
-    else:
-        embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_id = DocumentService.get_embd_id(document_id)
+    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
@@ -404,12 +397,8 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
-    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
-    if tenant_embd_id:
-        model_config = get_model_config_by_id(tenant_embd_id)
-    else:
-        embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_id = DocumentService.get_embd_id(document_id)
+    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
