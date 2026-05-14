@@ -6,7 +6,7 @@
   "url_suffix": {
     "chat": "openai/v1/chat/completions",
     "models": "openai/v1/models",
-    "embedding": "v3/embeddings"
+    "embedding": "openai/v1/embeddings"
   },
   "class": "novita",
   "models": [
@@ -62,13 +62,6 @@
     {
       "name": "baai/bge-m3",
       "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "baai/bge-large-en-v1.5",
-      "max_tokens": 512,
       "model_types": [
         "embedding"
       ]
