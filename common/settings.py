@@ -16,8 +16,9 @@
 import os
 import json
 import secrets
-from datetime import date
 import logging
+from datetime import date
+
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
@@ -34,6 +35,7 @@ from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
 from rag.utils.gcs_conn import RAGFlowGCS
 from rag.utils.minio_conn import RAGFlowMinio
 from rag.utils.opendal_conn import OpenDALStorage
+from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.s3_conn import RAGFlowS3
 from rag.utils.oss_conn import RAGFlowOSS
 
@@ -42,6 +44,8 @@ from rag.nlp import search
 import memory.utils.es_conn as memory_es_conn
 import memory.utils.infinity_conn as memory_infinity_conn
 import memory.utils.ob_conn as memory_ob_conn
+
+TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
 LLM = None
 LLM_FACTORY = None
@@ -92,6 +96,8 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+# SSO-only mode: hide password login form
+DISABLE_PASSWORD_LOGIN = False
 
 # sandbox-executor-manager
 SANDBOX_HOST = None
@@ -135,7 +141,7 @@ def get_svr_queue_name(priority: int) -> str:
 def get_svr_queue_names():
     return [get_svr_queue_name(priority) for priority in [1, 0]]
 
-def _get_or_create_secret_key():
+def init_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
     if secret_key and len(secret_key) >= 32:
         return secret_key
@@ -144,13 +150,33 @@ def _get_or_create_secret_key():
     configured_key = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key")
     if configured_key and configured_key != str(date.today()) and len(configured_key) >= 32:
         return configured_key
+    return None
+
+
+def get_secret_key():
+    global SECRET_KEY
+    if SECRET_KEY is None:
+        return _get_or_create_secret_key()
+    return SECRET_KEY
+
+def _get_or_create_secret_key():
+    # secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
+    # if secret_key and len(secret_key) >= 32:
+    #     return secret_key
+    #
+    # # Check if there's a configured secret key
+    # configured_key = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key")
+    # if configured_key and configured_key != str(date.today()) and len(configured_key) >= 32:
+    #     return configured_key
 
     # Generate a new secure key and warn about it
     import logging
 
-    new_key = secrets.token_hex(32)
-    logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
-    return new_key
+    generated_key = secrets.token_hex(32)
+    secret_key = REDIS_CONN.get_or_create_secret_key("ragflow:system:secret_key", generated_key)
+    if generated_key == secret_key:
+        logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
+    return secret_key
 
 class StorageFactory:
     storage_mapping = {
@@ -183,6 +209,17 @@ def init_settings():
     global REGISTER_ENABLED
     try:
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
+    except Exception:
+        pass
+
+    global DISABLE_PASSWORD_LOGIN
+    try:
+        env_val = os.environ.get("DISABLE_PASSWORD_LOGIN", "").lower()
+        if env_val in ("1", "true", "yes"):
+            DISABLE_PASSWORD_LOGIN = True
+        else:
+            authentication_conf = get_base_config("authentication", {})
+            DISABLE_PASSWORD_LOGIN = bool(authentication_conf.get("disable_password_login", False))
     except Exception:
         pass
 
@@ -229,7 +266,7 @@ def init_settings():
     HOST_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
 
     global SECRET_KEY
-    SECRET_KEY = _get_or_create_secret_key()
+    SECRET_KEY = init_secret_key()
 
 
     # authentication
@@ -244,7 +281,7 @@ def init_settings():
     OAUTH_CONFIG = get_base_config("oauth", {})
 
     global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
     DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
     lower_case_doc_engine = DOC_ENGINE.lower()

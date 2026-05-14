@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
 import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
@@ -88,12 +89,14 @@ export function DatasetTable({
   //   metaRecord,
   // } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { knowledgeBase } = useKnowledgeBaseContext();
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     showRenameModal,
     showManageMetadataModal,
     showLog,
+    datasetId: knowledgeBase?.id,
   });
 
   const currentPagination = useMemo(() => {
@@ -114,6 +117,7 @@ export function DatasetTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id, // Use document ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     state: {
       sorting,
@@ -151,6 +155,8 @@ export function DatasetTable({
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}
+                data-testid="document-row"
+                data-doc-name={row.original.name}
                 data-state={row.getIsSelected() && 'selected'}
                 className="group"
               >
@@ -187,7 +193,7 @@ export function DatasetTable({
       {changeParserVisible && (
         <ChunkMethodDialog
           documentId={changeParserRecord.id}
-          parserId={changeParserRecord.parser_id}
+          parserId={changeParserRecord.chunk_method}
           pipelineId={changeParserRecord.pipeline_id}
           parserConfig={changeParserRecord.parser_config}
           documentExtension={getExtension(changeParserRecord.name)}

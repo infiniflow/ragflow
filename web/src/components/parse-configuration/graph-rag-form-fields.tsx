@@ -35,6 +35,7 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const enum MethodValue {
   General = 'general',
   Light = 'light',
+  NER = 'ner',
 }
 
 export const excludedParseMethods = [
@@ -122,10 +123,12 @@ const GraphRagItems = ({
   });
 
   const methodOptions = useMemo(() => {
-    return [MethodValue.Light, MethodValue.General].map((x) => ({
-      value: x,
-      label: upperFirst(x),
-    }));
+    return [MethodValue.Light, MethodValue.General /*, MethodValue.NER*/].map(
+      (x) => ({
+        value: x,
+        label: x === MethodValue.NER ? 'NER' : upperFirst(x),
+      }),
+    );
   }, []);
 
   const renderWideTooltip = useCallback(
@@ -147,7 +150,11 @@ const GraphRagItems = ({
       ></UseGraphRagFormField>
       {useRaptor && (
         <>
-          <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>
+          <EntityTypesFormField
+            name="parser_config.graphrag.entity_types"
+            addButtonTestId="ds-settings-graph-entity-types-add-btn"
+            inputTestId="ds-settings-graph-entity-types-input"
+          ></EntityTypesFormField>
           <FormField
             control={form.control}
             name="parser_config.graphrag.method"
@@ -171,6 +178,7 @@ const GraphRagItems = ({
                       <RAGFlowSelect
                         {...field}
                         options={methodOptions}
+                        triggerTestId="ds-settings-graph-method-select"
                       ></RAGFlowSelect>
                     </FormControl>
                   </div>
@@ -200,6 +208,7 @@ const GraphRagItems = ({
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        data-testid="ds-settings-graph-entity-resolution-switch"
                       ></Switch>
                     </FormControl>
                   </div>
@@ -229,6 +238,7 @@ const GraphRagItems = ({
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        data-testid="ds-settings-graph-community-reports-switch"
                       ></Switch>
                     </FormControl>
                   </div>

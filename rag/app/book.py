@@ -21,16 +21,18 @@ from io import BytesIO
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.app.naive import by_plaintext, PARSERS
+from common.constants import MAXIMUM_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import bullets_category, is_english, remove_contents_table, hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, tokenize_chunks, attach_media_context
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
 from PIL import Image
+from rag.utils.lazy_image import LazyImage
 
 
 class Pdf(PdfParser):
-    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
 
         start = timer()
@@ -58,7 +60,7 @@ class Pdf(PdfParser):
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes], tbls
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, txt.
     Since a book is long and not all the parts are useful, if it's a PDF,
@@ -85,7 +87,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
-        sections = [(item[0], item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], Image.Image)]
+        sections = [
+            (item[0], item[1] if item[1] is not None else "")
+            for item in sections
+            if not isinstance(item[1], (Image.Image, LazyImage))
+        ]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):

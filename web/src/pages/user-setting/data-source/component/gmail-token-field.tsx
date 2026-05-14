@@ -95,11 +95,7 @@ const withRedirectUri = (credentials: string, redirectUri: string): string => {
   });
 };
 
-const GmailTokenField = ({
-  value,
-  onChange,
-  placeholder,
-}: GmailTokenFieldProps) => {
+const GmailTokenField = ({ value, onChange }: GmailTokenFieldProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [pendingCredentials, setPendingCredentials] = useState<string>('');
   const [redirectUri, setRedirectUri] = useState('');
@@ -195,7 +191,7 @@ const GmailTokenField = ({
         }
         message.error(data.message || 'Authorization failed.');
         clearWebState();
-      } catch (err) {
+      } catch {
         message.error('Unable to retrieve authorization result.');
         clearWebState();
       }
@@ -315,7 +311,7 @@ const GmailTokenField = ({
       } else {
         message.error(data.message || 'Failed to start browser authorization.');
       }
-    } catch (err) {
+    } catch {
       message.error('Failed to start browser authorization.');
     } finally {
       setWebAuthLoading(false);
@@ -340,7 +336,7 @@ const GmailTokenField = ({
   }, [resetDialog]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex w-full flex-col gap-3">
       {(credentialSummary ||
         hasVerifiedTokens ||
         hasUploadedButUnverified ||

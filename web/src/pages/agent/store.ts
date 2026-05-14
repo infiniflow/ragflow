@@ -1,5 +1,5 @@
 import type { IAgentForm } from '@/interfaces/database/agent';
-import { IAgentNode, RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import type {} from '@redux-devtools/extension';
 import {
   Connection,
@@ -115,7 +115,8 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
-  hasChildNode: (nodeId: string) => boolean;
+  hasDownstreamNode: (nodeId: string) => boolean;
+  hasUpstreamNode: (nodeId: string) => boolean;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -469,7 +470,7 @@ const useGraphStore = create<RFState>()(
         const { updateNodeForm, edges, getOperatorTypeFromId } = get();
         if (sourceHandle) {
           // A handle will connect to multiple downstream nodes
-          let currentHandleTargets = edges
+          const currentHandleTargets = edges
             .filter(
               (x) =>
                 x.source === source &&
@@ -528,9 +529,7 @@ const useGraphStore = create<RFState>()(
         return generateNodeNamesWithIncreasingIndex(name, nodes);
       },
       generateAgentToolName: (id: string, name: string) => {
-        const node = get().nodes.find(
-          (x) => x.id === id,
-        ) as IAgentNode<IAgentForm>;
+        const node = get().nodes.find((x) => x.id === id) as RAGFlowNodeType;
 
         if (!node) {
           return '';
@@ -649,9 +648,13 @@ const useGraphStore = create<RFState>()(
           })),
         );
       },
-      hasChildNode: (nodeId) => {
+      hasDownstreamNode: (nodeId) => {
         const { edges } = get();
         return edges.some((edge) => edge.source === nodeId);
+      },
+      hasUpstreamNode: (nodeId) => {
+        const { edges } = get();
+        return edges.some((edge) => edge.target === nodeId);
       },
     })),
     { name: 'graph', trace: true },

@@ -20,6 +20,7 @@ export default {
       chinese: 'Chinois simplifié',
       traditionalChinese: 'Chinois traditionnel',
       bulgarian: 'Bulgare',
+      arabic: 'Arabe',
       language: 'Langue',
       languageMessage: 'Veuillez saisir votre langue !',
       languagePlaceholder: 'Sélectionnez votre langue',
@@ -163,7 +164,7 @@ export default {
       changeSpecificCategory: 'Changer de catégorie spécifique',
       uploadTitle: 'Glissez-déposez votre fichier ici pour le téléverser',
       uploadDescription:
-        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour demo.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
+        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour cloud.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
       chunk: 'Segment',
       bulk: 'En masse',
       cancel: 'Annuler',
@@ -287,7 +288,8 @@ export default {
         'Construit un graphe basé sur les segments de cette base pour répondre à des questions complexes. Voir documentation.',
       graphRagMethod: 'Méthode',
       graphRagMethodTip: `Light : (Par défaut) utilise les prompts de github.com/HKUDS/LightRAG. Moins de consommation.
-    General : utilise ceux de github.com/microsoft/graphrag.`,
+    General : utilise ceux de github.com/microsoft/graphrag.
+    NER : utilise spaCy NER et l'extraction de mots-clés basée sur des règles pour extraire les entités et les relations. Aucun LLM n'est requis pour l'extraction, ce qui la rend rapide et économe en ressources.`,
       resolution: 'Résolution d’entités',
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l’année 2025".',
@@ -336,6 +338,9 @@ export default {
       delete: 'Supprimer',
     },
     chat: {
+      chatSupport: 'Support par chat',
+      replyInstantly: 'Nous répondons généralement instantanément',
+      typeYourMessage: 'Tapez votre message...',
       newConversation: 'Nouvelle conversation',
       createAssistant: 'Créer un assistant',
       assistantSetting: 'Paramètres de l’assistant',
@@ -477,6 +482,14 @@ export default {
       crossLanguage: 'Recherche inter-langues',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n’est sélectionnée, le système recherche avec la requête originale.`,
     },
+    language: {
+      english: 'Anglais',
+      chinese: 'Chinois',
+      russian: 'Russe',
+      bulgarian: 'Bulgare',
+      arabic: 'Arabe',
+      turkish: 'Turc',
+    },
     setting: {
       profile: 'Profil',
       avatar: 'Avatar',
@@ -542,6 +555,8 @@ export default {
         "Si votre clé API provient d'OpenAI, ignorez ceci. Tout autre fournisseur intermédiaire fournira cette URL de base avec la clé API.",
       tongyiBaseUrlTip:
         'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://dashscope.aliyuncs.com/compatible-mode/v1. Pour les utilisateurs internationaux, utilisez https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://api.siliconflow.cn/v1. Pour les utilisateurs internationaux, utilisez https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         "(Utilisateurs internationaux uniquement, veuillez consulter l'astuce)",
       minimaxBaseUrlTip:
@@ -598,8 +613,8 @@ export default {
       FishAudioLink: 'Comment utiliser FishAudio',
       TencentCloudLink: 'Comment utiliser TencentCloud ASR',
       volcModelNameMessage: 'Veuillez saisir le nom de votre modèle !',
-      addEndpointID: 'EndpointID du modèle',
-      endpointIDMessage: "Veuillez saisir l'EndpointID du modèle",
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Veuillez saisir le Model ID du modèle',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Veuillez saisir votre ARK_API_KEY',
       bedrockModelNameMessage: 'Veuillez saisir le nom de votre modèle !',
@@ -678,6 +693,8 @@ export default {
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        "Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d'une table spécifiée.",
     },
     message: {
       registered: 'Enregistré !',
@@ -729,7 +746,7 @@ export default {
       directory: 'Répertoire',
       uploadTitle: 'Glissez-déposez votre fichier ici pour téléverser',
       uploadDescription:
-        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour demo.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
+        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour cloud.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
       local: 'Téléversements locaux',
       s3: 'Téléversements S3',
       preview: 'Aperçu',
@@ -818,10 +835,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         "Un composant qui effectue des recherches via la URL de l'instance de SearXNG que vous fournissez. Spécifiez TopN et l'URL de l'instance.",
-      pdfGenerator: 'Générateur de Documents',
-      pDFGenerator: 'Générateur de Documents',
-      pdfGeneratorDescription: `Un composant qui génère des documents (PDF, DOCX, TXT) à partir de contenu formaté en markdown avec un style personnalisable, des images et des tableaux. Prend en charge : **gras**, *italique*, # titres, - listes, tableaux avec syntaxe |.`,
-      pDFGeneratorDescription: `Un composant qui génère des documents (PDF, DOCX, TXT) à partir de contenu formaté en markdown avec un style personnalisable, des images et des tableaux. Prend en charge : **gras**, *italique*, # titres, - listes, tableaux avec syntaxe |.`,
+      docGenerator: 'Générateur de Documents',
+      docGeneratorDescription: `Génère un fichier à partir de contenu Markdown.`,
       subtitle: 'Sous-titre',
       logoImage: 'Image Logo',
       logoPosition: 'Position Logo',

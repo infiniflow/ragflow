@@ -1,23 +1,26 @@
 @import url(./inter.less);
 
-html {
-  height: 100%;
-  overflow: hidden; // The content of the DatasetSettings page is too high, which will cause scroll bars to appear on the html tags. Setting the maximum height in DatasetSettings does not work either. I don't understand.
+:root {
+  --font-sans: 'Inter';
 }
 
-body {
-  font-family: Inter;
-  margin: 0;
-  height: 100%;
+@supports (font-variation-settings: normal) {
+  :root {
+    --font-sans: 'InterVariable';
+  }
 }
 
+html,
+body,
 #root {
-  height: 100%;
-}
+  width: 100vw;
+  width: 100dvw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 
-.ant-app {
-  height: 100%;
-  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .vue-office-excel {

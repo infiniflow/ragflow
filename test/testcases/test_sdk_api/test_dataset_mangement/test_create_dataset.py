@@ -31,8 +31,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "Authentication error: API key is invalid!"),
-            (INVALID_API_TOKEN, "Authentication error: API key is invalid!"),
+            (None, "<Unauthorized '401: Unauthorized'>"),
+            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
         ],
         ids=["empty_auth", "invalid_api_token"],
     )
@@ -306,8 +306,9 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
+            ("resume", "resume")
         ],
-        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
     def test_chunk_method(self, client, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
@@ -327,7 +328,7 @@ class TestDatasetCreate:
         payload = {"name": name, "chunk_method": chunk_method}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, client):
@@ -493,8 +494,8 @@ class TestDatasetCreate:
             ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ("graphrag_entity_types_not_list", {"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ("graphrag_entity_types_not_str_in_list", {"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),

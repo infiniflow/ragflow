@@ -1,6 +1,7 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { LanguageAbbreviation } from '@/constants/common';
 import { IFlowTemplate } from '@/interfaces/database/agent';
 import i18n from '@/locales/config';
 import { useCallback, useMemo } from 'react';
@@ -19,6 +20,9 @@ export function TemplateCard({ data, showModal }: IProps) {
   }, [data, showModal]);
 
   const language = useMemo(() => {
+    if (i18n.language === LanguageAbbreviation.Zh) {
+      return 'zh';
+    }
     return i18n.language || 'en';
   }, []) as 'en' | 'zh' | 'de';
 

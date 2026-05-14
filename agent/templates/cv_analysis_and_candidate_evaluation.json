@@ -94,7 +94,7 @@
                                     "type": "integer"
                                 },
                                 "item": {
-                                    "type": "unkown"
+                                    "type": "unknown"
                                 }
                             }
                         }
@@ -252,7 +252,7 @@
                                         "type": "integer"
                                     },
                                     "item": {
-                                        "type": "unkown"
+                                        "type": "unknown"
                                     }
                                 }
                             },

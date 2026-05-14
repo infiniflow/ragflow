@@ -1,0 +1,100 @@
+{
+  "name": "Jina",
+  "url": {
+    "default": "https://api.jina.ai/v1",
+    "deepsearch": "https://deepsearch.jina.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank"
+  },
+  "class": "jina",
+  "models": [
+    {
+      "name": "jina-reranker-v3",
+      "max_tokens": 134144,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "jina-reranker-m0",
+      "max_tokens": 134144,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "jina-colbert-v2",
+      "max_tokens": 134144,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "jina-reranker-v2-base-multilingual",
+      "max_tokens": 134144,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v4",
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v5-text-small",
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v5-text-nano",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v5-omni-small",
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v5-omni-nano",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-clip-v2",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "jina-embeddings-v2-base-en",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

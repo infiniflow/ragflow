@@ -1,3 +1,5 @@
+type Nullable<T> = T | null;
+
 declare module '*.md' {
   const content: string;
   export default content;

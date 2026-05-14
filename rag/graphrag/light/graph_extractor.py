@@ -1,8 +1,6 @@
 # Copyright (c) 2024 Microsoft Corporation.
 # Licensed under the MIT License
 
-from common.misc_utils import thread_pool_exec
-
 """
 Reference:
  - [graphrag](https://github.com/microsoft/graphrag)
@@ -83,12 +81,12 @@ class GraphExtractor(Extractor):
         if self.callback:
             self.callback(msg=f"Start processing for {chunk_key}: {content[:25]}...")
         async with chat_limiter:
-            final_result = await thread_pool_exec(self._chat,"",[{"role": "user", "content": hint_prompt}],gen_conf,task_id)
+            final_result = await self._async_chat("", [{"role": "user", "content": hint_prompt}], gen_conf, task_id)
         token_count += num_tokens_from_string(hint_prompt + final_result)
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result, self._continue_prompt)
         for now_glean_index in range(self._max_gleanings):
             async with chat_limiter:
-                glean_result = await thread_pool_exec(self._chat,"",history,gen_conf,task_id)
+                glean_result = await self._async_chat("", history, gen_conf, task_id)
             history.extend([{"role": "assistant", "content": glean_result}])
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + hint_prompt + self._continue_prompt)
             final_result += glean_result
@@ -97,7 +95,7 @@ class GraphExtractor(Extractor):
 
             history.extend([{"role": "user", "content": self._if_loop_prompt}])
             async with chat_limiter:
-                if_loop_result = await thread_pool_exec(self._chat,"",history,gen_conf,task_id)
+                if_loop_result = await self._async_chat("", history, gen_conf, task_id)
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + if_loop_result + self._if_loop_prompt)
             if_loop_result = if_loop_result.strip().strip('"').strip("'").lower()
             if if_loop_result != "yes":

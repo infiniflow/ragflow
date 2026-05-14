@@ -13,11 +13,11 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { DocumentParserType } from '@/constants/knowledge';
+import { DocumentParserType, ParseType } from '@/constants/knowledge';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
-import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { MetadataType } from '@/pages/dataset/components/metedata/constant';
 import {
   AutoMetadata,
@@ -28,7 +28,6 @@ import {
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import omit from 'lodash/omit';
-import {} from 'module';
 import { useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -42,7 +41,6 @@ import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
-import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
@@ -57,10 +55,7 @@ import {
 
 const FormId = 'ChunkMethodDialogForm';
 
-interface IProps extends IModalProps<{
-  parserId: string;
-  parserConfig: IChangeParserConfigRequestBody;
-}> {
+interface IProps extends IModalProps<IChangeParserRequestBody> {
   loading: boolean;
   parserId: string;
   pipelineId?: string;
@@ -103,7 +98,7 @@ export function ChunkMethodDialog({
 
   const FormSchema = z
     .object({
-      parseType: z.number(),
+      parseType: z.nativeEnum(ParseType),
       parser_id: z
         .string()
         .min(1, {
@@ -127,16 +122,19 @@ export function ChunkMethodDialog({
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
-        // raptor: z
-        //   .object({
-        //     use_raptor: z.boolean().optional(),
-        //     prompt: z.string().optional().optional(),
-        //     max_token: z.coerce.number().optional(),
-        //     threshold: z.coerce.number().optional(),
-        //     max_cluster: z.coerce.number().optional(),
-        //     random_seed: z.coerce.number().optional(),
-        //   })
-        //   .optional(),
+        raptor: z
+          .object({
+            use_raptor: z.boolean().optional(),
+            prompt: z.string().optional(),
+            max_token: z.coerce.number().optional(),
+            threshold: z.coerce.number().optional(),
+            max_cluster: z.coerce.number().optional(),
+            random_seed: z.coerce.number().optional(),
+            scope: z.string().optional(),
+            clustering_method: z.enum(['gmm', 'ahc']).optional(),
+            tree_builder: z.enum(['raptor', 'psi']).optional(),
+          })
+          .optional(),
         // graphrag: z.object({
         //   use_graphrag: z.boolean().optional(),
         // }),
@@ -157,7 +155,7 @@ export function ChunkMethodDialog({
       }),
     })
     .superRefine((data, ctx) => {
-      if (data.parseType === 2 && !data.pipeline_id) {
+      if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
         ctx.addIssue({
           path: ['pipeline_id'],
           message: t('common.pleaseSelect'),
@@ -171,7 +169,7 @@ export function ChunkMethodDialog({
     defaultValues: {
       parser_id: parserId || '',
       pipeline_id: pipelineId || '',
-      parseType: pipelineId ? 2 : 1,
+      parseType: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
       parser_config: defaultParserValues,
     },
   });
@@ -216,7 +214,6 @@ export function ChunkMethodDialog({
   const showAutoKeywords = useShowAutoKeywords();
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
     const parserConfig = data.parser_config;
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
@@ -235,7 +232,6 @@ export function ChunkMethodDialog({
         pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
-    console.log('🚀 ~ onSubmit ~ nextData:', nextData);
     const ret = await onOk?.(nextData);
     if (ret) {
       hideModal?.();
@@ -249,7 +245,7 @@ export function ChunkMethodDialog({
       form.reset({
         parser_id: parserId || '',
         pipeline_id: pipelineId || '',
-        parseType: pipelineId ? 2 : 1,
+        parseType: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
@@ -280,10 +276,10 @@ export function ChunkMethodDialog({
   const parseType = useWatch({
     control: form.control,
     name: 'parseType',
-    defaultValue: pipelineId ? 2 : 1,
+    defaultValue: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
   });
   useEffect(() => {
-    if (parseType === 1) {
+    if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
   }, [parseType, form]);
@@ -293,79 +289,54 @@ export function ChunkMethodDialog({
         <DialogHeader>
           <DialogTitle>{t('knowledgeDetails.chunkMethod')}</DialogTitle>
         </DialogHeader>
+
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit(onSubmit)}
-            className="space-y-6 max-h-[70vh] overflow-auto"
+            className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
             id={FormId}
           >
-            <FormContainer>
+            <div className="space-y-6">
               <ParseTypeItem />
-              {parseType === 1 && <ChunkMethodItem></ChunkMethodItem>}
-              {parseType === 2 && (
-                <DataFlowSelect
-                  isMult={false}
-                  // toDataPipeline={navigateToAgents}
-                  formFieldName="pipeline_id"
-                />
+              {parseType === ParseType.BuiltIn && <ChunkMethodItem />}
+
+              {showPages && parseType === ParseType.BuiltIn && (
+                <DynamicPageRange />
               )}
 
-              {/* <FormField
-                control={form.control}
-                name="parser_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('knowledgeDetails.chunkMethod')}</FormLabel>
-                    <FormControl>
-                      <RAGFlowSelect
-                        {...field}
-                        options={parserList}
-                      ></RAGFlowSelect>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+              {showPages &&
+                parseType === ParseType.BuiltIn &&
+                layoutRecognize && (
+                  <FormField
+                    control={form.control}
+                    name="parser_config.task_page_size"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel
+                          tooltip={t('knowledgeDetails.taskPageSizeTip')}
+                        >
+                          {t('knowledgeDetails.taskPageSize')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input {...field} type={'number'} min={1} max={128} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 )}
-              /> */}
-              {showPages && parseType === 1 && (
-                <DynamicPageRange></DynamicPageRange>
-              )}
-              {showPages && parseType === 1 && layoutRecognize && (
-                <FormField
-                  control={form.control}
-                  name="parser_config.task_page_size"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel
-                        tooltip={t('knowledgeDetails.taskPageSizeTip')}
-                      >
-                        {t('knowledgeDetails.taskPageSize')}
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type={'number'}
-                          min={1}
-                          max={128}
-                        ></Input>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            </FormContainer>
-            {parseType === 1 && (
+            </div>
+
+            {parseType === ParseType.BuiltIn && (
               <>
-                <FormContainer
-                  show={showOne || showMaxTokenNumber}
-                  className="space-y-3"
-                >
+                <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {showOne && (
                     <>
                       <LayoutRecognizeFormField showMineruOptions={false} />
                       {isMineruSelected && <MinerUOptionsFormField />}
                     </>
                   )}
+
                   {showMaxTokenNumber && (
                     <>
                       <MaxTokenNumberFormField
@@ -374,26 +345,21 @@ export function ChunkMethodDialog({
                             ? 8192 * 2
                             : 2048
                         }
-                      ></MaxTokenNumberFormField>
-                      <DelimiterFormField></DelimiterFormField>
+                      />
+                      <DelimiterFormField />
                       <ChildrenDelimiterForm />
                     </>
                   )}
-                </FormContainer>
-                <FormContainer
-                  show={
-                    isMineruSelected ||
-                    showAutoKeywords(selectedTag) ||
-                    showExcelToHtml
-                  }
-                  className="space-y-3"
-                >
+                </div>
+
+                <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
                   {selectedTag === DocumentParserType.Naive && (
                     <>
                       <EnableTocToggle />
                       <ImageContextWindow />
                     </>
                   )}
+
                   {showAutoKeywords(selectedTag) && (
                     <>
                       <AutoMetadata
@@ -404,28 +370,27 @@ export function ChunkMethodDialog({
                       <AutoQuestionsFormField></AutoQuestionsFormField>
                     </>
                   )}
+
                   {showExcelToHtml && (
                     <ExcelToHtmlFormField></ExcelToHtmlFormField>
                   )}
-                </FormContainer>
-                {/* {showRaptorParseConfiguration(
-                  selectedTag as DocumentParserType,
-                ) && (
-                  <FormContainer>
-                    <RaptorFormFields></RaptorFormFields>
-                  </FormContainer>
-                )} */}
-                {/* {showGraphRagItems(selectedTag as DocumentParserType) &&
-                  useGraphRag && (
-                    <FormContainer>
-                      <UseGraphRagFormField></UseGraphRagFormField>
-                    </FormContainer>
-                  )} */}
-                {showEntityTypes && (
-                  <EntityTypesFormField></EntityTypesFormField>
-                )}
+                </div>
+
+                <div className="space-y-6 border-t-0.5 border-border-button pt-6 empty:hidden">
+                  {showEntityTypes && <EntityTypesFormField />}
+                </div>
               </>
             )}
+
+            <div className="space-y-6 empty:hidden">
+              {parseType === ParseType.Pipeline && (
+                <DataFlowSelect
+                  isMult={false}
+                  // toDataPipeline={navigateToAgents}
+                  formFieldName="pipeline_id"
+                />
+              )}
+            </div>
           </form>
         </Form>
         <DialogFooter>

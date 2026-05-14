@@ -18,10 +18,14 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
 } from '@/utils/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
+import { getDirAttribute } from '@/utils/text-direction';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -46,7 +50,7 @@ const styles = {
   fileThumbnail: 'inline-block max-w-[40px]',
 };
 
-const getChunkIndex = (match: string) => Number(match);
+const getChunkIndex = (match: string) => parseCitationIndex(match);
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
@@ -64,7 +68,7 @@ const MarkdownContent = ({
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
     let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section'],
+      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
     // let text = content;
@@ -72,7 +76,7 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -86,10 +90,13 @@ const MarkdownContent = ({
       chunk: IReferenceChunk,
       isPdf: boolean = false,
       documentUrl?: string,
-    ) =>
-      () => {
+    ) => {
+      void isPdf;
+      void documentUrl;
+      return () => {
         clickDocumentButton?.(documentId, chunk);
-      },
+      };
+    },
     [clickDocumentButton],
   );
 
@@ -212,7 +219,7 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match) => {
+      const replacedText = reactStringReplace(text, currentReg, (match) => {
         const chunkIndex = getChunkIndex(match);
 
         return (
@@ -234,42 +241,49 @@ const MarkdownContent = ({
     [getPopoverContent],
   );
 
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
   return (
-    <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-      remarkPlugins={[remarkGfm, remarkMath]}
+    <div
+      dir={dir}
       className="[&>section.think]:pl-[10px] [&>section.think]:text-[#8b8b8b] [&>section.think]:border-l-2 [&>section.think]:border-l-[#d5d3d3] [&>section.think]:mb-[10px] [&>section.think]:text-xs [&>blockquote]:pl-[10px] [&>blockquote]:border-l-4 [&>blockquote]:border-l-[#ccc] text-sm"
-      components={
-        {
-          'custom-typography': ({ children }: { children: string }) =>
-            renderReference(children),
-          code(props: any) {
-            const { children, className, ...rest } = props;
-            const restProps = omit(rest, 'node');
-            const match = /language-(\w+)/.exec(className || '');
-            return match ? (
-              <SyntaxHighlighter
-                {...restProps}
-                PreTag="div"
-                language={match[1]}
-                wrapLongLines
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code
-                {...restProps}
-                className={classNames(className, 'text-wrap')}
-              >
-                {children}
-              </code>
-            );
-          },
-        } as any
-      }
     >
-      {contentWithCursor}
-    </Markdown>
+      <Markdown
+        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        components={
+          {
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+            'custom-typography': ({ children }: { children: string }) =>
+              renderReference(children),
+            code(props: any) {
+              const { children, className, ...rest } = props;
+              const restProps = omit(rest, 'node');
+              const match = /language-(\w+)/.exec(className || '');
+              return match ? (
+                <SyntaxHighlighter
+                  {...restProps}
+                  PreTag="div"
+                  language={match[1]}
+                  wrapLongLines
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code
+                  {...restProps}
+                  className={classNames(className, 'text-wrap')}
+                >
+                  {children}
+                </code>
+              );
+            },
+          } as any
+        }
+      >
+        {contentWithCursor}
+      </Markdown>
+    </div>
   );
 };
 

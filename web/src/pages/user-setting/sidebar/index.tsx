@@ -1,9 +1,8 @@
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import ThemeToggle from '@/components/theme-toggle';
+import ThemeSwitch from '@/components/theme-switch';
 import { Button } from '@/components/ui/button';
 import { Domain } from '@/constants/common';
-import { useSecondPathName } from '@/hooks/route-hook';
 import { useLogout } from '@/hooks/use-login-request';
 import {
   useFetchSystemVersion,
@@ -12,18 +11,49 @@ import {
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
-import { Banknote, Box, Server, Unplug, User, Users } from 'lucide-react';
+import {
+  LucideBox,
+  LucideServer,
+  LucideUnplug,
+  LucideUser,
+  LucideUsers,
+} from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
 
 const menuItems = (t: TFunction) => [
-  { icon: Server, label: t('setting.dataSources'), key: Routes.DataSource },
-  { icon: Box, label: t('setting.model'), key: Routes.Model },
-  { icon: Banknote, label: 'MCP', key: Routes.Mcp },
-  { icon: Users, label: t('setting.team'), key: Routes.Team },
-  { icon: User, label: t('setting.profile'), key: Routes.Profile },
-  { icon: Unplug, label: t('setting.api'), key: Routes.Api },
+  {
+    icon: <LucideServer className="size-[1em]" />,
+    label: t('setting.dataSources'),
+    key: Routes.DataSource,
+  },
+  {
+    icon: <LucideBox className="size-[1em]" />,
+    label: t('setting.model'),
+    key: Routes.Model,
+    'data-testid': 'settings-nav-model-providers',
+  },
+  {
+    icon: <IconFontFill name="mcp" className="size-[1em]" />,
+    label: 'MCP',
+    key: Routes.Mcp,
+  },
+  {
+    icon: <LucideUsers className="size-[1em]" />,
+    label: t('setting.team'),
+    key: Routes.Team,
+  },
+  {
+    icon: <LucideUser className="size-[1em]" />,
+    label: t('setting.profile'),
+    key: Routes.Profile,
+  },
+  {
+    icon: <LucideUnplug className="size-[1em]" />,
+    label: t('setting.api'),
+    key: Routes.Api,
+  },
   // {
   //   icon: MessageSquareQuote,
   //   label: 'Prompt Templates',
@@ -33,10 +63,10 @@ const menuItems = (t: TFunction) => [
   // { icon: Cog, label: t('setting.system'), key: Routes.System },
   // { icon: Banknote, label: 'Plan', key: Routes.Plan },
 ];
+
 export function SideBar() {
-  const pathName = useSecondPathName();
   const { data: userInfo } = useFetchUserInfo();
-  const { handleMenuClick, active } = useHandleMenuClick();
+  const { handleMenuClick, active: activeItemKey } = useHandleMenuClick();
   const { version, fetchSystemVersion } = useFetchSystemVersion();
   const { t } = useTranslation();
   useEffect(() => {
@@ -48,35 +78,38 @@ export function SideBar() {
 
   return (
     <aside className="w-[303px] bg-bg-base flex flex-col">
-      <div className="px-6 flex gap-2 items-center">
-        <RAGFlowAvatar
-          avatar={userInfo?.avatar}
-          name={userInfo?.nickname}
-          isPerson
-        />
-        <p className="text-sm text-text-primary">{userInfo?.email}</p>
-      </div>
-      <div className="flex-1 overflow-auto">
-        {menuItems(t).map((item, idx) => {
-          const hoverKey = pathName === item.key;
-          return (
-            <div key={idx}>
-              <div key={idx} className="mx-6 my-5 ">
+      <header>
+        <h1 className="px-6 flex gap-2.5 items-center font-normal">
+          <RAGFlowAvatar
+            avatar={userInfo?.avatar}
+            name={userInfo?.nickname}
+            isPerson
+          />
+
+          <p className="text-sm text-text-primary">{userInfo?.email}</p>
+        </h1>
+      </header>
+
+      <nav className="flex-1 overflow-auto mt-4 py-1">
+        <ul className="px-6 flex flex-col gap-5">
+          {menuItems(t).map((item) => {
+            const { key, icon, label, ...rest } = item;
+
+            return (
+              <li key={key}>
                 <Button
-                  variant={hoverKey ? 'secondary' : 'ghost'}
-                  className={cn('w-full justify-between gap-2.5 p-3 relative', {
-                    'bg-bg-card text-text-primary': active === item.key,
-                    'bg-bg-base text-text-secondary': active !== item.key,
-                  })}
-                  onClick={handleMenuClick(item.key)}
+                  {...rest}
+                  block
+                  variant="ghost"
+                  className={cn(
+                    'justify-start gap-2.5 px-3 relative h-10 text-base',
+                    activeItemKey === key && 'bg-bg-card text-text-primary',
+                  )}
+                  onClick={handleMenuClick(key)}
                 >
                   <section className="flex items-center gap-2.5">
-                    {item.key === Routes.Mcp ? (
-                      <IconFontFill name={'mcp'} className="size-4 w-4 h-4" />
-                    ) : (
-                      <item.icon className="w-6 h-6" />
-                    )}
-                    <span>{item.label}</span>
+                    {icon}
+                    <span>{label}</span>
                   </section>
                   {/* {item.key === Routes.System && (
                     <div className="mr-2 px-2 bg-accent-primary-5 text-accent-primary rounded-md">
@@ -87,29 +120,23 @@ export function SideBar() {
                     <div className="absolute right-0 w-[5px] h-[66px] bg-primary rounded-l-xl shadow-[0_0_5.94px_#7561ff,0_0_11.88px_#7561ff,0_0_41.58px_#7561ff,0_0_83.16px_#7561ff,0_0_142.56px_#7561ff,0_0_249.48px_#7561ff]" />
                   )} */}
                 </Button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
 
-      <div className="p-6 mt-auto ">
+      <footer className="p-6 mt-auto">
         <div className="flex items-center gap-2 mb-6 justify-between">
-          <div className="mr-2 px-2 text-accent-primary rounded-md">
-            {version}
-          </div>
-          <ThemeToggle />
+          <span className="text-xs text-accent-primary">{version}</span>
+
+          <ThemeSwitch />
         </div>
-        <Button
-          variant="ghost"
-          className="w-full gap-3 bg-bg-base border border-border-button"
-          onClick={() => {
-            logout();
-          }}
-        >
+
+        <Button block size="lg" variant="transparent" onClick={() => logout()}>
           {t('setting.logout')}
         </Button>
-      </div>
+      </footer>
     </aside>
   );
 }

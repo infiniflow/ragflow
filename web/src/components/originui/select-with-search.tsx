@@ -2,7 +2,6 @@
 
 import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
 import {
-  Fragment,
   MouseEventHandler,
   ReactNode,
   forwardRef,
@@ -48,6 +47,8 @@ export type SelectWithSearchFlagProps = {
   disabled?: boolean;
   placeholder?: string;
   emptyData?: string;
+  testId?: string;
+  optionTestIdPrefix?: string;
 };
 
 function findLabelWithoutOptions(
@@ -80,6 +81,8 @@ export const SelectWithSearch = forwardRef<
       disabled = false,
       placeholder = t('common.selectPlaceholder'),
       emptyData = t('common.noDataFound'),
+      testId,
+      optionTestIdPrefix,
     },
     ref,
   ) => {
@@ -154,14 +157,15 @@ export const SelectWithSearch = forwardRef<
             aria-expanded={open}
             ref={ref}
             disabled={disabled}
+            data-testid={testId}
             className={cn(
               '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
               triggerClassName,
             )}
           >
             {selectLabel || value ? (
-              <span className="flex min-w-0 options-center gap-2">
-                <span className="leading-none truncate">{selectLabel || value}</span>
+              <span className="flex min-w-0 options-center gap-2 truncate">
+                {selectLabel || value}
               </span>
             ) : (
               <span className="text-text-disabled">{placeholder}</span>
@@ -202,38 +206,51 @@ export const SelectWithSearch = forwardRef<
               <CommandEmpty>
                 <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
               </CommandEmpty>
-              {options.map((group, idx) => {
+              {options.map((group, groupIndex) => {
                 if (group.options) {
                   return (
-                    <Fragment key={idx}>
-                      <CommandGroup heading={group.label} className="mb-1">
-                        {group.options.map((option) => (
-                          <CommandItem
-                            key={option.value}
-                            value={option.value}
-                            disabled={option.disabled}
-                            onSelect={handleSelect}
-                            className={
-                              value === option.value ? 'bg-bg-card' : ''
-                            }
-                          >
-                            <span className="leading-none">{option.label}</span>
+                    <CommandGroup
+                      key={group.value || `group-${groupIndex}`}
+                      heading={group.label}
+                      className="mb-1"
+                    >
+                      {group.options.map((option, optionIndex) => (
+                        <CommandItem
+                          key={
+                            option.value ||
+                            `option-${groupIndex}-${optionIndex}`
+                          }
+                          value={option.value}
+                          disabled={option.disabled}
+                          onSelect={handleSelect}
+                          data-testid={
+                            optionTestIdPrefix && option.value
+                              ? `${optionTestIdPrefix}${option.value}`
+                              : 'combobox-option'
+                          }
+                          className={value === option.value ? 'bg-bg-card' : ''}
+                        >
+                          <span className="leading-none">{option.label}</span>
 
-                            {value === option.value && (
-                              <CheckIcon size={16} className="ml-auto" />
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Fragment>
+                          {value === option.value && (
+                            <CheckIcon size={16} className="ml-auto" />
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
                   );
                 } else {
                   return (
                     <CommandItem
-                      key={group.value}
+                      key={group.value || `item-${groupIndex}`}
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
+                      data-testid={
+                        optionTestIdPrefix && group.value
+                          ? `${optionTestIdPrefix}${group.value}`
+                          : 'combobox-option'
+                      }
                       className={cn('mb-1 min-h-10 ', {
                         'bg-bg-card ': value === group.value,
                       })}

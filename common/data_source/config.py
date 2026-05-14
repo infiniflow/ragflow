@@ -40,8 +40,10 @@ class BlobType(str, Enum):
 
 class DocumentSource(str, Enum):
     """Document sources"""
+    RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
+    REST_API = "rest_api"
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"
@@ -66,6 +68,7 @@ class DocumentSource(str, Enum):
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
+    DINGTALK_AI_TABLE = "dingtalk_ai_table"
 
 
 class FileOrigin(str, Enum):
@@ -194,6 +197,10 @@ CONFLUENCE_TIMEZONE_OFFSET = float(
 
 CONFLUENCE_SYNC_TIME_BUFFER_SECONDS = int(
     os.environ.get("CONFLUENCE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY)
+)
+
+GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS = int(
+    os.environ.get("GOOGLE_DRIVE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY)
 )
 
 GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD = int(

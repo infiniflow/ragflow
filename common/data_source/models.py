@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Optional, List, Sequence, NamedTuple
 from typing_extensions import TypedDict, NotRequired
 from pydantic import BaseModel
+from enum import Enum
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,25 @@ class Document(BaseModel):
     primary_owners: Optional[list] = None
     metadata: Optional[dict[str, Any]] = None
     doc_metadata: Optional[dict[str, Any]] = None
+    # Opaque, connector-supplied fingerprint stored in Document.content_hash for
+    # change-detection. 32-char hex string; format is per-source (xxhash128 of
+    # bytes for local uploads, xxhash128(ETag) for blob storage, etc.). When set
+    # on a yielded Document, the orchestrator persists it as content_hash and
+    # skips the post-download xxhash128(blob) recomputation.
+    fingerprint: Optional[str] = None
+
+
+class KeyRecord(BaseModel):
+    """One entry returned by a FingerprintConnector.list_keys() call.
+
+    A KeyRecord is the cheap-listing primitive: connector enumerates all keys
+    it has, attaches a fingerprint when the source exposes one, and the
+    orchestrator only fetches content when the fingerprint differs from what's
+    persisted.
+    """
+    key: str
+    fingerprint: Optional[str] = None
+    deleted: bool = False
 
 
 class BasicExpertInfo(BaseModel):
@@ -306,6 +326,11 @@ class ProcessedSlackMessage:
         self.failure = failure
 
 
+class SeafileSyncScope(str, Enum):
+    """Defines how much of SeaFile to synchronise."""
+    ACCOUNT = "account"      # All libraries the token can see
+    LIBRARY = "library"      # A single library (repo)
+    DIRECTORY = "directory"  # A single directory inside a library
 # Type aliases for type hints
 SecondsSinceUnixEpoch = float
 GenerateDocumentsOutput = Any

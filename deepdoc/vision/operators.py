@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 import math
 from PIL import Image
+from rag.utils.lazy_image import ensure_pil_image
 
 
 class DecodeImage:
@@ -128,8 +129,9 @@ class NormalizeImage:
     def __call__(self, data):
         img = data['image']
         from PIL import Image
-        if isinstance(img, Image.Image):
-            img = np.array(img)
+        pil = ensure_pil_image(img)
+        if isinstance(pil, Image.Image):
+            img = np.array(pil)
         assert isinstance(img,
                           np.ndarray), "invalid input 'img' in NormalizeImage"
         data['image'] = (
@@ -147,8 +149,9 @@ class ToCHWImage:
     def __call__(self, data):
         img = data['image']
         from PIL import Image
-        if isinstance(img, Image.Image):
-            img = np.array(img)
+        pil = ensure_pil_image(img)
+        if isinstance(pil, Image.Image):
+            img = np.array(pil)
         data['image'] = img.transpose((2, 0, 1))
         return data
 

@@ -16,7 +16,8 @@ export enum Routes {
   Home = '/home',
   Datasets = '/datasets',
   DatasetBase = '/dataset',
-  Dataset = `${Routes.DatasetBase}${Routes.DatasetBase}`,
+  Files = '/files',
+  Dataset = `${Routes.DatasetBase}/${Routes.Files}`,
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
@@ -32,7 +33,8 @@ export enum Routes {
   SearchShare = '/search/share',
   Chats = '/chats',
   Chat = '/chat',
-  Files = '/files',
+
+  Skills = '/files/skills',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
   Api = '/api',
@@ -49,7 +51,7 @@ export enum Routes {
   ProfileModel = `${ProfileSetting}${Model}`,
   ProfilePrompt = `${ProfileSetting}${Prompt}`,
   ProfileProfile = `${ProfileSetting}${Profile}`,
-  DatasetTesting = '/testing',
+  DatasetTesting = '/retrieval',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
@@ -62,8 +64,8 @@ export enum Routes {
   ChatShare = `${Chats}/share`,
   ChatWidget = `${Chats}/widget`,
   UserSetting = '/user-setting',
-  DataSetOverview = '/dataset-overview',
-  DataSetSetting = '/dataset-setting',
+  DataSetOverview = '/logs',
+  DataSetSetting = '/configuration',
   DataflowResult = '/dataflow-result',
   Admin = '/admin',
   AdminServices = `${Admin}/services`,
@@ -146,8 +148,8 @@ const routeConfigOptions = [
   {
     path: Routes.Root,
     layout: false,
-    Component: () => import('@/layouts/next'),
-    loader: ({ request }) => {
+    Component: () => import('@/layouts/root-layout'),
+    loader: ({ request }: { request: Request }) => {
       const url = new URL(request.url);
       const auth = url.searchParams.get('auth');
       if (auth) {
@@ -165,62 +167,71 @@ const routeConfigOptions = [
     ],
   },
   {
-    path: Routes.Datasets,
-    layout: false,
-    Component: () => import('@/layouts/next'),
+    path: Routes.Chat + '/:id',
+    Component: () => import('@/pages/next-chats/chat'),
+  },
+  {
+    path: Routes.Root,
+    Component: () => import('@/layouts/root-layout'),
     children: [
       {
         path: Routes.Datasets,
         Component: () => import('@/pages/datasets'),
       },
-    ],
-  },
-  {
-    path: Routes.Chats,
-    layout: false,
-    Component: () => import('@/layouts/next'),
-    children: [
+      {
+        path: Routes.DatasetBase,
+        Component: () => import('@/pages/dataset'),
+        children: [
+          {
+            path: `${Routes.Dataset}/:id`,
+            Component: () => import('@/pages/dataset/dataset'),
+          },
+          {
+            path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
+            Component: () => import('@/pages/dataset/testing'),
+          },
+          {
+            path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,
+            Component: () => import('@/pages/dataset/knowledge-graph'),
+          },
+          {
+            path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
+            Component: () => import('@/pages/dataset/dataset-overview'),
+          },
+          {
+            path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
+            Component: () => import('@/pages/dataset/dataset-setting'),
+          },
+        ],
+      },
       {
         path: Routes.Chats,
         Component: () => import('@/pages/next-chats'),
       },
-    ],
-  },
-  {
-    path: Routes.Chat + '/:id',
-    layout: false,
-    Component: () => import('@/pages/next-chats/chat'),
-  },
-  {
-    path: Routes.Searches,
-    layout: false,
-    Component: () => import('@/layouts/next'),
-    children: [
       {
         path: Routes.Searches,
         Component: () => import('@/pages/next-searches'),
       },
-    ],
-  },
-  {
-    path: Routes.Memories,
-    layout: false,
-    Component: () => import('@/layouts/next'),
-    children: [
+      {
+        path: `${Routes.Search}/:id`,
+        layout: false,
+        Component: () => import('@/pages/next-search'),
+      },
+      {
+        path: Routes.Agents,
+        Component: () => import('@/pages/agents'),
+      },
+      {
+        path: Routes.AgentTemplates,
+        layout: false,
+        Component: () => import('@/pages/agents/agent-templates'),
+      },
       {
         path: Routes.Memories,
         Component: () => import('@/pages/memories'),
       },
-    ],
-  },
-  {
-    path: `${Routes.Memory}`,
-    layout: false,
-    Component: () => import('@/layouts/next'),
-    children: [
       {
         path: `${Routes.Memory}`,
-        layout: false,
         Component: () => import('@/pages/memory'),
         children: [
           {
@@ -233,181 +244,113 @@ const routeConfigOptions = [
           },
         ],
       },
+      {
+        path: Routes.Files,
+        Component: () => import('@/pages/files'),
+      },
+      {
+        path: Routes.Skills,
+        Component: () => import('@/pages/skills'),
+      },
+      {
+        path: Routes.UserSetting,
+        Component: () => import('@/pages/user-setting'),
+        layout: false,
+        children: [
+          {
+            path: Routes.UserSetting,
+            element: (
+              <Navigate to={`/user-setting${Routes.DataSource}`} replace />
+            ),
+          },
+          {
+            path: `${Routes.UserSetting}/profile`,
+            Component: () => import('@/pages/user-setting/profile'),
+          },
+          /*
+          {
+            path: `${Routes.UserSetting}/locale`,
+            Component: () => import('@/pages/user-setting/setting-locale'),
+          },
+          */
+          {
+            path: `${Routes.UserSetting}/model`,
+            Component: () => import('@/pages/user-setting/setting-model'),
+          },
+          {
+            path: `${Routes.UserSetting}/team`,
+            Component: () => import('@/pages/user-setting/setting-team'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.Api}`,
+            Component: () => import('@/pages/user-setting/setting-api'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.Mcp}`,
+            Component: () => import('@/pages/user-setting/mcp'),
+          },
+
+          {
+            path: `${Routes.UserSetting}${Routes.DataSource}`,
+            Component: () => import('@/pages/user-setting/data-source'),
+          },
+        ],
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+        layout: false,
+        Component: () =>
+          import('@/pages/user-setting/data-source/data-source-detail-page'),
+      },
     ],
   },
   {
-    path: `${Routes.Search}/:id`,
-    layout: false,
-    Component: () => import('@/pages/next-search'),
-  },
-  {
     path: `${Routes.SearchShare}`,
-    layout: false,
     Component: () => import('@/pages/next-search/share'),
   },
   {
-    path: Routes.Agents,
-    layout: false,
-    Component: () => import('@/layouts/next'),
+    path: Routes.Agent,
     children: [
       {
-        path: Routes.Agents,
-        Component: () => import('@/pages/agents'),
+        path: `${Routes.Agent}/:id`,
+        Component: () => import('@/pages/agent'),
+      },
+      {
+        path: Routes.AgentExplore,
+        Component: () => import('@/pages/agent/explore'),
+        errorElement: <FallbackComponent />,
       },
     ],
   },
   {
     path: `${Routes.AgentLogPage}/:id`,
-    layout: false,
     Component: () => import('@/pages/agents/agent-log-page'),
   },
   {
-    path: `${Routes.Agent}/:id`,
-    layout: false,
-    Component: () => import('@/pages/agent'),
-  },
-  {
-    path: Routes.AgentExplore,
-    layout: false,
-    Component: () => import('@/pages/agent/explore'),
-    errorElement: <FallbackComponent />,
-  },
-  {
-    path: Routes.AgentTemplates,
-    layout: false,
-    Component: () => import('@/pages/agents/agent-templates'),
-  },
-
-  {
-    path: Routes.Files,
-    layout: false,
-    Component: () => import('@/layouts/next'),
-    children: [
-      {
-        path: Routes.Files,
-        Component: () => import('@/pages/files'),
-      },
-    ],
-  },
-  {
-    path: Routes.DatasetBase,
-    layout: false,
-    Component: () => import('@/layouts/next'),
-    children: [
-      {
-        path: Routes.DatasetBase,
-        element: <Navigate to={Routes.Dataset} replace />,
-      },
-    ],
-  },
-  {
-    path: Routes.DatasetBase,
-    layout: false,
-    Component: () => import('@/pages/dataset'),
-    children: [
-      {
-        path: `${Routes.Dataset}/:id`,
-        Component: () => import('@/pages/dataset/dataset'),
-      },
-      {
-        path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
-        Component: () => import('@/pages/dataset/testing'),
-      },
-      {
-        path: `${Routes.DatasetBase}${Routes.KnowledgeGraph}/:id`,
-        Component: () => import('@/pages/dataset/knowledge-graph'),
-      },
-      {
-        path: `${Routes.DatasetBase}${Routes.DataSetOverview}/:id`,
-        Component: () => import('@/pages/dataset/dataset-overview'),
-      },
-      {
-        path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
-        Component: () => import('@/pages/dataset/dataset-setting'),
-      },
-    ],
-  },
-  {
     path: `${Routes.DataflowResult}`,
-    layout: false,
     Component: () => import('@/pages/dataflow-result'),
   },
   {
-    path: `${Routes.ParsedResult}/chunks`,
-    layout: false,
-    Component: () =>
-      import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
-  },
-  {
     path: Routes.Chunk,
-    layout: false,
     children: [
       {
-        path: Routes.Chunk,
+        path: `${Routes.Chunk}`,
         Component: () => import('@/pages/chunk'),
-        children: [
-          {
-            path: `${Routes.ChunkResult}/:id`,
-            Component: () => import('@/pages/chunk/chunk-result'),
-          },
-          {
-            path: `${Routes.ResultView}/:id`,
-            Component: () => import('@/pages/chunk/result-view'),
-          },
-        ],
+      },
+      {
+        path: `${Routes.ParsedResult}/chunks`,
+        Component: () =>
+          import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
+      },
+      {
+        path: `${Routes.ChunkResult}/:id`,
+        Component: () => import('@/pages/chunk/chunk-result'),
+      },
+      {
+        path: `${Routes.ResultView}/:id`,
+        Component: () => import('@/pages/chunk/result-view'),
       },
     ],
-  },
-  {
-    path: Routes.Chunk,
-    layout: false,
-    Component: () => import('@/pages/chunk'),
-  },
-  {
-    path: '/user-setting',
-    Component: () => import('@/pages/user-setting'),
-    layout: false,
-    children: [
-      {
-        path: '/user-setting',
-        element: <Navigate to={`/user-setting${Routes.DataSource}`} replace />,
-      },
-      {
-        path: '/user-setting/profile',
-        Component: () => import('@/pages/user-setting/profile'),
-      },
-      {
-        path: '/user-setting/locale',
-        Component: () => import('@/pages/user-setting/setting-locale'),
-      },
-      {
-        path: '/user-setting/model',
-        Component: () => import('@/pages/user-setting/setting-model'),
-      },
-      {
-        path: '/user-setting/team',
-        Component: () => import('@/pages/user-setting/setting-team'),
-      },
-      {
-        path: `/user-setting${Routes.Api}`,
-        Component: () => import('@/pages/user-setting/setting-api'),
-      },
-      {
-        path: `/user-setting${Routes.Mcp}`,
-        Component: () => import('@/pages/user-setting/mcp'),
-      },
-      {
-        path: `/user-setting${Routes.DataSource}`,
-        Component: () => import('@/pages/user-setting/data-source'),
-      },
-    ],
-  },
-  {
-    path: `/user-setting${Routes.DataSource}${Routes.DataSourceDetailPage}`,
-    Component: () =>
-      import('@/pages/user-setting/data-source/data-source-detail-page'),
-
-    layout: false,
   },
   {
     path: Routes.Admin,
@@ -420,7 +363,6 @@ const routeConfigOptions = [
       {
         path: Routes.Admin,
         Component: () => import('@/pages/admin/layouts/authorized-layout'),
-
         children: [
           {
             path: `${Routes.AdminUserManagement}/:id`,
@@ -428,7 +370,6 @@ const routeConfigOptions = [
           },
           {
             Component: () => import('@/pages/admin/layouts/navigation-layout'),
-
             children: [
               {
                 path: Routes.AdminServices,

@@ -12,7 +12,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
     console.log('🚀 ~ useWatchFormChange ~ values:', form?.formState.isDirty);
     if (id) {
       values = form?.getValues() || {};
-      let nextValues: any = {
+      const nextValues: any = {
         ...values,
         conditions:
           values?.conditions?.map((x: ISwitchCondition) => ({ ...x })) ?? [], // Changing the form value with useFieldArray does not change the array reference

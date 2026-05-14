@@ -7,7 +7,7 @@ ARG NEED_MIRROR=0
 
 WORKDIR /ragflow
 
-# Copy models downloaded via download_deps.py
+# copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' -cf - \
@@ -19,49 +19,49 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
     cp -r /deps/nltk_data /root/ && \
-    cp /deps/tika-server-standard-3.2.3.jar /deps/tika-server-standard-3.2.3.jar.md5 /ragflow/ && \
+    cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
-ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.2.3.jar"
+ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup apt
 # Python package and implicit dependencies:
 # opencv-python: libglib2.0-0 libglx-mesa0 libgl1
-# python-pptx:   default-jdk                              tika-server-standard-3.2.3.jar
+# python-pptx:   default-jdk                              tika-server-standard-3.3.0.jar
 # selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
 # Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     apt --no-install-recommends install -y ca-certificates; \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
-        sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.tuna.tsinghua.edu.cn/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt install -y libglib2.0-0 libglx-mesa0 libgl1 && \
-    apt install -y pkg-config libicu-dev libgdiplus && \
-    apt install -y default-jdk && \
-    apt install -y libatk-bridge2.0-0 && \
-    apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
-    apt install -y libjemalloc-dev && \
-    apt install -y gnupg unzip curl wget git vim less && \
-    apt install -y ghostscript && \
-    apt install -y pandoc && \
-    apt install -y texlive && \
-    apt install -y fonts-freefont-ttf fonts-noto-cjk && \
-    apt install -y postgresql-client
+    apt install -y \
+    build-essential libglib2.0-0 libglx-mesa0 libgl1 pkg-config libicu-dev libgdiplus default-jdk libatk-bridge2.0-0 libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev libjemalloc-dev gnupg unzip curl wget git vim less ghostscript pandoc texlive texlive-latex-extra texlive-xetex texlive-lang-chinese fonts-freefont-ttf fonts-noto-cjk postgresql-client
+
+# Download resource from GitHub to /usr/share/infinity
+RUN mkdir -p /usr/share/infinity/resource && \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        git clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource; \
+    else \
+        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
+    fi && \
+    cp -r /tmp/resource/* /usr/share/infinity/resource && \
+    rm -rf /tmp/resource
 
 ARG NGINX_VERSION=1.29.5-1~noble
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
+    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
-    apt update && \
-    apt install -y nginx=${NGINX_VERSION} && \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y nginx=${NGINX_VERSION} && \
     apt-mark hold nginx
 
 # Install uv
@@ -70,7 +70,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
         mkdir -p /etc/uv && \
         echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
         echo '[[index]]' >> /etc/uv/uv.toml && \
-        echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
+        echo 'url = "https://mirrors.aliyun.com/pypi/simple"' >> /etc/uv/uv.toml && \
         echo 'default = true' >> /etc/uv/uv.toml; \
     fi; \
     arch="$(uname -m)"; \
@@ -80,32 +80,18 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
     && uv python install 3.12
 
-ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+    UV_HTTP_TIMEOUT=200 \
+    UV_HTTP_RETRIES=3
 ENV PATH=/root/.local/bin:$PATH
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt purge -y nodejs npm cargo && \
+    apt purge -y nodejs npm && \
     apt autoremove -y && \
     apt update && \
     apt install -y nodejs
-
-# A modern version of cargo is needed for the latest version of the Rust compiler.
-RUN apt update && apt install -y curl build-essential \
-    && if [ "$NEED_MIRROR" == "1" ]; then \
-         # Use TUNA mirrors for rustup/rust dist files \
-         export RUSTUP_DIST_SERVER="https://mirrors.tuna.tsinghua.edu.cn/rustup"; \
-         export RUSTUP_UPDATE_ROOT="https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"; \
-         echo "Using TUNA mirrors for Rustup."; \
-       fi; \
-    # Force curl to use HTTP/1.1 \
-    curl --proto '=https' --tlsv1.2 --http1.1 -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal \
-    && echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc
-
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-RUN cargo --version && rustc --version
 
 # Add msssql ODBC driver
 # macOS ARM64 environment, install msodbcsql18.
@@ -157,9 +143,9 @@ COPY pyproject.toml uv.lock ./
 # uv records index url into uv.lock but doesn't failover among multiple indexes
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
+        sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
     else \
-        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
+        sed -i 's|mirrors.aliyun.com/pypi|pypi.org|g' uv.lock; \
     fi; \
     uv sync --python 3.12 --frozen && \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
@@ -168,8 +154,8 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
-    export NODE_OPTIONS="--max-old-space-size=4096" && \
-    cd web && npm install && npm run build
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install && \
+    NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
 
 COPY .git /ragflow/.git
 
@@ -202,10 +188,18 @@ COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY common common
 COPY memory memory
+COPY bin bin
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
+
+# Copy nginx configuration for frontend serving
+COPY docker/nginx/ragflow.conf.golang docker/nginx/ragflow.conf.python docker/nginx/ragflow.conf.hybrid docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
+RUN mv /etc/nginx/ragflow.conf.golang /etc/nginx/conf.d/ragflow.conf.golang && \
+    mv /etc/nginx/ragflow.conf.python /etc/nginx/conf.d/ragflow.conf.python && \
+    mv /etc/nginx/ragflow.conf.hybrid /etc/nginx/conf.d/ragflow.conf.hybrid && \
+    rm -f /etc/nginx/sites-enabled/default
 
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist

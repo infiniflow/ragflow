@@ -51,11 +51,19 @@ class _DummyTenantLLMModel:
     llm_factory = _ExprField("llm_factory")
     llm_name = _ExprField("llm_name")
 
+    def __init__(self, id=None, **kwargs):
+        self.id = id
+        self.api_key = None
+        self.status = None
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
 
 class _TenantLLMRow:
     def __init__(
         self,
         *,
+        id,
         llm_name,
         llm_factory,
         model_type,
@@ -65,6 +73,7 @@ class _TenantLLMRow:
         api_base="",
         max_tokens=8192,
     ):
+        self.id = id
         self.llm_name = llm_name
         self.llm_factory = llm_factory
         self.model_type = model_type
@@ -76,6 +85,7 @@ class _TenantLLMRow:
 
     def to_dict(self):
         return {
+            "id": self.id,
             "llm_name": self.llm_name,
             "llm_factory": self.llm_factory,
             "model_type": self.model_type,
@@ -138,6 +148,10 @@ def _load_llm_app(monkeypatch):
     class _StubTenantLLMService:
         @staticmethod
         def ensure_mineru_from_env(_tenant_id):
+            return None
+
+        @staticmethod
+        def ensure_opendataloader_from_env(_tenant_id):
             return None
 
         @staticmethod
@@ -239,6 +253,28 @@ def _load_llm_app(monkeypatch):
 
 
 @pytest.mark.p2
+def test_openai_catalog_contains_latest_gpt_models_unit():
+    repo_root = Path(__file__).resolve().parents[4]
+
+    openai_provider_path = repo_root / "conf" / "llm_factories.json"
+    openai_model_path = repo_root / "conf" / "models" / "openai.json"
+
+    with open(openai_provider_path, "r", encoding="utf-8") as f:
+        factories = json.load(f)["factory_llm_infos"]
+
+    openai_factory = next(item for item in factories if item["name"] == "OpenAI")
+    factory_model_names = {item["llm_name"] for item in openai_factory["llm"]}
+
+    with open(openai_model_path, "r", encoding="utf-8") as f:
+        openai_models = json.load(f)["models"]
+    model_file_names = {item["name"] for item in openai_models}
+
+    for model_name in ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]:
+        assert model_name in factory_model_names
+        assert model_name in model_file_names
+
+
+@pytest.mark.p2
 def test_list_app_grouping_availability_and_merge(monkeypatch):
     module = _load_llm_app(monkeypatch)
 
@@ -246,14 +282,18 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     monkeypatch.setattr(module.TenantLLMService, "ensure_mineru_from_env", lambda tenant_id: ensure_calls.append(tenant_id))
 
     tenant_rows = [
-        _TenantLLMRow(llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
-        _TenantLLMRow(llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+        _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
+        _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+        _TenantLLMRow(id=3, llm_name="gpt-5.5", llm_factory="OpenAI", model_type="chat", api_key="k3", status="1"),
+        _TenantLLMRow(id=4, llm_name="gpt-5.4", llm_factory="OpenAI", model_type="chat", api_key="k4", status="1"),
     ]
     monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: tenant_rows)
 
     all_llms = [
         _LLMRow(llm_name="tei-embed", fid="Builtin", model_type="embedding", status="1"),
         _LLMRow(llm_name="fast-emb", fid="FastEmbed", model_type="embedding", status="1"),
+        _LLMRow(llm_name="gpt-5.5", fid="OpenAI", model_type="chat", status="1"),
+        _LLMRow(llm_name="gpt-5.4", fid="OpenAI", model_type="chat", status="1"),
         _LLMRow(llm_name="not-in-status", fid="Other", model_type="chat", status="1"),
     ]
     monkeypatch.setattr(module.LLMService, "get_all", lambda: all_llms)
@@ -263,11 +303,11 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     monkeypatch.setenv("TEI_MODEL", "tei-embed")
 
     res = _run(module.list_app())
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert ensure_calls == ["tenant-1"]
 
     data = res["data"]
-    assert {"Builtin", "FastEmbed", "CustomFactory"}.issubset(set(data.keys()))
+    assert {"Builtin", "FastEmbed", "CustomFactory", "OpenAI"}.issubset(set(data.keys()))
 
     builtin = data["Builtin"][0]
     assert builtin["llm_name"] == "tei-embed"
@@ -281,6 +321,10 @@ def test_list_app_grouping_availability_and_merge(monkeypatch):
     assert tenant_only["llm_name"] == "tenant-only"
     assert tenant_only["available"] is True
 
+    # Response-level assertion: /llm/list output includes latest OpenAI IDs.
+    openai_names = {item["llm_name"] for item in data["OpenAI"]}
+    assert {"gpt-5.5", "gpt-5.4"}.issubset(openai_names)
+
 
 @pytest.mark.p2
 def test_list_app_model_type_filter(monkeypatch):
@@ -291,8 +335,8 @@ def test_list_app_model_type_filter(monkeypatch):
         module.TenantLLMService,
         "query",
         lambda **_kwargs: [
-            _TenantLLMRow(llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
-            _TenantLLMRow(llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
+            _TenantLLMRow(id=1, llm_name="fast-emb", llm_factory="FastEmbed", model_type="embedding", api_key="k1", status="1"),
+            _TenantLLMRow(id=2, llm_name="tenant-only", llm_factory="CustomFactory", model_type="chat", api_key="k2", status="1"),
         ],
     )
     monkeypatch.setattr(
@@ -306,7 +350,7 @@ def test_list_app_model_type_filter(monkeypatch):
 
     monkeypatch.setattr(module, "request", SimpleNamespace(args={"model_type": "chat"}))
     res = _run(module.list_app())
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert list(res["data"].keys()) == ["CustomFactory"]
     assert res["data"]["CustomFactory"][0]["model_type"] == "chat"
 
@@ -514,6 +558,10 @@ def test_add_llm_factory_specific_key_assembly_unit(monkeypatch):
         async def async_chat(self, *_args, **_kwargs):
             return "ok", 1
 
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "ok"
+            yield 1
+
     class _TTSOK:
         def __init__(self, key, model_name, base_url="", **_kwargs):
             captured["tts"].append((key, model_name, base_url))
@@ -679,12 +727,20 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
         async def async_chat(self, *_args, **_kwargs):
             return "**ERROR**: chat failed", 0
 
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "**ERROR**: chat failed"
+            yield 0
+
     class _ChatPass:
         def __init__(self, *_args, **_kwargs):
             pass
 
         async def async_chat(self, *_args, **_kwargs):
             return "ok", 1
+
+        async def async_chat_streamly(self, *_args, **_kwargs):
+            yield "ok"
+            yield 1
 
     class _RerankFail:
         def __init__(self, *_args, **_kwargs):
@@ -757,7 +813,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
 
     res = _call({"llm_factory": "FRKey", "llm_name": "m", "model_type": module.LLMType.RERANK.value, "verify": True})
     assert res["code"] == 0
-    assert "dose not support this model(FRKey/m)" in res["data"]["message"]
+    assert "does not support this model(FRKey/m)" in res["data"]["message"]
 
     res = _call({"llm_factory": "FRFail", "llm_name": "m", "model_type": module.LLMType.RERANK.value, "verify": True})
     assert res["code"] == 0
@@ -787,7 +843,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.TenantLLMService, "filter_update", lambda _filters, _payload: False)
     monkeypatch.setattr(module.TenantLLMService, "save", lambda **kwargs: saved.append(kwargs) or True)
     res = _call({"llm_factory": "FChatPass", "llm_name": "m", "model_type": module.LLMType.CHAT.value, "api_key": "k"})
-    assert res["code"] == 0
+    assert res["code"] == 0, res["message"]
     assert res["data"] is True
     assert saved
     assert saved[0]["llm_factory"] == "FChatPass"
@@ -824,11 +880,13 @@ def test_my_llms_include_details_and_exception_unit(monkeypatch):
     monkeypatch.setattr(module, "request", SimpleNamespace(args={"include_details": "true"}))
     ensure_calls = []
     monkeypatch.setattr(module.TenantLLMService, "ensure_mineru_from_env", lambda tenant_id: ensure_calls.append(tenant_id))
+    monkeypatch.setattr(module.TenantLLMService, "ensure_opendataloader_from_env", lambda _tenant_id: None)
     monkeypatch.setattr(
         module.TenantLLMService,
         "query",
         lambda **_kwargs: [
             _TenantLLMRow(
+                id=1,
                 llm_name="chat-model",
                 llm_factory="FactoryX",
                 model_type="chat",

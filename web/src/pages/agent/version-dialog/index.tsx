@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useClientPagination } from '@/hooks/logic-hooks/use-pagination';
 import {
   useFetchVersion,
@@ -24,6 +25,12 @@ import { ArrowDownToLine } from 'lucide-react';
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { nodeTypes } from '../canvas';
+
+function Dot() {
+  return (
+    <span className="w-2 h-2 inline-block rounded-full bg-accent-primary flex-shrink-0" />
+  );
+}
 
 export function VersionDialog({
   hideModal,
@@ -58,14 +65,14 @@ export function VersionDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="max-w-[60vw]">
+      <DialogContent className="max-w-[900px]">
         <DialogHeader>
           <DialogTitle className="text-base">
             {t('flow.historyVersion')}
           </DialogTitle>
         </DialogHeader>
         <section className="flex gap-8 relative">
-          <div className="w-1/3 max-h-[60vh] overflow-auto min-h-[40vh]">
+          <div className="w-72 max-h-[60vh] overflow-auto min-h-[40vh]">
             {loading ? (
               <Spin className="top-1/2"></Spin>
             ) : (
@@ -78,7 +85,10 @@ export function VersionDialog({
                     })}
                     onClick={handleClick(x.id)}
                   >
-                    {x.title}
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{x.title}</span>
+                      {x.release && <Dot></Dot>}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -90,13 +100,26 @@ export function VersionDialog({
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">
-                  <section className="flex justify-between">
+                  <section className="flex justify-between pb-2">
                     <div>
-                      <div className="pb-1 truncate">{agent?.title}</div>
+                      <div className="flex">
+                        <span className="pb-1 truncate">{agent?.title}</span>
+                        {agent?.release && (
+                          <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>
+                            <Button className="bg-accent-primary-5 ml-3">
+                              <Dot></Dot>
+                              <span className="text-accent-primary pl-2 rounded">
+                                {t('flow.production')}
+                              </span>
+                            </Button>
+                          </RAGFlowTooltip>
+                        )}
+                      </div>
                       <p className="text-text-secondary text-xs">
                         Created: {formatDate(agent?.create_date)}
                       </p>
                     </div>
+
                     <Button variant={'ghost'} onClick={downloadFile}>
                       <ArrowDownToLine />
                     </Button>
@@ -120,6 +143,9 @@ export function VersionDialog({
                         zoomOnDoubleClick={false}
                         preventScrolling={true}
                         minZoom={0.1}
+                        nodesDraggable={false}
+                        nodesConnectable={false}
+                        elementsSelectable={false}
                       >
                         <AgentBackground></AgentBackground>
                         <Spotlight className="z-0" opcity={0.7} coverage={70} />
