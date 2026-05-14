@@ -25,6 +25,7 @@ from api.utils.web_utils import get_float, safe_json_parse
 from common.constants import VALID_MCP_SERVER_TYPES
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from common.misc_utils import get_uuid, thread_pool_exec
+from common.ssrf_guard import assert_url_is_safe, pin_dns_global
 
 
 def _get_mcp_ids_from_args() -> list[str]:
@@ -296,9 +297,17 @@ async def import_multiple() -> Response:
 async def test_mcp(mcp_id: str) -> Response:
     req = await get_request_json()
 
+    mcp_server_record = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
+    if mcp_server_record is None:
+        return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+
     url = req.get("url", "")
     if not url:
         return get_data_error_result(message="Invalid MCP url.")
+    try:
+        hostname, resolved_ip = assert_url_is_safe(url)
+    except ValueError as exc:
+        return get_data_error_result(message=str(exc))
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
@@ -312,14 +321,15 @@ async def test_mcp(mcp_id: str) -> Response:
 
     result = []
     try:
-        tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+        with pin_dns_global(hostname, resolved_ip):
+            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
 
-        try:
-            tools = await thread_pool_exec(tool_call_session.get_tools, timeout)
-        except Exception as e:
-            return get_data_error_result(message=f"Test MCP error: {e}")
-        finally:
-            await thread_pool_exec(close_multiple_mcp_toolcall_sessions, [tool_call_session])
+            try:
+                tools = await thread_pool_exec(tool_call_session.get_tools, timeout)
+            except Exception as e:
+                return get_data_error_result(message=f"Test MCP error: {e}")
+            finally:
+                await thread_pool_exec(close_multiple_mcp_toolcall_sessions, [tool_call_session])
 
         for tool in tools:
             tool_dict = tool.model_dump()
