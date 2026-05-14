@@ -817,7 +817,8 @@ func (l *LocalAIModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	return fmt.Errorf("%s, no such method", l.Name())
 }
 
-// OCRFile OCR file
-func (d *LocalAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+// OCRFile: LocalAI has no OCR pipeline in its OpenAI-compatible surface;
+// document parsing belongs to a different interface entirely.
+func (l *LocalAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

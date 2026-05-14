@@ -461,7 +461,7 @@ func TestLongCatAudioOCRReturnNoSuchMethod(t *testing.T) {
 	if _, err := m.AudioSpeech(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: want 'no such method', got %v", err)
 	}
-	if _, err := m.OCRFile(&model, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := m.OCRFile(&model, nil, &model, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: want 'no such method', got %v", err)
 	}
 }
