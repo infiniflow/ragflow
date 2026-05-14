@@ -711,6 +711,18 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 	return &ocrResponse, nil
 }
 
+type giteeParseFileResponse struct {
+	TaskID    string    `json:"task_id"`
+	Status    string    `json:"status"`
+	CreatedAt int64     `json:"created_at"`
+	URLs      giteeURLs `json:"urls"`
+}
+
+type giteeURLs struct {
+	Get    string `json:"get"`
+	Cancel string `json:"cancel"`
+}
+
 // ParseFile parse file
 func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	if documentURL == nil && content == nil {
@@ -750,19 +762,19 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 	}
 
 	if documentURL != nil {
-		if err := writer.WriteField("image", *documentURL); err != nil {
-			return nil, fmt.Errorf("failed to write image URL: %w", err)
+		if err := writer.WriteField("file", *documentURL); err != nil {
+			return nil, fmt.Errorf("failed to write file URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
-		part, err := writer.CreateFormFile("image", "image")
+		part, err := writer.CreateFormFile("file", "file")
 		if err != nil {
-			return nil, fmt.Errorf("failed to create image form file: %w", err)
+			return nil, fmt.Errorf("failed to create file form file: %w", err)
 		}
 		if _, err = part.Write(content); err != nil {
-			return nil, fmt.Errorf("failed to write image content: %w", err)
+			return nil, fmt.Errorf("failed to write file content: %w", err)
 		}
 	} else {
-		return nil, fmt.Errorf("image or image URL is required")
+		return nil, fmt.Errorf("file or file URL is required")
 	}
 
 	writer.Close()
@@ -793,14 +805,71 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 		return nil, fmt.Errorf("gitee OCR API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var giteeResponse giteeOCRResponse
-	if err = json.Unmarshal(body, &giteeResponse); err != nil {
+	var giteeParseFileResp giteeParseFileResponse
+	if err = json.Unmarshal(body, &giteeParseFileResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	_, err = g.getParseFile(&baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
+	if err != nil {
+		return nil, err
 	}
 
 	var parseFileResponse = ParseFileResponse{}
 
 	return &parseFileResponse, nil
+}
+
+type giteeGetParseFileResponse struct {
+}
+
+func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
+	url := fmt.Sprintf("%s/task/%s/status", strings.TrimSuffix(*baseURL, "/"), *taskID)
+
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	var resp *http.Response
+	for i := 0; i < count; i++ {
+		resp, err = g.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		var body []byte
+		body, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
+
+		// Parse response
+		var result map[string]interface{}
+		if err = json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		time.Sleep(timeOut)
+	}
+
+	// if resp show the file is ok, download it. otherwise, provide timeout info
+	return nil, nil
 }
 
 func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
