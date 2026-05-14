@@ -2773,38 +2773,71 @@ func (p *Parser) parseASRCommand() (*Command, error) {
 }
 
 func (p *Parser) parseTTSCommand() (*Command, error) {
-	p.nextToken() // consume TTS
+	p.nextToken()
+
+	cmd := NewCommand("tts_user_command")
 
 	if p.curToken.Type != TokenWith {
-		return nil, fmt.Errorf("expected WITH after TTS")
+		return nil, fmt.Errorf("expect 'with' after tts")
 	}
-	p.nextToken() // consume WITH
+	p.nextToken()
 
-	compositeModelName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
+	if p.curToken.Type != TokenQuotedString && p.curToken.Type != TokenIdentifier {
+		return nil, fmt.Errorf("expect model name after 'with'")
 	}
+	cmd.Params["composite_model_name"] = strings.Trim(p.curToken.Value, "\"'")
 	p.nextToken()
 
 	if p.curToken.Type != TokenText {
-		return nil, fmt.Errorf("expected TEXT to TTS")
-	}
-	p.nextToken() // consume FILE
-
-	text, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("expect 'text' parameter")
 	}
 	p.nextToken()
 
-	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expect quoted string after 'text'")
+	}
+	cmd.Params["text"] = strings.Trim(p.curToken.Value, "\"'")
+	p.nextToken()
+
+	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
+		switch p.curToken.Type {
+		case TokenPlay:
+			p.nextToken()
+			cmd.Params["play"] = true
+		case TokenParam:
+			p.nextToken()
+			if p.curToken.Type != TokenQuotedString {
+				return nil, fmt.Errorf("expect quoted string after 'param'")
+			}
+			cmd.Params["param_str"] = strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+			p.nextToken()
+		case TokenSave:
+			p.nextToken()
+
+			if p.curToken.Type != TokenQuotedString && p.curToken.Type != TokenIdentifier {
+				return nil, fmt.Errorf("expect directory path after 'save'")
+			}
+
+			cmd.Params["save"] = true
+			cmd.Params["save_path"] = strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		case TokenFormat:
+			p.nextToken()
+			if p.curToken.Type != TokenQuotedString && p.curToken.Type != TokenIdentifier {
+				return nil, fmt.Errorf("expect format string (e.g. 'wav') after 'format'")
+			}
+			cmd.Params["format"] = strings.Trim(p.curToken.Value, "\"'")
+			p.nextToken()
+		default:
+			return nil, fmt.Errorf("unexpected token: %s", p.curToken.Value)
+		}
+	}
+
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("tts_user_command")
-	cmd.Params["composite_model_name"] = compositeModelName
-	cmd.Params["text"] = text
 	return cmd, nil
 }
 

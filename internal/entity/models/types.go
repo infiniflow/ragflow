@@ -65,6 +65,7 @@ type ASRResponse struct {
 }
 
 type TTSResponse struct {
+	Audio []byte `json:"audio"`
 }
 
 type OCRResponse struct {
@@ -83,6 +84,7 @@ type URLSuffix struct {
 	Balance     string `json:"balance"`
 	Files       string `json:"files"`
 	Status      string `json:"status"`
+	TTS         string `json:"tts"`
 }
 
 type ChatConfig struct {
@@ -116,6 +118,7 @@ type ASRConfig struct {
 }
 
 type TTSConfig struct {
+	Params map[string]interface{}
 }
 
 type OCRConfig struct {
