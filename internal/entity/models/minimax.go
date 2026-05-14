@@ -463,20 +463,6 @@ func (z *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (z *MinimaxModel) buildTTSPayload(modelName string, text string, ttsConfig *TTSConfig) map[string]interface{} {
-	payload := map[string]interface{}{
-		"model": modelName,
-		"text":  text,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			payload[key] = value
-		}
-	}
-	return payload
-}
-
 // AudioSpeech convert audio to text
 func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
@@ -566,7 +552,6 @@ func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	}, nil
 }
 
-// tts with 'speech-2.8-hd@test@minimax' text 'If that day, out position was switched, would our fate, be different?' voice 'English_expressive_narrator' param '{"voice_setting": {"voice_id": "English_expressive_narrator", "speed": 1, "vol": 1, "pitch": 0}, "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "wav", "channel": 1}, "output_format": "hex"}'
 func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return fmt.Errorf("MiniMax API key is missing")
@@ -599,11 +584,14 @@ func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 			reqBody[key] = value
 		}
 	}
+	reqBody["stream"] = false
+
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["audio_setting"] = map[string]interface{}{
 			"format": ttsConfig.Format,
 		}
 	}
+
 	reqBody["stream"] = true
 
 	jsonData, err := json.Marshal(reqBody)
