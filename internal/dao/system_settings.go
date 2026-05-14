@@ -82,6 +82,8 @@ func (d *SystemSettingsDAO) SaveOrCreate(name string, value string, source strin
 	if len(settings) == 1 {
 		setting := &settings[0]
 		setting.Value = value
+		setting.Source = source
+		setting.DataType = dataType
 		return d.UpdateByName(name, setting)
 	} else if len(settings) > 1 {
 		return errors.New("can't update more than 1 setting: " + name)

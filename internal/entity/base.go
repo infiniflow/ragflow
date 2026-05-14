@@ -101,10 +101,10 @@ func (m *BaseModel) BeforeCreate(tx *gorm.DB) error {
 func (m *BaseModel) BeforeUpdate(tx *gorm.DB) error {
 	timestamp, dateTime := autoModelTime()
 
-	if m.UpdateTime == nil {
+	if !statementHasTimeField(tx, "update_time", "UpdateTime") {
 		m.UpdateTime = &timestamp
 	}
-	if m.UpdateDate == nil {
+	if !statementHasTimeField(tx, "update_date", "UpdateDate") {
 		m.UpdateDate = &dateTime
 	}
 
