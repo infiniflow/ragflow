@@ -64,6 +64,7 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         logging.warning(f"Invalid model string: {default_model}")
         return None
 
+    model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Special case: OCR with infiniflow@default@deepdoc is always enabled
     if model_type == "ocr" and provider_name == "infiniflow" and instance_name == "default" and model_name == "deepdoc":
         return {
