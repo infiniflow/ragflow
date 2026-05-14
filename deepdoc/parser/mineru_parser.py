@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import html
 import logging
 import os
 import re
@@ -204,6 +205,26 @@ class MinerUParser(RAGFlowPdfParser):
             return response.status_code in [200, 301, 302, 307, 308]
         except Exception:
             return False
+
+    @staticmethod
+    def _sanitize_section_text(section: str) -> str:
+        """Normalize MinerU text blocks before chunking.
+
+        MinerU may return HTML fragments (e.g. table_body with <tr>/<td>/<br>).
+        Keep human-readable text while removing tag noise that hurts chunking.
+        """
+        if not section:
+            return ""
+        # Preserve rough structure before dropping tags.
+        section = re.sub(r"(?is)<\s*br\s*/?\s*>", "\n", section)
+        section = re.sub(r"(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>", "\n", section)
+        section = re.sub(r"(?is)<[^>]+>", "", section)
+        section = html.unescape(section)
+        # Collapse whitespace while preserving line boundaries.
+        section = re.sub(r"[ \t]+\n", "\n", section)
+        section = re.sub(r"\n{3,}", "\n\n", section)
+        section = re.sub(r"[ \t]{2,}", " ", section)
+        return section.strip()
 
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
@@ -637,6 +658,10 @@ class MinerUParser(RAGFlowPdfParser):
                     section = "\n".join(output.get("list_items", []))
                 case MinerUContentType.DISCARDED:
                     continue  # Skip discarded blocks entirely
+
+            section = self._sanitize_section_text(section)
+            if not section:
+                continue
 
             if section and parse_method in {"manual", "pipeline"}:
                 sections.append((section, output["type"], self._line_tag(output)))
