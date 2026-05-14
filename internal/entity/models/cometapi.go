@@ -99,9 +99,6 @@ func (m *CometAPIModel) endpointURL(region, suffix string) (string, error) {
 
 func (m *CometAPIModel) balanceURL(apiKey string) string {
 	rawURL := strings.TrimSpace(m.URLSuffix.Balance)
-	if rawURL == "" {
-		rawURL = "https://query.cometapi.com/user/quota"
-	}
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = fmt.Sprintf("https://query.cometapi.com/%s", strings.TrimLeft(rawURL, "/"))
 	}
@@ -119,6 +116,10 @@ func (m *CometAPIModel) balanceURL(apiKey string) string {
 func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
+	}
+
+	if strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	if len(messages) == 0 {
@@ -239,6 +240,10 @@ func (m *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 func (m *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
+	}
+
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is required")
 	}
 
 	if len(messages) == 0 {
@@ -577,6 +582,9 @@ func (m *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 func (m *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
+	}
+	if strings.TrimSpace(m.URLSuffix.Balance) == "" {
+		return nil, fmt.Errorf("balance URL is required")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)

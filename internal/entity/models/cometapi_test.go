@@ -54,6 +54,7 @@ func newCometAPIForTest(baseURL string) *CometAPIModel {
 			Chat:      "v1/chat/completions",
 			Models:    "api/models",
 			Embedding: "v1/embeddings",
+			Balance:   "user/quota",
 		},
 	)
 }
@@ -182,6 +183,19 @@ func TestCometAPIChatRequiresAPIKey(t *testing.T) {
 	}
 }
 
+func TestCometAPIChatRequiresModelName(t *testing.T) {
+	m := newCometAPIForTest("http://unused")
+	apiKey := "test-key"
+	_, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("expected model-name error, got %v", err)
+	}
+	err = m.ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, func(*string, *string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("stream: expected model-name error, got %v", err)
+	}
+}
+
 func TestCometAPIChatRequiresMessages(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
@@ -263,15 +277,77 @@ func TestCometAPIChatRejectsUnknownRegion(t *testing.T) {
 	}
 }
 
+func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		run  func(*CometAPIModel, *APIConfig) error
+	}{
+		{
+			name: "Chat",
+			path: "/v1/chat/completions",
+			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
+				_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil)
+				return err
+			},
+		},
+		{
+			name: "Stream",
+			path: "/v1/chat/completions",
+			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
+				return m.ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil, func(*string, *string) error { return nil })
+			},
+		},
+		{
+			name: "Embed",
+			path: "/v1/embeddings",
+			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
+				model := "text-embedding-3-small"
+				_, err := m.Embed(&model, []string{"x"}, apiConfig, nil)
+				return err
+			},
+		},
+		{
+			name: "ListModels",
+			path: "/api/models",
+			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
+				_, err := m.ListModels(apiConfig)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newCometAPIServer(t, tt.path, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+				switch tt.name {
+				case "Chat":
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{{"message": map[string]interface{}{"content": "ok"}}}})
+				case "Stream":
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`+"\n")
+				case "Embed":
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"embedding": []float64{1}, "index": 0}}})
+				case "ListModels":
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "gpt-5"}}})
+				}
+			})
+			defer srv.Close()
+
+			m := newCometAPIForTest(srv.URL + "/")
+			m.URLSuffix.Chat = "/v1/chat/completions"
+			m.URLSuffix.Models = "/api/models"
+			m.URLSuffix.Embedding = "/v1/embeddings"
+			apiKey := "test-key"
+			if err := tt.run(m, &APIConfig{ApiKey: &apiKey}); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+		})
+	}
+}
+
 func TestCometAPIStreamHappyPath(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" {
-			t.Errorf("path=%s", r.URL.Path)
-			return
-		}
-		raw, _ := io.ReadAll(r.Body)
-		var body map[string]interface{}
-		_ = json.Unmarshal(raw, &body)
+	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("expected stream=true, got %v", body["stream"])
 		}
@@ -284,7 +360,7 @@ func TestCometAPIStreamHappyPath(t *testing.T) {
 				`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`+"\n"+
 				`data: [DONE]`+"\n",
 		)
-	}))
+	})
 	defer srv.Close()
 
 	m := newCometAPIForTest(srv.URL)
@@ -335,10 +411,10 @@ func TestCometAPIStreamRejectsExplicitFalse(t *testing.T) {
 func TestCometAPIStreamFailsWithoutTerminal(t *testing.T) {
 	// Body closes before [DONE] or a finish_reason -> driver must complain
 	// instead of pretending the stream finished cleanly.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"half"}}]}`+"\n")
-	}))
+	})
 	defer srv.Close()
 
 	m := newCometAPIForTest(srv.URL)
@@ -459,6 +535,16 @@ func TestCometAPIBalanceRequiresAPIKey(t *testing.T) {
 	_, err := m.Balance(&APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("Balance: expected api-key error, got %v", err)
+	}
+}
+
+func TestCometAPIBalanceRequiresConfiguredURL(t *testing.T) {
+	m := newCometAPIForTest("http://unused")
+	m.URLSuffix.Balance = ""
+	apiKey := "test-key"
+	_, err := m.Balance(&APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "balance URL is required") {
+		t.Errorf("Balance: expected balance URL error, got %v", err)
 	}
 }
 
