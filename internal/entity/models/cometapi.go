@@ -41,61 +41,6 @@ type CometAPIModel struct {
 	httpClient *http.Client
 }
 
-type cometapiChatRequest struct {
-	Model       string               `json:"model"`
-	Messages    []cometapiAPIMessage `json:"messages"`
-	Stream      bool                 `json:"stream"`
-	MaxTokens   *int                 `json:"max_tokens,omitempty"`
-	Temperature *float64             `json:"temperature,omitempty"`
-	TopP        *float64             `json:"top_p,omitempty"`
-	Stop        *[]string            `json:"stop,omitempty"`
-}
-
-type cometapiAPIMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
-}
-
-type cometapiChatResponsePayload struct {
-	Choices []cometapiChatChoice `json:"choices"`
-}
-
-type cometapiChatChoice struct {
-	Message      cometapiChatMessage `json:"message"`
-	Delta        cometapiChatDelta   `json:"delta"`
-	FinishReason string              `json:"finish_reason"`
-}
-
-type cometapiChatMessage struct {
-	Content          *string `json:"content"`
-	ReasoningContent string  `json:"reasoning_content"`
-}
-
-type cometapiChatDelta struct {
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content"`
-}
-
-type cometapiEmbeddingRequest struct {
-	Model      string   `json:"model"`
-	Input      []string `json:"input"`
-	Dimensions int      `json:"dimensions,omitempty"`
-}
-
-type cometapiModelCatalogResponse struct {
-	Data []cometapiModelCatalogItem `json:"data"`
-}
-
-type cometapiModelCatalogItem struct {
-	ID string `json:"id"`
-}
-
-type cometapiHTTPResponse struct {
-	StatusCode int
-	Status     string
-	Body       []byte
-}
-
 // NewCometAPIModel creates a new CometAPI model instance.
 //
 // We clone http.DefaultTransport so we keep Go's defaults for
@@ -188,6 +133,21 @@ func (m *CometAPIModel) balanceURL(apiKey string) string {
 	return parsed.String()
 }
 
+type cometapiChatRequest struct {
+	Model       string               `json:"model"`
+	Messages    []cometapiAPIMessage `json:"messages"`
+	Stream      bool                 `json:"stream"`
+	MaxTokens   *int                 `json:"max_tokens,omitempty"`
+	Temperature *float64             `json:"temperature,omitempty"`
+	TopP        *float64             `json:"top_p,omitempty"`
+	Stop        *[]string            `json:"stop,omitempty"`
+}
+
+type cometapiAPIMessage struct {
+	Role    string      `json:"role"`
+	Content interface{} `json:"content"`
+}
+
 func buildCometAPIChatRequest(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) cometapiChatRequest {
 	apiMessages := make([]cometapiAPIMessage, len(messages))
 	for i, msg := range messages {
@@ -228,6 +188,12 @@ func newCometAPIJSONRequest(ctx context.Context, method string, endpoint string,
 	return req, nil
 }
 
+type cometapiHTTPResponse struct {
+	StatusCode int
+	Status     string
+	Body       []byte
+}
+
 func (m *CometAPIModel) doCometAPIRequest(req *http.Request) (*cometapiHTTPResponse, error) {
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
@@ -245,6 +211,26 @@ func (m *CometAPIModel) doCometAPIRequest(req *http.Request) (*cometapiHTTPRespo
 		Status:     resp.Status,
 		Body:       body,
 	}, nil
+}
+
+type cometapiChatResponsePayload struct {
+	Choices []cometapiChatChoice `json:"choices"`
+}
+
+type cometapiChatChoice struct {
+	Message      cometapiChatMessage `json:"message"`
+	Delta        cometapiChatDelta   `json:"delta"`
+	FinishReason string              `json:"finish_reason"`
+}
+
+type cometapiChatMessage struct {
+	Content          *string `json:"content"`
+	ReasoningContent string  `json:"reasoning_content"`
+}
+
+type cometapiChatDelta struct {
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content"`
 }
 
 func parseCometAPIChatResponse(body []byte) (*ChatResponse, error) {
@@ -277,6 +263,14 @@ func parseCometAPIStreamEvent(data string) (content string, reasonContent string
 	}
 	choice := event.Choices[0]
 	return choice.Delta.Content, choice.Delta.ReasoningContent, choice.FinishReason != "", true
+}
+
+type cometapiModelCatalogResponse struct {
+	Data []cometapiModelCatalogItem `json:"data"`
+}
+
+type cometapiModelCatalogItem struct {
+	ID string `json:"id"`
 }
 
 func parseCometAPIModelCatalog(body []byte) ([]string, error) {
@@ -458,6 +452,12 @@ type cometapiEmbeddingResponse struct {
 	Data   []cometapiEmbeddingData `json:"data"`
 	Model  string                  `json:"model"`
 	Object string                  `json:"object"`
+}
+
+type cometapiEmbeddingRequest struct {
+	Model      string   `json:"model"`
+	Input      []string `json:"input"`
+	Dimensions int      `json:"dimensions,omitempty"`
 }
 
 // Embed turns a list of texts into embedding vectors using the
