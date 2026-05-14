@@ -263,7 +263,7 @@ class Graph:
         keys = path.split('.')
         if not path:
             return value
-        for key in keys:
+        for key in keys[:-1]:
             if key not in cur or not isinstance(cur[key], dict):
                 cur[key] = {}
             cur = cur[key]

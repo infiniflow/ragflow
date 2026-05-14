@@ -270,6 +270,6 @@ func (z *JinaModel) AudioSpeechWithSender(modelName *string, audioContent *strin
 }
 
 // OCRFile OCR file
-func (z *JinaModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *JinaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

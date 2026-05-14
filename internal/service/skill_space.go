@@ -126,8 +126,6 @@ func (s *SkillSpaceService) getSkillsFolderID(tenantID string) (string, error) {
 	// Skills folder not found, create it
 	common.Info("Creating skills folder", zap.String("tenant_id", tenantID))
 	folderID := generateSpaceID()
-	now := time.Now()
-	createTime := now.UnixMilli()
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   rootFolder.ID,
@@ -137,12 +135,6 @@ func (s *SkillSpaceService) getSkillsFolderID(tenantID string) (string, error) {
 		Type:       "folder",
 		Size:       0,
 		SourceType: "system",
-		BaseModel: entity.BaseModel{
-			CreateTime: &createTime,
-			UpdateTime: &createTime,
-			CreateDate: &now,
-			UpdateDate: &now,
-		},
 	}
 
 	if err := s.fileDAO.Create(folder); err != nil {
@@ -218,8 +210,6 @@ func (s *SkillSpaceService) CreateSpace(req *CreateSpaceRequest) (map[string]int
 	// Generate space ID and folder ID
 	spaceID := generateSpaceID()
 	folderID := generateSpaceID()
-	timestamp := time.Now().UnixMilli()
-	now := time.Now()
 
 	// Create folder for the space under skills folder
 	folder := &entity.File{
@@ -249,8 +239,6 @@ func (s *SkillSpaceService) CreateSpace(req *CreateSpaceRequest) (map[string]int
 		RerankID:    req.RerankID,
 		TopK:        10,
 		Status:      "1",
-		CreateTime:  &timestamp,
-		UpdateTime:  &now,
 	}
 
 	if err := s.spaceDAO.Create(space); err != nil {

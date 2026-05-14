@@ -318,7 +318,10 @@ class InfinityConnection(InfinityConnectionBase):
                       "authors_sm_tks"]:
             fields.add(field)
         res_fields = self.get_fields(res, list(fields))
-        return res_fields.get(chunk_id, None)
+        chunk = res_fields.get(chunk_id, None)
+        if chunk is not None:
+            chunk["id"] = chunk_id
+        return chunk
 
     def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
         '''

@@ -9,7 +9,8 @@
     "status": "",
     "balance": "tokens/packages/balance",
     "embedding": "embedding",
-    "rerank": "rerank"
+    "rerank": "rerank",
+    "ocr": "images/ocr"
   },
   "models": [
     {
@@ -45,6 +46,30 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "GOT-OCR2_0",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "DeepSeek-OCR-2",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PaddleOCR-VL-1.5",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "HunyuanOCR",
+      "model_types": [
+        "ocr"
       ]
     }
   ]
