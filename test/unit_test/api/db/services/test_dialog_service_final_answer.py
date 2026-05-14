@@ -168,7 +168,7 @@ def test_async_ask_final_event_carries_decorated_answer(monkeypatch):
         dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB]
     )
     monkeypatch.setattr(
-        dialog_service, "get_model_config_by_type_and_name",
+        dialog_service, "get_model_config_from_provider_instance",
         lambda _tid, _type, _name: _LLM_CONFIG,
     )
     monkeypatch.setattr(dialog_service, "LLMBundle", lambda _tid, _cfg: chat_mdl)
@@ -222,7 +222,7 @@ def test_async_ask_delta_events_carry_incremental_text_only(monkeypatch):
         dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB]
     )
     monkeypatch.setattr(
-        dialog_service, "get_model_config_by_type_and_name",
+        dialog_service, "get_model_config_from_provider_instance",
         lambda _tid, _type, _name: _LLM_CONFIG,
     )
     monkeypatch.setattr(dialog_service, "LLMBundle", lambda _tid, _cfg: chat_mdl)
