@@ -17,10 +17,21 @@
 package utility
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
+
+// JSONFloat64 is a float64 that always marshals with decimal point
+type JSONFloat64 float64
+
+func (f JSONFloat64) MarshalJSON() ([]byte, error) {
+	// Always output with decimal point (e.g., 0.0 instead of 0)
+	return []byte(fmt.Sprintf("%.1f", float64(f))), nil
+}
 
 // GetProjectBaseDirectory returns the current working directory.
 // If an error occurs while getting the current directory, it returns ".".
@@ -86,4 +97,257 @@ func FormatTime(t time.Time) string {
 		return "N/A (Perpetual)"
 	}
 	return t.Format("2006-01-02 15:04:05")
+}
+
+// FormatTimeToString converts time.Time to string in specified format
+func FormatTimeToString(t *time.Time, format string) interface{} {
+	if t == nil {
+		return nil
+	}
+	return t.Format(format)
+}
+
+// ConvertHexToPositionIntArray converts hex string to position int array (grouped by 5)
+func ConvertHexToPositionIntArray(hexStr string) interface{} {
+	if hexStr == "" {
+		return nil
+	}
+
+	parts := strings.Split(hexStr, "_")
+	var intVals []int
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		val, err := strconv.ParseInt(part, 16, 64)
+		if err != nil {
+			continue
+		}
+		intVals = append(intVals, int(val))
+	}
+
+	if len(intVals) == 0 {
+		return nil
+	}
+
+	// Group by 5 elements
+	var result [][]int
+	for i := 0; i < len(intVals); i += 5 {
+		end := i + 5
+		if end > len(intVals) {
+			end = len(intVals)
+		}
+		result = append(result, intVals[i:end])
+	}
+
+	return result
+}
+
+// ConvertPositionIntArrayToHex converts position_int list (2D) to hex string
+// e.g. [[1,2],[3,4]] -> "0000000100000002_0000000300000004"
+func ConvertPositionIntArrayToHex(list []interface{}) string {
+	var hexParts []string
+	for _, item := range list {
+		if inner, ok := item.([]interface{}); ok {
+			for _, num := range inner {
+				if n, ok := num.(float64); ok {
+					hexParts = append(hexParts, fmt.Sprintf("%08x", int64(n)))
+				} else if n, ok := num.(int64); ok {
+					hexParts = append(hexParts, fmt.Sprintf("%08x", n))
+				} else if n, ok := num.(int); ok {
+					hexParts = append(hexParts, fmt.Sprintf("%08x", n))
+				}
+			}
+		}
+	}
+	return strings.Join(hexParts, "_")
+}
+
+// ConvertHexToIntArray converts hex string to int array (split by "_")
+func ConvertHexToIntArray(hexStr string) interface{} {
+	if hexStr == "" {
+		return nil
+	}
+
+	parts := strings.Split(hexStr, "_")
+	var result []int
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		val, err := strconv.ParseInt(part, 16, 64)
+		if err != nil {
+			continue
+		}
+		result = append(result, int(val))
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// ConvertIntArrayToHex converts int array to hex string
+// e.g. [1, 2] -> "00000001_00000002"
+func ConvertIntArrayToHex(list []interface{}) string {
+	var hexParts []string
+	for _, num := range list {
+		if n, ok := num.(float64); ok {
+			hexParts = append(hexParts, fmt.Sprintf("%08x", int64(n)))
+		} else if n, ok := num.(int64); ok {
+			hexParts = append(hexParts, fmt.Sprintf("%08x", n))
+		} else if n, ok := num.(int); ok {
+			hexParts = append(hexParts, fmt.Sprintf("%08x", n))
+		}
+	}
+	return strings.Join(hexParts, "_")
+}
+
+// IsEmpty checks if value is empty (nil, empty array, or empty string)
+func IsEmpty(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+	if arr, ok := v.([]interface{}); ok {
+		return len(arr) == 0
+	}
+	if arr, ok := v.([]string); ok {
+		return len(arr) == 0
+	}
+	if arr, ok := v.([]int); ok {
+		return len(arr) == 0
+	}
+	if strVal, ok := v.(string); ok && strVal == "" {
+		return true
+	}
+	return false
+}
+
+// IsNumericValue checks if a value is numeric (int, uint, float, or numeric string)
+func IsNumericValue(v interface{}) bool {
+	if v == nil {
+		return false
+	}
+	switch val := v.(type) {
+	case int, int8, int16, int32, int64:
+		return true
+	case uint, uint8, uint16, uint32, uint64:
+		return true
+	case float32, float64:
+		return true
+	case string:
+		_, err := strconv.ParseFloat(val, 64)
+		return err == nil
+	default:
+		return false
+	}
+}
+
+// SetFieldArray copies value to dest key, or sets empty array if value is empty
+func SetFieldArray(result map[string]interface{}, destKey string, v interface{}) {
+	if IsEmpty(v) {
+		result[destKey] = []interface{}{}
+	} else {
+		result[destKey] = v
+	}
+}
+
+// ToFloat64 converts various types to float64
+func ToFloat64(val interface{}) (float64, bool) {
+	switch v := val.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case string:
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	default:
+		return 0, false
+	}
+}
+
+// ConvertToStringSlice converts an interface{} to []string
+// e.g. []interface{}{"a", "b", "c"} -> []string{"a", "b", "c"}
+// e.g. "hello" -> []string{"hello"}
+func ConvertToStringSlice(v interface{}) []string {
+	if v == nil {
+		return nil
+	}
+	switch val := v.(type) {
+	case []interface{}:
+		result := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			} else {
+				result = append(result, fmt.Sprintf("%v", item))
+			}
+		}
+		return result
+	case []string:
+		return val
+	case string:
+		return []string{val}
+	default:
+		return nil
+	}
+}
+
+// ConvertToString converts an interface{} to space-separated string
+// For []interface{}, joins elements with space; for other types, returns string representation
+// e.g. []interface{}{"a", "b", "c"} -> "a b c"
+// e.g. "hello" -> "hello"
+func ConvertToString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case []interface{}:
+		parts := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				parts = append(parts, s)
+			} else {
+				parts = append(parts, fmt.Sprintf("%v", item))
+			}
+		}
+		return strings.Join(parts, " ")
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// ConvertMapToJSONString converts a map to JSON string for Infinity JSON columns
+// If v is a map[string]interface{}, marshals it to JSON string
+// If v is nil, returns "{}"
+// Otherwise returns v as-is
+//
+// e.g. map[string]interface{}{"key": "value"}) -> `"{\"key\":\"value\"}"`
+func ConvertMapToJSONString(v interface{}) interface{} {
+	if v == nil {
+		return "{}"
+	}
+	if m, ok := v.(map[string]interface{}); ok {
+		jsonBytes, _ := json.Marshal(m)
+		return string(jsonBytes)
+	}
+	return v
+}
+
+// FloatToString formats a float like Python's str() - adds ".0" if needed
+func FloatToString(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") && !strings.Contains(s, "e") {
+		s = s + ".0"
+	}
+	return s
 }

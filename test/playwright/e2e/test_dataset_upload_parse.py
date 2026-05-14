@@ -91,12 +91,21 @@ def select_combobox_option(
     options = page.get_by_test_id("combobox-option")
     expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
 
+    def click_option(option) -> None:
+        option.scroll_into_view_if_needed()
+        try:
+            option.click()
+        except Exception:
+            page.wait_for_timeout(120)
+            option.scroll_into_view_if_needed()
+            option.click(force=True)
+
     if preferred_text:
         preferred_option = options.filter(
             has_text=re.compile(rf"^{re.escape(preferred_text)}$", re.I)
         )
         if preferred_option.count() > 0:
-            preferred_option.first.click()
+            click_option(preferred_option.first)
             return preferred_text
 
     selected_text = ""
@@ -113,14 +122,14 @@ def select_combobox_option(
             continue
         if current_text and text.lower() == current_text.lower() and option_count > 1:
             continue
-        option.click()
+        click_option(option)
         selected_text = text
         break
 
     if not selected_text:
         fallback = options.first
         selected_text = fallback.inner_text().strip()
-        fallback.click()
+        click_option(fallback)
     return selected_text
 
 
@@ -194,7 +203,7 @@ def get_request_json_payload(response) -> dict:
             payload = None
 
     if not isinstance(payload, dict):
-        raise AssertionError(f"Expected JSON object payload for /v1/kb/update, got={payload!r}")
+        raise AssertionError(f"Expected JSON object payload for /api/v1/datasets update, got={payload!r}")
     return payload
 
 
@@ -325,7 +334,7 @@ def step_03_create_dataset(
         create_response = capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "POST" and "/v1/kb/create" in resp.url,
+            lambda resp: resp.request.method == "POST" and "/api/v1/datasets" in resp.url,
             timeout_ms=RESULT_TIMEOUT_MS * 2,
         )
         try:
@@ -493,7 +502,11 @@ def step_04_set_dataset_settings(
         set_switch_state(page, "ds-settings-graph-entity-resolution-switch", True)
         set_switch_state(page, "ds-settings-graph-community-reports-switch", True)
 
-        page.get_by_test_id("ds-settings-raptor-generation-scope-option-dataset").click()
+        raptor_scope_dataset = page.get_by_role(
+            "radio", name=re.compile(r"^Dataset$", re.I)
+        ).first
+        raptor_scope_dataset.check(force=True)
+        expect(raptor_scope_dataset).to_be_checked(timeout=RESULT_TIMEOUT_MS)
         page.get_by_test_id("ds-settings-raptor-prompt-textarea").fill(
             "Playwright prompt for dataset settings"
         )
@@ -527,23 +540,20 @@ def step_04_set_dataset_settings(
         response = capture_response(
             page,
             trigger,
-            lambda resp: resp.request.method == "POST" and "/v1/kb/update" in resp.url,
+            lambda resp: resp.request.method == "PUT" and f"/api/v1/datasets/{dataset_id}" in resp.url,
             timeout_ms=RESULT_TIMEOUT_MS * 2,
         )
-        assert 200 <= response.status < 400, f"Unexpected /v1/kb/update status={response.status}"
+        assert 200 <= response.status < 400, f"Unexpected /api/v1/datasets update status={response.status}"
         response_payload = response.json()
         if isinstance(response_payload, dict):
             assert response_payload.get("code") == 0, (
-                f"/v1/kb/update response code={response_payload.get('code')} "
+                f"/api/v1/datasets update response code={response_payload.get('code')} "
                 f"message={response_payload.get('message')}"
             )
 
         payload = get_request_json_payload(response)
-        assert payload.get("kb_id") == dataset_id, (
-            f"Expected kb_id={dataset_id!r}, got {payload.get('kb_id')!r}"
-        )
         for key in ("name", "language", "parser_config"):
-            assert key in payload, f"Expected key {key!r} in /v1/kb/update payload"
+            assert key in payload, f"Expected key {key!r} in /api/v1/datasets update payload"
         parser_config = payload.get("parser_config") or {}
         assert (
             parser_config.get("image_table_context_window")

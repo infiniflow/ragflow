@@ -57,17 +57,32 @@ class LLMToolPluginCallSession(ToolCallSession):
 
     async def tool_call_async(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
+        logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]}")
         st = timer()
         tool_obj = self.tools_map[name]
         if isinstance(tool_obj, MCPToolCallSession):
             resp = await thread_pool_exec(tool_obj.tool_call, name, arguments, 60)
+        elif hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
+            resp = await tool_obj.invoke_async(**arguments)
         else:
-            if hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
-                resp = await tool_obj.invoke_async(**arguments)
-            else:
-                resp = await thread_pool_exec(tool_obj.invoke, **arguments)
+            resp = await thread_pool_exec(tool_obj.invoke, **arguments)
 
-        self.callback(name, arguments, resp, elapsed_time=timer()-st)
+        if resp is None and hasattr(tool_obj, "output") and callable(tool_obj.output):
+            try:
+                fallback_output = tool_obj.output()
+                if isinstance(fallback_output, dict) and fallback_output.get("content") not in (None, ""):
+                    resp = fallback_output["content"]
+                elif fallback_output not in (None, ""):
+                    resp = fallback_output
+                else:
+                    resp = fallback_output
+                logging.warning(f"[ToolCall] resp is None, fallback to output name={name} output_keys={list(fallback_output.keys()) if isinstance(fallback_output, dict) else type(fallback_output).__name__}")
+            except Exception as e:
+                logging.warning(f"[ToolCall] resp is None and output fallback failed name={name} err={e}")
+
+        elapsed = timer() - st
+        logging.info(f"[ToolCall] done name={name} elapsed={elapsed:.2f}s result={str(resp)[:200]}")
+        self.callback(name, arguments, resp, elapsed_time=elapsed)
         return resp
 
     def get_tool_obj(self, name):
@@ -101,13 +116,8 @@ class ToolParamBase(ComponentParamBase):
             if "enum" in p:
                 params[k]["enum"] = p["enum"]
 
-        desc = self.meta["description"]
-        if hasattr(self, "description"):
-            desc = self.description
-
-        function_name = self.meta["name"]
-        if hasattr(self, "function_name"):
-            function_name = self.function_name
+        desc = getattr(self, "description", None) or self.meta["description"]
+        function_name = getattr(self, "function_name", self.meta["name"])
 
         return {
             "type": "function",

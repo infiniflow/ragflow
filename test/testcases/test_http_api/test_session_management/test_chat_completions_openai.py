@@ -59,7 +59,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             chat_id,
             {
-                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
+                "model": "model",  # Legacy placeholder keeps using the chat assistant's configured model
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
@@ -100,7 +100,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             chat_id,
             {
-                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
+                "model": "model",  # Legacy placeholder keeps using the chat assistant's configured model
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },
@@ -123,7 +123,7 @@ class TestChatCompletionsOpenAI:
             HttpApiAuth,
             "invalid_chat_id",
             {
-                "model": "model",  # Required by OpenAI-compatible API, value is ignored by RAGFlow
+                "model": "model",  # Legacy placeholder keeps using the chat assistant's configured model
                 "messages": [{"role": "user", "content": "hello"}],
                 "stream": False,
             },

@@ -151,7 +151,7 @@ export default {
       changeSpecificCategory: 'Ubah kategori spesifik',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk cloud.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       chunk: 'Potongan',
       bulk: 'Massal',
       cancel: 'Batal',
@@ -352,6 +352,9 @@ export default {
       mind: 'Peta pikiran',
     },
     chat: {
+      chatSupport: 'Dukungan Obrolan',
+      replyInstantly: 'Kami biasanya membalas secara instan',
+      typeYourMessage: 'Ketik pesan Anda...',
       newConversation: 'Percakapan baru',
       createAssistant: 'Buat Asisten',
       assistantSetting: 'Pengaturan Asisten',
@@ -586,8 +589,8 @@ export default {
       FishAudioLink: 'Cara menggunakan FishAudio',
       TencentCloudLink: 'Cara menggunakan TencentCloud ASR',
       volcModelNameMessage: 'Silakan masukkan nama model Anda!',
-      addEndpointID: 'EndpointID dari model',
-      endpointIDMessage: 'Silakan masukkan EndpointID dari model',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Silakan masukkan Model ID dari model',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Silakan masukkan ARK_API_KEY Anda',
       bedrockModelNameMessage: 'Silakan masukkan nama model Anda!',
@@ -653,7 +656,7 @@ export default {
       FishAudioModelNameMessage: 'Silakan beri nama model sintesis ucapan Anda',
       addFishAudioAK: 'Fish Audio API KEY',
       addFishAudioAKMessage: 'Silakan masukkan API KEY Anda',
-      addFishAudioRefID: 'FishAudio Refrence ID',
+      addFishAudioRefID: 'FishAudio Reference ID',
       addFishAudioRefIDMessage:
         'Silakan masukkan Reference ID (biarkan kosong untuk menggunakan model default).',
       GoogleModelIDMessage: 'Silakan masukkan ID model Anda!',
@@ -734,7 +737,7 @@ export default {
       directory: 'Direktori',
       uploadTitle: 'Klik atau seret file ke area ini untuk mengunggah',
       uploadDescription:
-        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk demo.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
+        'RAGFlow mendukung pengunggahan file secara tunggal atau batch. Untuk RAGFlow yang dideploy secara lokal: batas ukuran total file per unggahan adalah 1GB, dengan batas unggahan batch sebanyak 32 file. Tidak ada batasan jumlah total file per akun. Untuk cloud.ragflow.io: batas ukuran total file per unggahan adalah 10MB, dengan setiap file tidak melebihi 10MB dan maksimum 128 file per akun.',
       local: 'Unggahan lokal',
       s3: 'Unggahan S3',
       preview: 'Pratinjau',
@@ -810,10 +813,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Komponen yang melakukan pencarian menggunakan URL instance SearXNG yang Anda berikan. Spesifikasikan TopN dan URL instance.',
-      pdfGenerator: 'Pembuat Dokumen',
-      pDFGenerator: 'Pembuat Dokumen',
-      pdfGeneratorDescription: `Komponen yang menghasilkan dokumen (PDF, DOCX, TXT) dari konten berformat markdown dengan gaya yang dapat disesuaikan, gambar, dan tabel. Mendukung: **tebal**, *miring*, # judul, - daftar, tabel dengan sintaks |.`,
-      pDFGeneratorDescription: `Komponen yang menghasilkan dokumen (PDF, DOCX, TXT) dari konten berformat markdown dengan gaya yang dapat disesuaikan, gambar, dan tabel. Mendukung: **tebal**, *miring*, # judul, - daftar, tabel dengan sintaks |.`,
+      docGenerator: 'Pembuat Dokumen',
+      docGeneratorDescription: `Menghasilkan file dari konten Markdown.`,
       subtitle: 'Subjudul',
       logoImage: 'Gambar Logo',
       logoPosition: 'Posisi Logo',
@@ -1145,6 +1146,7 @@ export default {
       russian: 'Rusia',
       bulgarian: 'Bulgaria',
       arabic: 'Arab',
+      turkish: 'Turki',
     },
   },
 };

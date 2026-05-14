@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { IFlow } from '@/interfaces/database/agent';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { formatDate } from '@/utils/date';
 import { BookPlus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -26,7 +26,7 @@ interface PublishConfirmDialogProps {
 function AssociatedDataset({
   associatedDatasets,
 }: {
-  associatedDatasets: Pick<IKnowledge, 'id' | 'name' | 'avatar'>[];
+  associatedDatasets: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
 }) {
   const { t } = useTranslation();
 
@@ -74,7 +74,7 @@ export function PublishConfirmDialog({
       return formatDate(agentDetail.last_publish_time);
     }
     return '';
-  }, [agentDetail?.update_time]);
+  }, [agentDetail.last_publish_time]);
 
   // Get datasets associated with this pipeline from API response
   const associatedDatasets = useMemo(() => {
@@ -84,7 +84,7 @@ export function PublishConfirmDialog({
   const handleConfirmPublish = useCallback(() => {
     onPublish();
     setOpen(false);
-  }, []);
+  }, [onPublish]);
 
   if (isPipeline) {
     return null;

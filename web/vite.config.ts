@@ -26,9 +26,35 @@ const inspectorBabelPlugin = (): import('vite').Plugin => ({
   },
 });
 
+type MinifyValue = boolean | 'esbuild' | 'terser';
+
+function resolveMinify(value: string | undefined): MinifyValue {
+  if (value === undefined) return 'terser';
+  const lower = value.toLowerCase();
+  if (lower === 'false') return false;
+  if (lower === 'esbuild') return 'esbuild';
+  if (lower === 'terser') return 'terser';
+  return 'terser';
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  // Load env from .env file (also loads .env.local, .env.[mode], .env.[mode].local)
   const env = loadEnv(mode, process.cwd(), '');
+
+  // Try to load from .env file explicitly if API_PROXY_SCHEME not found
+  let proxyScheme = env.API_PROXY_SCHEME;
+  if (!proxyScheme) {
+    try {
+      const envLocal = loadEnv('', process.cwd(), '');
+      proxyScheme = envLocal.API_PROXY_SCHEME;
+    } catch {
+      // ignore
+    }
+  }
+  proxyScheme = proxyScheme || 'python';
+
+  console.log(`[vite.config] mode: ${mode}, API_PROXY_SCHEME: ${proxyScheme}`);
 
   const proxySchemes = {
     python: {
@@ -49,31 +75,34 @@ export default defineConfig(({ mode }) => {
       },
     },
     hybrid: {
-      '/v1/system/config': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/user/login': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/v1/user/logout': {
-        target: 'http://127.0.0.1:9384/',
-        changeOrigin: true,
-        ws: true,
-      },
-      '/api/v1/admin/sandbox': {
-        target: 'http://127.0.0.1:9381/',
-        changeOrigin: true,
-        ws: true,
-      },
+      '^(/v1/kb)|^(/v1/document)|^(/v1/llm/list)|^(/api/v1/datasets)|^(/api/v1/memories)|^(/v1/user)|^(/v1/user/tenant_info)|^(/v1/tenant/list)|^(/v1/system/config)|^(/v1/user/login)|^(/v1/user/logout)|^(/api/v1/files)':
+        {
+          target: 'http://127.0.0.1:9384/',
+          changeOrigin: true,
+          ws: true,
+        },
+      '^(/api/v1/admin/sandbox)|^(/api/v1/admin/roles)|^(/api/v1/admin/roles/owner/permission)|^(/api/v1/admin/roles_with_permission)|^(/api/v1/admin/whitelist)|^(/api/v1/admin/variables)':
+        {
+          target: 'http://127.0.0.1:9381/',
+          changeOrigin: true,
+          ws: true,
+        },
       '/api/v1/admin': {
-        target: 'http://127.0.0.1:9385/',
+        target: 'http://127.0.0.1:9383/',
         changeOrigin: true,
         ws: true,
       },
+      '/api/v1/users/me/models': {
+        target: 'http://127.0.0.1:9380/',
+        changeOrigin: true,
+        ws: true,
+      },
+      '^(/api/v1/users)|^(/api/v1/auth)|^(/api/v1/users/me)|^(/api/v1/system/config)|^(/api/v1/system/version)|^(/api/v1/tenants)|^(/api/v1/chats)|^(/api/v1/searches)|^(/api/v1/files)':
+        {
+          target: 'http://127.0.0.1:9384/',
+          changeOrigin: true,
+          ws: true,
+        },
       '/api': {
         target: 'http://127.0.0.1:9380/',
         changeOrigin: true,
@@ -87,7 +116,7 @@ export default defineConfig(({ mode }) => {
     },
     go: {
       '/api/v1/admin': {
-        target: 'http://127.0.0.1:9385/',
+        target: 'http://127.0.0.1:9383/',
         changeOrigin: true,
         ws: true,
       },
@@ -104,10 +133,15 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  const proxy =
-    proxySchemes[env.API_PROXY_SCHEME || 'python'] || proxySchemes.python;
+  const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
 
   return {
+    define: {
+      // Expose to client code via import.meta.env
+      'import.meta.env.API_PROXY_SCHEME': JSON.stringify(proxyScheme),
+      // Keep backward compatibility
+      __API_PROXY_SCHEME__: JSON.stringify(proxyScheme),
+    },
     plugins: [
       inspectorBabelPlugin(),
       react(),
@@ -173,7 +207,6 @@ export default defineConfig(({ mode }) => {
         'react',
         'react-dom',
         'react-router',
-        'antd',
         'axios',
         'lodash',
         'dayjs',
@@ -238,7 +271,7 @@ export default defineConfig(({ mode }) => {
         plugins: [],
         treeshake: true,
       },
-      minify: 'terser',
+      minify: resolveMinify(env.VITE_MINIFY),
       terserOptions: {
         compress: {
           drop_console: true, // delete console
@@ -255,7 +288,7 @@ export default defineConfig(({ mode }) => {
           comments: false, // Delete comments
         },
       },
-      sourcemap: true,
+      sourcemap: env.VITE_BUILD_SOURCEMAP !== 'false',
       cssCodeSplit: true,
       target: 'es2015',
     },

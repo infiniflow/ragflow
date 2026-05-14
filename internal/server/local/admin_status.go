@@ -17,6 +17,8 @@
 package local
 
 import (
+	"fmt"
+	"ragflow/internal/common"
 	"sync"
 )
 
@@ -66,6 +68,10 @@ func SetAdminStatus(status int, reason string) {
 	}
 	adminStatus.Status = status
 	adminStatus.Reason = reason
+
+	if adminStatus.Status != 0 {
+		common.Warn(fmt.Sprintf("Admin server is unavailable, reason: %s", adminStatus.Reason))
+	}
 }
 
 // IsAdminAvailable returns true if admin is valid (Status == 0)

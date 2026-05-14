@@ -17,13 +17,17 @@ import { FieldValues } from 'react-hook-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
-  DataSourceFormFields,
+  DataSourceKey,
+  getCommonExtraDefaultValues,
+  getDataSourceFieldsWithExtras,
+  mergeDataSourceFormValues,
   useDataSourceInfo,
 } from '../constant';
 import {
   useAddDataSource,
   useDataSourceResume,
   useFetchDataSourceDetail,
+  useTestDataSource,
 } from '../hooks';
 import { DataSourceLogsTable } from './log-table';
 
@@ -141,7 +145,8 @@ const SourceDetailPage = () => {
     ];
   }, [detail, runSchedule]);
 
-  const { addLoading, handleAddOk } = useAddDataSource();
+  const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
+  const { loading: testLoading, handleTest } = useTestDataSource();
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
@@ -163,9 +168,7 @@ const SourceDetailPage = () => {
     if (detail) {
       const fields = [
         ...baseFields,
-        ...DataSourceFormFields[
-          detail.source as keyof typeof DataSourceFormFields
-        ],
+        ...getDataSourceFieldsWithExtras(detail.source as any),
         ...customFields,
       ] as FormFieldConfig[];
 
@@ -179,12 +182,14 @@ const SourceDetailPage = () => {
       setFields(newFields);
 
       const defaultValueTemp = {
-        ...(DataSourceFormDefaultValues[
-          detail?.source as keyof typeof DataSourceFormDefaultValues
-        ] as FieldValues),
-        ...detail,
+        ...mergeDataSourceFormValues(
+          DataSourceFormDefaultValues[
+            detail?.source as keyof typeof DataSourceFormDefaultValues
+          ] as FieldValues,
+          getCommonExtraDefaultValues(),
+          detail as FieldValues,
+        ),
       };
-      console.log('defaultValue', defaultValueTemp);
       setDefaultValues(defaultValueTemp);
     }
   }, [detail, customFields, onSubmit]);
@@ -210,7 +215,18 @@ const SourceDetailPage = () => {
               defaultValues={defaultValues}
             />
           </div>
-          <div className="max-w-[1200px] flex justify-end">
+          <div className="max-w-[1200px] flex justify-end gap-2">
+            {detail?.source === DataSourceKey.REST_API && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTest}
+                disabled={testLoading}
+                loading={testLoading}
+              >
+                {t('setting.restApiTestConnection')}
+              </Button>
+            )}
             <Button
               type="button"
               onClick={onSubmit}

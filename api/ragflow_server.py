@@ -14,18 +14,20 @@
 #  limitations under the License.
 #
 
-# from beartype import BeartypeConf
-# from beartype.claw import beartype_all  # <-- you didn't sign up for this
-# beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
+print("Start RAGFlow server...")
 
 import time
 start_ts = time.time()
 
-import logging
 import os
+
+# LiteLLM fetches a model cost map from GitHub during import unless this is set.
+# The API server should not block startup on external network access.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+import logging
 import signal
 import sys
-import traceback
 import threading
 import uuid
 import faulthandler
@@ -148,9 +150,9 @@ if __name__ == '__main__':
     # start http server
     try:
         logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
-        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
-    except Exception:
-        traceback.print_exc()
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT, use_reloader=RuntimeConfig.DEBUG, debug=False)
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         stop_event.wait(1)
         os.kill(os.getpid(), signal.SIGKILL)

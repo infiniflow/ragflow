@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/logger"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 
@@ -56,12 +55,15 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		// Get user by access token
 		user, code, err := h.userService.GetUserByToken(token)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    code,
-				"message": "Invalid access token",
-			})
-			c.Abort()
-			return
+			user, code, err = h.userService.GetUserByAPIToken(token)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":    code,
+					"message": "Invalid access token",
+				})
+				c.Abort()
+				return
+			}
 		}
 
 		if *user.IsSuperuser {
@@ -75,7 +77,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if !local.IsAdminAvailable() {
 			license := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server license %s", license.Reason)
-			logger.Warn(errMsg)
+			common.Warn(errMsg)
 			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"code":    common.CodeUnauthorized,
 				"message": errMsg,

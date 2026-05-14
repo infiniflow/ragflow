@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/server"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -31,33 +32,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// S3Config holds AWS S3 storage configuration
-type S3Config struct {
-	AccessKeyID      string `mapstructure:"access_key"`        // AWS Access Key ID
-	SecretAccessKey  string `mapstructure:"secret_key"`        // AWS Secret Access Key
-	SessionToken     string `mapstructure:"session_token"`     // AWS Session Token (optional)
-	Region           string `mapstructure:"region_name"`       // AWS Region
-	EndpointURL      string `mapstructure:"endpoint_url"`      // Custom endpoint (optional)
-	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
-	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
-	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
-}
-
 // S3Storage implements Storage interface for AWS S3
 type S3Storage struct {
 	client     *s3.Client
 	bucket     string
 	prefixPath string
-	config     *S3Config
+	config     *server.S3Config
 }
 
 // NewS3Storage creates a new S3 storage instance
-func NewS3Storage(config *S3Config) (*S3Storage, error) {
+func NewS3Storage(config *server.S3Config) (*S3Storage, error) {
 	storage := &S3Storage{
-		bucket:     config.Bucket,
-		prefixPath: config.PrefixPath,
-		config:     config,
+		config: config,
 	}
 
 	if err := storage.connect(); err != nil {
@@ -78,10 +64,10 @@ func (s *S3Storage) connect() error {
 	}
 
 	// Configure credentials if provided
-	if s.config.AccessKeyID != "" && s.config.SecretAccessKey != "" {
+	if s.config.AccessKey != "" && s.config.SecretKey != "" {
 		creds := credentials.NewStaticCredentialsProvider(
-			s.config.AccessKeyID,
-			s.config.SecretAccessKey,
+			s.config.AccessKey,
+			s.config.SecretKey,
 			s.config.SessionToken,
 		)
 		opts = append(opts, config.WithCredentialsProvider(creds))
@@ -240,8 +226,8 @@ func (s *S3Storage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) 
 	return nil, fmt.Errorf("failed to get object after retries")
 }
 
-// Rm removes an object from S3
-func (s *S3Storage) Rm(bucket, fnm string, tenantID ...string) error {
+// Remove removes an object from S3
+func (s *S3Storage) Remove(bucket, fnm string, tenantID ...string) error {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
 
 	ctx := context.Background()
@@ -403,7 +389,7 @@ func (s *S3Storage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
 // Move moves an object from source to destination
 func (s *S3Storage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 	if s.Copy(srcBucket, srcPath, destBucket, destPath) {
-		if err := s.Rm(srcBucket, srcPath); err != nil {
+		if err := s.Remove(srcBucket, srcPath); err != nil {
 			zap.L().Error("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
 			return false
 		}

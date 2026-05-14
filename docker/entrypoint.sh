@@ -2,6 +2,9 @@
 
 set -e
 
+echo "Start RAGFlow cluster, version: "
+cat /ragflow/VERSION
+
 # -----------------------------------------------------------------------------
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
@@ -176,6 +179,27 @@ export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
 
 # -----------------------------------------------------------------------------
+# Select Nginx Configuration based on API_PROXY_SCHEME
+# -----------------------------------------------------------------------------
+NGINX_CONF_DIR="/etc/nginx/conf.d"
+if [ -n "$API_PROXY_SCHEME" ]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.hybrid"
+    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.golang (default)"
+    else
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.python"
+    fi
+else
+    # Default to python backend
+    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+    echo "Default: applied nginx config: ragflow.conf.python"
+fi
+
+# -----------------------------------------------------------------------------
 # Function(s)
 # -----------------------------------------------------------------------------
 
@@ -213,8 +237,27 @@ function ensure_docling() {
 }
 
 function ensure_db_init() {
-  echo "Initializing database tables..."
-  "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Initializing database tables..."
+    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Database tables initialized."
+}
+
+function wait_for_server() {
+    local url="$1"
+    local server_name="$2"
+    local timeout=90
+    local interval=2
+    local start_time=$(date +%s)
+
+    echo "Waiting for $server_name to be ready at $url..."
+    while ! curl -f -s -o /dev/null "$url"; do
+        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
+            echo "Timeout waiting for $server_name after $timeout seconds"
+            return 1
+        fi
+        sleep $interval
+    done
+    echo "$server_name is ready."
 }
 
 # -----------------------------------------------------------------------------
@@ -227,36 +270,48 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server..."
     while true; do
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
-
-        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-            echo "Starting RAGFlow server in hybrid mode..."
-            bin/server_main &
-        fi
-        wait;
+        echo "Attempt to start RAGFlow server..."
+        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
+        echo "RAGFlow python server started."
         sleep 1;
     done &
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        while true; do
+            echo "Attempt to start RAGFlow go server..."
+            wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
+            echo "Starting RAGFlow go server..."
+            bin/server_main
+            sleep 1;
+        done &
+    fi
+fi
+
+
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    while true; do
+        echo "Attempt to start Admin python server..."
+        "$PY" admin/server/admin_server.py
+        echo "Admin python server started"
+        sleep 1;
+    done &
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        while true; do
+            echo "Attempt to starting Admin go server..."
+            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
+            echo "Starting Admin go server..."
+            bin/admin_server
+            sleep 1;
+        done &
+    fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
         "$PY" rag/svr/sync_data_source.py &
-        wait;
-        sleep 1;
-    done &
-fi
-
-if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    echo "Starting admin_server..."
-    while true; do
-        "$PY" admin/server/admin_server.py &
-        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-            echo "Starting Admin server in hybrid mode..."
-            bin/admin_server &
-        fi
         wait;
         sleep 1;
     done &

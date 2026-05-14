@@ -20,11 +20,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -102,14 +105,14 @@ func responseWithCode(c *gin.Context, message string, httpCode int, errorCode co
 	}
 }
 
-// Health health check
+// Health check
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
 // Ping ping endpoint
 func (h *Handler) Ping(c *gin.Context) {
-	successNoData(c, "PONG")
+	successNoData(c, "pong")
 }
 
 // Login handle admin login
@@ -132,8 +135,8 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// Use userService.LoginByEmail with adminLogin=true
-	// This allows default admin account to login admin system
-	user, code, err := h.userService.LoginByEmail(&req, true)
+	// This allows default admin account to log in admin system
+	user, code, err := h.userService.LoginByEmail(&req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
@@ -151,8 +154,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+		})
+		return
+	}
+
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -196,6 +206,15 @@ func (h *Handler) Logout(c *gin.Context) {
 // AuthCheck check admin auth
 func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
+}
+
+// ListTasks handle list tasks
+func (h *Handler) ListTasks(c *gin.Context) {
+	tasks, err := h.service.ListTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, tasks, "Get all tasks")
 }
 
 // ListUsers handle list users
@@ -266,12 +285,18 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteUser(username); err != nil {
+	result, err := h.service.DeleteUser(username)
+	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
 	}
 
-	successNoData(c, "User deleted successfully")
+	detailsMsg := "Successfully deleted user. Details:\n"
+	for _, detail := range result.DeletedDetails {
+		detailsMsg += detail + "\n"
+	}
+
+	successNoData(c, detailsMsg)
 }
 
 // ChangePasswordHTTPRequest change password request
@@ -414,15 +439,15 @@ func (h *Handler) GetUserAgents(c *gin.Context) {
 	success(c, agents, "")
 }
 
-// GetUserAPIKeys handle get user API keys
-func (h *Handler) GetUserAPIKeys(c *gin.Context) {
+// ListUserAPITokens handle get user API keys
+func (h *Handler) ListUserAPITokens(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
 	}
 
-	apiKeys, err := h.service.GetUserAPIKeys(username)
+	apiKeys, err := h.service.ListUserAPITokens(username)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -431,15 +456,15 @@ func (h *Handler) GetUserAPIKeys(c *gin.Context) {
 	success(c, apiKeys, "Get user API keys")
 }
 
-// GenerateUserAPIKey handle generate user API key
-func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
+// GenerateUserAPIToken handle generate user API key
+func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 	username := c.Param("username")
 	if username == "" {
 		errorResponse(c, "Username is required", 400)
 		return
 	}
 
-	apiKey, err := h.service.GenerateUserAPIKey(username)
+	apiKey, err := h.service.GenerateUserAPIToken(username)
 	if err != nil {
 		errorResponse(c, err.Error(), 500)
 		return
@@ -448,16 +473,16 @@ func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 	success(c, apiKey, "API key generated successfully")
 }
 
-// DeleteUserAPIKey handle delete user API key
-func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
+// DeleteUserAPIToken handle delete user API key
+func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 	username := c.Param("username")
-	key := c.Param("key")
+	key := c.Param("token")
 	if username == "" || key == "" {
 		errorResponse(c, "Username and key are required", 400)
 		return
 	}
 
-	if err := h.service.DeleteUserAPIKey(username, key); err != nil {
+	if err := h.service.DeleteUserAPIToken(username, key); err != nil {
 		errorResponse(c, err.Error(), 404)
 		return
 	}
@@ -473,7 +498,14 @@ func (h *Handler) ListRoles(c *gin.Context) {
 		return
 	}
 
-	success(c, roles, "")
+	if roles == nil {
+		roles = []map[string]interface{}{}
+	}
+
+	success(c, gin.H{
+		"roles": roles,
+		"total": len(roles),
+	}, "")
 }
 
 // CreateRoleHTTPRequest create role request
@@ -778,6 +810,115 @@ func (h *Handler) RestartService(c *gin.Context) {
 	}
 
 	success(c, result, "")
+}
+
+func (h *Handler) ListProviders(c *gin.Context) {
+
+	keywords := ""
+	if queryKeywords := c.Query("available"); queryKeywords != "" {
+		keywords = queryKeywords
+	}
+
+	// convert keywords to small case
+	keywords = strings.ToLower(keywords)
+	if keywords == "true" {
+		// list pool providers
+		providers, err := dao.GetModelProviderManager().ListProviders()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeNotFound,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "success",
+			"data":    providers,
+		})
+	}
+}
+
+func (h *Handler) ShowProvider(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	provider, err := dao.GetModelProviderManager().GetProviderByName(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    provider,
+	})
+}
+
+func (h *Handler) ListModels(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	models, err := dao.GetModelProviderManager().ListModels(providerName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    models,
+	})
+}
+
+func (h *Handler) ShowModel(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+	modelName := c.Param("model_name")
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Model name is required",
+		})
+		return
+	}
+	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    model,
+	})
 }
 
 // GetVariables handle get variables
@@ -1093,6 +1234,33 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 	})
 }
 
+// GetLogLevel returns the current log level
+func (h *Handler) GetLogLevel(c *gin.Context) {
+	level := common.GetLevel()
+	success(c, gin.H{"level": level}, "")
+}
+
+// SetLogLevelRequest set log level request
+type SetLogLevelRequest struct {
+	Level string `json:"level" binding:"required"`
+}
+
+// SetLogLevel sets the log level at runtime
+func (h *Handler) SetLogLevel(c *gin.Context) {
+	var req SetLogLevelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "level is required", 400)
+		return
+	}
+
+	if err := common.SetLevel(req.Level); err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
+}
+
 // Reports handle heartbeat reports from servers
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
@@ -1125,5 +1293,5 @@ func (h *Handler) Reports(c *gin.Context) {
 		return
 	}
 
-	responseWithCode(c, message, int(http.StatusOK), errCode)
+	responseWithCode(c, message, http.StatusOK, errCode)
 }

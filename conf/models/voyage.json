@@ -1,0 +1,69 @@
+{
+  "name": "Voyage",
+  "url": {
+    "default": "https://api.voyageai.com"
+  },
+  "url_suffix": {
+    "embedding": "v1/embeddings",
+    "rerank": "v1/rerank"
+  },
+  "class": "voyage",
+  "models": [
+    {
+      "name": "voyage-3.5",
+      "max_tokens": 327680,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-3.5-lite",
+      "max_tokens": 1048576,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-3-large",
+      "max_tokens": 122880,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-code-3",
+      "max_tokens": 122880,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-law-2",
+      "max_tokens": 122880,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "voyage-finance-2",
+      "max_tokens": 122880,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "rerank-2",
+      "max_tokens": 4000,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "rerank-2-lite",
+      "max_tokens": 2000,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}

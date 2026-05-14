@@ -57,6 +57,7 @@ export const LanguageList = [
   'Italian',
   'Bulgarian',
   'Arabic',
+  'Turkish',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -74,6 +75,7 @@ export const LanguageMap = {
   Italian: 'Italiano',
   Bulgarian: 'Български',
   Arabic: 'العربية',
+  Turkish: 'Türkçe',
 };
 
 export enum LanguageAbbreviation {
@@ -91,6 +93,7 @@ export enum LanguageAbbreviation {
   It = 'it',
   Bg = 'bg',
   Ar = 'ar',
+  Tr = 'tr',
 }
 
 export const LanguageAbbreviationMap = {
@@ -108,6 +111,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.It]: 'Italiano',
   [LanguageAbbreviation.Bg]: 'Български',
   [LanguageAbbreviation.Ar]: 'العربية',
+  [LanguageAbbreviation.Tr]: 'Türkçe',
 };
 
 export const LanguageTranslationMap = {
@@ -136,6 +140,7 @@ export const LanguageTranslationMap = {
   Ukrainian: 'uk',
   Bulgarian: 'bg',
   Arabic: 'ar',
+  Turkish: 'tr',
 };
 
 export enum FileMimeType {
@@ -163,7 +168,7 @@ export enum FileMimeType {
   Mdx = 'text/markdown',
 }
 
-export const Domain = 'demo.ragflow.io';
+export const Domain = 'cloud.ragflow.io';
 
 //#region file preview
 export const Images = [

@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 	"time"
 )
 
@@ -31,7 +31,7 @@ func NewLicenseDAO() *LicenseDAO {
 
 // Create creates a new license record
 func (dao *LicenseDAO) Create(licenseID, licenseStr string) error {
-	license := model.License{
+	license := entity.License{
 		ID:        licenseID,
 		License:   licenseStr,
 		CreatedAt: time.Now(),
@@ -40,8 +40,8 @@ func (dao *LicenseDAO) Create(licenseID, licenseStr string) error {
 }
 
 // GetLatest gets the latest license record by creation time
-func (dao *LicenseDAO) GetLatest() (*model.License, error) {
-	var license model.License
+func (dao *LicenseDAO) GetLatest() (*entity.License, error) {
+	var license entity.License
 	err := DB.Order("created_at DESC").First(&license).Error
 	if err != nil {
 		return nil, err

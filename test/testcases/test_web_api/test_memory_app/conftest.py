@@ -15,7 +15,7 @@
 #
 import pytest
 import random
-from test_web_api.common import create_memory, list_memory, delete_memory
+from test_common import create_memory, list_memory, delete_memory
 
 @pytest.fixture(scope="function")
 def add_memory_func(request, WebApiAuth):

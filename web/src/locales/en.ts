@@ -18,6 +18,7 @@ export default {
       name: 'Name',
       save: 'Save',
       namePlaceholder: 'Please input name',
+      descriptionPlaceholder: 'Enter description',
       next: 'Next',
       create: 'Create',
       edit: 'Edit',
@@ -37,11 +38,14 @@ export default {
       italian: 'Italian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      viewMore: 'View more',
+      viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
       close: 'Close',
@@ -58,6 +62,7 @@ export default {
       openInNewTab: 'Chat in new tab',
       previousPage: 'Previous',
       nextPage: 'Next',
+      previous: 'Previous',
       add: 'Add',
       remove: 'Remove',
       search: 'Search',
@@ -109,11 +114,173 @@ export default {
       setting: 'User settings',
       logout: 'Log out',
       fileManager: 'File',
+      skills: 'Skills',
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
       dataset: 'Dataset',
       memories: 'Memory',
+    },
+    skills: {
+      title: 'Skills',
+      selectSpace: 'Select a skill space to get started',
+      spacePlaceholder: 'Enter space name',
+      createSpace: 'Create skill space',
+      createSpaceTitle: 'Create new skill space',
+      createSpaceDescription:
+        'Create a new space to organize and manage your skills.',
+      spaceName: 'Space name',
+      spaceNamePlaceholder: 'e.g., my-space',
+      spaceNameRequired: 'Please enter space name',
+      noSpaces: 'No skill space yet. Create your first one!',
+      enterSpace: 'Enter',
+      spaceCreated: 'Skill space created successfully',
+      spaceDeleted: 'Skill space deleted successfully',
+      fetchError: 'Failed to fetch skills',
+      deleteSpaceTitle: 'Delete skill space',
+      deleteSpaceDescription:
+        'Are you sure you want to delete this skill space? This action cannot be undone and all skills in this space will be permanently deleted.',
+      deleteSpaceName: 'Space name',
+      uploadSuccess: 'Skill uploaded successfully',
+      uploadError: 'Failed to upload skill',
+      deleteSuccess: 'Skill deleted successfully',
+      deleteError: 'Failed to delete skill',
+      skillExists:
+        'A skill with this name already exists. Please delete it first or use a different name.',
+      uploadSkill: 'Upload skill',
+      searchPlaceholder: 'Search skills...',
+      noSkills: 'No skills yet. Upload your first skill.',
+      noSearchResults: 'No skills matching your search',
+      filesCount: '{{count}} files',
+      foldersCount: '{{count}} folders',
+      pageInfo: 'Page {{current}} of {{total}}',
+      totalSkills: '{{total}} skills total',
+      backToSkills: 'Back to skills',
+      selectFileToView: 'Select a file to view',
+      skillName: 'Skill name',
+      skillNamePlaceholder: 'e.g., my-awesome-skill',
+      skillNameHelp: 'Only letters, numbers, hyphens and underscores allowed',
+      source: 'Source',
+      version: 'Version',
+      skillVersion: 'Version',
+      skillVersionPlaceholder: 'e.g., 1.0.0',
+      versionFormatHelp: 'Version must be in semver format (e.g., 1.0.0)',
+      versionRequired: 'Version is required',
+      selectFilesOrFolder: 'Select files or folder',
+      uploadDescription:
+        'Upload skill files. You can drag and drop files or select a folder.',
+      selectFolder: 'Select folder',
+      dragFilesHint: 'or drag files below',
+      dragFilesTitle: 'Drag skill folder here',
+      dragFilesDescription:
+        'Drag and drop a skill folder here, or use the "Select Folder" button below.',
+      filesSelected: '{{count}} files selected',
+      uploading: 'Uploading...',
+      files: 'Files',
+      noFiles: 'No files',
+      versionHistory: 'Version history',
+      selectVersion: 'Select version to preview',
+      latest: 'Latest',
+      metadata: {
+        basic: 'Basic info',
+        emoji: 'Emoji',
+        skillKey: 'Skill key',
+        always: 'Always active',
+        primaryEnv: 'Primary Environment Variable',
+        requires: 'Requirements',
+        requiredBins: 'Required Binaries',
+        requiredEnv: 'Required Environment Variables',
+        anyBins: 'At Least One Required',
+        install: 'Dependencies',
+        links: 'Links',
+        homepage: 'Homepage',
+        repository: 'Repository',
+        documentation: 'Documentation',
+      },
+      validation: {
+        missing_skill_md:
+          'Invalid skill: SKILL.md not found. Please ensure your skill directory contains a valid SKILL.md file.',
+        invalid_frontmatter:
+          'Invalid skill: SKILL.md must have valid frontmatter (start and end with ---).',
+        missing_name:
+          'Invalid skill: SKILL.md frontmatter must include a "name" field.',
+        invalid_name_format:
+          'Invalid skill: "name" must be lowercase and URL-safe (letters, numbers, hyphens only).',
+        invalid_version:
+          'Invalid skill: "version" must be valid semver (e.g., 1.0.0).',
+        invalid_metadata: 'Invalid skill: metadata contains invalid fields.',
+        invalid_file_type: 'Invalid skill: Only text-based files are allowed.',
+        invalid_path: 'Invalid skill: File path contains invalid characters.',
+        file_too_large:
+          'Invalid skill: Individual file size exceeds 5MB limit.',
+        total_size_exceeded:
+          'Invalid skill: Total bundle size exceeds 50MB limit.',
+        no_files: 'No files selected. Please select a skill folder.',
+        noValidFiles: 'No valid files found. Please check your selection.',
+        junkFilesFound:
+          'Temporary files detected (e.g., .DS_Store). Please remove them before uploading.',
+        read_failed: 'Invalid skill: Failed to read SKILL.md file.',
+        invalid: 'Invalid skill format.',
+        valid: 'Valid skill format. Ready to upload.',
+        versionExists:
+          'This version already exists. Please use a different version number.',
+        error: 'Validation failed',
+      },
+      parsedMetadata: 'Parsed from SKILL.md:',
+      addSkill: 'Add Skill',
+      upload: 'Upload',
+      importFromGit: 'Import from Git',
+      gitPlatform: 'Platform',
+      repoUrl: 'Repository URL',
+      repoUrlHelp: 'Supports repository URL with optional path',
+      accessToken: 'Access Token',
+      githubTokenHelp:
+        'For private repos or higher rate limits (5000 req/hour)',
+      giteeTokenHelp: 'For private repos or higher rate limits (2000 req/hour)',
+      rateLimitInfo: 'Rate Limit Info',
+      githubRateLimit:
+        'Public repos: 60 requests/hour per IP. Use token for 5000 req/hour.',
+      giteeRateLimit:
+        'Public repos: 1000 requests/hour per IP. Use token for 2000 req/hour.',
+      import: 'Import',
+      importing: 'Importing...',
+      configureSearch: 'Configure Search',
+    },
+    skillSearch: {
+      configTitle: 'Skill Search Configuration',
+      configDesc: 'Configure how skills are indexed and searched',
+      embeddingModel: 'Embedding Model',
+      embeddingModelPlaceholder: 'Select an embedding model',
+      vectorSimilarityWeight: 'Vector Similarity Weight',
+      similarityThreshold: 'Similarity Threshold',
+      topK: 'Top K Results',
+      indexFields: 'Index Fields',
+      indexFieldsDesc: 'Select which fields to include in the search index',
+      fieldName: 'Name',
+      fieldNameDesc: 'Skill name',
+      fieldTags: 'Tags',
+      fieldTagsDesc: 'Skill tags',
+      fieldDescription: 'Description',
+      fieldDescriptionDesc: 'Skill description',
+      fieldContent: 'Content',
+      fieldContentDesc: 'Skill content (e.g., README)',
+      weight: 'Weight',
+      pureVector: 'Vector Only',
+      hybrid: 'Hybrid',
+      keyword: 'Keyword',
+      vector: 'Vector',
+      keywordOnly: 'Keyword Only',
+      balanced: 'Balanced',
+      vectorOnly: 'Vector Only',
+      reindex: 'Reindex All',
+      reindexing: 'Reindexing...',
+      reindexSuccess: 'Reindexed successfully',
+      pleaseSelectEmbeddingModel: 'Please select an embedding model',
+      saveSuccess: 'Saved successfully',
+      saveError: 'Failed to save',
+      semanticSearchPlaceholder: 'Search skills by meaning...',
+      switchToSemantic: 'Switch to semantic search',
+      switchToLocal: 'Switch to local search',
     },
     memories: {
       llmTooltip:
@@ -207,6 +374,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
       parserRequired: 'Chunk method is required',
+      dataFlowRequired: 'Data flow is required',
     },
     knowledgeDetails: {
       metadata: {
@@ -251,11 +419,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         deleteManageFieldAllWarn:
           'This field and all its corresponding values will be deleted from all associated files.',
         deleteManageValueAllWarn:
-          'This value will be deleted from from all associated files.',
+          'This value will be deleted from all associated files.',
         deleteManageFieldSingleWarn:
-          'This field and all its corresponding values will be deleted from this files.',
+          'This field and all its corresponding values will be deleted from this file.',
         deleteManageValueSingleWarn:
-          'This value will be deleted from this files.',
+          'This value will be deleted from this file.',
         deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
         deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
@@ -281,6 +449,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       raptor: 'RAPTOR',
       processingType: 'Processing type',
       dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipelineTitle: 'Ingestion pipeline',
       operations: 'Operations',
       taskId: 'Task ID',
       duration: 'Duration',
@@ -386,7 +555,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       changeSpecificCategory: 'Change specific category',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For demo.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
       chunk: 'Chunk',
       bulk: 'Bulk',
       cancel: 'Cancel',
@@ -544,6 +713,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      tableColumnMode: 'Column mode',
+      tableColumnModeAuto: 'Auto',
+      tableColumnModeManual: 'Manual',
+      tableColumnModeAutoDescription:
+        'All columns are included in chunk text and stored as metadata (RAGFlow default).',
+      tableColumnRoles: 'Column roles',
+      tableColumnRolesTip:
+        'Choose which columns to include in chunk text (indexed for vector and full-text search), in metadata only (filterable), or both. Changes apply to new parses; re-parse existing documents for roles to take effect.',
+      tableColumnRoleIndexing: 'Indexing',
+      tableColumnRoleMetadata: 'Metadata',
+      tableColumnRoleBoth: 'Both',
+      tableColumnRolesEmpty:
+        'Upload and parse a CSV or Excel file to begin configuring column roles.',
+      tableColumnRolesReparseTip:
+        'Re-parse existing documents for the new column roles to take effect.',
       parserLabel: {
         naive: 'General',
         qa: 'Q&A',
@@ -677,6 +861,11 @@ The above is the content you need to summarize.`,
       thresholdTip:
         'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
+      clusteringMethod: 'Clustering method',
+      clusteringMethodTip:
+        'Select the RAPTOR clustering method. AHC can use a larger max cluster value, but may require more memory on large inputs.',
+      clusteringMethodGmm: 'GMM',
+      clusteringMethodAhc: 'AHC',
       maxCluster: 'Max cluster',
       maxClusterTip: 'The maximum number of clusters to create.',
       maxClusterMessage: 'Max cluster is required',
@@ -712,7 +901,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships.</br>
+      NER: Use spaCy NER and rule-based keyword extraction to extract entities and relationships. No LLM is required for extraction itself, making it fast and resource-efficient.`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',
@@ -759,6 +949,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       delete: 'Delete',
     },
     chat: {
+      chatSupport: 'Chat Support',
+      replyInstantly: 'We typically reply instantly',
+      typeYourMessage: 'Type your message...',
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
@@ -875,6 +1068,17 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       created: 'Created',
       action: 'Action',
       embedModalTitle: 'Embed into webpage',
+      published: 'Published',
+      publishedTooltip:
+        'Use the published version for this embed. When enabled, the generated URL includes release=true.',
+      embedType: 'Embed type',
+      fullscreenChat: 'Fullscreen chat (traditional iframe)',
+      floatingWidget: 'Floating widget (Intercom-style)',
+      theme: 'Theme',
+      light: 'Light',
+      dark: 'Dark',
+      enableStreaming: 'Enable streaming responses',
+      muteWidget: 'Mute widget sounds',
       comingSoon: 'Coming soon',
       fullScreenTitle: 'Full embed',
       fullScreenDescription:
@@ -944,6 +1148,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       Verify: 'Verify',
       keyValid: 'Your API key is valid.',
       keyInvalid: 'Your API key is invalid.',
+      enableToolCall: 'Enable tool call',
+      enableToolCallTip:
+        'Allow this model to call tools when the selected model type supports tool calling.',
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
@@ -968,6 +1175,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
       connectorNameTip: 'A descriptive name for the connector',
+      syncDeletedFiles: 'Sync deleted files',
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -989,6 +1197,8 @@ Example: Virtual Hosted Style`,
       newDocs: 'New docs',
       timeStarted: 'Time started',
       log: 'Log',
+      rssDescription:
+        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -1156,6 +1366,42 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      rest_apiDescription:
+        'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      restApiQueryParamsTip:
+        'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
+      restApiHeadersTip:
+        'Optional JSON object of additional HTTP headers to send with every request.',
+      restApiItemsPathTip:
+        'Field name or JSONPath to the array of items in the response. Leave empty to auto-detect (tries "items", "results", "data", etc.).',
+      restApiIdFieldTip:
+        'Field path within each item used to build a stable document ID. Leave empty to auto-generate from content hash.',
+      restApiContentFieldsTip:
+        'Comma-separated list of item fields to concatenate into the document content.',
+      restApiMetadataFieldsTip:
+        'Comma-separated list of item fields to store as metadata.',
+      restApiNextCursorPathTip:
+        'JSONPath expression that resolves to the next-page cursor in the API response.',
+      restApiPollTimestampFieldTip:
+        'Field path in each item that represents the last updated time, used for incremental sync.',
+      restApiRequestBodyTip:
+        'Optional JSON body to send for POST requests. Used together with query params and pagination.',
+      restApiRequestDelayTip:
+        'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
+      restApiValidationApiKeyRequired:
+        'API key is required when Auth Type is API Key (Header).',
+      restApiValidationApiKeyHeaderNameRequired:
+        'API key header name is required when Auth Type is API Key (Header).',
+      restApiValidationBearerTokenRequired:
+        'Bearer token is required when Auth Type is Bearer Token.',
+      restApiValidationBasicUsernameRequired:
+        'Username is required when Auth Type is Basic Auth.',
+      restApiValidationBasicPasswordRequired:
+        'Password is required when Auth Type is Basic Auth.',
+      restApiTestConnection: 'Test connection',
+      restApiTestSuccess: 'REST API connector validated successfully.',
+      restApiTestFailed:
+        'REST API connector validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -1276,8 +1522,8 @@ Example: Virtual Hosted Style`,
       FishAudioLink: 'How to use FishAudio',
       TencentCloudLink: 'How to use TencentCloud ASR',
       volcModelNameMessage: 'Please input your model name!',
-      addEndpointID: 'EndpointID of the model',
-      endpointIDMessage: 'Please input your EndpointID of the model',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Please input your Model ID of the model',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Please input your ARK_API_KEY',
       bedrockModelNameMessage: 'Please input your model name!',
@@ -1471,7 +1717,7 @@ Example: Virtual Hosted Style`,
       directory: 'Directory',
       uploadTitle: 'Drag and drop your file here to upload',
       uploadDescription:
-        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For demo.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
+        'Supports single or batch file upload. For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. For cloud.ragflow.io, the total file size limit per upload is 10MB, with each file not exceeding 10MB and a maximum of 128 files per account.',
       local: 'Local uploads',
       s3: 'S3 uploads',
       preview: 'Preview',
@@ -1489,6 +1735,29 @@ Example: Virtual Hosted Style`,
         author: 'Author',
         sectionTitle: 'Section title',
       },
+      editTags: 'Edit tags',
+      editTagsDescription:
+        'Add tags to organize and filter your agents. Press Enter or comma to add.',
+      tagsPlaceholder: 'Add a tag and press Enter',
+      tagSuggestionsLabel: 'Existing tags',
+      removeTagAriaLabel: 'Remove {{tag}}',
+      includeHeadingContent: 'Separate parent-heading content',
+      includeHeadingContentTip:
+        'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',
+      rootAsHeading: 'Set first chunk as global context',
+      rootAsHeadingTip:
+        'Treats the first split as a global heading to maintain consistent context across the document hierarchy. Ideal for resumes where the first section identifies the subject.',
+      hierarchyTip: `Construct a heading tree and produce self-contained chunks, each carrying its full ancestral path (e.g. Part 1 › Chapter 3 › Section 2 + body text).\n
+Best for: Highly structured texts — such as legal statutes, regulations, contracts, and technical specs — where each chunk must be identifiable by its position in the hierarchy.`,
+      groupTip: `Split the document flat at a chosen heading level, merging adjacent small sections to ensure semantic flow. Chunks exclude ancestral path.\n
+Best for: Documents with flowing, contextually connected content — such as books, manuals, reports, and articles — where narrative coherence depends on keeping adjacent paragraphs together.`,
+      enableMultiColumn: 'Detect multi-column layout',
+      enableMultiColumnTip:
+        'Detect and parse multi-column page layouts to preserve the correct reading order. Turn this on for PDFs or documents with two-column or newspaper-style layouts.',
+      removeToc: 'Remove original table of contents',
+      removeTocTip:
+        'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
+      removeHeaderFooter: 'Remove header and footer',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
@@ -1537,6 +1806,13 @@ Example: Virtual Hosted Style`,
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      one: 'One',
+      oneChunkTitle: 'Note',
+      oneChunkDescription:
+        'All parsed sections will be merged in order into a single chunk.',
+      flattenMediaToText: 'Disable vision model',
+      flattenMediaToTextTip:
+        'Treat image and table sections as plain text and skip vision enhancement.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -1657,10 +1933,8 @@ Example: Virtual Hosted Style`,
       searXNG: 'SearXNG',
       searXNGDescription:
         'A component that searches via your provided SearXNG instance URL. Specify TopN and the instance URL.',
-      pdfGenerator: 'Docs Generator',
-      pDFGenerator: 'Docs Generator',
-      pdfGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
-      pDFGeneratorDescription: `A component that generates documents (PDF, DOCX, TXT) from markdown-formatted content with customizable styling, images, and tables. Supports: **bold**, *italic*, # headings, - lists, tables with | syntax.`,
+      docGenerator: 'Doc Generator',
+      docGeneratorDescription: `Generate a file from Markdown content.`,
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -2065,6 +2339,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       }`,
       datatype: 'MINE type of the HTTP request',
       insertVariableTip: `Enter / Insert variables`,
+      mergePath: 'Merge path',
+      mergePathTip:
+        'When enabled, a dot suffix immediately after a variable is merged into a path query, such as {node@result.name}.',
       historyVersion: 'Version history',
       version: {
         created: 'Created',
@@ -2205,7 +2482,7 @@ This process aggregates variables from multiple branches into a single variable 
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      ceateAgent: 'Agent flow',
+      ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       chooseAgentType: 'Choose agent type',
       parser: 'Parser',
@@ -2215,12 +2492,12 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizerRequired: 'Please add the Indexer node first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
-      splitter: 'Token',
-      splitterDescription:
+      tokenChunker: 'Token Chunker',
+      tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
-      hierarchicalMergerDescription:
-        'Split documents into sections by title hierarchy with regex rules for finer control.',
-      hierarchicalMerger: 'Title',
+      titleChunkerDescription:
+        'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
+      titleChunker: 'Title Chunker',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -2231,15 +2508,22 @@ This process aggregates variables from multiple branches into a single variable 
         spreadsheet: 'Spreadsheet',
         image: 'Image',
         email: 'Email',
-        'text&markdown': 'Text & Markup',
-        word: 'Word',
+        markdown: 'Markdown',
+        'text&code': 'Text & Code',
+        html: 'HTML',
+        doc: 'DOC',
+        docx: 'DOCX',
         slides: 'PPTX',
         audio: 'Audio',
         video: 'Video',
       },
       fields: 'Field',
       addParser: 'Add Parser',
+      rule: 'Rule',
+      addRule: 'Add rule',
+      group: 'Group',
       hierarchy: 'Hierarchy',
+      addRegularExpressions: 'Add regular expressions',
       regularExpressions: 'Regular Expressions',
       overlappedPercent: 'Overlapped percent (%)',
       searchMethod: 'Search method',
@@ -2342,7 +2626,7 @@ Important structured information may include: names, dates, locations, events, k
         renameKeys: 'Rename keys',
       },
       ListOperationsOptions: {
-        topN: 'Top N',
+        nth: 'Nth',
         head: 'Head',
         tail: 'Tail',
         sort: 'Sort',
@@ -2350,6 +2634,9 @@ Important structured information may include: names, dates, locations, events, k
         dropDuplicates: 'Drop duplicates',
       },
       sortMethod: 'Sort method',
+      strictMode: 'Strict mode',
+      strictModeTip:
+        'Off uses lenient behavior and returns an empty result for invalid n. On uses strict behavior and raises an error for out-of-range n.',
       SortMethodOptions: {
         asc: 'Ascending',
         desc: 'Descending',
@@ -2410,6 +2697,15 @@ Important structured information may include: names, dates, locations, events, k
       },
       saveToMemory: 'Save to memory',
       retrievalFrom: 'Retrieval from',
+      id: 'ID',
+      state: 'State',
+      number: 'Number',
+      latestDate: 'Latest date',
+      createDate: 'Create date',
+      noDataToExport: 'No data to export',
+      success: 'Success',
+      failed: 'Failed',
+      logTitle: 'Title',
     },
     llmTools: {
       bad_calculator: {
@@ -2481,6 +2777,7 @@ Important structured information may include: names, dates, locations, events, k
       russian: 'Russian',
       bulgarian: 'Bulgarian',
       arabic: 'Arabic',
+      turkish: 'Turkish',
     },
     pagination: {
       total: 'Total {{total}}',
@@ -2561,6 +2858,8 @@ Important structured information may include: names, dates, locations, events, k
       notFoundSearch: 'Search app not found',
       memoryTitle: 'No memory created yet',
       notFoundMemory: 'Memory not found',
+      skillsTitle: 'No skill space created yet',
+      notFoundSkills: 'Skill space not found',
       addNow: 'Add Now',
     },
 

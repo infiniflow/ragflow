@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // LLMDAO LLM data access object
@@ -29,8 +29,8 @@ func NewLLMDAO() *LLMDAO {
 }
 
 // GetAll gets all LLMs
-func (dao *LLMDAO) GetAll() ([]*model.LLM, error) {
-	var llms []*model.LLM
+func (dao *LLMDAO) GetAll() ([]*entity.LLM, error) {
+	var llms []*entity.LLM
 	err := DB.Find(&llms).Error
 	if err != nil {
 		return nil, err
@@ -39,8 +39,8 @@ func (dao *LLMDAO) GetAll() ([]*model.LLM, error) {
 }
 
 // GetAllValid gets all valid LLMs
-func (dao *LLMDAO) GetAllValid() ([]*model.LLM, error) {
-	var llms []*model.LLM
+func (dao *LLMDAO) GetAllValid() ([]*entity.LLM, error) {
+	var llms []*entity.LLM
 	err := DB.Where("status = ?", "1").Find(&llms).Error
 	if err != nil {
 		return nil, err
@@ -49,8 +49,8 @@ func (dao *LLMDAO) GetAllValid() ([]*model.LLM, error) {
 }
 
 // GetByFactory gets LLMs by factory
-func (dao *LLMDAO) GetByFactory(factory string) ([]*model.LLM, error) {
-	var llms []*model.LLM
+func (dao *LLMDAO) GetByFactory(factory string) ([]*entity.LLM, error) {
+	var llms []*entity.LLM
 	err := DB.Where("fid = ?", factory).Find(&llms).Error
 	if err != nil {
 		return nil, err
@@ -59,8 +59,8 @@ func (dao *LLMDAO) GetByFactory(factory string) ([]*model.LLM, error) {
 }
 
 // GetByFactoryAndName gets LLM by factory and name
-func (dao *LLMDAO) GetByFactoryAndName(factory, name string) (*model.LLM, error) {
-	var llm model.LLM
+func (dao *LLMDAO) GetByFactoryAndName(factory, name string) (*entity.LLM, error) {
+	var llm entity.LLM
 	err := DB.Where("fid = ? AND llm_name = ?", factory, name).First(&llm).Error
 	if err != nil {
 		return nil, err
@@ -77,8 +77,8 @@ func NewLLMFactoryDAO() *LLMFactoryDAO {
 }
 
 // GetAllValid gets all valid LLM factories
-func (dao *LLMFactoryDAO) GetAllValid() ([]*model.LLMFactories, error) {
-	var factories []*model.LLMFactories
+func (dao *LLMFactoryDAO) GetAllValid() ([]*entity.LLMFactories, error) {
+	var factories []*entity.LLMFactories
 	err := DB.Where("status = ?", "1").Find(&factories).Error
 	if err != nil {
 		return nil, err
@@ -87,8 +87,8 @@ func (dao *LLMFactoryDAO) GetAllValid() ([]*model.LLMFactories, error) {
 }
 
 // GetByName gets LLM factory by name
-func (dao *LLMFactoryDAO) GetByName(name string) (*model.LLMFactories, error) {
-	var factory model.LLMFactories
+func (dao *LLMFactoryDAO) GetByName(name string) (*entity.LLMFactories, error) {
+	var factory entity.LLMFactories
 	err := DB.Where("name = ?", name).First(&factory).Error
 	if err != nil {
 		return nil, err

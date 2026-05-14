@@ -17,7 +17,7 @@
 package dao
 
 import (
-	"ragflow/internal/model"
+	"ragflow/internal/entity"
 )
 
 // ConnectorDAO connector data access object
@@ -36,12 +36,21 @@ type ConnectorListItem struct {
 	Status string `json:"status"`
 }
 
+// ConnectorDatasetListItem represents a connector linked to a dataset.
+type ConnectorDatasetListItem struct {
+	ID        string `json:"id" gorm:"column:id"`
+	Source    string `json:"source" gorm:"column:source"`
+	Name      string `json:"name" gorm:"column:name"`
+	AutoParse string `json:"auto_parse" gorm:"column:auto_parse"`
+	Status    string `json:"status" gorm:"column:status"`
+}
+
 // ListByTenantID list connectors by tenant ID
 // Only selects id, name, source, status fields (matching Python implementation)
 func (dao *ConnectorDAO) ListByTenantID(tenantID string) ([]*ConnectorListItem, error) {
 	var connectors []*ConnectorListItem
 
-	err := DB.Model(&model.Connector{}).
+	err := DB.Model(&entity.Connector{}).
 		Select("id", "name", "source", "status").
 		Where("tenant_id = ?", tenantID).
 		Find(&connectors).Error
@@ -53,9 +62,26 @@ func (dao *ConnectorDAO) ListByTenantID(tenantID string) ([]*ConnectorListItem, 
 	return connectors, nil
 }
 
+// ListByDatasetID lists connectors linked to a dataset.
+func (dao *ConnectorDAO) ListByDatasetID(datasetID string) ([]*ConnectorDatasetListItem, error) {
+	var connectors []*ConnectorDatasetListItem
+
+	err := DB.Model(&entity.Connector2Kb{}).
+		Select("connector.id, connector.source, connector.name, connector2kb.auto_parse, connector.status").
+		Joins("JOIN connector ON connector2kb.connector_id = connector.id").
+		Where("connector2kb.kb_id = ?", datasetID).
+		Scan(&connectors).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return connectors, nil
+}
+
 // GetByID get connector by ID
-func (dao *ConnectorDAO) GetByID(id string) (*model.Connector, error) {
-	var connector model.Connector
+func (dao *ConnectorDAO) GetByID(id string) (*entity.Connector, error) {
+	var connector entity.Connector
 	err := DB.Where("id = ?", id).First(&connector).Error
 	if err != nil {
 		return nil, err
@@ -64,16 +90,16 @@ func (dao *ConnectorDAO) GetByID(id string) (*model.Connector, error) {
 }
 
 // Create create a new connector
-func (dao *ConnectorDAO) Create(connector *model.Connector) error {
+func (dao *ConnectorDAO) Create(connector *entity.Connector) error {
 	return DB.Create(connector).Error
 }
 
 // UpdateByID update connector by ID
 func (dao *ConnectorDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&model.Connector{}).Where("id = ?", id).Updates(updates).Error
+	return DB.Model(&entity.Connector{}).Where("id = ?", id).Updates(updates).Error
 }
 
 // DeleteByID delete connector by ID
 func (dao *ConnectorDAO) DeleteByID(id string) error {
-	return DB.Where("id = ?", id).Delete(&model.Connector{}).Error
+	return DB.Where("id = ?", id).Delete(&entity.Connector{}).Error
 }

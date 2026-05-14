@@ -2,6 +2,7 @@ import json
 import logging
 import time
 
+from agent.dsl_migration import normalize_chunker_dsl
 from api.db.db_models import UserCanvasVersion, DB
 from api.db.services.common_service import CommonService
 from peewee import DoesNotExist
@@ -10,6 +11,7 @@ from peewee import DoesNotExist
 class UserCanvasVersionService(CommonService):
     model = UserCanvasVersion
 
+    # Build a stable display name for saved snapshots.
     @staticmethod
     def build_version_title(user_nickname, agent_title, ts=None):
         tenant = str(user_nickname or "").strip() or "tenant"
@@ -17,6 +19,7 @@ class UserCanvasVersionService(CommonService):
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts is not None else time.strftime("%Y-%m-%d %H:%M:%S")
         return "{0}_{1}_{2}".format(tenant, title, stamp)
 
+    # Normalize DSL before comparing or writing version content.
     @staticmethod
     def _normalize_dsl(dsl):
         normalized = dsl
@@ -30,7 +33,7 @@ class UserCanvasVersionService(CommonService):
             raise ValueError("DSL must be a JSON object.")
 
         try:
-            return json.loads(json.dumps(normalized, ensure_ascii=False))
+            return json.loads(json.dumps(normalize_chunker_dsl(normalized), ensure_ascii=False))
         except Exception as e:
             raise ValueError("DSL is not JSON-serializable.") from e
 
@@ -91,14 +94,35 @@ class UserCanvasVersionService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_latest_released(cls, user_canvas_id):
+    def _get_latest_by_canvas_id(cls, user_canvas_id, only_released=False):
+        """Get the latest version for a canvas, optionally filtered by release status."""
         try:
-            return cls.model.select().where((cls.model.user_canvas_id == user_canvas_id) & (cls.model.release)).order_by(cls.model.create_time.desc()).first()
+            query = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id)
+            if only_released:
+                query = query.where(cls.model.release)
+            return query.order_by(cls.model.create_time.desc()).first()
         except DoesNotExist:
             return None
         except Exception as e:
             logging.exception(e)
             return None
+
+    @classmethod
+    def get_latest_released(cls, user_canvas_id):
+        """Get the latest released version for a canvas."""
+        return cls._get_latest_by_canvas_id(user_canvas_id, only_released=True)
+
+    @classmethod
+    def get_latest_version_title(cls, user_canvas_id, release_mode=False):
+        """Get the version title for a canvas based on release_mode.
+
+        Args:
+            user_canvas_id: The canvas ID
+            release_mode: If True, get the latest released version title;
+                         If False, get the latest version title (regardless of release status)
+        """
+        latest = cls._get_latest_by_canvas_id(user_canvas_id, only_released=release_mode)
+        return latest.title if latest else None
 
     @classmethod
     @DB.connection_context()
@@ -121,6 +145,7 @@ class UserCanvasVersionService(CommonService):
                 .first()
             )
 
+            # Repeated saves with the same DSL only refresh the latest snapshot.
             if latest and cls._normalize_dsl(latest.dsl) == normalized_dsl:
                 # Protect released version: if latest is released and current is not,
                 # create a new version instead of updating
@@ -137,9 +162,9 @@ class UserCanvasVersionService(CommonService):
                     return None, True
 
                 # Normal case: update existing version
+                # DSL unchanged: do NOT update title to preserve version identity
+                # Only update dsl (for normalization consistency), description, and release
                 update_data = {"dsl": normalized_dsl}
-                if title is not None:
-                    update_data["title"] = title
                 if description is not None:
                     update_data["description"] = description
                 if release is not None:
@@ -148,6 +173,7 @@ class UserCanvasVersionService(CommonService):
                 cls.delete_all_versions(user_canvas_id)
                 return latest.id, False
 
+            # Real content changes create a new snapshot.
             insert_data = {"user_canvas_id": user_canvas_id, "dsl": normalized_dsl}
             if title is not None:
                 insert_data["title"] = title
