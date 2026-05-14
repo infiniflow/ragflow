@@ -1,7 +1,6 @@
 import api from '@/utils/api';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
-export { downloadFileFromBlob } from '@/utils/file-util';
 
 const {
   listFile,
