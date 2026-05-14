@@ -33,6 +33,8 @@ func NewModelFactory() *ModelFactory {
 func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string]string, urlSuffix URLSuffix) (ModelDriver, error) {
 	providerLower := strings.ToLower(providerName)
 	switch providerLower {
+	case "anthropic":
+		return NewAnthropicModel(baseURL, urlSuffix), nil
 	case "zhipu-ai":
 		return NewZhipuAIModel(baseURL, urlSuffix), nil
 	case "deepseek":
