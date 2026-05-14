@@ -16,9 +16,10 @@
 import logging
 from io import BytesIO
 
-from quart import request, send_file
+from quart import send_file
 
-from api.db.db_models import APIToken, Document, Task
+from api.apps import login_required
+from api.db.db_models import Document, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
@@ -27,7 +28,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required, add_tenant_id_to_kwargs
 from common import settings
 from common.constants import LLMType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
@@ -51,7 +52,8 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
-@token_required
+@login_required
+@add_tenant_id_to_kwargs
 async def download(tenant_id, dataset_id, document_id):
     """
     Download a document from a dataset.
@@ -90,56 +92,9 @@ async def download(tenant_id, dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
-    # The process of downloading
-    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
-    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
-    if not file_stream:
-        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
-    file = BytesIO(file_stream)
-    # Use send_file with a proper filename and MIME type
-    return await send_file(
-        file,
-        as_attachment=True,
-        attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
-    )
-
-
-@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
-async def download_doc(document_id):
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
-        return get_error_data_result(message="Authorization is not valid!")
-    token = token[1]
-    logging.info("Beta API token lookup attempted for document download")
-    objs = APIToken.query(beta=token)
-    if not objs:
-        logging.warning("Beta API token lookup failed for document download: invalid API key")
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-    if len(objs) > 1:
-        logging.error("Beta API token lookup is ambiguous for document download: matches=%s", len(objs))
-        return get_error_data_result(message="Authentication error: API key configuration is ambiguous.")
-    tenant_id = objs[0].tenant_id
-    logging.info("Beta API token authorized for document download: tenant_id=%s", tenant_id)
-
-    if not document_id:
-        return get_error_data_result(message="Specify document_id please.")
-    doc = DocumentService.query(id=document_id)
-    if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
-    if not KnowledgebaseService.query(id=doc[0].kb_id, tenant_id=tenant_id):
-        logging.warning(
-            "cross-tenant access denied for document download: tenant_id=%s kb_id=%s document_id=%s",
-            tenant_id,
-            doc[0].kb_id,
-            document_id,
-        )
-        return get_error_data_result(message="You do not have access to this document.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
