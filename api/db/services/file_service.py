@@ -482,7 +482,12 @@ class FileService(CommonService):
                         err.append(file.filename + ": " + user_msg)
                         continue
                     blob = file.read()
-                    new_hash = xxhash.xxh128(blob).hexdigest()
+                    # Connector-supplied fingerprint (e.g. xxhash128(S3 ETag))
+                    # takes precedence: for connector-sourced docs the bypass
+                    # path uses the fingerprint as content_hash, so reverting
+                    # to xxhash128(blob) here would defeat it.
+                    incoming_fp = getattr(file, "fingerprint", None)
+                    new_hash = incoming_fp or xxhash.xxh128(blob).hexdigest()
                     old_hash = doc.content_hash or ""
                     settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
                     doc.size = len(blob)
@@ -518,6 +523,7 @@ class FileService(CommonService):
                     thumbnail_location = f"thumbnail_{doc_id}.png"
                     settings.STORAGE_IMPL.put(kb.id, thumbnail_location, img)
 
+                incoming_fp = getattr(file, "fingerprint", None)
                 doc = {
                     "id": doc_id,
                     "kb_id": kb.id,
@@ -532,7 +538,7 @@ class FileService(CommonService):
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
-                    "content_hash": xxhash.xxh128(blob).hexdigest(),
+                    "content_hash": incoming_fp or xxhash.xxh128(blob).hexdigest(),
                 }
                 DocumentService.insert(doc)
 
@@ -555,14 +561,14 @@ class FileService(CommonService):
 
     @staticmethod
     def parse_docs(file_objs, user_id):
-        exe = ThreadPoolExecutor(max_workers=12)
-        threads = []
-        for file in file_objs:
-            threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
+        with ThreadPoolExecutor(max_workers=12) as exe:
+            threads = []
+            for file in file_objs:
+                threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
 
-        res = []
-        for th in threads:
-            res.append(th.result())
+            res = []
+            for th in threads:
+                res.append(th.result())
 
         return "\n\n".join(res)
 
@@ -699,7 +705,7 @@ class FileService(CommonService):
 
             # Pre-resolve the full redirect chain so that AsyncWebCrawler never
             # follows a server-sent redirect to an unvalidated (potentially
-            # internal) host.  Each hop is SSRF-checked before being followed;
+            # internal) host. Each hop is SSRF-checked before being followed;
             # the validated (hostname, ip) pairs are pinned via Chromium's
             # --host-resolver-rules so the browser cannot re-resolve any of them
             # through a fresh DNS query.
@@ -735,7 +741,7 @@ class FileService(CommonService):
                 )
 
             # Build a single MAP rule string covering every validated hostname
-            # in the redirect chain.  Chromium uses the pinned IP for each,
+            # in the redirect chain. Chromium uses the pinned IP for each,
             # skipping DNS entirely and eliminating the rebinding window.
             _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
 
@@ -787,19 +793,19 @@ class FileService(CommonService):
         def image_to_base64(file):
             return "data:{};base64,{}".format(file["mime_type"],
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
-        exe = ThreadPoolExecutor(max_workers=5)
-        threads = []
-        imgs = []
-        for file in files:
-            if file["mime_type"].find("image") >=0:
-                if raw:
-                    imgs.append(FileService.get_blob(file["created_by"], file["id"]))
-                else:
-                    threads.append(exe.submit(image_to_base64, file))
-                continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
-    
-        if raw:
-            return [th.result() for th in threads], imgs
-        else:
-            return [th.result() for th in threads]
+        with ThreadPoolExecutor(max_workers=5) as exe:
+            threads = []
+            imgs = []
+            for file in files:
+                if file["mime_type"].find("image") >=0:
+                    if raw:
+                        imgs.append(FileService.get_blob(file["created_by"], file["id"]))
+                    else:
+                        threads.append(exe.submit(image_to_base64, file))
+                    continue
+                threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
+
+            if raw:
+                return [th.result() for th in threads], imgs
+            else:
+                return [th.result() for th in threads]

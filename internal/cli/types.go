@@ -102,6 +102,15 @@ const (
 	TokenASR
 	TokenTTS
 	TokenOCR
+	TokenEmbed
+	TokenText
+	TokenQuery
+	TokenFormat
+	TokenParam
+	TokenPlay
+	TokenSave
+	TokenTop
+	TokenDimension
 	TokenAsync
 	TokenSync
 	TokenBenchmark
@@ -143,6 +152,7 @@ const (
 	TokenTag
 	TokenRegion
 	TokenURL
+	TokenTasks
 	TokenLog
 	TokenLevel
 	TokenDebug

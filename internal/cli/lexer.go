@@ -363,6 +363,16 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenASR, Value: ident}
 	case "TTS":
 		return Token{Type: TokenTTS, Value: ident}
+	case "EMBED":
+		return Token{Type: TokenEmbed, Value: ident}
+	case "TEXT":
+		return Token{Type: TokenText, Value: ident}
+	case "QUERY":
+		return Token{Type: TokenQuery, Value: ident}
+	case "TOP":
+		return Token{Type: TokenTop, Value: ident}
+	case "DIMENSION":
+		return Token{Type: TokenDimension, Value: ident}
 	case "OCR":
 		return Token{Type: TokenOCR, Value: ident}
 	case "ASYNC":
@@ -427,6 +437,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenRegion, Value: ident}
 	case "URL":
 		return Token{Type: TokenURL, Value: ident}
+	case "TASKS":
+		return Token{Type: TokenTasks, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":
@@ -443,6 +455,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFatal, Value: ident}
 	case "PANIC":
 		return Token{Type: TokenPanic, Value: ident}
+	case "PARAM":
+		return Token{Type: TokenParam, Value: ident}
+	case "PLAY":
+		return Token{Type: TokenPlay, Value: ident}
+	case "FORMAT":
+		return Token{Type: TokenFormat, Value: ident}
+	case "SAVE":
+		return Token{Type: TokenSave, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}

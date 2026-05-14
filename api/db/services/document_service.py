@@ -390,6 +390,35 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def list_id_content_hash_map_by_kb_and_source_type(cls, kb_id, source_type, page_size=500):
+        """Return {doc_id: content_hash} for the connector's existing docs.
+
+        Used by the fingerprint-bypass path to decide which keys can skip a
+        re-fetch -- if the connector's listing fingerprint equals content_hash,
+        the body hasn't changed since the last sync.
+
+        Ordered by create_time so LIMIT/OFFSET pagination is stable under
+        concurrent writes; without this, page boundaries can drop or duplicate
+        rows and the resulting map would silently miss entries.
+        """
+        fields = [cls.model.id, cls.model.content_hash]
+        docs = cls.model.select(*fields).where(
+            cls.model.kb_id == kb_id,
+            cls.model.source_type == source_type,
+        ).order_by(cls.model.create_time.asc())
+        offset = 0
+        result: dict[str, str] = {}
+        while True:
+            batch = list(docs.offset(offset).limit(page_size).dicts())
+            if not batch:
+                break
+            for row in batch:
+                result[row["id"]] = row.get("content_hash") or ""
+            offset += page_size
+        return result
+
+    @classmethod
+    @DB.connection_context()
     def get_all_docs_by_creator_id(cls, creator_id):
         fields = [cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id]
         docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(cls.model.created_by == creator_id)
@@ -426,7 +455,7 @@ class DocumentService(CommonService):
         chunk_index_name = search.index_name(tenant_id)
         chunk_index_exists = settings.docStoreConn.index_exist(chunk_index_name, doc.kb_id)
 
-        # Cancel all running tasks first Using preset function in task_service.py ---  set cancel flag in Redis
+        # Cancel all running tasks first using preset function in task_service.py --- set cancel flag in Redis
         try:
             cancel_all_task_of(doc.id)
             logging.info(f"Cancelled all tasks for document {doc.id}")
@@ -562,27 +591,84 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
-        num = (
-            cls.model.update(token_num=cls.model.token_num + token_num, chunk_num=cls.model.chunk_num + chunk_num, process_duration=cls.model.process_duration + duration)
-            .where(cls.model.id == doc_id)
-            .execute()
-        )
-        if num == 0:
-            logging.warning("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num + token_num, chunk_num=Knowledgebase.chunk_num + chunk_num).where(Knowledgebase.id == kb_id).execute()
+        """Atomically add chunk/token counters on the document and its knowledge base."""
+        with DB.atomic():
+            num = (
+                cls.model.update(
+                    token_num=cls.model.token_num + token_num,
+                    chunk_num=cls.model.chunk_num + chunk_num,
+                    process_duration=cls.model.process_duration + duration,
+                )
+                .where((cls.model.id == doc_id) & (cls.model.kb_id == kb_id))
+                .execute()
+            )
+            if num == 0:
+                logging.error(
+                    "increment_chunk_num: no document matched doc_id=%s kb_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    doc_id,
+                    kb_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
+                raise LookupError("Document not found which is supposed to be there")
+            num = (
+                Knowledgebase.update(
+                    token_num=Knowledgebase.token_num + token_num,
+                    chunk_num=Knowledgebase.chunk_num + chunk_num,
+                )
+                .where(Knowledgebase.id == kb_id)
+                .execute()
+            )
+            if num == 0:
+                logging.error(
+                    "increment_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    kb_id,
+                    doc_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
+                raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
     @classmethod
     @DB.connection_context()
     def decrement_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
-        num = (
-            cls.model.update(token_num=cls.model.token_num - token_num, chunk_num=cls.model.chunk_num - chunk_num, process_duration=cls.model.process_duration + duration)
-            .where(cls.model.id == doc_id)
-            .execute()
-        )
-        if num == 0:
-            raise LookupError("Document not found which is supposed to be there")
-        num = Knowledgebase.update(token_num=Knowledgebase.token_num - token_num, chunk_num=Knowledgebase.chunk_num - chunk_num).where(Knowledgebase.id == kb_id).execute()
+        """Atomically subtract chunk/token counters on the document and its knowledge base."""
+        with DB.atomic():
+            num = (
+                cls.model.update(
+                    token_num=cls.model.token_num - token_num,
+                    chunk_num=cls.model.chunk_num - chunk_num,
+                    process_duration=cls.model.process_duration + duration,
+                )
+                .where((cls.model.id == doc_id) & (cls.model.kb_id == kb_id))
+                .execute()
+            )
+            if num == 0:
+                raise LookupError("Document not found which is supposed to be there")
+            num = (
+                Knowledgebase.update(
+                    token_num=Knowledgebase.token_num - token_num,
+                    chunk_num=Knowledgebase.chunk_num - chunk_num,
+                )
+                .where(Knowledgebase.id == kb_id)
+                .execute()
+            )
+            if num == 0:
+                logging.error(
+                    "decrement_chunk_num: no knowledgebase matched kb_id=%s for doc_id=%s "
+                    "token_num=%s chunk_num=%s duration=%s",
+                    kb_id,
+                    doc_id,
+                    token_num,
+                    chunk_num,
+                    duration,
+                )
+                raise LookupError("Knowledgebase not found which is supposed to be there")
         return num
 
     @classmethod
@@ -678,17 +764,10 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def accessible(cls, doc_id, user_id):
-        docs = (
-            cls.model.select(cls.model.id)
-            .join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id))
-            .join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id))
-            .where(cls.model.id == doc_id, UserTenant.user_id == user_id)
-            .paginate(0, 1)
-        )
-        docs = docs.dicts()
-        if not docs:
+        e, doc = cls.get_by_id(doc_id)
+        if not e:
             return False
-        return True
+        return KnowledgebaseService.accessible(doc.kb_id, user_id)
 
     @classmethod
     @DB.connection_context()
@@ -985,11 +1064,13 @@ class DocumentService(CommonService):
             queue_tasks(doc, bucket, name, 0)
 
 
-def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=[]):
+def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_ids=None):
     """
     You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
     Optionally, specify a list of doc_ids to determine which documents participate in the task.
     """
+    if doc_ids is None:
+        doc_ids = []
     assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])

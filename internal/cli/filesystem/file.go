@@ -279,7 +279,7 @@ func (p *FileProvider) getRootID(ctx stdctx.Context) (string, error) {
 	}
 
 	// List files without parent_id to get root folder
-	resp, err := p.httpClient.Request("GET", "/files", true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", "/files", "auto", nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -340,7 +340,7 @@ func (p *FileProvider) listFilesByParentID(ctx stdctx.Context, parentID string, 
 		path = path + "?" + strings.Join(queryParams, "&")
 	}
 
-	resp, err := p.httpClient.Request("GET", path, true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +429,7 @@ func (p *FileProvider) getFolderIDByName(ctx stdctx.Context, folderName string) 
 		path = path + "?" + strings.Join(queryParams, "&")
 	}
 
-	resp, err := p.httpClient.Request("GET", path, true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -521,7 +521,7 @@ func (p *FileProvider) getFileNode(ctx stdctx.Context, folderName, fileName stri
 // downloadFile downloads file content
 func (p *FileProvider) downloadFile(ctx stdctx.Context, fileID string) ([]byte, error) {
 	path := fmt.Sprintf("/files/%s", fileID)
-	resp, err := p.httpClient.Request("GET", path, true, "auto", nil, nil)
+	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +548,7 @@ func (p *FileProvider) DeleteFile(ctx stdctx.Context, fileID string) error {
 	payload := map[string]interface{}{
 		"ids": []string{fileID},
 	}
-	resp, err := p.httpClient.Request("DELETE", "/files", true, "api", nil, payload)
+	resp, err := p.httpClient.Request("DELETE", "/files", "api", nil, payload)
 	if err != nil {
 		return fmt.Errorf("delete request failed: %w", err)
 	}

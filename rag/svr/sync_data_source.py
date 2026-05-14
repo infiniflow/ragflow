@@ -41,7 +41,9 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
+from common.constants import FileSource, TaskStatus
 from common.config_utils import show_configs
+from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source import (
     BlobStorageConnector,
     RSSConnector,
@@ -58,9 +60,8 @@ from common.data_source import (
     SeaFileConnector,
     RDBMSConnector,
     DingTalkAITableConnector,
+    RestAPIConnector,
 )
-from common.constants import FileSource, TaskStatus
-from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -70,6 +71,7 @@ from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -202,7 +204,7 @@ class SyncBase:
             docs = []
             for doc in document_batch:
                 d = {
-                    "id": hash128(doc.id),
+                    "id": hash128(f"{task['connector_id']}:{doc.id}"),
                     "connector_id": task["connector_id"],
                     "source": self.SOURCE_NAME,
                     "semantic_identifier": doc.semantic_identifier,
@@ -213,6 +215,8 @@ class SyncBase:
                 }
                 if doc.metadata:
                     d["metadata"] = doc.metadata
+                if getattr(doc, "fingerprint", None):
+                    d["fingerprint"] = doc.fingerprint
                 docs.append(d)
 
             try:
@@ -253,6 +257,7 @@ class SyncBase:
             and task.get("poll_range_start")
             and self.conf.get("sync_deleted_files")
         )
+        cleanup_errors = []
         if expects_deleted_file_snapshot and file_list is None:
             logging.warning(
                 "%s deleted-file snapshot retrieval failed "
@@ -261,16 +266,8 @@ class SyncBase:
                 task["connector_id"],
                 task["kb_id"],
             )
-        elif file_list:
-            logging.info(
-                "[%s] Starting stale document reconciliation. Snapshot size: %d "
-                "(connector_id=%s, kb_id=%s)",
-                self.SOURCE_NAME,
-                len(file_list),
-                task["connector_id"],
-                task["kb_id"],
-            )
-            removed_docs, _ = ConnectorService.cleanup_stale_documents_for_task(
+        elif file_list is not None:
+            removed_docs, cleanup_errors = ConnectorService.cleanup_stale_documents_for_task(
                 task["id"],
                 task["connector_id"],
                 task["kb_id"],
@@ -288,6 +285,13 @@ class SyncBase:
             summary = f"{summary}, skipped={failed_docs}"
         logging.info(summary)
 
+        if (
+            isinstance(self, _RDBMSBase)
+            and failed_docs == 0
+            and (not expects_deleted_file_snapshot or file_list is not None)
+            and not cleanup_errors
+        ):
+            self.connector.persist_sync_state()
         SyncLogsService.done(task["id"], task["connector_id"])
         task["poll_range_start"] = next_update
 
@@ -301,6 +305,81 @@ class SyncBase:
 class _BlobLikeBase(SyncBase):
     DEFAULT_BUCKET_TYPE: str = "s3"
 
+    def _fingerprint_filtered_generator(self, task: dict):
+        """Generator that uses list_keys() + get_value() to skip unchanged objects.
+
+        Pre-loads {doc_id: content_hash} for the connector's existing docs in
+        this KB, iterates the bucket via list_keys(), and only materializes a
+        Document (one GetObject call) when the listing fingerprint differs from
+        the persisted content_hash. Unchanged objects are skipped entirely --
+        no download, no re-parse.
+
+        Per-key fetch failures are counted and surfaced via SyncLogsService so
+        a partially failing sync (e.g. throttling, IAM regression mid-run)
+        doesn't silently report DONE while half the bucket is unreachable.
+        Connectors yielding KeyRecord(deleted=True) are skipped here -- actual
+        deletion reconciliation lives in the unified delete pass (PR-4).
+        """
+        source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
+        existing_fingerprints = DocumentService.list_id_content_hash_map_by_kb_and_source_type(
+            task["kb_id"], source_type,
+        )
+
+        bypass_count = 0
+        fetch_count = 0
+        fail_count = 0
+        batch = []
+        for key_record in self.connector.list_keys():
+            if key_record.deleted:
+                continue
+
+            doc_id = hash128(key_record.key)
+            stored = existing_fingerprints.get(doc_id, "")
+            if key_record.fingerprint and stored and key_record.fingerprint == stored:
+                bypass_count += 1
+                continue
+
+            try:
+                doc = self.connector.get_value(key_record.key)
+            except Exception as ex:
+                fail_count += 1
+                logging.exception(
+                    "Failed to fetch %s from %s: %s",
+                    key_record.key,
+                    self.SOURCE_NAME,
+                    ex,
+                )
+                continue
+
+            fetch_count += 1
+            batch.append(doc)
+            if len(batch) >= self.connector.batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
+
+        log_msg = (
+            "[%s] fingerprint sync: %d bypassed, %d fetched, %d failed "
+            "(connector_id=%s, kb_id=%s)"
+        )
+        log_args = (
+            self.SOURCE_NAME,
+            bypass_count,
+            fetch_count,
+            fail_count,
+            task["connector_id"],
+            task["kb_id"],
+        )
+        # Use WARNING when any fetch failed so partial-bucket regressions
+        # (auth, throttling, IAM drift) surface without diving into the
+        # per-exception traces above.
+        if fail_count:
+            logging.warning(log_msg, *log_args)
+        else:
+            logging.info(log_msg, *log_args)
+
     async def _generate(self, task: dict):
         bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
 
@@ -313,14 +392,13 @@ class _BlobLikeBase(SyncBase):
         self.connector.load_credentials(self.conf["credentials"])
 
         file_list = None
-        document_batch_generator = (
-            self.connector.load_from_state()
-            if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(
-                task["poll_range_start"].timestamp(),
-                datetime.now(timezone.utc).timestamp(),
-            )
-        )
+        # Fingerprint-bypass path: skip GetObject for unchanged ETags. Disabled
+        # on full reindex (we want to re-fetch everything in that case).
+        use_fingerprint_path = task["reindex"] != "1"
+        if use_fingerprint_path:
+            document_batch_generator = self._fingerprint_filtered_generator(task)
+        else:
+            document_batch_generator = self.connector.load_from_state()
 
         if (
             task["reindex"] != "1"
@@ -332,9 +410,9 @@ class _BlobLikeBase(SyncBase):
                 file_list.extend(slim_batch)
 
         _begin_info = (
-            "totally"
-            if task["reindex"] == "1" or not task["poll_range_start"]
-            else "from {}".format(task["poll_range_start"])
+            "fingerprint-bypass"
+            if use_fingerprint_path
+            else "full reindex"
         )
 
         logging.info(
@@ -937,14 +1015,6 @@ class WebDAV(SyncBase):
             end_ts = datetime.now(timezone.utc).timestamp()
             if self.conf.get("sync_deleted_files"):
                 file_list = []
-                logging.info(
-                    "WebDAV: fetching slim snapshot for stale-document reconciliation "
-                    "(connector_id=%s, kb_id=%s, base_url=%s, path=%s)",
-                    task["connector_id"],
-                    task["kb_id"],
-                    self.conf["base_url"],
-                    self.conf.get("remote_path", "/"),
-                )
                 try:
                     for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                         file_list.extend(slim_batch)
@@ -984,19 +1054,40 @@ class Moodle(SyncBase):
 
         # Determine the time range for synchronization based on reindex or poll_range_start
         poll_start = task.get("poll_range_start")
+        file_list = None
 
         if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             _begin_info = "totally"
         else:
+            # Freeze the poll end time BEFORE the slim snapshot so that the
+            # snapshot and the poll cover the same point in time. Without
+            # this, a module created between the snapshot and the poll
+            # could be polled as new and at the same time be missing from
+            # the slim list, which would mark it as stale and delete it.
+            end_ts = datetime.now(timezone.utc).timestamp()
+
+            if self.conf.get("sync_deleted_files"):
+                file_list = []
+                try:
+                    for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                        file_list.extend(slim_batch)
+                except Exception:
+                    logging.exception(
+                        "Moodle slim snapshot failed; skipping stale-document cleanup "
+                        "(connector_id=%s, kb_id=%s)",
+                        task.get("connector_id"),
+                        task.get("kb_id"),
+                    )
+                    file_list = None
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp(),
+                end_ts,
             )
             _begin_info = f"from {poll_start}"
 
         self.log_connection("Moodle", self.conf["moodle_url"], task)
-        return document_generator
+        return document_generator, file_list
 
 
 class BOX(SyncBase):
@@ -1560,14 +1651,6 @@ class SeaFile(SyncBase):
             end_ts = datetime.now(timezone.utc).timestamp()
             if self.conf.get("sync_deleted_files"):
                 file_list = []
-                logging.info(
-                    "SeaFile: fetching slim snapshot for stale-document reconciliation "
-                    "(connector_id=%s, kb_id=%s, scope=%s)",
-                    task["connector_id"],
-                    task["kb_id"],
-                    conf.get("sync_scope")
-                    or SeafileSyncScope.ACCOUNT.value,
-                )
                 try:
                     for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
                         file_list.extend(slim_batch)
@@ -1668,81 +1751,100 @@ class DingTalkAITable(SyncBase):
         return document_generator, file_list
 
 
-class MySQL(SyncBase):
+class _RDBMSBase(SyncBase):
+    DB_TYPE: str = ""
+    LOG_NAME: str = ""
+    DEFAULT_PORT: int = 0
+
+    async def _generate(self, task: dict):
+        self.connector = RDBMSConnector(
+            db_type=self.DB_TYPE,
+            host=self.conf.get("host", "localhost"),
+            port=int(self.conf.get("port", self.DEFAULT_PORT)),
+            database=self.conf.get("database", ""),
+            query=self.conf.get("query", ""),
+            content_columns=self.conf.get("content_columns", ""),
+            metadata_columns=self.conf.get("metadata_columns", ""),
+            id_column=self.conf.get("id_column") or None,
+            timestamp_column=self.conf.get("timestamp_column") or None,
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError(f"{self.DB_TYPE} connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+        self.connector.prepare_sync_state(task["connector_id"], self.conf)
+
+        file_list = None
+        if (
+            task["reindex"] != "1"
+            and task["poll_range_start"]
+            and self.conf.get("sync_deleted_files")
+        ):
+            file_list = []
+            for slim_batch in self.connector.retrieve_all_slim_docs_perm_sync():
+                file_list.extend(slim_batch)
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            _begin_info = "totally"
+        elif not self.connector.timestamp_column:
+            document_generator = self.connector.load_from_state()
+            _begin_info = f"from {task['poll_range_start']}"
+        else:
+            poll_start = task["poll_range_start"]
+            start_cursor_value = self.connector.get_saved_sync_cursor_value()
+            document_generator = self.connector.load_from_cursor_range(
+                start_cursor_value,
+                self.connector._pending_sync_cursor_value,
+            )
+            _begin_info = f"from {poll_start}"
+
+        self.log_connection(self.LOG_NAME, f"{self.conf.get('host')}:{self.conf.get('database')}", task)
+        return document_generator, file_list
+
+
+class MySQL(_RDBMSBase):
     SOURCE_NAME: str = FileSource.MYSQL
-
-    async def _generate(self, task: dict):
-        self.connector = RDBMSConnector(
-            db_type="mysql",
-            host=self.conf.get("host", "localhost"),
-            port=int(self.conf.get("port", 3306)),
-            database=self.conf.get("database", ""),
-            query=self.conf.get("query", ""),
-            content_columns=self.conf.get("content_columns", ""),
-            metadata_columns=self.conf.get("metadata_columns", ""),
-            id_column=self.conf.get("id_column") or None,
-            timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-        )
-
-        credentials = self.conf.get("credentials")
-        if not credentials:
-            raise ValueError("MySQL connector is missing credentials.")
-
-        self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-
-        if task["reindex"] == "1" or not task["poll_range_start"]:
-            document_generator = self.connector.load_from_state()
-            _begin_info = "totally"
-        else:
-            poll_start = task["poll_range_start"]
-            document_generator = self.connector.poll_source(
-                poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
-            )
-            _begin_info = f"from {poll_start}"
-
-        self.log_connection("MySQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
-        return document_generator
+    DB_TYPE: str = "mysql"
+    LOG_NAME: str = "MySQL"
+    DEFAULT_PORT: int = 3306
 
 
-class PostgreSQL(SyncBase):
+class PostgreSQL(_RDBMSBase):
     SOURCE_NAME: str = FileSource.POSTGRESQL
+    DB_TYPE: str = "postgresql"
+    LOG_NAME: str = "PostgreSQL"
+    DEFAULT_PORT: int = 5432
+
+
+class REST_API(SyncBase):
+    SOURCE_NAME: str = FileSource.REST_API
 
     async def _generate(self, task: dict):
-        self.connector = RDBMSConnector(
-            db_type="postgresql",
-            host=self.conf.get("host", "localhost"),
-            port=int(self.conf.get("port", 5432)),
-            database=self.conf.get("database", ""),
-            query=self.conf.get("query", ""),
-            content_columns=self.conf.get("content_columns", ""),
-            metadata_columns=self.conf.get("metadata_columns", ""),
-            id_column=self.conf.get("id_column") or None,
-            timestamp_column=self.conf.get("timestamp_column") or None,
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
-        )
+        try:
+            cfg = RestAPIConnector.parse_storage_config(self.conf)
+        except ConnectorValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
-        credentials = self.conf.get("credentials")
-        if not credentials:
-            raise ValueError("PostgreSQL connector is missing credentials.")
+        self.connector = RestAPIConnector.from_parsed_config(cfg)
+        self.connector.load_credentials(self.conf.get("credentials") or {})
 
-        self.connector.load_credentials(credentials)
-        self.connector.validate_connector_settings()
-
-        if task["reindex"] == "1" or not task["poll_range_start"]:
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
-            _begin_info = "totally"
+            begin_info = "totally"
         else:
-            poll_start = task["poll_range_start"]
             document_generator = self.connector.poll_source(
                 poll_start.timestamp(),
-                datetime.now(timezone.utc).timestamp()
+                datetime.now(timezone.utc).timestamp(),
             )
-            _begin_info = f"from {poll_start}"
+            begin_info = f"from {poll_start}"
 
-        self.log_connection("PostgreSQL", f"{self.conf.get('host')}:{self.conf.get('database')}", task)
+        logging.info("Connect to REST API: %s %s %s", self.conf.get("method", "GET"), self.conf.get("url"), begin_info)
         return document_generator
 
 
@@ -1776,6 +1878,7 @@ func_factory = {
     FileSource.MYSQL: MySQL,
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
+    FileSource.REST_API: REST_API,
 }
 
 

@@ -19,6 +19,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,11 @@ type MinimaxModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
+}
+
+func (z *MinimaxModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewMinimaxModel creates a new Minimax model instance
@@ -58,124 +64,6 @@ func (z *MinimaxModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (z *MinimaxModel) Name() string {
 	return "minimax"
-}
-
-// Chat sends a message and returns response
-func (z *MinimaxModel) Chat(modelName, message *string, apiConfig *APIConfig, modelConfig *ChatConfig) (*ChatResponse, error) {
-	var region = "default"
-
-	if *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
-
-	// Build request Body
-	reqBody := map[string]interface{}{
-		"model": modelName,
-		"messages": []map[string]interface{}{
-			{"role": "user", "content": *message},
-		},
-		"stream":      false,
-		"temperature": 1,
-	}
-
-	if modelConfig.Temperature != nil {
-		reqBody["temperature"] = *modelConfig.Temperature
-	}
-
-	if modelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *modelConfig.MaxTokens
-	}
-
-	if modelConfig.Stream != nil {
-		reqBody["stream"] = *modelConfig.Stream
-	}
-
-	if modelConfig.TopP != nil {
-		reqBody["top_p"] = *modelConfig.TopP
-	}
-
-	if modelConfig.DoSample != nil {
-		reqBody["do_sample"] = *modelConfig.DoSample
-	}
-
-	if modelConfig.Thinking != nil {
-		reqBody["thinking"] = *modelConfig.Thinking
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := z.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to send request: %d %s", resp.StatusCode, string(body))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	var reasonContent string
-	if modelConfig.Thinking != nil && *modelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		// if first char of reasonContent is \n remove the \n
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
@@ -462,8 +350,8 @@ func (z *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *MinimaxModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+// Embed embeds a list of texts into embeddings
+func (z *MinimaxModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -561,7 +449,224 @@ func (z *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *MinimaxModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+// Rerank calculates similarity scores between query and documents
+func (z *MinimaxModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (z *MinimaxModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("MiniMax API key is missing")
+	}
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("text content is empty")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"text":  audioContent,
+	}
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if asrConfig != nil && asrConfig.Format != "" {
+		reqBody["audio_setting"] = map[string]interface{}{
+			"format": asrConfig.Format,
+		}
+	}
+	reqBody["stream"] = false
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("MiniMax TTS API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		BaseResp struct {
+			StatusCode int    `json:"status_code"`
+			StatusMsg  string `json:"status_msg"`
+		} `json:"base_resp"`
+		Data struct {
+			Audio string `json:"audio"` // HEX
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if result.BaseResp.StatusCode != 0 {
+		return nil, fmt.Errorf("MiniMax TTS returned error: %d - %s", result.BaseResp.StatusCode, result.BaseResp.StatusMsg)
+	}
+
+	// format HEX
+	audioBytes, err := hex.DecodeString(result.Data.Audio)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode MiniMax hex audio: %w", err)
+	}
+
+	return &TTSResponse{
+		Audio: audioBytes,
+	}, nil
+}
+
+func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("MiniMax API key is missing")
+	}
+	if audioContent == nil || *audioContent == "" {
+		return fmt.Errorf("text content is empty")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := strings.TrimSuffix(z.BaseURL[region], "/")
+	if baseURL == "" {
+		baseURL = strings.TrimSuffix(z.BaseURL["default"], "/")
+	}
+	suffix := strings.TrimPrefix(z.URLSuffix.TTS, "/")
+	if suffix == "" {
+		suffix = "v1/t2a_v2"
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, suffix)
+
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"text":  audioContent,
+	}
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	reqBody["stream"] = false
+
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["audio_setting"] = map[string]interface{}{
+			"format": ttsConfig.Format,
+		}
+	}
+
+	reqBody["stream"] = true
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("MiniMax stream TTS API error: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		dataStr := strings.TrimSpace(line[5:])
+		if dataStr == "" {
+			continue
+		}
+
+		var event struct {
+			Data struct {
+				Audio  string `json:"audio"`
+				Status int    `json:"status"`
+			} `json:"data"`
+		}
+
+		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+			continue
+		}
+
+		if event.Data.Audio != "" {
+			audioBytes, err := hex.DecodeString(event.Data.Audio)
+			if err == nil && len(audioBytes) > 0 {
+				chunk := string(audioBytes)
+				if errSend := sender(&chunk, nil); errSend != nil {
+					return errSend
+				}
+			}
+		}
+
+		if event.Data.Status == 2 {
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading minimax stream: %w", err)
+	}
+
+	return nil
+}
+
+// OCRFile OCR file
+func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

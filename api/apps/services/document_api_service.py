@@ -122,13 +122,16 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
 
     # Delete chunks from document store
     if doc.token_num > 0:
-        e = DocumentService.increment_chunk_num(
-            doc.id,
-            doc.kb_id,
-            doc.token_num * -1,
-            doc.chunk_num * -1,
-            doc.process_duration * -1,
-        )
+        try:
+            e = DocumentService.increment_chunk_num(
+                doc.id,
+                doc.kb_id,
+                doc.token_num * -1,
+                doc.chunk_num * -1,
+                doc.process_duration * -1,
+            )
+        except LookupError:
+            return get_error_data_result(message="Document not found!")
         if not e:
             return get_error_data_result(message="Document not found!")
         settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)

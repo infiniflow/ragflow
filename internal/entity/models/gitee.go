@@ -19,9 +19,11 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
@@ -33,6 +35,11 @@ type GiteeModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client // Reusable HTTP client with connection pool
+}
+
+func (g *GiteeModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewGiteeModel creates a new Gitee model instance
@@ -52,16 +59,16 @@ func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 	}
 }
 
-func (z *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (g *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return nil
 }
 
-func (z *GiteeModel) Name() string {
+func (g *GiteeModel) Name() string {
 	return "gitee"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is nil or empty")
 	}
@@ -71,10 +78,10 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -143,7 +150,7 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -212,17 +219,17 @@ func (z *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", z.BaseURL[region])
+	url := fmt.Sprintf("%s/chat/completions", g.BaseURL[region])
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -290,7 +297,7 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -397,23 +404,325 @@ func (z *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *GiteeModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+type giteeEmbeddingResponse struct {
+	Object string               `json:"object"`
+	Data   []giteeEmbeddingData `json:"data"`
+	Model  string               `json:"model"`
+	Usage  giteeUsage           `json:"usage"`
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *GiteeModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+type giteeEmbeddingData struct {
+	Object    string    `json:"object"`
+	Embedding []float64 `json:"embedding"`
+	Index     int       `json:"index"`
 }
 
-func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+type giteeUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+}
+
+// Embed embeds a list of texts into embeddings
+func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := g.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := g.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitee: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Gitee embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed giteeEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
+}
+
+type giteeRerankRequest struct {
+	Model           string   `json:"model"`
+	Query           string   `json:"query"`
+	Documents       []string `json:"documents"`
+	TopN            int      `json:"top_n"`
+	ReturnDocuments bool     `json:"return_documents"`
+}
+
+// Rerank calculates similarity scores between query and documents
+func (g *GiteeModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := g.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := g.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitee: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.Rerank)
+
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN == 0 {
+		topN = len(documents)
+	}
+
+	reqBody := giteeRerankRequest{
+		Model:           *modelName,
+		Query:           query,
+		Documents:       documents,
+		TopN:            topN,
+		ReturnDocuments: false,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitee rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var rerankResponse RerankResponse
+	if err = json.Unmarshal(body, &rerankResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &rerankResponse, nil
+}
+
+// TranscribeAudio transcribe audio
+func (g *GiteeModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (z *GiteeModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (g *GiteeModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (z *GiteeModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+type giteeOCRResponse struct {
+	Text   string `json:"text_result"`
+	Prompt string `json:"prompt"`
+}
+
+// OCRFile OCR file
+func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	if imageURL == nil && content == nil {
+		return nil, fmt.Errorf("url or content is required")
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := g.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := g.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitee: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.OCR)
+
+	payload := &bytes.Buffer{}
+	writer := multipart.NewWriter(payload)
+
+	if err := writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	if imageURL != nil {
+		if err := writer.WriteField("image", *imageURL); err != nil {
+			return nil, fmt.Errorf("failed to write image URL: %w", err)
+		}
+	} else if content != nil && len(content) > 0 {
+		part, err := writer.CreateFormFile("image", "image")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create image form file: %w", err)
+		}
+		if _, err = part.Write(content); err != nil {
+			return nil, fmt.Errorf("failed to write image content: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("image or image URL is required")
+	}
+
+	writer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitee OCR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var giteeResponse giteeOCRResponse
+	if err = json.Unmarshal(body, &giteeResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var ocrResponse = OCRResponse{
+		Text: &giteeResponse.Text,
+	}
+
+	return &ocrResponse, nil
+}
+
+func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -431,7 +740,7 @@ func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -464,13 +773,13 @@ func (z *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (z *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Balance)
+	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -488,7 +797,7 @@ func (z *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -519,13 +828,13 @@ func (z *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 	return response, nil
 }
 
-func (z *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
+func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Status)
+	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Status)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -543,7 +852,7 @@ func (z *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

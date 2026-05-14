@@ -43,6 +43,7 @@ export default {
   dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
   dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceTest: (id: string) => `${restAPIv1}/connectors/${id}/test`,
   googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
     `${restAPIv1}/connectors/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
@@ -58,14 +59,14 @@ export default {
   // knowledge base
 
   checkEmbedding: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/embedding`,
+    `${restAPIv1}/datasets/${datasetId}/embedding/check`,
   kbList: `${restAPIv1}/datasets`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   rmKb: `${restAPIv1}/datasets`,
   getKbDetail: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   getKnowledgeGraph: (knowledgeId: string) =>
-    `${restAPIv1}/datasets/${knowledgeId}/graph/search`,
+    `${restAPIv1}/datasets/${knowledgeId}/graph`,
   knowledgeGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/graph`,
   deleteKnowledgeGraph: (knowledgeId: string) =>
@@ -109,8 +110,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
-  retrievalTest: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/search`,
+  retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
   getDocumentList: (datasetId: string) =>
@@ -126,10 +126,12 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
+  getDatasetDocumentFileDownload: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentThumbnails: `${restAPIv1}/thumbnails`,
-  getDocumentFile: `${webAPI}/document/get`,
+  getDocumentFile: `${restAPIv1}/documents`,
   getDocumentFileDownload: (docId: string) =>
-    `${webAPI}/document/download/${docId}`,
+    `${restAPIv1}/documents/${docId}/download`,
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: (datasetId: string) =>
@@ -161,7 +163,7 @@ export default {
   completionUrl: `${restAPIv1}/chat/completions`,
   chatsTts: `${restAPIv1}/chat/audio/speech`,
   searchCompletion: (searchId: string) =>
-    `${restAPIv1}/searches/${searchId}/completion`,
+    `${restAPIv1}/searches/${searchId}/completions`,
   chatsMindmap: `${restAPIv1}/chat/mindmap`,
   chatsRelatedQuestions: `${restAPIv1}/chat/recommendation`,
 
@@ -189,10 +191,13 @@ export default {
   // flow
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
+  listAgentTags: `${restAPIv1}/agents/tags`,
+  updateAgentTags: (agentId: string) =>
+    `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
-  agentChatCompletion: `${restAPIv1}/agents/chat/completion`,
+  agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
   testDbConnect: `${restAPIv1}/agents/test_db_connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,

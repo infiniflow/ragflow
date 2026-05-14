@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,11 @@ type OllamaModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
+}
+
+func (o *OllamaModel) ParseFile() {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewOllamaModel creates a new Ollama AI model instance
@@ -36,7 +42,7 @@ func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel
 	}
 }
 
-func (o OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (o *OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &OllamaModel{
 		BaseURL:   baseURL,
 		URLSuffix: o.URLSuffix,
@@ -52,11 +58,11 @@ func (o OllamaModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (o OllamaModel) Name() string {
+func (o *OllamaModel) Name() string {
 	return "ollama"
 }
 
-func (o OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("message is nil")
 	}
@@ -179,23 +185,32 @@ func (o OllamaModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	thinking, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
+	var reasonContent string
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		reasonContent, ok = messageMap["reasoning_content"].(string)
+		if !ok {
+			return nil, fmt.Errorf("invalid content format")
+		}
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
+	}
 
 	chatResponse := &ChatResponse{
-		Answer:        answer,
-		ReasonContent: thinking,
+		Answer:        &content,
+		ReasonContent: &reasonContent,
 	}
 
 	return chatResponse, nil
 }
 
-func (o OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
 	var region = "default"
-	if apiConfig.Region != nil {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -350,22 +365,130 @@ func (o OllamaModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-func (o OllamaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
-	return nil, fmt.Errorf("no such method")
-}
+func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
 
-func (o OllamaModel) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
-	return nil, fmt.Errorf("no such method")
-}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 
-func (o OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-
-	if apiConfig.Region != nil {
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Models)
+	baseURL := o.BaseURL[region]
+	if baseURL == "" {
+		baseURL = o.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Ollama embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed openaiEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
+}
+
+func (o *OllamaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("no such method")
+}
+
+// TranscribeAudio transcribe audio
+func (o *OllamaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OllamaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert audio to text
+func (o *OllamaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OllamaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *OllamaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	var region = "default"
+
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := o.BaseURL[region]
+	if baseURL == "" {
+		baseURL = o.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -380,7 +503,12 @@ func (o OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	// Ollama is a local provider and the API key is optional. Only set
+	// the Authorization header when a non-empty key was supplied. This
+	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -414,10 +542,12 @@ func (o OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (o OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (o OllamaModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+// CheckConnection verifies that the configured Ollama base URL is reachable
+func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := o.ListModels(apiConfig)
+	return err
 }

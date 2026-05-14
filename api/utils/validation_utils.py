@@ -327,10 +327,14 @@ def validate_uuid1_hex(v: Any) -> str:
 
 
 class Base(BaseModel):
+    """Strict base model that rejects unknown request fields."""
+
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class RaptorConfig(Base):
+    """Dataset parser configuration for RAPTOR summary generation."""
+
     use_raptor: Annotated[bool, Field(default=False)]
     prompt: Annotated[
         str,
@@ -344,19 +348,25 @@ class RaptorConfig(Base):
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
     scope: Annotated[Literal["file", "dataset"], Field(default="file")]
+    clustering_method: Annotated[Literal["gmm", "ahc"], Field(default="gmm")]
+    tree_builder: Annotated[Literal["raptor", "psi"], Field(default="raptor")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
     ext: Annotated[dict, Field(default={})]
 
 
 class GraphragConfig(Base):
+    """Dataset parser configuration for GraphRAG generation."""
+
     use_graphrag: Annotated[bool, Field(default=False)]
     entity_types: Annotated[list[str], Field(default_factory=lambda: ["organization", "person", "geo", "event", "category"])]
-    method: Annotated[Literal["light", "general"], Field(default="light")]
+    method: Annotated[Literal["light", "general", "ner"], Field(default="light")]
     community: Annotated[bool, Field(default=False)]
     resolution: Annotated[bool, Field(default=False)]
 
 
 class ParentChildConfig(Base):
+    """Dataset parser configuration for parent-child chunking."""
+
     use_parent_child: Annotated[bool, Field(default=False)]
     children_delimiter: Annotated[str, Field(default=r"\n", min_length=1)]
 
@@ -377,7 +387,12 @@ class AutoMetadataConfig(Base):
     built_in_metadata: Annotated[list[AutoMetadataField], Field(default_factory=list)]
 
 
+TableColumnRole = Literal["indexing", "metadata", "both"]
+
+
 class ParserConfig(Base):
+    """Complete parser configuration accepted by dataset APIs."""
+
     auto_keywords: Annotated[int, Field(default=0, ge=0, le=32)]
     auto_questions: Annotated[int, Field(default=0, ge=0, le=10)]
     chunk_token_num: Annotated[int, Field(default=512, ge=1, le=2048)]
@@ -393,6 +408,25 @@ class ParserConfig(Base):
     task_page_size: Annotated[int | None, Field(default=None, ge=1)]
     pages: Annotated[list[list[int]] | None, Field(default=None)]
     ext: Annotated[dict, Field(default={})]
+    # Table parser: column name -> "indexing" | "metadata" | "both". Absence => all columns "both".
+    # Table parser: "auto" = all columns both (default), "manual" = use table_column_roles. None → treated as "auto".
+    table_column_mode: Annotated[Literal["auto", "manual"] | None, Field(default=None)]
+    # Table parser: column name -> "indexing" | "metadata" | "both". Used only when table_column_mode == "manual".
+    table_column_roles: Annotated[dict[str, TableColumnRole] | None, Field(default=None)]
+    # Table parser: list of column names (set by backend after first parse; used by frontend for role selector).
+    table_column_names: Annotated[list[str] | None, Field(default=None)]
+
+    @field_validator("table_column_roles", mode="before")
+    @classmethod
+    def legacy_vectorize_table_column_role(cls, v: Any) -> Any:
+        """Normalize legacy role value *vectorize* to *indexing* (chunk text + full-text search)."""
+        if v is None or not isinstance(v, dict):
+            return v
+        out: dict[str, Any] = {}
+        for key, val in v.items():
+            k = key if isinstance(key, str) else str(key)
+            out[k] = "indexing" if val == "vectorize" else val
+        return out
 
 
 class UpdateDocumentReq(Base):
@@ -417,6 +451,7 @@ class UpdateDocumentReq(Base):
     @field_validator("chunk_method", mode="after")
     @classmethod
     def validate_document_chunk_method(cls, chunk_method: str | None):
+        """Validate an optional document parser method."""
         if chunk_method:
             # Validate chunk method if present
             valid_chunk_method = {"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"}
@@ -428,6 +463,7 @@ class UpdateDocumentReq(Base):
     @field_validator("enabled", mode="after")
     @classmethod
     def validate_document_enabled(cls, enabled: str | None):
+        """Validate the optional enabled flag."""
         if enabled:
             converted = int(enabled)
             if converted < 0 or converted > 1:
@@ -438,6 +474,7 @@ class UpdateDocumentReq(Base):
     @field_validator("meta_fields", mode="after")
     @classmethod
     def validate_document_meta_fields(cls, meta_fields: dict | None):
+        """Validate user-provided document metadata values."""
         if meta_fields is None:
             return None
 
@@ -453,6 +490,8 @@ class UpdateDocumentReq(Base):
 
 
 class CreateDatasetReq(Base):
+    """Request model for creating a dataset."""
+
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(...)]
     avatar: Annotated[str | None, Field(default=None, max_length=65535)]
     description: Annotated[str | None, Field(default=None, max_length=65535)]
@@ -468,6 +507,7 @@ class CreateDatasetReq(Base):
     @field_validator("pipeline_id", mode="before")
     @classmethod
     def handle_pipeline_id(cls, v: str | None, info: ValidationInfo):
+        """Drop pipeline_id when parse_type selects direct parser mode."""
         if v is None:
             return v
         if info.data.get("parse_type", 0) == 1:
@@ -721,6 +761,8 @@ class CreateDatasetReq(Base):
 
 
 class UpdateDatasetReq(CreateDatasetReq):
+    """Request model for updating a dataset."""
+
     dataset_id: Annotated[str, Field(...)]
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=DATASET_NAME_LIMIT), Field(default="")]
     pagerank: Annotated[int, Field(default=0, ge=0, le=100)]
@@ -730,10 +772,13 @@ class UpdateDatasetReq(CreateDatasetReq):
     @field_validator("dataset_id", mode="before")
     @classmethod
     def validate_dataset_id(cls, v: Any) -> str:
+        """Validate and normalize the dataset id."""
         return validate_uuid1_hex(v)
 
 
 class DeleteReq(Base):
+    """Base request model for batch delete APIs."""
+
     ids: Annotated[list[str] | None, Field(default=None)]
     delete_all: Annotated[bool, Field(default=False)]
 
@@ -811,10 +856,15 @@ class DeleteReq(Base):
         return ids_list
 
 
-class DeleteDatasetReq(DeleteReq): ...
+class DeleteDatasetReq(DeleteReq):
+    """Request model for deleting datasets."""
+
+    ...
 
 
 class DeleteDocumentReq(DeleteReq):
+    """Request model for deleting documents."""
+
     @field_validator("ids", mode="after")
     @classmethod
     def validate_ids(cls, v_list: list[str] | None) -> list[str] | None:
@@ -840,6 +890,8 @@ class DeleteDocumentReq(DeleteReq):
 
 
 class SearchDatasetReq(BaseModel):
+    """Request model for searching one dataset."""
+
     model_config = ConfigDict(extra="ignore")
 
     question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
@@ -854,11 +906,35 @@ class SearchDatasetReq(BaseModel):
     keyword: Annotated[bool, Field(default=False)]
     search_id: Annotated[str | None, Field(default=None)]
     rerank_id: Annotated[str | None, Field(default=None)]
-    tenant_rerank_id: Annotated[str | None, Field(default=None)]
+    tenant_rerank_id: Annotated[int | None, Field(default=None)]
+    meta_data_filter: Annotated[dict | None, Field(default=None)]
+
+
+class SearchDatasetsReq(BaseModel):
+    """Request model for searching multiple datasets."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    dataset_ids: Annotated[list[str], Field(..., min_length=1)]
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), Field(...)]
+    doc_ids: Annotated[list[str], Field(default=[])]
+    page: Annotated[int, Field(default=1, ge=1)]
+    size: Annotated[int, Field(default=30, ge=1)]
+    top_k: Annotated[int, Field(default=1024, ge=1)]
+    similarity_threshold: Annotated[float, Field(default=0.0, ge=0.0, le=1.0)]
+    vector_similarity_weight: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
+    use_kg: Annotated[bool, Field(default=False)]
+    cross_languages: Annotated[list[str], Field(default=[])]
+    keyword: Annotated[bool, Field(default=False)]
+    search_id: Annotated[str | None, Field(default=None)]
+    rerank_id: Annotated[str | None, Field(default=None)]
+    tenant_rerank_id: Annotated[int | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
 
 
 class BaseListReq(BaseModel):
+    """Shared pagination and sorting fields for list APIs."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: Annotated[str | None, Field(default=None)]
@@ -871,10 +947,13 @@ class BaseListReq(BaseModel):
     @field_validator("id", mode="before")
     @classmethod
     def validate_id(cls, v: Any) -> str:
+        """Validate and normalize an optional list filter id."""
         return validate_uuid1_hex(v)
 
 
 class ListDatasetReq(BaseListReq):
+    """Request model for listing datasets."""
+
     include_parsing_status: Annotated[bool, Field(default=False)]
     ext: Annotated[dict, Field(default={})]
 
@@ -883,22 +962,29 @@ class ListDatasetReq(BaseListReq):
 
 
 class CreateFolderReq(Base):
+    """Request model for creating a folder."""
+
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(...)]
     parent_id: Annotated[str | None, Field(default=None)]
     type: Annotated[str | None, Field(default=None)]
 
 
 class DeleteFileReq(Base):
+    """Request model for deleting files."""
+
     ids: Annotated[list[str], Field(min_length=1)]
 
 
 class MoveFileReq(Base):
+    """Request model for moving or renaming files."""
+
     src_file_ids: Annotated[list[str], Field(min_length=1)]
     dest_file_id: Annotated[str | None, Field(default=None)]
     new_name: Annotated[str | None, StringConstraints(strip_whitespace=True, min_length=1, max_length=255), Field(default=None)]
 
     @model_validator(mode="after")
     def check_operation(self):
+        """Require either a destination folder or a new file name."""
         if not self.dest_file_id and not self.new_name:
             raise ValueError("At least one of dest_file_id or new_name must be provided")
         if self.new_name and len(self.src_file_ids) > 1:
@@ -907,6 +993,8 @@ class MoveFileReq(Base):
 
 
 class ListFileReq(BaseModel):
+    """Request model for listing files."""
+
     model_config = ConfigDict(extra="forbid")
 
     parent_id: Annotated[str | None, Field(default=None)]
