@@ -21,6 +21,7 @@ Cargo.lock
 
 .idea/
 .vscode/
+.VSCodeCounter/
 
 # Exclude Mac generated files
 .DS_Store

@@ -90,7 +90,11 @@ class LLMBundle(LLM4Tenant):
         if not self.is_tools:
             logging.warning(f"Model {self.model_config['llm_name']} does not support tool call, but you have assigned one or more tools to it!")
             return
-        self.mdl.bind_tools(toolcall_session, tools)
+        bind_tools = getattr(self.mdl, "bind_tools", None)
+        if not callable(bind_tools):
+            logging.warning("Model %s is marked as supporting tool calls, but %s does not implement bind_tools.", self.model_config["llm_name"], type(self.mdl).__name__)
+            return
+        bind_tools(toolcall_session, tools)
 
     def encode(self, texts: list):
         if self.langfuse:

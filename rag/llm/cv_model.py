@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import asyncio
 import base64
 import json
 import logging
@@ -27,6 +28,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
+import json_repair
 from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
@@ -257,6 +259,208 @@ class GptV4(Base):
         self.model_name = model_name
         self.lang = lang
         super().__init__(**kwargs)
+
+    def _clean_conf(self, gen_conf):
+        gen_conf = dict(gen_conf or {})
+        gen_conf.pop("max_tokens", None)
+        allowed_conf = {
+            "temperature",
+            "max_completion_tokens",
+            "top_p",
+            "stop",
+            "n",
+            "presence_penalty",
+            "frequency_penalty",
+            "functions",
+            "function_call",
+            "logit_bias",
+            "user",
+            "response_format",
+            "seed",
+            "tools",
+            "tool_choice",
+            "logprobs",
+            "top_logprobs",
+            "extra_headers",
+        }
+        return {k: v for k, v in gen_conf.items() if k in allowed_conf}
+
+    def _verbose_tool_use(self, name, args, res):
+        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+
+    def _append_history_batch(self, hist, results):
+        hist.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "index": getattr(tc, "index", None),
+                        "id": tc.id,
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        "type": "function",
+                    }
+                    for tc, _, _, _, _ in results
+                ],
+            }
+        )
+        for tc, _, _, result, err in results:
+            if err:
+                content = str(err)
+            elif isinstance(result, dict):
+                content = json.dumps(result, ensure_ascii=False)
+            else:
+                content = str(result)
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+        return hist
+
+    def bind_tools(self, toolcall_session, tools):
+        if not (toolcall_session and tools):
+            return
+        self.is_tools = True
+        self.toolcall_session = toolcall_session
+        self.tools = tools
+
+    async def _exec_tool_call(self, tool_call):
+        name = tool_call.function.name
+        try:
+            args = json_repair.loads(tool_call.function.arguments)
+            if hasattr(self.toolcall_session, "tool_call_async"):
+                result = await self.toolcall_session.tool_call_async(name, args)
+            else:
+                result = await thread_pool_exec(self.toolcall_session.tool_call, name, args)
+            return tool_call, name, args, result, None
+        except Exception as e:
+            logging.exception("Tool call failed: %s", tool_call)
+            return tool_call, name, {}, None, e
+
+    async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None, images=None, **kwargs):
+        gen_conf = self._clean_conf(gen_conf)
+        messages = self._form_history(system, deepcopy(history), images)
+        ans = ""
+        total_tokens = 0
+
+        for _ in range(self.max_rounds + 1):
+            request_kwargs = {
+                "model": self.model_name,
+                "messages": messages,
+                "tools": self.tools,
+                "tool_choice": "auto",
+                **gen_conf,
+            }
+            if self.extra_body is not None:
+                request_kwargs["extra_body"] = self.extra_body
+            response = await self.async_client.chat.completions.create(**request_kwargs)
+            total_tokens += total_token_count_from_response(response)
+
+            if not hasattr(response, "choices") or not response.choices or not response.choices[0].message:
+                raise Exception(f"500 response structure error. Response: {response}")
+
+            message = response.choices[0].message
+            if not hasattr(message, "tool_calls") or not message.tool_calls:
+                return ans + (message.content or ""), total_tokens
+
+            results = await asyncio.gather(*[self._exec_tool_call(tc) for tc in message.tool_calls])
+            messages = self._append_history_batch(messages, results)
+            for _, name, args, result, err in results:
+                ans += self._verbose_tool_use(name, args, err if err else result)
+
+        logging.warning("Exceed max rounds: %s", self.max_rounds)
+        messages.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+        response, token_count = await self.async_chat("", messages, gen_conf)
+        return ans + response, total_tokens + token_count
+
+    async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None, images=None, **kwargs):
+        gen_conf = self._clean_conf(gen_conf)
+        messages = self._form_history(system, deepcopy(history), images)
+        total_tokens = 0
+
+        for _round in range(self.max_rounds + 1):
+            request_kwargs = {
+                "model": self.model_name,
+                "messages": messages,
+                "stream": True,
+                "tools": self.tools,
+                "tool_choice": "auto",
+                **gen_conf,
+            }
+            if self.extra_body is not None:
+                request_kwargs["extra_body"] = self.extra_body
+
+            response = await self.async_client.chat.completions.create(**request_kwargs)
+            final_tool_calls = {}
+            answer = ""
+
+            async for resp in response:
+                if not hasattr(resp, "choices") or not resp.choices:
+                    continue
+
+                delta = resp.choices[0].delta
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        index = tool_call.index
+                        if index not in final_tool_calls:
+                            if not tool_call.function.arguments:
+                                tool_call.function.arguments = ""
+                            final_tool_calls[index] = tool_call
+                        else:
+                            final_tool_calls[index].function.arguments += tool_call.function.arguments or ""
+                    continue
+
+                if not hasattr(delta, "content") or delta.content is None:
+                    delta.content = ""
+
+                answer += delta.content
+                yield delta.content
+
+                token_count = total_token_count_from_response(resp)
+                if token_count:
+                    total_tokens = token_count
+                else:
+                    total_tokens += num_tokens_from_string(delta.content)
+
+            if answer and not final_tool_calls:
+                yield total_tokens
+                return
+
+            if not final_tool_calls:
+                yield total_tokens
+                return
+
+            tool_calls = list(final_tool_calls.values())
+            logging.info("[CVToolLoop] round=%s executing %s tool(s): %s", _round, len(tool_calls), [tc.function.name for tc in tool_calls])
+            for tool_call in tool_calls:
+                try:
+                    args = json_repair.loads(tool_call.function.arguments)
+                except Exception:
+                    args = {}
+                yield self._verbose_tool_use(tool_call.function.name, args, "Begin to call...")
+
+            results = await asyncio.gather(*[self._exec_tool_call(tc) for tc in tool_calls])
+            messages = self._append_history_batch(messages, results)
+            for _, name, args, result, err in results:
+                yield self._verbose_tool_use(name, args, err if err else result)
+
+        logging.warning("Exceed max rounds: %s", self.max_rounds)
+        messages.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
+        request_kwargs = {"model": self.model_name, "messages": messages, "stream": True, **gen_conf}
+        if self.extra_body is not None:
+            request_kwargs["extra_body"] = self.extra_body
+        response = await self.async_client.chat.completions.create(**request_kwargs)
+
+        async for resp in response:
+            if not hasattr(resp, "choices") or not resp.choices:
+                continue
+            delta = resp.choices[0].delta
+            if not hasattr(delta, "content") or delta.content is None:
+                continue
+            token_count = total_token_count_from_response(resp)
+            if token_count:
+                total_tokens = token_count
+            else:
+                total_tokens += num_tokens_from_string(delta.content)
+            yield delta.content
+
+        yield total_tokens
 
     def describe(self, image):
         b64 = self.image2base64(image)

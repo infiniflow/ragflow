@@ -172,18 +172,18 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
 
-    if not await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        await thread_pool_exec(
+            get_model_config_by_type_and_name,
+            tenant_id,
+            model_type,
+            llm_id,
+        )
+    except LookupError:
         return f"`llm_id` {llm_id} doesn't exist"
     return None
 

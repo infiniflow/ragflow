@@ -33,6 +33,26 @@ class LLMFactoriesService(CommonService):
 
 class TenantLLMService(CommonService):
     model = TenantLLM
+    _FACTORY_MODEL_NAME_SUFFIX = {
+        "LocalAI": "___LocalAI",
+        "HuggingFace": "___HuggingFace",
+        "OpenAI-API-Compatible": "___OpenAI-API",
+        "VLLM": "___VLLM",
+    }
+
+    @classmethod
+    def model_name_candidates_for_factory(cls, llm_name: str, llm_factory: str | None) -> list[str]:
+        candidates = [llm_name]
+        suffix = cls._FACTORY_MODEL_NAME_SUFFIX.get(llm_factory)
+        if suffix and llm_name:
+            if llm_name.endswith(suffix):
+                base_name = llm_name[: -len(suffix)]
+                if base_name:
+                    candidates.append(base_name)
+            else:
+                candidates.append(f"{llm_name}{suffix}")
+
+        return list(dict.fromkeys(candidates))
 
     @staticmethod
     def _decode_api_key_config(raw_api_key: str) -> tuple[str, bool | None, str | None]:
@@ -75,28 +95,16 @@ class TenantLLMService(CommonService):
     def get_api_key(cls, tenant_id, model_name, model_type=None):
         mdlnm, fid = TenantLLMService.split_model_name_and_factory(model_name)
         model_type_val = model_type.value if hasattr(model_type, "value") else model_type
-        query_kwargs = {"tenant_id": tenant_id, "llm_name": mdlnm}
-        if model_type_val is not None:
-            query_kwargs["model_type"] = model_type_val
-        if not fid:
+        for candidate in cls.model_name_candidates_for_factory(mdlnm, fid):
+            query_kwargs = {"tenant_id": tenant_id, "llm_name": candidate}
+            if model_type_val is not None:
+                query_kwargs["model_type"] = model_type_val
+            if fid:
+                query_kwargs["llm_factory"] = fid
             objs = cls.query(**query_kwargs)
-        else:
-            objs = cls.query(**query_kwargs, llm_factory=fid)
-
-        if (not objs) and fid:
-            if fid == "LocalAI":
-                mdlnm += "___LocalAI"
-            elif fid == "HuggingFace":
-                mdlnm += "___HuggingFace"
-            elif fid == "OpenAI-API-Compatible":
-                mdlnm += "___OpenAI-API"
-            elif fid == "VLLM":
-                mdlnm += "___VLLM"
-            query_kwargs["llm_name"] = mdlnm
-            objs = cls.query(**query_kwargs, llm_factory=fid)
-        if not objs:
-            return None
-        return objs[0]
+            if objs:
+                return objs[0]
+        return None
 
     @classmethod
     @DB.connection_context()
@@ -477,21 +485,31 @@ class TenantLLMService(CommonService):
     def llm_id2llm_type(llm_id: str) -> str | None:
         from api.db.services.llm_service import LLMService
 
-        llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
+        llm_id, fid = TenantLLMService.split_model_name_and_factory(llm_id)
+        candidate_names = TenantLLMService.model_name_candidates_for_factory(llm_id, fid)
         llm_factories = settings.FACTORY_LLM_INFOS
-        for llm_factory in llm_factories:
-            for llm in llm_factory["llm"]:
-                if llm_id == llm["llm_name"]:
-                    return llm["model_type"].split(",")[-1]
+        for candidate in candidate_names:
+            for llm_factory in llm_factories:
+                if fid and llm_factory["name"] != fid:
+                    continue
+                for llm in llm_factory["llm"]:
+                    if candidate == llm["llm_name"]:
+                        return llm["model_type"].split(",")[-1]
 
-        for llm in LLMService.query(llm_name=llm_id):
-            return llm.model_type
+            llm_query = {"llm_name": candidate}
+            if fid:
+                llm_query["fid"] = fid
+            for llm in LLMService.query(**llm_query):
+                return llm.model_type
 
-        llm = TenantLLMService.get_or_none(llm_name=llm_id)
-        if llm:
-            return llm.model_type
-        for llm in TenantLLMService.query(llm_name=llm_id):
-            return llm.model_type
+            tenant_llm_query = {"llm_name": candidate}
+            if fid:
+                tenant_llm_query["llm_factory"] = fid
+            llm = TenantLLMService.get_or_none(**tenant_llm_query)
+            if llm:
+                return llm.model_type
+            for llm in TenantLLMService.query(**tenant_llm_query):
+                return llm.model_type
         return None
 
 

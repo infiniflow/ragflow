@@ -123,9 +123,8 @@ def _load_session_module(monkeypatch):
 
     # Mock common.constants module
     from enum import Enum
-    from strenum import StrEnum
 
-    class _StubLLMType(StrEnum):
+    class _StubLLMType(str, Enum):
         CHAT = "chat"
         EMBEDDING = "embedding"
         SPEECH2TEXT = "speech2text"
@@ -134,7 +133,7 @@ def _load_session_module(monkeypatch):
         TTS = "tts"
         OCR = "ocr"
 
-    class _StubParserType(StrEnum):
+    class _StubParserType(str, Enum):
         PRESENTATION = "presentation"
         LAWS = "laws"
         MANUAL = "manual"
@@ -186,11 +185,11 @@ def _load_session_module(monkeypatch):
         OPENDAL = 6
         GCS = 7
 
-    class _StubMCPServerType(StrEnum):
+    class _StubMCPServerType(str, Enum):
         SSE = "sse"
         STREAMABLE_HTTP = "streamable-http"
 
-    class _StubTaskStatus(StrEnum):
+    class _StubTaskStatus(str, Enum):
         UNSTART = "0"
         RUNNING = "1"
         CANCEL = "2"
@@ -198,7 +197,7 @@ def _load_session_module(monkeypatch):
         FAIL = "4"
         SCHEDULE = "5"
 
-    class _StubFileSource(StrEnum):
+    class _StubFileSource(str, Enum):
         LOCAL = ""
         KNOWLEDGEBASE = "knowledgebase"
         S3 = "s3"
@@ -245,10 +244,8 @@ def _load_session_module(monkeypatch):
     common_constants_mod.SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
     common_constants_mod.PAGERANK_FLD = "pagerank_fea"
     common_constants_mod.TAG_FLD = "tag_feas"
-    # Import pure-Python constants from the real module (no heavy deps)
-    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
-    common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
-    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
+    common_constants_mod.MAXIMUM_PAGE_NUMBER = 100000
+    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = common_constants_mod.MAXIMUM_PAGE_NUMBER * 1000
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     common_metadata_utils_mod = ModuleType("common.metadata_utils")
@@ -875,6 +872,10 @@ def _load_openai_api_module(monkeypatch):
     quart_mod.jsonify = lambda payload: payload
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
+    common_token_utils_mod = ModuleType("common.token_utils")
+    common_token_utils_mod.num_tokens_from_string = lambda _text: 1
+    monkeypatch.setitem(sys.modules, "common.token_utils", common_token_utils_mod)
+
     module_path = repo_root / "api" / "apps" / "restful_apis" / "openai_api.py"
     spec = importlib.util.spec_from_file_location("test_openai_api_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -882,6 +883,33 @@ def _load_openai_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "test_openai_api_unit_module", module)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.p1
+def test_openai_validate_llm_id_uses_model_config_resolver_for_provider_suffixes(monkeypatch):
+    module = _load_openai_api_module(monkeypatch)
+    calls = []
+
+    def _get_model_config_by_type_and_name(tenant_id, model_type, model_name):
+        calls.append((tenant_id, getattr(model_type, "value", model_type), model_name))
+        if model_name == "Qwen3.6-35B-A3B___OpenAI-API@OpenAI-API-Compatible":
+            return {"id": "llm-1"}
+        raise LookupError("not found")
+
+    monkeypatch.setattr(module, "get_model_config_by_type_and_name", _get_model_config_by_type_and_name)
+    monkeypatch.setattr(
+        module.TenantLLMService,
+        "query",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("raw TenantLLM query should not validate llm_id")),
+        raising=False,
+    )
+
+    model_id = "Qwen3.6-35B-A3B___OpenAI-API@OpenAI-API-Compatible"
+    assert module._validate_llm_id(model_id, "tenant-1", {"model_type": "chat"}) is None
+    assert calls == [("tenant-1", "chat", model_id)]
+
+    missing = "missing___OpenAI-API@OpenAI-API-Compatible"
+    assert module._validate_llm_id(missing, "tenant-1", {"model_type": "chat"}) == f"`llm_id` {missing} doesn't exist"
 
 
 @pytest.mark.p2

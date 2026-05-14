@@ -211,10 +211,8 @@ def _load_chat_module(monkeypatch):
     common_constants_mod.LLMType = _StubLLMType
     common_constants_mod.RetCode = _StubRetCode
     common_constants_mod.StatusEnum = _StubStatusEnum
-    # Import pure-Python constants from the real module (no heavy deps)
-    from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
-    common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
-    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
+    common_constants_mod.MAXIMUM_PAGE_NUMBER = 100000
+    common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = common_constants_mod.MAXIMUM_PAGE_NUMBER * 1000
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     misc_utils_mod = ModuleType("common.misc_utils")
@@ -448,6 +446,31 @@ def _load_chat_module(monkeypatch):
 
 def _set_request_json(monkeypatch, module, payload):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue(deepcopy(payload)))
+
+
+@pytest.mark.p1
+def test_validate_llm_id_uses_model_config_resolver_for_provider_suffixes(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    calls = []
+
+    def _get_model_config_by_type_and_name(tenant_id, model_type, model_name):
+        calls.append((tenant_id, model_type, model_name))
+        if model_name == "qwen-gpu___VLLM@VLLM":
+            return {"id": "llm-1"}
+        raise LookupError("not found")
+
+    monkeypatch.setattr(module, "get_model_config_by_type_and_name", _get_model_config_by_type_and_name)
+    monkeypatch.setattr(
+        module.TenantLLMService,
+        "query",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("raw TenantLLM query should not validate llm_id")),
+    )
+
+    assert _run(module._validate_llm_id("qwen-gpu___VLLM@VLLM", "tenant-1", {})) is None
+    assert calls == [("tenant-1", "chat", "qwen-gpu___VLLM@VLLM")]
+
+    err = _run(module._validate_llm_id("missing___VLLM@VLLM", "tenant-1", {}))
+    assert err == "`llm_id` missing___VLLM@VLLM doesn't exist"
 
 
 @pytest.mark.p2

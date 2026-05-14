@@ -20,11 +20,12 @@ import time
 from quart import Response, jsonify
 
 from api.apps import current_user, login_required
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
-from common.constants import RetCode, StatusEnum
+from common.constants import LLMType, RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
@@ -33,17 +34,17 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
 
-    if not TenantLLMService.query(
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        get_model_config_by_type_and_name(
+            tenant_id,
+            LLMType(model_type),
+            llm_id,
+        )
+    except LookupError:
         return f"`llm_id` {llm_id} doesn't exist"
     return None
 
