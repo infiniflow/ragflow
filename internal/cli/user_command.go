@@ -2112,7 +2112,10 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	shouldSave, _ := cmd.Params["save"].(bool)
 	saveDir, _ := cmd.Params["save_path"].(string)
 
-	fileName := fmt.Sprintf("%s_output.%s", modelName, explicitFormat)
+	// format file name
+	safeModelName := strings.ReplaceAll(modelName, "/", "_")
+	safeModelName = strings.ReplaceAll(safeModelName, ":", "-")
+	fileName := fmt.Sprintf("%s_output.%s", safeModelName, explicitFormat)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -2252,7 +2255,9 @@ func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	result.Code = rawResult.Code
-	result.Message = rawResult.Data["text"].(string) // TODO
+	result.Data = []map[string]interface{}{
+		{"text": rawResult.Data["text"].(string)},
+	}
 	result.Duration = resp.Duration
 
 	return &result, nil

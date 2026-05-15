@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,6 +68,15 @@ func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunMod
 		},
 	}
 }
+
+/*
+
+RAGFlow(user)> tts with 'fnlp/MOSS-TTSD-v0.5@test@siliconflow' text 'He who desires but acts not, breeds pestilence.' play format 'wav' param '{"voice": "fnlp/MOSS-TTSD-v0.5:alex"}'
+SUCCESS
+RAGFlow(user)> stream tts with 'fnlp/MOSS-TTSD-v0.5@test@siliconflow' text 'He who desires but acts not, breeds pestilence.' play format 'wav' param '{"voice": "fnlp/MOSS-TTSD-v0.5:claire"}'
+SUCCESS
+
+*/
 
 func (s *StepFunModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewStepFunModel(baseURL, s.URLSuffix)
@@ -459,21 +469,177 @@ func (s *StepFunModel) Rerank(modelName *string, query string, documents []strin
 }
 
 // TranscribeAudio transcribe audio
-func (z *StepFunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (s *StepFunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
 
-func (z *StepFunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (s *StepFunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", s.Name())
 }
 
 // AudioSpeech convert audio to text
-func (z *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+	// TODO Test it
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("audio content is empty")
+	}
+
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": *audioContent,
+	}
+
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if asrConfig != nil && asrConfig.Format != "" {
+		reqBody["response_format"] = asrConfig.Format
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
+	}
+
+	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+// AudioSpeechWithSender for Streaming TTS
+func (s *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	// TODO Test it
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("StepFun API key is missing")
+	}
+
+	if audioContent == nil || *audioContent == "" {
+		return fmt.Errorf("audio content is empty")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model":         *modelName,
+		"input":         *audioContent,
+		"stream_format": "sse",
+	}
+
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("StepFun stream TTS API error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		dataStr := strings.TrimSpace(line[6:])
+		// [DONE]
+		if dataStr == "" || dataStr == "[DONE]" {
+			continue
+		}
+
+		// Parse
+		var event struct {
+			Type  string `json:"type"`
+			Audio string `json:"audio"`
+		}
+
+		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+			continue
+		}
+
+		if event.Type == "speech.audio.error" {
+			return fmt.Errorf("StepFun stream encountered an error during generation")
+		}
+
+		// Extract the Base64 string containing the audio and decode it
+		if event.Type == "speech.audio.delta" && event.Audio != "" {
+			audioBytes, err := base64.StdEncoding.DecodeString(event.Audio)
+			if err == nil && len(audioBytes) > 0 {
+				chunk := string(audioBytes)
+				if errSend := sender(&chunk, nil); errSend != nil {
+					return errSend
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading StepFun stream: %w", err)
+	}
+
+	return nil
 }
 
 // OCRFile OCR file

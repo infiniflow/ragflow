@@ -22,7 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
@@ -723,7 +726,119 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 
 // TranscribeAudio transcribe audio
 func (o *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.ASR)
+
+	// multipart body
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// open audio file
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	// create multipart file field
+	part, err := writer.CreateFormFile(
+		"file",
+		filepath.Base(*file),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file: %w", err)
+	}
+
+	// copy file content
+	if _, err = io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", err)
+	}
+
+	// model field
+	if err := writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	// extra params
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+
+			var val string
+
+			switch v := value.(type) {
+			case string:
+				val = v
+			case bool:
+				val = strconv.FormatBool(v)
+			case int:
+				val = strconv.Itoa(v)
+			case int64:
+				val = strconv.FormatInt(v, 10)
+			case float32:
+				val = strconv.FormatFloat(float64(v), 'f', -1, 32)
+			case float64:
+				val = strconv.FormatFloat(v, 'f', -1, 64)
+			default:
+				val = fmt.Sprintf("%v", v)
+			}
+
+			if err = writer.WriteField(key, val); err != nil {
+				return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+			}
+		}
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// build request
+	req, err := http.NewRequest("POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	// send request
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("SiliconFlow ASR error: %s - %s", resp.Status, string(respBody))
+	}
+
+	// SiliconFlow response
+	var result struct {
+		Text string `json:"text"`
+	}
+
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w, body=%s", err, string(respBody))
+	}
+
+	var res ASRResponse
+	res.Text = result.Text
+
+	return &ASRResponse{Text: result.Text}, nil
 }
 
 func (z *SiliconflowModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
@@ -732,11 +847,138 @@ func (z *SiliconflowModel) TranscribeAudioWithSender(modelName *string, file *st
 
 // AudioSpeech convert audio to text
 func (o *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("audio content is empty")
+	}
+
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model":  *modelName,
+		"input":  *audioContent,
+		"stream": false,
+	}
+
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if asrConfig != nil && asrConfig.Format != "" {
+		reqBody["response_format"] = asrConfig.Format
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
+	}
+
+	return &TTSResponse{Audio: body}, nil
 }
 
 func (z *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("SiliconFlow API key is missing")
+	}
+
+	if audioContent == nil || *audioContent == "" {
+		return fmt.Errorf("audio content is empty")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model":  *modelName,
+		"input":  *audioContent,
+		"stream": true,
+	}
+
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("SiliconFlow stream TTS API error: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	buf := make([]byte, 32*1024)
+
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := string(buf[:n])
+			if errSend := sender(&chunk, nil); errSend != nil {
+				return errSend
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("error reading SiliconFlow binary audio stream: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // OCRFile OCR file
