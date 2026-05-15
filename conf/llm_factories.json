@@ -6804,6 +6804,96 @@
                     "model_type": "embedding"
                 }
             ]
+        },
+        {
+            "name": "Astraflow",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "100",
+            "url": "https://api-us-ca.umodelverse.ai/v1",
+            "llm": [
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-235B-A22B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
+        },
+        {
+            "name": "Astraflow-CN",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "99",
+            "url": "https://api.modelverse.cn/v1",
+            "llm": [
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-V3",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ai/DeepSeek-R1",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-235B-A22B",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
         }
     ]
 }
