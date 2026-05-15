@@ -1,0 +1,34 @@
+{
+  "name": "TogetherAI",
+  "url": {
+    "default": "https://api.together.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "together",
+  "models": [
+    {
+      "name": "openai/gpt-oss-20b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
