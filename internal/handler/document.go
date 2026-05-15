@@ -475,10 +475,11 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 
 type ParseDocumentRequest struct {
 	Documents []string `json:"documents" binding:"required"`
-	DatasetID string   `json:"dataset_id" binding:"required"`
 }
 
 func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+
 	var req ParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -490,12 +491,12 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	if !h.datasetService.Accessible(req.DatasetID, userID) {
+	if !h.datasetService.Accessible(datasetID, userID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
 		return
 	}
 
-	err := h.documentService.ParseDocuments(req.DatasetID, userID, req.Documents)
+	err := h.documentService.ParseDocuments(datasetID, userID, req.Documents)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return

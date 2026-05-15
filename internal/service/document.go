@@ -19,6 +19,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
 	"sort"
@@ -211,6 +212,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 	// create document parse id
 	// save to task table
 	// send to message queue
+	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
 	return nil
 }
 

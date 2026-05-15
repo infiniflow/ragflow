@@ -314,6 +314,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RmTags(cmd)
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
+	case "parse_documents_user_command":
+		return c.ParseDocumentsUserCommand(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
