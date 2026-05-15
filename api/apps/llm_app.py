@@ -201,17 +201,33 @@ async def add_llm():
             "VLLM": "___VLLM",
         }
         saved_llm_name = llm_name + _LLM_NAME_SUFFIX.get(factory, "")
+        logging.debug(
+            "add_llm: attempting api_key recovery factory=%s llm_name=%s saved_llm_name=%s tenant_id=%s",
+            factory, llm_name, saved_llm_name, current_user.id,
+        )
         existing_llms = TenantLLMService.query(
             tenant_id=current_user.id,
             llm_factory=factory,
             llm_name=saved_llm_name,
         )
+        logging.debug(
+            "add_llm: api_key recovery query matched=%d factory=%s saved_llm_name=%s",
+            len(existing_llms) if existing_llms else 0, factory, saved_llm_name,
+        )
         if existing_llms:
             existing_api_key, _, _ = TenantLLMService._decode_api_key_config(
                 existing_llms[0].api_key
             )
+            logging.debug(
+                "add_llm: api_key recovery decoded=%s factory=%s saved_llm_name=%s",
+                "present" if existing_api_key else "absent", factory, saved_llm_name,
+            )
             if existing_api_key:
                 req["api_key"] = existing_api_key
+                logging.info(
+                    "add_llm: recovered saved api_key from existing record factory=%s saved_llm_name=%s tenant_id=%s",
+                    factory, saved_llm_name, current_user.id,
+                )
 
     api_key = req.get("api_key", "x")
 
