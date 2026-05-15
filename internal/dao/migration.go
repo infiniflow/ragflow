@@ -345,7 +345,9 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 			index_version VARCHAR(32) DEFAULT '1.0.0',
 			status VARCHAR(1) DEFAULT '1',
 			create_time BIGINT,
-			update_time DATETIME,
+			create_date DATETIME,
+			update_time BIGINT,
+			update_date DATETIME,
 			INDEX idx_tenant_id (tenant_id),
 			INDEX idx_space_id (space_id),
 			UNIQUE INDEX idx_tenant_space_embd (tenant_id, space_id, embd_id)
@@ -366,6 +368,15 @@ func migrateSkillSearchTables(db *gorm.DB) error {
 		// Add space_id for existing installations.
 		if err := addColumnIfNotExists(db, "skill_search_configs", "space_id", "VARCHAR(128) NOT NULL DEFAULT 'default'"); err != nil {
 			return fmt.Errorf("failed to add space_id column to skill_search_configs: %w", err)
+		}
+		if err := addColumnIfNotExists(db, "skill_search_configs", "create_date", "DATETIME"); err != nil {
+			return fmt.Errorf("failed to add create_date column to skill_search_configs: %w", err)
+		}
+		if err := addColumnIfNotExists(db, "skill_search_configs", "update_date", "DATETIME"); err != nil {
+			return fmt.Errorf("failed to add update_date column to skill_search_configs: %w", err)
+		}
+		if err := db.Exec(`ALTER TABLE skill_search_configs MODIFY COLUMN update_time BIGINT`).Error; err != nil {
+			common.Warn("Failed to modify skill_search_configs.update_time", zap.Error(err))
 		}
 
 		// Drop legacy unique index (tenant_id, embd_id) to allow per-space configs.
@@ -411,7 +422,9 @@ func migrateSkillSpaceTables(db *gorm.DB) error {
 			top_k INT DEFAULT 10,
 			status VARCHAR(1) DEFAULT '1',
 			create_time BIGINT,
-			update_time DATETIME,
+			create_date DATETIME,
+			update_time BIGINT,
+			update_date DATETIME,
 			INDEX idx_tenant_id (tenant_id),
 			UNIQUE INDEX idx_tenant_name_status (tenant_id, name, status)
 		)
@@ -432,6 +445,15 @@ func migrateSkillSpaceTables(db *gorm.DB) error {
 		// Migrate existing table: add status column first, then update index
 		if err := addColumnIfNotExists(db, "skill_spaces", "status", "VARCHAR(1) NOT NULL DEFAULT '1'"); err != nil {
 			return fmt.Errorf("failed to add status column to skill_spaces: %w", err)
+		}
+		if err := addColumnIfNotExists(db, "skill_spaces", "create_date", "DATETIME"); err != nil {
+			return fmt.Errorf("failed to add create_date column to skill_spaces: %w", err)
+		}
+		if err := addColumnIfNotExists(db, "skill_spaces", "update_date", "DATETIME"); err != nil {
+			return fmt.Errorf("failed to add update_date column to skill_spaces: %w", err)
+		}
+		if err := db.Exec(`ALTER TABLE skill_spaces MODIFY COLUMN update_time BIGINT`).Error; err != nil {
+			common.Warn("Failed to modify skill_spaces.update_time", zap.Error(err))
 		}
 		// Migrate index after status column exists
 		if err := migrateSkillSpaceIndex(db); err != nil {

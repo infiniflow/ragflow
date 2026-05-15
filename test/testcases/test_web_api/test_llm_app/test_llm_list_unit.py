@@ -269,7 +269,7 @@ def test_openai_catalog_contains_latest_gpt_models_unit():
         openai_models = json.load(f)["models"]
     model_file_names = {item["name"] for item in openai_models}
 
-    for model_name in ["gpt-5.5", "gpt-5.4"]:
+    for model_name in ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]:
         assert model_name in factory_model_names
         assert model_name in model_file_names
 

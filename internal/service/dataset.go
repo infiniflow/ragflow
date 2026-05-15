@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"ragflow/internal/entity"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -58,8 +57,8 @@ var (
 	datasetChunkMethodErrorMessage = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'"
 )
 
-// DatasetsService implements the RESTful dataset APIs from dataset_api.py.
-type DatasetsService struct {
+// DatasetService implements the RESTful dataset APIs from dataset_api.py.
+type DatasetService struct {
 	kbDAO        *dao.KnowledgebaseDAO
 	documentDAO  *dao.DocumentDAO
 	connectorDAO *dao.ConnectorDAO
@@ -67,9 +66,9 @@ type DatasetsService struct {
 	tenantLLMDAO *dao.TenantLLMDAO
 }
 
-// NewDatasetsService creates a new datasets service.
-func NewDatasetsService() *DatasetsService {
-	return &DatasetsService{
+// NewDatasetService creates a new datasets service.
+func NewDatasetService() *DatasetService {
+	return &DatasetService{
 		kbDAO:        dao.NewKnowledgebaseDAO(),
 		documentDAO:  dao.NewDocumentDAO(),
 		connectorDAO: dao.NewConnectorDAO(),
@@ -109,7 +108,7 @@ type CreateDatasetRequest struct {
 }
 
 // ListDatasets lists datasets with pagination and filtering.
-func (s *DatasetsService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (s *DatasetService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" {
 		normalizedID, err := normalizeDatasetUUID1(id)
@@ -191,7 +190,7 @@ func (s *DatasetsService) ListDatasets(id, name string, page, pageSize int, orde
 }
 
 // CreateDataset creates a new dataset.
-func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	if !isValidString(req.Name) {
 		return nil, common.CodeDataError, errors.New("Dataset name must be string.")
 	}
@@ -396,8 +395,6 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
 
-	now := time.Now().Truncate(time.Second)
-	createTime := now.UnixMilli()
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
@@ -420,10 +417,6 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		EmbdID:       embdID,
 		Status:       &status,
 	}
-	kb.CreateTime = &createTime
-	kb.UpdateTime = &createTime
-	kb.CreateDate = &now
-	kb.UpdateDate = &now
 
 	if description != nil {
 		kb.Description = description
@@ -448,7 +441,7 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 }
 
 // DeleteDatasets deletes multiple datasets.
-func (s *DatasetsService) DeleteDatasets(ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	normalizedIDs := make([]string, 0, len(ids))
 	seenIDs := make(map[string]struct{}, len(ids))
 
@@ -528,7 +521,7 @@ func (s *DatasetsService) DeleteDatasets(ids []string, deleteAll bool, tenantID 
 }
 
 // GetDataset gets a single dataset with its size and linked connectors.
-func (s *DatasetsService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
@@ -566,7 +559,12 @@ func (s *DatasetsService) GetDataset(datasetID, userID string) (map[string]inter
 	return data, common.CodeSuccess, nil
 }
 
-func (s *DatasetsService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
+// Accessible checks if a knowledge base is accessible by a user
+func (s *DatasetService) Accessible(kbID, userID string) bool {
+	return s.kbDAO.Accessible(kbID, userID)
+}
+
+func (s *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		var documents []entity.Document
 		if err := tx.Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
@@ -713,7 +711,7 @@ func normalizeDatasetUUID1(id string) (string, error) {
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
 
-func (s *DatasetsService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
+func (s *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
 	modelName, _, provider, err := parseModelName(embdID)
 	if err != nil {
 		return false, "Embedding model identifier must follow <model_name>@<provider> format"
