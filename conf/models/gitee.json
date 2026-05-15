@@ -10,7 +10,10 @@
     "balance": "tokens/packages/balance",
     "embedding": "embedding",
     "rerank": "rerank",
-    "ocr": "images/ocr"
+    "ocr": "images/ocr",
+    "doc_parse": "async/documents/parse",
+    "tasks": "tasks",
+    "task": "task"
   },
   "models": [
     {
@@ -70,6 +73,12 @@
       "name": "HunyuanOCR",
       "model_types": [
         "ocr"
+      ]
+    },
+    {
+      "name": "MinerU2.5",
+      "model_types": [
+        "doc_parse"
       ]
     }
   ]

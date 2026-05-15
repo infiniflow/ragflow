@@ -20,11 +20,6 @@ type LmStudioModel struct {
 	httpClient *http.Client
 }
 
-func (l *LmStudioModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewLmStudioModel
 func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioModel {
 	return &LmStudioModel{
@@ -471,8 +466,13 @@ func (z *LmStudioModel) AudioSpeechWithSender(modelName *string, audioContent *s
 }
 
 // OCRFile OCR file
-func (l *LmStudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (l *LmStudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
+}
+
+// ParseFile parse file
+func (z *LmStudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 // ListModels list supported models
@@ -552,4 +552,12 @@ func (l *LmStudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := l.ListModels(apiConfig)
 	return err
+}
+
+func (z *LmStudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *LmStudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

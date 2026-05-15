@@ -163,6 +163,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return NewCommand("list_user_chats"), nil
 	case TokenFiles:
 		return p.parseListFiles()
+	case TokenQuotedString:
+		return p.parseListQuotedStringCommand()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -280,9 +282,57 @@ func (p *Parser) parseListFiles() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseListQuotedStringCommand() (*Command, error) {
+	str, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume str
+	switch p.curToken.Type {
+	case TokenTasks:
+		p.nextToken() // consume TASKS
+		cmd := NewCommand("list_tasks_user_command")
+		cmd.Params["composite_instance_name"] = str
+		return cmd, nil
+	default:
+		return nil, fmt.Errorf("unknown command: %s", str)
+	}
+}
+
+func (p *Parser) parseShowQuotedStringCommand() (*Command, error) {
+	str, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume str
+	switch p.curToken.Type {
+	case TokenTask:
+		p.nextToken() // consume TASK
+
+		var taskID string
+		taskID, err = p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected string: %w", err)
+		}
+		p.nextToken()
+
+		cmd := NewCommand("show_task_user_command")
+		cmd.Params["task_id"] = taskID
+		cmd.Params["composite_instance_name"] = str
+		p.nextToken()
+
+		// Semicolon is optional
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	default:
+		return nil, fmt.Errorf("unknown command: %s", str)
+	}
+}
+
 func (p *Parser) parseShowCommand() (*Command, error) {
 	p.nextToken() // consume SHOW
-
 	switch p.curToken.Type {
 	case TokenVersion:
 		p.nextToken()
@@ -333,6 +383,10 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return p.parseShowInstance()
 	case TokenBalance:
 		return p.parseShowBalance()
+	case TokenTask:
+		return p.parseShowTask()
+	case TokenQuotedString:
+		return p.parseShowQuotedStringCommand()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1447,6 +1501,27 @@ func (p *Parser) parseShowBalance() (*Command, error) {
 	cmd.Params["provider_name"] = providerName
 
 	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseShowTask parses SHOW TASK <task>
+func (p *Parser) parseShowTask() (*Command, error) {
+	p.nextToken() // consume TASK
+
+	taskID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected string: %w", err)
+	}
+	p.nextToken()
+
+	cmd := NewCommand("show_task_user_command")
+	cmd.Params["task_id"] = taskID
+	p.nextToken()
+
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
@@ -2900,6 +2975,45 @@ func (p *Parser) parseOCRCommand() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseModelParseCommand() (*Command, error) {
+	p.nextToken() // consume WITH
+
+	compositeModelName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("parse_file_user_command")
+
+	switch p.curToken.Type {
+	case TokenFile:
+		p.nextToken()
+		var file string
+		file, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["file"] = file
+		p.nextToken()
+	case TokenURL:
+		p.nextToken()
+		var url string
+		url, err = p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd.Params["url"] = url
+		p.nextToken()
+	default:
+		return nil, fmt.Errorf("expected FILE or URL")
+	}
+
+	cmd.Params["composite_model_name"] = compositeModelName
+
+	return cmd, nil
+}
+
 func (p *Parser) parseCheckCommand() (*Command, error) {
 	p.nextToken() // consume CHECK
 
@@ -2964,11 +3078,14 @@ func (p *Parser) parseUseCommand() (*Command, error) {
 func (p *Parser) parseParseCommand() (*Command, error) {
 	p.nextToken() // consume PARSE
 
-	if p.curToken.Type == TokenDataset {
+	switch p.curToken.Type {
+	case TokenDataset:
 		return p.parseParseDataset()
+	case TokenWith:
+		return p.parseModelParseCommand()
+	default:
+		return p.parseParseDocs()
 	}
-
-	return p.parseParseDocs()
 }
 
 func (p *Parser) parseParseDataset() (*Command, error) {

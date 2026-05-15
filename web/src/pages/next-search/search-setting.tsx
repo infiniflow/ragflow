@@ -422,7 +422,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"
-              vectorSimilarityWeightName="search_config.vector_similarity_weight"
+              similarityWeightName="search_config.vector_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
             {/* Rerank Model */}

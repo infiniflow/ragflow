@@ -263,6 +263,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckProviderConnection)
+				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
+				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
@@ -275,6 +277,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
 				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
 				v1.POST("/file/ocr", r.providerHandler.OCRFile)
+				v1.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")

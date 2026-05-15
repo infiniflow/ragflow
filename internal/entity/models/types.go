@@ -17,12 +17,11 @@ type ModelDriver interface {
 
 	Name() string
 
-	// ChatWithMessages sends multiple messages with role and content
+	// ChatWithMessages sends multiple messages synchronously
 	ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error)
-	// ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-	// messages accepts []Message which supports multimodal content (e.g., [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}])
+	// ChatStreamlyWithSender sends multiple messages asynchronously
 	ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error
-	// Encode encodes a list of texts into embeddings
+	// Embed a list of texts into embeddings
 	Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error)
 	// Rerank calculates similarity scores between query and texts
 	Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error)
@@ -33,13 +32,19 @@ type ModelDriver interface {
 	AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error)
 	AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error
 	// OCRFile OCR file
-	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error)
+	OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error)
+	// ParseFile parse file
+	ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error)
 	// ListModels List supported models
 	ListModels(apiConfig *APIConfig) ([]string, error)
 
 	Balance(apiConfig *APIConfig) (map[string]interface{}, error)
 
 	CheckConnection(apiConfig *APIConfig) error
+
+	ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error)
+
+	ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error)
 }
 
 type ChatResponse struct {
@@ -69,24 +74,44 @@ type TTSResponse struct {
 	Audio []byte `json:"audio"`
 }
 
-type OCRResponse struct {
+type OCRFileResponse struct {
 	Text *string `json:"text"`
+}
+
+type ParseFileResponse struct {
+}
+
+type ListTaskStatus struct {
+	TaskID string `json:"task_id"`
+	Status string `json:"status"`
+}
+
+type TaskSegment struct {
+	Index   int    `json:"index"`
+	Content string `json:"content"`
+}
+
+type TaskResponse struct {
+	Segments []TaskSegment `json:"segments"`
 }
 
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat        string `json:"chat"`
-	AsyncChat   string `json:"async_chat"`
-	AsyncResult string `json:"async_result"`
-	Embedding   string `json:"embedding"`
-	Rerank      string `json:"rerank"`
-	OCR         string `json:"ocr"`
-	Models      string `json:"models"`
-	Balance     string `json:"balance"`
-	Files       string `json:"files"`
-	Status      string `json:"status"`
-	TTS         string `json:"tts"`
-	ASR         string `json:"asr"`
+	Chat          string `json:"chat"`
+	AsyncChat     string `json:"async_chat"`
+	AsyncResult   string `json:"async_result"`
+	Embedding     string `json:"embedding"`
+	Rerank        string `json:"rerank"`
+	TTS           string `json:"tts"`
+	ASR           string `json:"asr"`
+	OCR           string `json:"ocr"`
+	DocumentParse string `json:"doc_parse"`
+	Models        string `json:"models"`
+	Balance       string `json:"balance"`
+	Files         string `json:"files"`
+	Status        string `json:"status"`
+	Tasks         string `json:"tasks"`
+	Task          string `json:"task"`
 }
 
 type ChatConfig struct {
@@ -126,6 +151,9 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
+}
+
+type ParseFileConfig struct {
 }
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration

@@ -152,6 +152,7 @@ const (
 	TokenTag
 	TokenRegion
 	TokenURL
+	TokenTask
 	TokenTasks
 	TokenLog
 	TokenLevel
