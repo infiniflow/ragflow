@@ -136,6 +136,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return NewCommand("list_environments"), nil
 	case TokenDatasets:
 		return p.parseListDatasets()
+	case TokenDocuments:
+		return p.parseListDatasetDocuments()
 	case TokenAgents:
 		return p.parseListAgents()
 	case TokenTokens:
@@ -178,6 +180,31 @@ func (p *Parser) parseListDatasets() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+func (p *Parser) parseListDatasetDocuments() (*Command, error) {
+	p.nextToken() // consume DOCUMENTS
+
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
+	}
+	p.nextToken()
+
+	datasetID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	cmd := NewCommand("list_dataset_documents")
+	cmd.Params["dataset_id"] = datasetID
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 

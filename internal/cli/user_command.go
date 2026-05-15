@@ -391,7 +391,63 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list datasets failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// ListDatasetDocumentUserCommand lists dataset documents
+func (c *RAGFlowClient) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	// Determine auth kind based on whether API token is being used
+	if c.HTTPClient.LoginToken == "" && !c.HTTPClient.useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no dataset id")
+	}
+
+	payload := map[string]interface{}{
+		"dataset_id": datasetID,
+		"page":       0,
+		"page_size":  0,
+	}
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("GET", "/documents", "web", nil, payload, iterations)
+	}
+
+	// Normal mode
+	resp, err := c.HTTPClient.Request("GET", "/documents", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListDocumentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
