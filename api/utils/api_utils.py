@@ -566,9 +566,7 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
-    from api.db.services.llm_service import LLMService
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import split_model_name, get_model_config_from_provider_instance
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 
     """
     Verifies availability of an embedding model for a specific tenant.

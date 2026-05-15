@@ -30,7 +30,6 @@ from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolP
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from api.db.services.llm_service import LLMBundle
 from api.db.services.mcp_server_service import MCPServerService
-from api.db.services.tenant_llm_service import TenantLLMService
 from common.connection_utils import timeout
 from common.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
 from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, message_fit_in, structured_output_prompt
