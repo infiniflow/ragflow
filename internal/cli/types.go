@@ -105,6 +105,10 @@ const (
 	TokenEmbed
 	TokenText
 	TokenQuery
+	TokenFormat
+	TokenParam
+	TokenPlay
+	TokenSave
 	TokenTop
 	TokenDimension
 	TokenAsync
@@ -148,6 +152,7 @@ const (
 	TokenTag
 	TokenRegion
 	TokenURL
+	TokenTask
 	TokenTasks
 	TokenLog
 	TokenLevel

@@ -217,9 +217,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.reference_metadata.include',
   });
-  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(
-    selectedKbIds || [],
-  );
+  const { data: metadataKeys, loading: metadataKeysLoading } =
+    useFetchKnowledgeMetadataKeys(selectedKbIds || []);
   const metadataFieldOptions = useMemo(() => {
     return (metadataKeys || []).map((key) => ({
       label: key,
@@ -252,7 +251,13 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
         undefined,
       );
     }
-  }, [selectedKbIds, metadataKeys, referenceMetadataEnabled, formMethods]);
+  }, [
+    selectedKbIds,
+    metadataKeys,
+    metadataKeysLoading,
+    referenceMetadataEnabled,
+    formMethods,
+  ]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
@@ -417,7 +422,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"
-              vectorSimilarityWeightName="search_config.vector_similarity_weight"
+              similarityWeightName="search_config.vector_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
             {/* Rerank Model */}

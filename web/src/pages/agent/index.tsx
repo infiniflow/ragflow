@@ -1,4 +1,7 @@
-import EmbedDialog from '@/components/embed-dialog';
+import EmbedDialog, {
+  defaultWidgetSettings,
+  type WidgetSettings,
+} from '@/components/embed-dialog';
 import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
 import {
@@ -21,6 +24,7 @@ import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useSetAgent } from '@/hooks/use-agent-request';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -34,7 +38,7 @@ import {
   Settings,
   Upload,
 } from 'lucide-react';
-import { ComponentPropsWithoutRef, useCallback } from 'react';
+import { ComponentPropsWithoutRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import AgentCanvas from './canvas';
@@ -42,6 +46,7 @@ import { DropdownProvider } from './canvas/context';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
 import { GlobalParamSheet } from './gobal-variable-sheet';
+import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -66,6 +71,9 @@ import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 import WebhookSheet from './webhook-sheet';
 
+/**
+ * Standardizes dropdown menu item styling for agent management actions.
+ */
 function AgentDropdownMenuItem({
   children,
   ...props
@@ -77,6 +85,11 @@ function AgentDropdownMenuItem({
   );
 }
 
+const AgentWidgetSettingsGlobalKey = 'sys.widget_settings';
+
+/**
+ * Displays the agent editor and persists agent-scoped widget defaults in DSL globals.
+ */
 export default function Agent() {
   const { id } = useParams();
   const isPipeline = useIsPipeline();
@@ -92,6 +105,8 @@ export default function Agent() {
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
   const { flowDetail: agentDetail } = useFetchDataOnMount();
+  const { buildDslData } = useBuildDslData();
+  const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
   const inputs = useGetBeginNodeDataInputs();
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const handleRunAgent = useCallback(() => {
@@ -211,6 +226,37 @@ export default function Agent() {
     uploadedFileData,
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
+  const initialWidgetSettings = useMemo<WidgetSettings>(() => {
+    const widgetSettings =
+      agentDetail?.dsl?.globals?.[AgentWidgetSettingsGlobalKey];
+
+    return {
+      ...defaultWidgetSettings,
+      ...(widgetSettings && typeof widgetSettings === 'object'
+        ? widgetSettings
+        : {}),
+    };
+  }, [agentDetail]);
+
+  const handleSaveWidgetSettings = useCallback(
+    async (widgetSettings: WidgetSettings) => {
+      const dsl = buildDslData();
+
+      return setAgent({
+        id: id!,
+        title: agentDetail.title,
+        dsl: {
+          ...dsl,
+          globals: {
+            ...dsl.globals,
+            [AgentWidgetSettingsGlobalKey]: widgetSettings,
+          },
+        },
+      });
+    },
+    [agentDetail.title, buildDslData, id, setAgent],
+  );
+
   return (
     <section className="h-full" data-testid="agent-detail">
       <PageHeader>
@@ -327,6 +373,9 @@ export default function Agent() {
           from={SharedFrom.Agent}
           beta={beta}
           isAgent
+          initialWidgetSettings={initialWidgetSettings}
+          onSaveWidgetSettings={handleSaveWidgetSettings}
+          savingWidgetSettings={savingWidgetSettings}
         ></EmbedDialog>
       )}
       {versionDialogVisible && (

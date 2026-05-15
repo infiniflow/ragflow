@@ -201,6 +201,7 @@ class Retrieval(ToolBase, ABC):
                 self._param.top_n,
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
+                top=self._param.top_k,
                 doc_ids=doc_ids,
                 aggs=True,
                 rerank_mdl=rerank_mdl,
