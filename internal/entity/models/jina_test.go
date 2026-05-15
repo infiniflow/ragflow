@@ -52,8 +52,8 @@ func newJinaForTest(baseURL string) *JinaModel {
 
 func TestJinaChatHappyPath(t *testing.T) {
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["model"] != "jina-ai/jina-vlm" {
-			t.Errorf("expected model=jina-ai/jina-vlm, got %v", body["model"])
+		if body["model"] != "jina-vlm" {
+			t.Errorf("expected model=jina-vlm, got %v", body["model"])
 		}
 		if body["stream"] != false {
 			t.Errorf("expected stream=false, got %v", body["stream"])
@@ -77,7 +77,7 @@ func TestJinaChatHappyPath(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := j.ChatWithMessages("jina-ai/jina-vlm", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	resp, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	temperature := 0.2
 	topP := 0.8
 	stop := []string{"END"}
-	_, err := j.ChatWithMessages("jina-ai/jina-vlm", []Message{{Role: "user", Content: "ping"}},
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
 	)
@@ -139,20 +139,20 @@ func TestJinaChatValidation(t *testing.T) {
 	}{
 		{
 			name:      "missing api config",
-			modelName: "jina-ai/jina-vlm",
+			modelName: "jina-vlm",
 			messages:  []Message{{Role: "user", Content: "x"}},
 			want:      "api key is required",
 		},
 		{
 			name:      "missing api key",
-			modelName: "jina-ai/jina-vlm",
+			modelName: "jina-vlm",
 			messages:  []Message{{Role: "user", Content: "x"}},
 			apiConfig: &APIConfig{},
 			want:      "api key is required",
 		},
 		{
 			name:      "empty api key",
-			modelName: "jina-ai/jina-vlm",
+			modelName: "jina-vlm",
 			messages:  []Message{{Role: "user", Content: "x"}},
 			apiConfig: &APIConfig{ApiKey: &emptyKey},
 			want:      "api key is required",
@@ -165,7 +165,7 @@ func TestJinaChatValidation(t *testing.T) {
 		},
 		{
 			name:      "missing messages",
-			modelName: "jina-ai/jina-vlm",
+			modelName: "jina-vlm",
 			apiConfig: &APIConfig{ApiKey: &apiKey},
 			want:      "messages is empty",
 		},
@@ -190,7 +190,7 @@ func TestJinaChatRejectsHTTPError(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := j.ChatWithMessages("jina-ai/jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
@@ -204,7 +204,7 @@ func TestJinaChatRejectsMalformedResponse(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := j.ChatWithMessages("jina-ai/jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no choices in response") {
 		t.Errorf("expected malformed-response error, got %v", err)
 	}
@@ -214,7 +214,7 @@ func TestJinaChatRejectsUnknownRegion(t *testing.T) {
 	j := newJinaForTest("http://unused")
 	apiKey := "test-key"
 	region := "eu"
-	_, err := j.ChatWithMessages("jina-ai/jina-vlm", []Message{{Role: "user", Content: "x"}},
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &region}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
 		t.Errorf("expected region error, got %v", err)
@@ -232,7 +232,7 @@ func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
 	emptyRegion := ""
-	_, err := j.ChatWithMessages("jina-ai/jina-vlm", []Message{{Role: "user", Content: "x"}},
+	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil)
 	if err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
