@@ -152,6 +152,8 @@ def init_llm_factory():
             except Exception:
                 pass
             break
+
+def update_document_number_in_init():
     doc_count = DocumentService.get_all_kb_doc_count()
     for kb_id in KnowledgebaseService.get_all_ids():
         KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=doc_count.get(kb_id, 0))
@@ -187,7 +189,8 @@ def init_web_data():
 
     init_table()
 
-    init_llm_factory()
+    # init_llm_factory()
+    update_document_number_in_init()
     # if not UserService.get_all().count():
     #    init_superuser()
 

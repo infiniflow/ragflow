@@ -23,11 +23,7 @@ class TenantModelService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_provider_id_and_instance_id_and_model_name(cls, provider_id, instance_id, model_name):
-        return cls.model.get_or_none(
-            cls.model.provider_id == provider_id,
-            cls.model.instance_id == instance_id,
-            cls.model.model_name == model_name,
-        )
+        return list(cls.model.select().where(cls.model.provider_id == provider_id, cls.model.instance_id == instance_id, cls.model.model_name == model_name))
 
     @classmethod
     @DB.connection_context()

@@ -173,7 +173,7 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str|enum.Enum):
     return get_model_config_from_provider_instance(tenant_id, model_type, model_name)
 
 
-def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
+def split_model_name(model_name: str):
     # Parse model_name: {model_name} or {model_name}@{factory_name} or {model_name}@{instance_name}@{factory_name}
     parts = model_name.split("@")
     if len(parts) == 1:
@@ -188,6 +188,11 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
         pure_model_name = parts[0]
         instance_name = parts[1]
         provider_name = parts[2]
+    return pure_model_name, instance_name, provider_name
+
+
+def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum, model_name: str):
+    pure_model_name, instance_name, provider_name = split_model_name(model_name)
     model_type_val = model_type if isinstance(model_type, str) else model_type.value
     # Builtin embedding model
     compose_profiles = os.getenv("COMPOSE_PROFILES", "")
@@ -258,17 +263,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
 
 
 def get_api_key(tenant_id: str, model_name: str):
-    # Parse model_name: {model_name} or {model_name}@{factory_name} or {model_name}@{instance_name}@{factory_name}
-    parts = model_name.split("@")
-    if len(parts) == 1:
-        provider_name = ""
-        instance_name = ""
-    elif len(parts) == 2:
-        provider_name = parts[1]
-        instance_name = "default"
-    else:
-        instance_name = parts[1]
-        provider_name = parts[2]
+    _, instance_name, provider_name = split_model_name(model_name)
 
     if not provider_name:
         raise LookupError("Provider name is required.")
@@ -279,3 +274,17 @@ def get_api_key(tenant_id: str, model_name: str):
     if not instance_obj:
         raise LookupError(f"Instance {instance_name} not found.")
     return instance_obj.api_key
+
+
+def get_model_type_by_name(tenant_id: str, model_name: str):
+    pure_model_name, instance_name, provider_name = split_model_name(model_name)
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        raise LookupError(f"Provider {provider_name} not found.")
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if not instance_obj:
+        raise LookupError(f"Instance {instance_name} not found.")
+    model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
+    if not model_objs:
+        raise LookupError(f"Model {pure_model_name} not found.")
+    return [model_obj.model_type for model_obj in model_objs]

@@ -245,11 +245,11 @@ async def question_proposal(chat_mdl, content, topn=3):
 async def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 
     if not chat_mdl:
-        if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
+        model_types = get_model_type_by_name(tenant_id, llm_id)
+        if "image2text" in model_types:
             chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
         else:
             chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
@@ -281,10 +281,9 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_tenant_default_model_by_type
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_tenant_default_model_by_type, get_model_type_by_name
 
-    if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
+    if llm_id and "image2text" in get_model_type_by_name(tenant_id, llm_id) :
         chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
         if not llm_id:

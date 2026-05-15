@@ -41,7 +41,7 @@ from api.utils.reference_metadata_utils import (
     resolve_reference_metadata_preferences,
 )
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.graphrag.general.mind_map_extractor import MindMapExtractor
@@ -247,12 +247,12 @@ class DialogService(CommonService):
 
 
 async def async_chat_solo(dialog, messages, stream=True):
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+    llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
     image_files = []
     if "files" in messages[-1]:
-        if llm_type == "chat":
+        if "chat" in llm_types:
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
@@ -510,8 +510,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     chat_start_ts = timer()
     if dialog.llm_id:
-        llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
-        if llm_type == "image2text":
+        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+        if "image2text" in llm_types:
             llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
         else:
             llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
