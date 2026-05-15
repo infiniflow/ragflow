@@ -37,11 +37,6 @@ type GiteeModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (g *GiteeModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewGiteeModel creates a new Gitee model instance
 func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 	return &GiteeModel{
@@ -623,7 +618,7 @@ type giteeOCRResponse struct {
 }
 
 // OCRFile OCR file
-func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	if imageURL == nil && content == nil {
 		return nil, fmt.Errorf("url or content is required")
 	}
@@ -709,11 +704,172 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var ocrResponse = OCRResponse{
+	var ocrResponse = OCRFileResponse{
 		Text: &giteeResponse.Text,
 	}
 
 	return &ocrResponse, nil
+}
+
+type giteeParseFileResponse struct {
+	TaskID    string    `json:"task_id"`
+	Status    string    `json:"status"`
+	CreatedAt int64     `json:"created_at"`
+	URLs      giteeURLs `json:"urls"`
+}
+
+type giteeURLs struct {
+	Get    string `json:"get"`
+	Cancel string `json:"cancel"`
+}
+
+// ParseFile parse file
+func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if documentURL == nil && content == nil {
+		return nil, fmt.Errorf("url or content is required")
+	}
+
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := g.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := g.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("gitee: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.DocumentParse)
+
+	payload := &bytes.Buffer{}
+	writer := multipart.NewWriter(payload)
+
+	if err := writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	if documentURL != nil {
+		if err := writer.WriteField("file", *documentURL); err != nil {
+			return nil, fmt.Errorf("failed to write file URL: %w", err)
+		}
+	} else if content != nil && len(content) > 0 {
+		part, err := writer.CreateFormFile("file", "file")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file form file: %w", err)
+		}
+		if _, err = part.Write(content); err != nil {
+			return nil, fmt.Errorf("failed to write file content: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("file or file URL is required")
+	}
+
+	writer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gitee OCR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var giteeParseFileResp giteeParseFileResponse
+	if err = json.Unmarshal(body, &giteeParseFileResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	_, err = g.getParseFile(&baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	var parseFileResponse = ParseFileResponse{}
+
+	return &parseFileResponse, nil
+}
+
+type giteeGetParseFileResponse struct {
+}
+
+func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
+	url := fmt.Sprintf("%s/task/%s/status", strings.TrimSuffix(*baseURL, "/"), *taskID)
+
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+	var resp *http.Response
+	for i := 0; i < count; i++ {
+		resp, err = g.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		var body []byte
+		body, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
+
+		// Parse response
+		var result map[string]interface{}
+		if err = json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		time.Sleep(timeOut)
+	}
+
+	// if resp show the file is ok, download it. otherwise, provide timeout info
+	return nil, nil
 }
 
 func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -868,4 +1024,145 @@ func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+type giteeTaskListResponse struct {
+	Total int             `json:"total"`
+	Items []giteeTaskItem `json:"items"`
+}
+
+type giteeTaskItem struct {
+	TaskID string `json:"task_id"`
+	//Output      giteeTaskOutput `json:"output"`
+	Status      string        `json:"status"`
+	CreatedAt   int64         `json:"created_at"`
+	StartedAt   int64         `json:"started_at,omitempty"`
+	CompletedAt int64         `json:"completed_at,omitempty"`
+	Price       float64       `json:"price"`
+	Currency    string        `json:"currency"`
+	URLs        giteeTaskURLs `json:"urls"`
+}
+
+type giteeTaskOutput struct {
+	Segments []giteeSegment `json:"segments"`
+}
+
+type giteeSegment struct {
+	Index   int    `json:"index"`
+	Content string `json:"content"`
+}
+type giteeTaskURLs struct {
+	Get    string `json:"get"`
+	Cancel string `json:"cancel"`
+}
+
+func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	var region = "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Tasks)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body []byte
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var giteeTaskList giteeTaskListResponse
+	if err = json.Unmarshal(body, &giteeTaskList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	taskListResp := []ListTaskStatus{}
+	for _, item := range giteeTaskList.Items {
+		taskListResp = append(taskListResp, ListTaskStatus{
+			TaskID: item.TaskID,
+			Status: item.Status,
+		})
+	}
+	return taskListResp, nil
+}
+
+func (g *GiteeModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	var region = "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s/%s/get", g.BaseURL[region], g.URLSuffix.Task, taskID)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var taskOutput giteeTaskOutput
+	if err = json.Unmarshal(body, &taskOutput); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	taskResp := &TaskResponse{}
+
+	for _, segment := range taskOutput.Segments {
+		taskResp.Segments = append(taskResp.Segments, TaskSegment{
+			Index:   segment.Index,
+			Content: segment.Content,
+		})
+	}
+
+	return taskResp, nil
 }

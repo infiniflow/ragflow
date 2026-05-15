@@ -26,11 +26,6 @@ type DummyModel struct {
 	URLSuffix URLSuffix
 }
 
-func (d *DummyModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewDummyModel creates a new Dummy AI model instance
 func NewDummyModel(baseURL map[string]string, urlSuffix URLSuffix) *DummyModel {
 	return &DummyModel{
@@ -98,6 +93,19 @@ func (z *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 // OCRFile OCR file
-func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+// ParseFile parse file
+func (z *DummyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *DummyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *DummyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

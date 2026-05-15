@@ -19,11 +19,6 @@ type OpenRouterModel struct {
 	httpClient *http.Client
 }
 
-func (o *OpenRouterModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewOpenRouterModel creates a new OpenRouter AI model instance
 func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRouterModel {
 	return &OpenRouterModel{
@@ -610,8 +605,13 @@ func (z *OpenRouterModel) AudioSpeechWithSender(modelName *string, audioContent 
 }
 
 // OCRFile OCR file
-func (m *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *OpenRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -725,4 +725,12 @@ func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 func (o *OpenRouterModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := o.Balance(apiConfig)
 	return err
+}
+
+func (z *OpenRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OpenRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

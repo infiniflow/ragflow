@@ -18,11 +18,6 @@ type BaiduModel struct {
 	httpClient *http.Client
 }
 
-func (b *BaiduModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (b *BaiduModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &BaiduModel{
 		BaseURL:   baseURL,
@@ -626,8 +621,13 @@ func (z *BaiduModel) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 // OCRFile OCR file
-func (b *BaiduModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (b *BaiduModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
+}
+
+// ParseFile parse file
+func (z *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -692,4 +692,12 @@ func (b *BaiduModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := b.ListModels(apiConfig)
 	return err
+}
+
+func (z *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

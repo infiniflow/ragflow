@@ -36,11 +36,6 @@ type DeepSeekModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (z *DeepSeekModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewDeepSeekModel creates a new DeepSeek model instance
 func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekModel {
 	return &DeepSeekModel{
@@ -609,6 +604,19 @@ func (z *DeepSeekModel) AudioSpeechWithSender(modelName *string, audioContent *s
 }
 
 // OCRFile OCR file
-func (d *DeepSeekModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (d *DeepSeekModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", d.Name())
+}
+
+// ParseFile parse file
+func (z *DeepSeekModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *DeepSeekModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *DeepSeekModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

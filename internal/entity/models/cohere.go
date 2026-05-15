@@ -17,11 +17,6 @@ type CoHereModel struct {
 	httpClient *http.Client
 }
 
-func (c *CoHereModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (c *CoHereModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &CoHereModel{
 		BaseURL:   baseURL,
@@ -504,8 +499,13 @@ func (z *CoHereModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 // OCRFile OCR file
-func (c *CoHereModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (c *CoHereModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+// ParseFile parse file
+func (z *CoHereModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -577,4 +577,12 @@ func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 func (c *CoHereModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := c.ListModels(apiConfig)
 	return err
+}
+
+func (z *CoHereModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *CoHereModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

@@ -36,11 +36,6 @@ type VllmModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (v *VllmModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewVllmModel creates a new Vllm AI model instance
 func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	return &VllmModel{
@@ -576,6 +571,19 @@ func (z *VllmModel) AudioSpeechWithSender(modelName *string, audioContent *strin
 }
 
 // OCRFile OCR file
-func (m *VllmModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *VllmModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *VllmModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VllmModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VllmModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

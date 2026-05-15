@@ -77,11 +77,6 @@ type GoogleModel struct {
 	URLSuffix URLSuffix
 }
 
-func (g *GoogleModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewGoogleModel creates a new Google AI model instance
 func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel {
 	return &GoogleModel{
@@ -364,6 +359,19 @@ func (z *GoogleModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 // OCRFile OCR file
-func (g *GoogleModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (g *GoogleModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+// ParseFile parse file
+func (z *GoogleModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *GoogleModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *GoogleModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

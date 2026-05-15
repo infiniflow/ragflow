@@ -529,8 +529,13 @@ func (z *VolcEngine) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 // OCRFile OCR file
-func (m *VolcEngine) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *VolcEngine) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *VolcEngine) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -626,4 +631,12 @@ func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+func (z *VolcEngine) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VolcEngine) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
