@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -685,8 +686,95 @@ func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
+type baiduBalanceResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
+		Balance      json.Number `json:"balance"`
+		TotalBalance json.Number `json:"totalBalance"`
+		Currency     string      `json:"currency"`
+	} `json:"data"`
+}
+
 func (b *BaiduModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf(b.Name() + "no such method")
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := b.BaseURL["default"]
+	if region != "default" {
+		if regional, ok := b.BaseURL[region]; ok && regional != "" {
+			baseURL = regional
+		}
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("baidu: no base URL configured for default region")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), b.URLSuffix.Balance)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Baidu balance API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed baiduBalanceResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if parsed.Code != 0 && parsed.Code != 200 {
+		msg := parsed.Message
+		if msg == "" {
+			msg = "unknown API error"
+		}
+		return nil, fmt.Errorf("Baidu API error (code %d): %s", parsed.Code, msg)
+	}
+
+	raw := parsed.Data.TotalBalance.String()
+	if raw == "" {
+		raw = parsed.Data.Balance.String()
+	}
+	if raw == "" {
+		return nil, fmt.Errorf("no balance info in response")
+	}
+
+	total, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid balance %q: %w", raw, err)
+	}
+
+	currency := parsed.Data.Currency
+	if currency == "" {
+		currency = "CNY"
+	}
+
+	return map[string]interface{}{
+		"balance":  total,
+		"currency": currency,
+	}, nil
 }
 
 func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
