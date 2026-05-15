@@ -69,11 +69,13 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 		}
 		msgs, ok := body["messages"].([]interface{})
 		if !ok || len(msgs) != 1 {
-			t.Fatalf("messages=%v, want one message", body["messages"])
+			t.Errorf("messages=%v, want one message", body["messages"])
+			return
 		}
 		msg, ok := msgs[0].(map[string]interface{})
 		if !ok || msg["role"] != "user" || msg["content"] != "ping" {
-			t.Fatalf("message=%v, want user ping", msgs[0])
+			t.Errorf("message=%v, want user ping", msgs[0])
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"content": []map[string]interface{}{
@@ -319,5 +321,14 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 	}
 	if _, err := m.OCRFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: got %v", err)
+	}
+	if _, err := m.ParseFile(&modelName, nil, &modelName, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+		t.Errorf("ParseFile: got %v", err)
+	}
+	if _, err := m.ListTasks(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
+		t.Errorf("ListTasks: got %v", err)
+	}
+	if _, err := m.ShowTask("task-id", &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
+		t.Errorf("ShowTask: got %v", err)
 	}
 }

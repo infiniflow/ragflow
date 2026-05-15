@@ -54,11 +54,6 @@ func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *Anthropi
 	}
 }
 
-func (a *AnthropicModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (a *AnthropicModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewAnthropicModel(baseURL, a.URLSuffix)
 }
@@ -440,10 +435,22 @@ func (a *AnthropicModel) AudioSpeechWithSender(modelName *string, audioContent *
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AnthropicModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (a *AnthropicModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AnthropicModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
 func (a *AnthropicModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AnthropicModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AnthropicModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
