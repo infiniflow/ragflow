@@ -649,7 +649,7 @@ func (n *NovitaModel) TranscribeAudioWithSender(modelName *string, file *string,
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (n *NovitaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+func (n *NovitaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 

@@ -91,6 +91,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "voyage":
 		return NewVoyageModel(baseURL, urlSuffix), nil
+	case "paddleocr":
+		return NewPaddleOCRModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

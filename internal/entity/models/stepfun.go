@@ -477,8 +477,8 @@ func (s *StepFunModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", s.Name())
 }
 
-// AudioSpeech convert audio to text
-func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	// TODO Test it
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
@@ -496,13 +496,13 @@ func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiC
 		"input": *audioContent,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["response_format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)

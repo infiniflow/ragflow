@@ -574,8 +574,8 @@ func (z *MistralModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -674,11 +674,9 @@ func (z *MistralModel) ParseFile(modelName *string, content []byte, url *string,
 }
 
 func (z *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("no such method", z.Name())
 }
 
 func (z *MistralModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("no such method", z.Name())
 }

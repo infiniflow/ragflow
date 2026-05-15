@@ -458,8 +458,8 @@ func (z *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("MiniMax API key is missing")
 	}
@@ -478,14 +478,14 @@ func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 		"model": modelName,
 		"text":  audioContent,
 	}
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
+	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["audio_setting"] = map[string]interface{}{
-			"format": asrConfig.Format,
+			"format": ttsConfig.Format,
 		}
 	}
 	reqBody["stream"] = false

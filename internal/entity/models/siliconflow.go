@@ -731,7 +731,7 @@ func (o *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	}
 
 	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -835,9 +835,6 @@ func (o *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 		return nil, fmt.Errorf("failed to unmarshal response: %w, body=%s", err, string(respBody))
 	}
 
-	var res ASRResponse
-	res.Text = result.Text
-
 	return &ASRResponse{Text: result.Text}, nil
 }
 
@@ -845,8 +842,8 @@ func (z *SiliconflowModel) TranscribeAudioWithSender(modelName *string, file *st
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (o *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (o *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
@@ -864,13 +861,13 @@ func (o *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, 
 		"stream": false,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["response_format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)
