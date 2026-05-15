@@ -749,10 +749,25 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             idx = set([])
             normalized_answer = normalize_arabic_digits(answer) or ""
             if embd_mdl and not CITATION_MARKER_PATTERN.search(normalized_answer):
+                # Vectors are no longer fetched during retrieval; lazy-fetch
+                # only when citations actually need them.
+                chunk_v = [ck.get("vector") for ck in kbinfos["chunks"]]
+                if not any(isinstance(v, list) and len(v) > 1 for v in chunk_v):
+                    idx_nm = index_name(tenant_ids[0])
+                    for i, ck in enumerate(kbinfos["chunks"]):
+                        cid = ck.get("chunk_id")
+                        if cid:
+                            data = retriever.dataStore.get(cid, idx_nm, [ck.get("kb_id")])
+                            if data:
+                                for k in data:
+                                    if k.endswith("_vec"):
+                                        kbinfos["chunks"][i]["vector"] = data[k]
+                                        break
+                    chunk_v = [ck["vector"] for ck in kbinfos["chunks"]]
                 answer, idx = retriever.insert_citations(
                     answer,
                     [ck["content_ltks"] for ck in kbinfos["chunks"]],
-                    [ck["vector"] for ck in kbinfos["chunks"]],
+                    chunk_v,
                     embd_mdl,
                     tkweight=1 - dialog.vector_similarity_weight,
                     vtweight=dialog.vector_similarity_weight,
@@ -1537,7 +1552,21 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, sys_prompt
-        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
+        # Lazy fetch vectors for citation computation.
+        chunk_v = [ck.get("vector") for ck in kbinfos["chunks"]]
+        if not any(isinstance(v, list) and len(v) > 1 for v in chunk_v):
+            idx_nm = index_name(tenant_ids[0])
+            for i, ck in enumerate(kbinfos["chunks"]):
+                cid = ck.get("chunk_id")
+                if cid:
+                    data = retriever.dataStore.get(cid, idx_nm, [ck.get("kb_id")])
+                    if data:
+                        for k in data:
+                            if k.endswith("_vec"):
+                                kbinfos["chunks"][i]["vector"] = data[k]
+                                break
+            chunk_v = [ck["vector"] for ck in kbinfos["chunks"]]
+        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], chunk_v, embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
         if not recall_docs:

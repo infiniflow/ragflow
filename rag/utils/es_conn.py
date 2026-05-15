@@ -279,6 +279,18 @@ class ESConnection(ESConnectionBase):
             q["fields"] = vector_fields
         self.logger.debug(f"ESConnection.search {str(index_names)} query: " + json.dumps(q))
 
+        # Detect hybrid mode (BM25 + KNN fused) for injecting raw KNN scores.
+        is_hybrid = False
+        dense_expr = None
+        for m in match_expressions:
+            if isinstance(m, MatchDenseExpr):
+                dense_expr = m
+        if dense_expr:
+            for m in match_expressions:
+                if isinstance(m, FusionExpr):
+                    is_hybrid = True
+                    break
+
         for i in range(ATTEMPT_TIME):
             try:
                 if use_search_after:
@@ -288,6 +300,39 @@ class ESConnection(ESConnectionBase):
                     res = self._es_search_once(index_names, q, track_total_hits=True)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
+
+                # Inject raw KNN _score for each hit via a lightweight KNN-only subquery.
+                if is_hybrid and dense_expr:
+                    hits = res.get("hits", {}).get("hits", [])
+                    if hits:
+                        candidate_ids = [h["_id"] for h in hits]
+                        knn_q = Search()
+                        knn_q = knn_q.knn(
+                            dense_expr.vector_column_name,
+                            len(candidate_ids),
+                            len(candidate_ids) * 2,
+                            query_vector=list(dense_expr.embedding_data),
+                            filter={"bool": {"filter": [{"terms": {"kb_id": knowledgebase_ids}}]}},
+                        )
+                        knn_body = knn_q.to_dict()
+                        knn_body["_source"] = False
+                        knn_body["size"] = len(candidate_ids)
+                        knn_res = self.es.search(
+                            index=index_names,
+                            body=knn_body,
+                            timeout="600s",
+                            track_total_hits=False,
+                            _source=False,
+                        )
+                        knn_scores = {
+                            h["_id"]: h["_score"]
+                            for h in knn_res.get("hits", {}).get("hits", [])
+                        }
+                        for hit in hits:
+                            if hit.get("_source") is None:
+                                hit["_source"] = {}
+                            hit["_source"]["_knn_score"] = knn_scores.get(hit["_id"], 0.0)
+
                 self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
                 return res
             except ConnectionTimeout:

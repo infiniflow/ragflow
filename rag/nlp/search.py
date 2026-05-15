@@ -180,8 +180,6 @@ class Dealer:
             else:
                 matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
-                if not settings.DOC_ENGINE_INFINITY:
-                    src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
                 matchExprs = [matchText, matchDense, fusionExpr]
@@ -225,7 +223,7 @@ class Dealer:
             query_vector=q_vec,
             aggregation=aggs,
             highlight=highlight,
-            field=self.dataStore.get_fields(res, src + ["_score"]),
+            field=self.dataStore.get_fields(res, src + ["_score", "_knn_score"]),
             keywords=keywords
         )
 
@@ -363,16 +361,12 @@ class Dealer:
                rank_feature: dict | None = None
                ):
         _, keywords = self.qryr.question(query)
-        vector_size = len(sres.query_vector)
-        vector_column = f"q_{vector_size}_vec"
-        zero_vector = [0.0] * vector_size
-        ins_embd = []
-        for chunk_id in sres.ids:
-            vector = sres.field[chunk_id].get(vector_column, zero_vector)
-            if isinstance(vector, str):
-                vector = [get_float(v) for v in vector.split("\t")]
-            ins_embd.append(vector)
-        if not ins_embd:
+        # Use _knn_score injected by es_conn.py instead of pulling full vectors.
+        knn_scores = np.array([
+            sres.field[chunk_id].get("_knn_score", 0.0)
+            for chunk_id in sres.ids
+        ], dtype=np.float64)
+        if len(knn_scores) == 0:
             return [], [], []
 
         for i in sres.ids:
@@ -390,10 +384,9 @@ class Dealer:
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
-        sim, tksim, vtsim = self.qryr.hybrid_similarity(sres.query_vector,
-                                                        ins_embd,
-                                                        keywords,
-                                                        ins_tw, tkweight, vtweight)
+        tksim = self.qryr.token_similarity(keywords, ins_tw)
+        vtsim = knn_scores.tolist()
+        sim = knn_scores * vtweight + np.array(tksim) * tkweight
 
         return sim + rank_fea, tksim, vtsim
 
@@ -549,7 +542,6 @@ class Dealer:
         page_idx = valid_idx[begin:end]
 
         dim = len(sres.query_vector)
-        vector_column = f"q_{dim}_vec"
         zero_vector = [0.0] * dim
 
         for i in page_idx:
@@ -572,7 +564,7 @@ class Dealer:
                 "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
                 "term_similarity": float(tsim[i]),
-                "vector": chunk.get(vector_column, zero_vector),
+                "vector": zero_vector,
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
                 "mom_id": chunk.get("mom_id", ""),
