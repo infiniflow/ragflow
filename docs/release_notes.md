@@ -15,20 +15,20 @@ Released on May 14, 2026
 
 ### New features
 
-- Adds a generic, configuration-driven RESTful API data source connector.
+- Introduces a generic RESTful API connector, enabling configurable data ingestion from niche or enterprise-specific platforms into RAGFlow. [#13545](https://github.com/infiniflow/ragflow/pull/13545)
+- Agent: Implements tag management to help users categorize, filter, and sort their Agent apps. [#14799](https://github.com/infiniflow/ragflow/pull/14799)
 
 ### Improvements
 
-- Agent tag management with filtering and sorting.
-- Widget customization and persistence.
+- Adds widget customization and persistence, allowing users to tailor their chat interface and ensure their settings are retained across sessions. [#14603](https://github.com/infiniflow/ragflow/pull/14603)
 
 ### Model support
 
-- Adds gpt-5.4-mini and gpt-5.4-nano to the OpenAI model list
+- Adds gpt-5.4-mini and gpt-5.4-nano to the OpenAI model list [#14908](https://github.com/infiniflow/ragflow/pull/14908)
 
 ### Bug fixes
 
-Fixed dataset document download route.
+- Corrects the API endpoint for downloading original files from a specified dataset. [#14910](https://github.com/infiniflow/ragflow/pull/14910) See also [Download document](./references/http_api_reference.md#download-document).
 
 ## v0.25.3
 
@@ -40,7 +40,7 @@ Released on May 13, 2026.
 
 ### Improvements
 
-- S3 connector: Implements ETag-based incremental synchronization for S3 data sources, drastically reduces sync time and AWS egress costs for users with massive-volumn S3-based datasets. [#14628](https://github.com/infiniflow/ragflow/issues/14628)[#14677](https://github.com/infiniflow/ragflow/pull/14677)
+- S3 connector: Implements ETag-based incremental synchronization for S3 data sources, drastically reducing sync time and AWS egress costs for users with massive-volumn S3-based datasets. [#14628](https://github.com/infiniflow/ragflow/issues/14628)[#14677](https://github.com/infiniflow/ragflow/pull/14677)
 - API refactoring and security
   - Continues the transition of web APIs to RESTful conventions, ensuring backward compatibility for all legacy endpoints.
   - Binds the `user_id` in `POST /api/v1/messages` to the authenticated JWT principal. [#14745](https://github.com/infiniflow/ragflow/pull/14745)
@@ -54,7 +54,7 @@ Released on May 13, 2026.
 
 - Images in multi-sheet Excel workbooks were not scoped by sheet, causing images to be incorrectly attributed across different worksheets. [#14120](https://github.com/infiniflow/ragflow/pull/14120)
 - Agent: Splits the **Message** component output into distinct 'waiting' and 'message' states when nested inside an **Iteration** component alongside a **Wait** component. [#14839](https://github.com/infiniflow/ragflow/pull/14839)
-- Agent: The **Iteration** component failed to correctly pass array elements to its child components due to a naming mismatch between the expected IterationItem alias and the runtime item variable. [#14146](https://github.com/infiniflow/ragflow/pull/14146)
+- Agent: The **Iteration** component failed to correctly pass array elements to its child components due to a naming mismatch between the expected `IterationItem` alias and the runtime `item` variable. [#14146](https://github.com/infiniflow/ragflow/pull/14146)
 - Agent: Template strings in tool-type components like **Email** and **Invoke** failed to interpolate; `{{variable}}` placeholders were passed through as raw text. [#14601](https://github.com/infiniflow/ragflow/pull/14601)
 - Volcengine (Doubao/Ark) endpoints were not visible in the provider list. [#14702](https://github.com/infiniflow/ragflow/pull/14702)
 

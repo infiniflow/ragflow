@@ -356,3 +356,11 @@ RAGFlow(user)> list datasets;
 | 0           | naive        | 1              | embedding-2@ZHIPU-AI | 0abe79f9423311f1ad8d38a74640adcc | English  | ccc  | aaa      | me         | 2ba4881420fa11f19e9c38a74640adcc | 0         | 1777375201933 |
 +-------------+--------------+----------------+----------------------+----------------------------------+----------+------+----------+------------+----------------------------------+-----------+---------------+
 ```
+
+### 6.23 Text to Speech
+
+```
+RAGFlow(user)> tts with 'speech-2.8-hd@test@minimax' text 'He who desires but acts not, breeds pestilence.' play format 'wav' save './internal' param '{"voice_setting": {"voice_id": "English_radiant_girl", "speed": 1, "vol": 1, "pitch": 0}, "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "wav", "channel": 1}, "output_format": "hex"}'
+Saved to directory: /home/infiniflow/Documents/development/ragflow/internal/speech-2.8-hd_output.wav
+SUCCESS
+```

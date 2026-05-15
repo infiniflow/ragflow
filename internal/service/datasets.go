@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"ragflow/internal/entity"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -396,8 +395,6 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
 
-	now := time.Now().Truncate(time.Second)
-	createTime := now.UnixMilli()
 	status := string(entity.StatusValid)
 	// Deduplicate name within tenant
 	duplicateName, err := common.DuplicateName(func(n, tid string) bool {
@@ -420,10 +417,6 @@ func (s *DatasetsService) CreateDataset(req *CreateDatasetRequest, tenantID stri
 		EmbdID:       embdID,
 		Status:       &status,
 	}
-	kb.CreateTime = &createTime
-	kb.UpdateTime = &createTime
-	kb.CreateDate = &now
-	kb.UpdateDate = &now
 
 	if description != nil {
 		kb.Description = description
