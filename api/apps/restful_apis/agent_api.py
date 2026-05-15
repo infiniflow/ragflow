@@ -1222,8 +1222,6 @@ async def _webhook_impl(agent_id: str, is_test: bool):
         """Check request size does not exceed max_body_size."""
         max_size = security_cfg.get("max_body_size")
         if not max_size:
-            if not _allow_anonymous_webhook(security_cfg):
-                return
             max_size = "10MB"
 
         # Convert "10MB" → bytes
@@ -1269,8 +1267,6 @@ async def _webhook_impl(agent_id: str, is_test: bool):
         """Simple in-memory rate limiting."""
         rl = security_cfg.get("rate_limit")
         if not rl:
-            if not _allow_anonymous_webhook(security_cfg):
-                return
             rl = {"limit": 60, "per": "minute"}
 
         limit = int(rl.get("limit", 60))

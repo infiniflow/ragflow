@@ -747,6 +747,20 @@ def test_webhook_max_body_size(monkeypatch):
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
     _assert_bad_request(_run(module.webhook("agent-1")), "Request body too large")
 
+    token_security = {"auth_type": "token", "token": {"token_header": "X-TOKEN", "token_value": "ok"}}
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=token_security))
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(
+            headers={"Content-Type": "application/json", "X-TOKEN": "ok"},
+            json_body={},
+            content_length=10 * 1024 * 1024 + 1,
+        ),
+    )
+    _assert_bad_request(_run(module.webhook("agent-1")), "Request body too large")
+
 
 @pytest.mark.p2
 def test_webhook_ip_whitelist(monkeypatch):
@@ -789,6 +803,22 @@ def test_webhook_rate_limit(monkeypatch):
     module.REDIS_CONN.bucket_result = [0]
     cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=_anonymous_security()))
     monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    _assert_bad_request(_run(module.webhook("agent-1")), "Too many requests")
+
+    module.REDIS_CONN.bucket_result = [1]
+    token_security = {"auth_type": "token", "token": {"token_header": "X-TOKEN", "token_value": "ok"}}
+    cvs = _make_webhook_cvs(module, params=_default_webhook_params(security=token_security))
+    monkeypatch.setattr(module.UserCanvasService, "get_by_id", lambda _id: (True, cvs))
+    monkeypatch.setattr(
+        module,
+        "request",
+        _DummyRequest(headers={"Content-Type": "application/json", "X-TOKEN": "ok"}, json_body={}),
+    )
+    res = _run(module.webhook("agent-1"))
+    assert hasattr(res, "status_code")
+    assert res.status_code == 200
+
+    module.REDIS_CONN.bucket_result = [0]
     _assert_bad_request(_run(module.webhook("agent-1")), "Too many requests")
 
     module.REDIS_CONN.bucket_result = [1]
