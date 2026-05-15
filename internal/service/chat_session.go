@@ -77,8 +77,8 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	if !req.IsNew {
 		// Update existing chat session
 		updates := map[string]interface{}{
-			"name":    name,
-			"user_id": userID,
+			"name":        name,
+			"user_id":     userID,
 		}
 
 		if err := s.chatSessionDAO.UpdateByID(req.SessionID, updates); err != nil {
@@ -448,8 +448,8 @@ func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, 
 	referenceJSON, _ := json.Marshal(reference)
 
 	updates := map[string]interface{}{
-		"message":   messagesJSON,
-		"reference": referenceJSON,
+		"message":     messagesJSON,
+		"reference":   referenceJSON,
 	}
 	s.chatSessionDAO.UpdateByID(session.ID, updates)
 }
@@ -625,7 +625,7 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *e
 			ans := s.structureAnswer(session, fullAnswer, messageID, session.ID, reference)
 			resultChan <- ans
 		}
-		if answer != nil && *answer != "" && *answer != "[DONE]" {
+		if answer != nil && *answer != "" {
 			fullAnswer += *answer
 			fullAnswer = s.removeReasoningContent(fullAnswer)
 			ans := s.structureAnswer(session, fullAnswer, messageID, session.ID, reference)
