@@ -201,32 +201,20 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 
 // ListDocuments document list
 
-type ListDocumentsRequest struct {
-	DatasetID string `json:"dataset_id"`
-	Page      int    `json:"page"`
-	PageSize  int    `json:"page_size"`
-}
-
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
-	var req ListDocumentsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
-		return
-	}
+	datasetID := c.Param("dataset_id")
+	pageStr := c.Query("page")
+	pageSizeStr := c.Query("page_size")
+	page, _ := strconv.Atoi(pageStr)
+	pageSize, _ := strconv.Atoi(pageSizeStr)
 
 	userID := c.GetString("user_id")
 
-	if !h.datasetService.Accessible(req.DatasetID, userID) {
+	if !h.datasetService.Accessible(datasetID, userID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
-
-	page := req.Page
-	pageSize := req.PageSize
 
 	if page < 1 {
 		page = 1
@@ -236,7 +224,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	// Use kbID to filter documents
-	documents, total, err := h.documentService.ListDocumentsByDatasetID(req.DatasetID, page, pageSize)
+	documents, total, err := h.documentService.ListDocumentsByDatasetID(datasetID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    1,

@@ -424,19 +424,19 @@ func (c *RAGFlowClient) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf
 		return nil, fmt.Errorf("no dataset id")
 	}
 
-	payload := map[string]interface{}{
-		"dataset_id": datasetID,
-		"page":       0,
-		"page_size":  0,
-	}
+	page := 1
+	pageSize := 10
+	keywords := ""
+	returnEmptyMetadata := "true"
+	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/documents", "web", nil, payload, iterations)
+		return c.HTTPClient.RequestWithIterations("GET", url, "web", nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", "/documents", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}
