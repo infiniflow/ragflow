@@ -103,9 +103,7 @@ async def create_memory(memory_info: dict):
         name=memory_name,
         memory_type=memory_type,
         embd_id=memory_info["embd_id"],
-        llm_id=memory_info["llm_id"],
-        tenant_llm_id=memory_info["tenant_llm_id"],
-        tenant_embd_id=memory_info["tenant_embd_id"]
+        llm_id=memory_info["llm_id"]
     )
     if success:
         return True, format_ret_data_from_memory(res)
