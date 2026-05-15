@@ -622,8 +622,7 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
-        update_dict = ensure_tenant_model_id_for_params(tid, req)
-        TenantService.update_by_id(tid, update_dict)
+        TenantService.update_by_id(tid, req)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

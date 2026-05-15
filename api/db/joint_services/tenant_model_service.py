@@ -271,7 +271,7 @@ def get_api_key(tenant_id: str, model_name: str):
         provider_name = parts[2]
 
     if not provider_name:
-        raise LookupError(f"Provider name is required.")
+        raise LookupError("Provider name is required.")
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         raise LookupError(f"Provider {provider_name} not found.")
