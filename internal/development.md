@@ -373,3 +373,13 @@ RAGFlow(user)> asr with 'FunAudioLLM/SenseVoiceSmall@test@siliconflow' audio './
 | The examination and testimony of the experts enabled the commission to conclude that five shots may have been fired. |
 +----------------------------------------------------------------------------------------------------------------------+
 ```
+
+### 6.25 Optical Character Recognition\
+```
+RAGFlow(user)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/text.jpg'
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| text                                                                                                                                                                                                                                                             |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Parallel to these organizational innovations there were significant complementary technical innovations (e.g., improved methods of manufacturing cast-iron pipe and of coating interiors for pressure maintenance, and newer paving and construction material... |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+```
