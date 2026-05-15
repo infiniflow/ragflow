@@ -262,15 +262,50 @@ func anthropicContentBlock(block map[string]interface{}) (map[string]interface{}
 	blockType, _ := block["type"].(string)
 	switch blockType {
 	case "text":
-		text, _ := block["text"].(string)
+		text, ok := block["text"].(string)
+		if !ok {
+			return nil, fmt.Errorf("anthropic: text block missing or invalid text field %T", block["text"])
+		}
 		return map[string]interface{}{"type": "text", "text": text}, nil
 	case "image":
-		return block, nil
+		return validateAnthropicImageBlock(block)
 	case "image_url":
 		return anthropicImageURLBlock(block)
 	default:
 		return nil, fmt.Errorf("anthropic: unsupported content block type %q", blockType)
 	}
+}
+
+func validateAnthropicImageBlock(block map[string]interface{}) (map[string]interface{}, error) {
+	source, ok := block["source"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("anthropic: image block missing source object")
+	}
+	sourceType, ok := source["type"].(string)
+	if !ok || sourceType == "" {
+		return nil, fmt.Errorf("anthropic: image source missing type")
+	}
+	switch sourceType {
+	case "url":
+		if url, ok := source["url"].(string); !ok || url == "" {
+			return nil, fmt.Errorf("anthropic: image url source missing url")
+		}
+	case "base64":
+		mediaType, ok := source["media_type"].(string)
+		if !ok || mediaType == "" {
+			return nil, fmt.Errorf("anthropic: image base64 source missing media_type")
+		}
+		data, ok := source["data"].(string)
+		if !ok || data == "" {
+			return nil, fmt.Errorf("anthropic: image base64 source missing data")
+		}
+		if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+			return nil, fmt.Errorf("anthropic: invalid base64 image data: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("anthropic: unsupported image source type %q", sourceType)
+	}
+	return block, nil
 }
 
 func anthropicImageURLBlock(block map[string]interface{}) (map[string]interface{}, error) {
@@ -345,7 +380,7 @@ func parseAnthropicChatResponse(body []byte) (string, string, error) {
 		}
 	}
 	if answer.Len() == 0 {
-		return "", reasoning.String(), fmt.Errorf("no text content in Anthropic response")
+		return "", "", fmt.Errorf("no text content in Anthropic response")
 	}
 	return answer.String(), reasoning.String(), nil
 }

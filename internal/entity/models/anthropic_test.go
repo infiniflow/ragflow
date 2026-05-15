@@ -122,10 +122,31 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 		if !ok || len(stop) != 1 || stop[0] != "END" {
 			t.Errorf("stop_sequences=%v want [END]", body["stop_sequences"])
 		}
-		msgs := body["messages"].([]interface{})
-		content := msgs[0].(map[string]interface{})["content"].([]interface{})
-		image := content[1].(map[string]interface{})
-		source := image["source"].(map[string]interface{})
+		msgs, ok := body["messages"].([]interface{})
+		if !ok || len(msgs) == 0 {
+			t.Errorf("messages=%v, want non-empty array", body["messages"])
+			return
+		}
+		first, ok := msgs[0].(map[string]interface{})
+		if !ok {
+			t.Errorf("first message=%v, want object", msgs[0])
+			return
+		}
+		content, ok := first["content"].([]interface{})
+		if !ok || len(content) < 2 {
+			t.Errorf("content=%v, want at least 2 blocks", first["content"])
+			return
+		}
+		image, ok := content[1].(map[string]interface{})
+		if !ok {
+			t.Errorf("image block=%v, want object", content[1])
+			return
+		}
+		source, ok := image["source"].(map[string]interface{})
+		if !ok {
+			t.Errorf("image source=%v, want object", image["source"])
+			return
+		}
 		if image["type"] != "image" || source["type"] != "url" || source["url"] != "https://example.com/cat.png" {
 			t.Errorf("image block=%v", image)
 		}
@@ -159,9 +180,31 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 
 func TestAnthropicChatMapsDataImageURL(t *testing.T) {
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		msgs := body["messages"].([]interface{})
-		content := msgs[0].(map[string]interface{})["content"].([]interface{})
-		source := content[0].(map[string]interface{})["source"].(map[string]interface{})
+		msgs, ok := body["messages"].([]interface{})
+		if !ok || len(msgs) == 0 {
+			t.Errorf("messages=%v, want non-empty array", body["messages"])
+			return
+		}
+		first, ok := msgs[0].(map[string]interface{})
+		if !ok {
+			t.Errorf("first message=%v, want object", msgs[0])
+			return
+		}
+		content, ok := first["content"].([]interface{})
+		if !ok || len(content) == 0 {
+			t.Errorf("content=%v, want non-empty array", first["content"])
+			return
+		}
+		image, ok := content[0].(map[string]interface{})
+		if !ok {
+			t.Errorf("image block=%v, want object", content[0])
+			return
+		}
+		source, ok := image["source"].(map[string]interface{})
+		if !ok {
+			t.Errorf("source=%v, want object", image["source"])
+			return
+		}
 		if source["type"] != "base64" || source["media_type"] != "image/png" || source["data"] != "aGVsbG8=" {
 			t.Errorf("source=%v", source)
 		}
@@ -199,6 +242,12 @@ func TestAnthropicChatValidationErrors(t *testing.T) {
 	}
 	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "video_url"}}}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "unsupported content block type") {
 		t.Errorf("bad block: got %v", err)
+	}
+	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "text", "text": 42}}}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "invalid text field") {
+		t.Errorf("bad text block: got %v", err)
+	}
+	if _, err := m.ChatWithMessages("claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "image"}}}}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "image block missing source") {
+		t.Errorf("bad image block: got %v", err)
 	}
 }
 

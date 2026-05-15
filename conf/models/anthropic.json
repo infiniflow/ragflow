@@ -59,7 +59,7 @@
     },
     {
       "name": "claude-3-7-sonnet-20250219",
-      "max_tokens": 200000,
+      "max_tokens": 64000,
       "model_types": [
         "chat",
         "vision"
@@ -67,7 +67,7 @@
     },
     {
       "name": "claude-3-5-sonnet-20241022",
-      "max_tokens": 200000,
+      "max_tokens": 8192,
       "model_types": [
         "chat",
         "vision"
@@ -75,15 +75,7 @@
     },
     {
       "name": "claude-3-5-haiku-20241022",
-      "max_tokens": 200000,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
-      "name": "claude-3-haiku-20240307",
-      "max_tokens": 200000,
+      "max_tokens": 8192,
       "model_types": [
         "chat",
         "vision"
