@@ -44,7 +44,6 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.crypt import decrypt
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (

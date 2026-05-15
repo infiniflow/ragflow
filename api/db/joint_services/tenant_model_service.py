@@ -255,3 +255,27 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
         return model_config
+
+
+def get_api_key(tenant_id: str, model_name: str):
+    # Parse model_name: {model_name} or {model_name}@{factory_name} or {model_name}@{instance_name}@{factory_name}
+    parts = model_name.split("@")
+    if len(parts) == 1:
+        provider_name = ""
+        instance_name = ""
+    elif len(parts) == 2:
+        provider_name = parts[1]
+        instance_name = "default"
+    else:
+        instance_name = parts[1]
+        provider_name = parts[2]
+
+    if not provider_name:
+        raise LookupError(f"Provider name is required.")
+    provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
+    if not provider_obj:
+        raise LookupError(f"Provider {provider_name} not found.")
+    instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
+    if not instance_obj:
+        raise LookupError(f"Instance {instance_name} not found.")
+    return instance_obj.api_key

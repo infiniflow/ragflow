@@ -26,7 +26,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.db.joint_services.tenant_model_service import (
-    get_tenant_default_model_by_type, get_model_config_from_provider_instance,
+    get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key
 )
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -44,7 +44,6 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from common.constants import LLMType, RetCode, StatusEnum
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
@@ -473,8 +472,6 @@ async def update_chat(chat_id):
         # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
-
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -1106,7 +1103,7 @@ async def session_completion(chat_id_in_arg=""):
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
-            if not await thread_pool_exec(TenantLLMService.get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
+            if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
