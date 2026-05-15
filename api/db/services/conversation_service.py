@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import time
+import logging
 from uuid import uuid4
 from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
@@ -24,6 +25,9 @@ from common.misc_utils import get_uuid
 import json
 
 from rag.prompts.generator import chunks_format
+
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationService(CommonService):
@@ -201,9 +205,23 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
             break
         yield answer
 
-async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, **kwargs):
-    e, dia = DialogService.get_by_id(dialog_id)
-    assert e, "Dialog not found"
+async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, tenant_id=None, **kwargs):
+    if tenant_id:
+        exists, dia = DialogService.get_by_id(dialog_id)
+        if (not exists
+                or getattr(dia, "tenant_id", None) != tenant_id
+                or str(getattr(dia, "status", "")) != StatusEnum.VALID.value):
+            logger.warning(
+                "Dialog lookup failed for tenant-scoped iframe completion: "
+                "tenant_id=%s dialog_id=%s required_status=%s",
+                tenant_id,
+                dialog_id,
+                StatusEnum.VALID.value,
+            )
+            raise AssertionError("Dialog not found")
+    else:
+        e, dia = DialogService.get_by_id(dialog_id)
+        assert e, "Dialog not found"
     if not session_id:
         session_id = get_uuid()
         conv = {
@@ -228,6 +246,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         session_id = session_id
         e, conv = API4ConversationService.get_by_id(session_id)
         assert e, "Session not found!"
+        assert conv.dialog_id == dialog_id, "Session does not belong to this dialog"
 
     if not conv.message:
         conv.message = []

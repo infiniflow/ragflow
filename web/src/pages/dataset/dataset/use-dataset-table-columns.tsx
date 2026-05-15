@@ -26,6 +26,7 @@ type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
   UseRenameDocumentShowType & {
     showLog: (record: IDocumentInfo) => void;
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+    datasetId?: string;
   };
 
 export function useDatasetTableColumns({
@@ -33,6 +34,7 @@ export function useDatasetTableColumns({
   showRenameModal,
   showManageMetadataModal,
   showLog,
+  datasetId,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -169,7 +171,7 @@ export function useDatasetTableColumns({
           <Switch
             checked={row.getValue('status') === '1'}
             onCheckedChange={(e) => {
-              setDocumentStatus({ status: e, documentId: id });
+              setDocumentStatus({ status: e, documentId: id, datasetId });
             }}
           />
         );

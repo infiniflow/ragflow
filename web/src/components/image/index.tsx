@@ -1,4 +1,4 @@
-import { webAPI } from '@/utils/api';
+import { restAPIv1 } from '@/utils/api';
 import classNames from 'classnames';
 import React from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
@@ -13,7 +13,7 @@ const Image = ({ id, t, label, className, ...props }: IImage) => {
   const imageElement = (
     <img
       {...props}
-      src={`${webAPI}/document/image/${id}${t ? `?_t=${t}` : ''}`}
+      src={`${restAPIv1}/documents/images/${id}${t ? `?_t=${t}` : ''}`}
       className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
   );

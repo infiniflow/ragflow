@@ -40,6 +40,13 @@ class _DummyAtomic:
         return False
 
 
+class _StubResponse:
+    def __init__(self, data=None, mimetype=None):
+        self.data = data
+        self.mimetype = mimetype
+        self.headers = {}
+
+
 class _Args(dict):
     def get(self, key, default=None):
         return super().get(key, default)
@@ -111,6 +118,7 @@ def _load_search_api(monkeypatch):
 
     quart_mod = ModuleType("quart")
     quart_mod.request = SimpleNamespace(args=_Args())
+    quart_mod.Response = _StubResponse
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     common_pkg = ModuleType("common")
@@ -201,12 +209,25 @@ def _load_search_api(monkeypatch):
     search_service_mod.SearchService = _SearchService
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
+    dialog_service_mod = ModuleType("api.db.services.dialog_service")
+
+    async def _async_ask(*_args, **_kwargs):
+        if False:
+            yield None
+
+    dialog_service_mod.async_ask = _async_ask
+    monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
+
     user_service_mod = ModuleType("api.db.services.user_service")
 
     class _TenantService:
         @staticmethod
         def get_by_id(_tenant_id):
             return True, SimpleNamespace(id=_tenant_id)
+
+        @staticmethod
+        def get_joined_tenants_by_user_id(_user_id):
+            return [{"tenant_id": "tenant-1"}, {"tenant_id": "team-tenant-2"}]
 
     class _UserTenantService:
         @staticmethod
@@ -474,19 +495,30 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
         module,
         {"keywords": "k", "page": "1", "page_size": "1", "orderby": "create_time", "desc": "true", "owner_ids": ["tenant-1"]},
     )
-    monkeypatch.setattr(
-        module.SearchService,
-        "get_by_tenant_ids",
-        lambda _tenants, _uid, _page, _size, _orderby, _desc, _keywords: (
-            [{"id": "x", "tenant_id": "tenant-1"}, {"id": "y", "tenant_id": "tenant-2"}],
-            2,
-        ),
-    )
+
+    def _get_by_tenant_ids_filtered(tenants, _uid, page, size, _orderby, _desc, _keywords):
+        all_items = [{"id": "x", "tenant_id": "tenant-1"}, {"id": "y", "tenant_id": "tenant-1"}]
+        filtered = [item for item in all_items if item["tenant_id"] in set(tenants)]
+        total = len(filtered)
+        if page and size:
+            filtered = filtered[(page - 1) * size : page * size]
+        return filtered, total
+
+    monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids_filtered)
     res = module.list_searches()
     assert res["code"] == 0
-    assert res["data"]["total"] == 1
+    assert res["data"]["total"] == 2
     assert len(res["data"]["search_apps"]) == 1
-    assert res["data"]["search_apps"][0]["tenant_id"] == "tenant-1"
+
+    # list: unauthorized owner_ids
+    _set_request_args(
+        monkeypatch,
+        module,
+        {"keywords": "", "page": "0", "page_size": "10", "orderby": "create_time", "desc": "true", "owner_ids": ["other-tenant"]},
+    )
+    res = module.list_searches()
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "authorized owner_ids" in res["message"]
 
     # list: exception
     def _raise_list(*_args, **_kwargs):
@@ -525,3 +557,63 @@ def test_list_and_delete_route_matrix_unit(monkeypatch):
     res = module.delete_search(search_id="search-1")
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "rm boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_list_searches_authorized_multi_tenant(monkeypatch):
+    module = _load_search_api(monkeypatch)
+    captured = {}
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {
+            "keywords": "",
+            "page": "1",
+            "page_size": "10",
+            "orderby": "create_time",
+            "desc": "true",
+            "owner_ids": ["tenant-1", "team-tenant-2"],
+        },
+    )
+
+    def _get_by_tenant_ids(owner_ids, user_id, *args, **kwargs):
+        captured["owner_ids"] = owner_ids
+        captured["user_id"] = user_id
+        return (
+            [
+                {"id": "s1", "tenant_id": "tenant-1"},
+                {"id": "s2", "tenant_id": "team-tenant-2"},
+            ],
+            2,
+        )
+
+    monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids)
+    res = module.list_searches()
+    assert res["code"] == 0
+    assert res["data"]["total"] == 2
+    assert {s["id"] for s in res["data"]["search_apps"]} == {"s1", "s2"}
+    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}
+    assert captured["user_id"] == "tenant-1"
+
+
+@pytest.mark.p2
+def test_list_searches_defaults_to_authorized_owner_ids_when_omitted(monkeypatch):
+    module = _load_search_api(monkeypatch)
+    captured = {}
+
+    _set_request_args(
+        monkeypatch,
+        module,
+        {"keywords": "", "page": "1", "page_size": "10", "orderby": "create_time", "desc": "true"},
+    )
+
+    def _get_by_tenant_ids(owner_ids, *_args, **_kwargs):
+        captured["owner_ids"] = owner_ids
+        return ([], 0)
+
+    monkeypatch.setattr(module.SearchService, "get_by_tenant_ids", _get_by_tenant_ids)
+    res = module.list_searches()
+
+    assert res["code"] == 0
+    assert set(captured["owner_ids"]) == {"tenant-1", "team-tenant-2"}

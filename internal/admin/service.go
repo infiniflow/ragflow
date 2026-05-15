@@ -30,12 +30,11 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/entity"
-	"ragflow/internal/logger"
-
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -100,6 +99,37 @@ func (s *Service) Logout(user interface{}) error {
 		return s.userDAO.UpdateAccessToken(u, invalidToken)
 	}
 	return nil
+}
+
+// ListTasks
+func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+
+	tasks, err := s.taskDAO.GetAllTasks()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for _, task := range tasks {
+		// task.ChunkIDs is a string, delimiter is space, count the word count
+		ChunkCount := strings.Count(*task.ChunkIDs, " ")
+		result = append(result, map[string]interface{}{
+			"id":          task.ID,
+			"task_type":   task.TaskType,
+			"document_id": task.DocID,
+			"chunk_count": ChunkCount,
+			"from_page":   task.FromPage,
+			"to_page":     task.ToPage,
+			"priority":    task.Priority,
+			"duration":    task.ProcessDuration,
+			"progress":    task.Progress,
+			//"message":     *task.ProgressMsg,
+			"retry_count": task.RetryCount,
+			"digest":      task.Digest,
+		})
+	}
+
+	return result, nil
 }
 
 // GetUserByToken get user by access token
@@ -183,9 +213,6 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	loginChannel := "password"
 	isSuperuser := role == "admin"
 
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-
 	user := &entity.User{
 		ID:              userID,
 		AccessToken:     &accessToken,
@@ -198,12 +225,6 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		IsAnonymous:     "0",
 		LoginChannel:    &loginChannel,
 		IsSuperuser:     &isSuperuser,
-		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
-		},
 	}
 
 	// Start transaction for creating user and related data
@@ -215,7 +236,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	// Rollback helper function
 	rollbackTx := func() {
 		if rbErr := tx.Rollback(); rbErr.Error != nil {
-			logger.Error("failed to rollback transaction", rbErr.Error)
+			common.Error("failed to rollback transaction", rbErr.Error)
 		}
 	}
 
@@ -258,12 +279,6 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
-		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
-		},
 	}
 	if err := tx.Create(tenant).Error; err != nil {
 		rollbackTx()
@@ -279,12 +294,6 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
-		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
-		},
 	}
 	if err := tx.Create(userTenant).Error; err != nil {
 		rollbackTx()
@@ -294,11 +303,11 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	// 4. Create tenant LLM configurations
 	tenantLLMs, err := s.getInitTenantLLM(userID)
 	if err != nil {
-		logger.Warn("failed to get init tenant LLM configs", zap.Error(err))
+		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
 		// Continue without LLM configs - not a critical error
 	} else if len(tenantLLMs) > 0 {
 		if err := tx.Create(&tenantLLMs).Error; err != nil {
-			logger.Warn("failed to create tenant LLM configs", zap.Error(err))
+			common.Warn("failed to create tenant LLM configs", zap.Error(err))
 			// Continue without LLM configs - not a critical error
 		}
 	}
@@ -315,12 +324,6 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		Type:      "folder",
 		Size:      0,
 		Location:  &fileLocation,
-		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
-		},
 	}
 	if err := tx.Create(file).Error; err != nil {
 		rollbackTx()
@@ -332,7 +335,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	logger.Info("Create user success with tenant and related data", zap.String("username", username))
+	common.Info("Create user success with tenant and related data", zap.String("username", username))
 
 	return map[string]interface{}{
 		"id":           user.ID,
@@ -381,7 +384,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 	for _, factoryConfig := range uniqueFactories {
 		llms, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
 		if err != nil {
-			logger.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
+			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
 		}
 
@@ -440,9 +443,6 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 			llmName := llm.LLMName
 			modelType := llm.ModelType
-			now := time.Now().Unix()
-			nowDate := time.Now().Truncate(time.Second)
-
 			tenantLLM := &entity.TenantLLM{
 				TenantID:   userID,
 				LLMFactory: factoryConfig.Factory,
@@ -452,12 +452,6 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 				APIBase:    &apiBase,
 				MaxTokens:  maxTokens,
 				Status:     "1",
-				BaseModel: entity.BaseModel{
-					CreateTime: &now,
-					CreateDate: &nowDate,
-					UpdateTime: &now,
-					UpdateDate: &nowDate,
-				},
 			}
 			tenantLLMs = append(tenantLLMs, tenantLLM)
 		}
@@ -544,7 +538,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Get user-tenant relations
 	tenants, err := s.userTenantDAO.GetByUserIDAll(user.ID)
 	if err != nil {
-		logger.Warn("failed to get user-tenant relations", zap.Error(err))
+		common.Warn("failed to get user-tenant relations", zap.Error(err))
 	}
 
 	// Find owned tenant (role = "owner")
@@ -565,7 +559,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Rollback helper function
 	rollbackTx := func() {
 		if rbErr := tx.Rollback(); rbErr.Error != nil {
-			logger.Error("failed to rollback transaction", rbErr.Error)
+			common.Error("failed to rollback transaction", rbErr.Error)
 		}
 	}
 
@@ -575,14 +569,14 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 		// 1. Get knowledge base IDs
 		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
 		if err != nil {
-			logger.Warn("failed to get knowledge base IDs", zap.Error(err))
+			common.Warn("failed to get knowledge base IDs", zap.Error(err))
 		}
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
 			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
 			if err != nil {
-				logger.Warn("failed to get document IDs", zap.Error(err))
+				common.Warn("failed to get document IDs", zap.Error(err))
 			}
 
 			// 3. Delete tasks by document IDs
@@ -592,58 +586,58 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 					docIDList[i] = d["id"]
 				}
 				if delErr := tx.Unscoped().Where("doc_id IN ?", docIDList).Delete(&entity.Task{}); delErr.Error != nil {
-					logger.Warn("failed to delete tasks", zap.Error(delErr.Error))
+					common.Warn("failed to delete tasks", zap.Error(delErr.Error))
 				}
 			}
 
 			// 4. Delete documents
 			if delErr := tx.Unscoped().Where("kb_id IN ?", kbIDs).Delete(&entity.Document{}); delErr.Error != nil {
-				logger.Warn("failed to delete documents", zap.Error(delErr.Error))
+				common.Warn("failed to delete documents", zap.Error(delErr.Error))
 			}
 
 			// 5. Delete knowledge bases
 			if delErr := tx.Unscoped().Where("id IN ?", kbIDs).Delete(&entity.Knowledgebase{}); delErr.Error != nil {
-				logger.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
+				common.Warn("failed to delete knowledge bases", zap.Error(delErr.Error))
 			}
 		}
 
 		// 6. Delete files
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.File{}); delErr.Error != nil {
-			logger.Warn("failed to delete files", zap.Error(delErr.Error))
+			common.Warn("failed to delete files", zap.Error(delErr.Error))
 		}
 
 		// 7. Delete user canvas (agents)
 		if delErr := tx.Unscoped().Where("user_id = ?", ownedTenantID).Delete(&entity.UserCanvas{}); delErr.Error != nil {
-			logger.Warn("failed to delete user canvas", zap.Error(delErr.Error))
+			common.Warn("failed to delete user canvas", zap.Error(delErr.Error))
 		}
 
 		// 8. Get dialog IDs
 		var dialogIDs []string
 		if pluckErr := tx.Model(&entity.Chat{}).Where("tenant_id = ?", ownedTenantID).Pluck("id", &dialogIDs); pluckErr.Error != nil {
-			logger.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
+			common.Warn("failed to get dialog IDs", zap.Error(pluckErr.Error))
 		}
 
 		// 9. Delete chat sessions
 		if len(dialogIDs) > 0 {
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{}); delErr.Error != nil {
-				logger.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
+				common.Warn("failed to delete chat sessions", zap.Error(delErr.Error))
 			}
 		}
 
 		// 10. Delete chats/dialogs
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.Chat{}); delErr.Error != nil {
-			logger.Warn("failed to delete chats", zap.Error(delErr.Error))
+			common.Warn("failed to delete chats", zap.Error(delErr.Error))
 		}
 
 		// 11. Delete API tokens
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.APIToken{}); delErr.Error != nil {
-			logger.Warn("failed to delete API tokens", zap.Error(delErr.Error))
+			common.Warn("failed to delete API tokens", zap.Error(delErr.Error))
 		}
 
 		// 12. Delete API4Conversations
 		if len(dialogIDs) > 0 {
 			if delErr := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{}); delErr.Error != nil {
-				logger.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
+				common.Warn("failed to delete API4Conversations", zap.Error(delErr.Error))
 			}
 		}
 
@@ -661,7 +655,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 		// 13. Delete tenant LLM configurations
 		if delErr := tx.Unscoped().Where("tenant_id = ?", ownedTenantID).Delete(&entity.TenantLLM{}); delErr.Error != nil {
-			logger.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
+			common.Warn("failed to delete tenant LLM", zap.Error(delErr.Error))
 		}
 
 		var tenantCount int64
@@ -669,7 +663,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 		result.TenantCount = int(tenantCount)
 		// 14. Delete tenant
 		if delErr := tx.Unscoped().Where("id = ?", ownedTenantID).Delete(&entity.Tenant{}); delErr.Error != nil {
-			logger.Warn("failed to delete tenant", zap.Error(delErr.Error))
+			common.Warn("failed to delete tenant", zap.Error(delErr.Error))
 		}
 		result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d tenant.", result.TenantCount))
 	}
@@ -680,7 +674,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 	// 15. Delete user-tenant relations
 	if delErr := tx.Unscoped().Where("user_id = ?", user.ID).Delete(&entity.UserTenant{}); delErr.Error != nil {
-		logger.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
+		common.Warn("failed to delete user-tenant relations", zap.Error(delErr.Error))
 	}
 	result.DeletedDetails = append(result.DeletedDetails, fmt.Sprintf("- Deleted %d user-tenant records.", result.UserTenantCount))
 
@@ -699,7 +693,7 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 
 	result.DeletedDetails = append(result.DeletedDetails, "Delete done!")
 
-	logger.Info("Delete user success with all related data", zap.String("username", username))
+	common.Info("Delete user success with all related data", zap.String("username", username))
 
 	return result, nil
 }
@@ -738,8 +732,6 @@ func (s *Service) ChangePassword(username, newPassword string) error {
 	}
 
 	user.Password = &hashedPassword
-	now := time.Now().Unix()
-	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -777,8 +769,6 @@ func (s *Service) UpdateUserActivateStatus(username string, isActive bool) error
 	}
 
 	user.IsActive = targetStatus
-	now := time.Now().Unix()
-	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -811,8 +801,6 @@ func (s *Service) GrantAdmin(username string) error {
 
 	isSuperuser := true
 	user.IsSuperuser = &isSuperuser
-	now := time.Now().Unix()
-	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -845,8 +833,6 @@ func (s *Service) RevokeAdmin(username string) error {
 
 	isSuperuser := false
 	user.IsSuperuser = &isSuperuser
-	now := time.Now().Unix()
-	user.UpdateTime = &now
 
 	if err := s.userDAO.Update(user); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
@@ -929,16 +915,12 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 	// 3. Generate API token
 	key := utility.GenerateAPIToken()
 	beta := utility.GenerateBetaAPIToken(key)
-	now := time.Now()
-	nowUnix := now.Unix()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
 		Token:    key,
 		Beta:     &beta,
 	}
-	apiToken.CreateTime = &nowUnix
-	apiToken.CreateDate = &now
 
 	// 4. Save API token
 	if err := s.apiTokenDAO.Create(apiToken); err != nil {
@@ -1700,8 +1682,6 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
-		now := time.Now().Unix()
-		nowDate := time.Now().Truncate(time.Second)
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
@@ -1728,12 +1708,6 @@ func (s *Service) InitDefaultAdmin() error {
 			IsAnonymous:     "0",
 			LoginChannel:    &loginChannel,
 			IsSuperuser:     &isSuperuser,
-			BaseModel: entity.BaseModel{
-				CreateTime: &now,
-				CreateDate: &nowDate,
-				UpdateTime: &now,
-				UpdateDate: &nowDate,
-			},
 		}
 
 		if err := dao.DB.Create(user).Error; err != nil {
@@ -1776,8 +1750,6 @@ func (s *Service) InitDefaultAdmin() error {
 
 // addTenantForAdmin add tenant for admin user
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
 	status := "1"
 	role := "owner"
 	tenantName := nickname + "'s Kingdom"
@@ -1785,12 +1757,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	tenant := &entity.Tenant{
 		ID:   userID,
 		Name: &tenantName,
-		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
-		},
 	}
 
 	if err := dao.DB.Create(tenant).Error; err != nil {
@@ -1803,12 +1769,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		InvitedBy: userID,
 		Role:      role,
 		Status:    &status,
-		BaseModel: entity.BaseModel{
-			CreateTime: &now,
-			CreateDate: &nowDate,
-			UpdateTime: &now,
-			UpdateDate: &nowDate,
-		},
 	}
 
 	return dao.DB.Create(userTenant).Error

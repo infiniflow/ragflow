@@ -29,6 +29,7 @@ import {
 import { useParams, useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
+import { MessageWaitSuffix } from '../constant/chat';
 import { AgentChatLogContext } from '../context';
 import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
 import {
@@ -39,6 +40,7 @@ import { useStopMessage } from '../hooks/use-stop-message';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
+import { shouldSplitMessage } from '../utils/chat';
 
 export function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
@@ -240,7 +242,7 @@ export const useSendAgentMessage = ({
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
-    useSendMessageBySSE(url || api.runCanvas);
+    useSendMessageBySSE(url || api.agentChatCompletion);
   const firstAnswer = answerList[0];
   const messageId = useMemo(() => {
     return firstAnswer?.message_id;
@@ -298,13 +300,12 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = {
-        id: agentId,
-      };
+      const params: Record<string, unknown> = { agent_id: agentId };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
+      params['openai-compatible'] = false;
       if (typeof message.content === 'string') {
         const query = inputs;
 
@@ -316,7 +317,10 @@ export const useSendAgentMessage = ({
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId || exploreSessionId;
+        // Prefer the session selected by the outer page state.
+        // The hook keeps its own session cache for streamed replies, but that cache
+        // can lag behind when the user switches sessions in Explore.
+        params.session_id = exploreSessionId || sessionId;
         if (releaseMode) {
           params.release = releaseMode;
         }
@@ -361,7 +365,7 @@ export const useSendAgentMessage = ({
   );
 
   const sendFormMessage = useCallback(
-    async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
+    async (body: { inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
           .map(([, val]) => `${val.name}: ${val.value}`)
@@ -370,12 +374,21 @@ export const useSendAgentMessage = ({
       });
       await send({
         ...body,
+        ...(isShared ? {} : { agent_id: agentId }),
         session_id: sessionId,
         ...(releaseMode ? { release: releaseMode } : {}),
       });
       refetch?.();
     },
-    [addNewestOneQuestion, refetch, releaseMode, send, sessionId],
+    [
+      addNewestOneQuestion,
+      agentId,
+      isShared,
+      refetch,
+      releaseMode,
+      send,
+      sessionId,
+    ],
   );
 
   // reset session
@@ -448,14 +461,31 @@ export const useSendAgentMessage = ({
     const answer = content || getLatestError(answerList);
 
     if (answerList.length > 0) {
-      addNewestOneAnswer({
-        answer: answer ?? '',
-        audio_binary: audio_binary,
-        attachment: attachment as IAttachment,
-        downloads,
-        id: id,
-        ...inputAnswer,
-      });
+      const shouldSplit = shouldSplitMessage(answerList, content);
+
+      if (shouldSplit) {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+        });
+        addNewestOneAnswer({
+          answer: '',
+          ...inputAnswer,
+          id: `${id}${MessageWaitSuffix}`,
+        });
+      } else {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+          ...inputAnswer,
+        });
+      }
     }
   }, [answerList, addNewestOneAnswer]);
 

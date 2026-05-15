@@ -27,7 +27,6 @@ import (
 
 	"ragflow/internal/utility"
 	"strings"
-	"time"
 )
 
 // KnowledgebaseService service class for managing dataset operations
@@ -212,11 +211,6 @@ func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (ma
 	if req.ParserConfig != nil {
 		updates["parser_config"] = req.ParserConfig
 	}
-
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-	updates["update_time"] = now
-	updates["update_date"] = nowDate
 
 	// Update in database
 	if err := s.kbDAO.UpdateByID(req.KBID, updates); err != nil {

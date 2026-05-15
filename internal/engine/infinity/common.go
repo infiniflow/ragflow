@@ -21,10 +21,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
-	"ragflow/internal/logger"
 )
 
 // Delete deletes rows from either a dataset table or metadata table.
@@ -45,7 +45,7 @@ func (e *infinityEngine) Delete(ctx context.Context, condition map[string]interf
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
-		logger.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
+		common.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
 		return 0, nil
 	}
 
@@ -127,10 +127,10 @@ func (e *infinityEngine) TableExists(ctx context.Context, indexName string) (boo
 // fieldInfo represents a field in the infinity mapping schema
 type fieldInfo struct {
 	Type      string      `json:"type"`
-	Default  interface{} `json:"default"`
-	Analyzer interface{} `json:"analyzer"`  // string or []string
+	Default   interface{} `json:"default"`
+	Analyzer  interface{} `json:"analyzer"`   // string or []string
 	IndexType interface{} `json:"index_type"` // string or map
-	Comment  string      `json:"comment"`
+	Comment   string      `json:"comment"`
 }
 
 // orderedFields preserves the order of fields as defined in JSON
@@ -176,14 +176,29 @@ func (o *orderedFields) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// existsCondition builds a NOT EXISTS or field!='' condition
+// fieldKeyword checks if field is a keyword field
+func fieldKeyword(fieldName string) bool {
+	if fieldName == "source_id" {
+		return true
+	}
+	if strings.HasSuffix(fieldName, "_kwd") &&
+		fieldName != "knowledge_graph_kwd" &&
+		fieldName != "docnm_kwd" &&
+		fieldName != "important_kwd" &&
+		fieldName != "question_kwd" {
+		return true
+	}
+	return false
+}
+
+// existsCondition builds a NOT EXISTS or field!=" condition
 func existsCondition(field string, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
 }) string {
 	col, colOk := tableColumns[field]
 	if !colOk {
-		logger.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
+		common.Warn(fmt.Sprintf("Column '%s' not found in table columns", field))
 		return fmt.Sprintf("%s!=null", field)
 	}
 	if strings.Contains(strings.ToLower(col.Type), "char") {
@@ -228,20 +243,29 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 
 		// Handle keyword fields -> filter_fulltext with converted field name
 		if fieldKeyword(k) {
-			if listVal, ok := v.([]interface{}); ok {
-				var orConds []string
-				for _, item := range listVal {
-					if strItem, ok := item.(string); ok {
-						strItem = strings.ReplaceAll(strItem, "'", "''")
-						orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strItem))
-					}
+			var orConds []string
+			addFullText := func(item string) {
+				item = strings.ReplaceAll(item, "'", "''")
+				orConds = append(orConds, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), item))
+			}
+
+			switch val := v.(type) {
+			case []string:
+				for _, item := range val {
+					addFullText(item)
 				}
-				if len(orConds) > 0 {
-					conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
+			case []interface{}:
+				for _, item := range val {
+					addFullText(fmt.Sprintf("%v", item))
 				}
-			} else if strVal, ok := v.(string); ok {
-				strVal = strings.ReplaceAll(strVal, "'", "''")
-				conditions = append(conditions, fmt.Sprintf("filter_fulltext('%s', '%s')", convertMatchingField(k), strVal))
+			case string:
+				addFullText(val)
+			default:
+				addFullText(fmt.Sprintf("%v", val))
+			}
+
+			if len(orConds) > 0 {
+				conditions = append(conditions, "("+strings.Join(orConds, " OR ")+")")
 			}
 			continue
 		}
@@ -286,4 +310,28 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 		return "1=1"
 	}
 	return strings.Join(conditions, " AND ")
+}
+
+// columnExists checks if a column exists in the table
+func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) (bool, error) {
+	colsResp, err := table.ShowColumns()
+	if err != nil {
+		return false, err
+	}
+
+	result, ok := colsResp.(*infinity.QueryResult)
+	if !ok {
+		return false, fmt.Errorf("unexpected response type: %T", colsResp)
+	}
+
+	// ShowColumns returns a result set where Data contains arrays of column values
+	if nameArr, ok := result.Data["name"]; ok {
+		for i := 0; i < len(nameArr); i++ {
+			colName, _ := nameArr[i].(string)
+			if colName == columnName {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
