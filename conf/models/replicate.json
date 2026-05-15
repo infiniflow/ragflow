@@ -1,0 +1,27 @@
+{
+  "name": "Replicate",
+  "url": {
+    "default": "https://api.replicate.com/v1"
+  },
+  "url_suffix": {
+    "chat": "predictions",
+    "models": "models"
+  },
+  "class": "replicate",
+  "models": [
+    {
+      "name": "meta/meta-llama-3-70b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/meta-llama-3-8b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
