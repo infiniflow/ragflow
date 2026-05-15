@@ -20,6 +20,7 @@ import {
 } from '../constant';
 import {
   IBuiltInMetadataItem,
+  IMetaDataJsonSchemaProperty,
   IMetaDataReturnJSONSettings,
   IMetaDataReturnJSONType,
   IMetaDataReturnType,
@@ -29,6 +30,29 @@ import {
   ShowManageMetadataModalProps,
   UpdateOperation,
 } from '../interface';
+
+const normalizeMetadataValueType = (type?: string): MetadataValueType => {
+  if (type === 'array') return metadataValueTypeEnum.list;
+  if (
+    type === metadataValueTypeEnum.string ||
+    type === metadataValueTypeEnum.list ||
+    type === metadataValueTypeEnum.time ||
+    type === metadataValueTypeEnum.number
+  ) {
+    return type;
+  }
+  return DEFAULT_VALUE_TYPE;
+};
+
+const getValueTypeFromJsonSchemaProperty = (
+  property: IMetaDataJsonSchemaProperty,
+): MetadataValueType => {
+  if (property.type === 'array') return metadataValueTypeEnum.list;
+  if (property.format === 'date-time' || property.format === 'date') {
+    return metadataValueTypeEnum.time;
+  }
+  return normalizeMetadataValueType(property.type);
+};
 
 export const util = {
   changeToMetaDataTableData(data: IMetaDataReturnType): IMetaDataTableData[] {
@@ -116,13 +140,13 @@ export const util = {
           description: item.description,
           values: item.enum || [],
           restrictDefinedValues: !!item.enum?.length,
-          valueType: DEFAULT_VALUE_TYPE,
+          valueType: normalizeMetadataValueType(item.type),
         } as IMetaDataTableData;
       });
     }
     const properties = data.properties || {};
     return Object.entries(properties).map(([key, property]) => {
-      const valueType = 'string';
+      const valueType = getValueTypeFromJsonSchemaProperty(property);
       const values = property.enum || property.items?.enum || [];
       return {
         field: key,

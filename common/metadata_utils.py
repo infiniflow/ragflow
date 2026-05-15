@@ -19,6 +19,22 @@ from typing import Any, Callable, Dict
 
 import json_repair
 
+SUPPORTED_METADATA_TYPES = {"string", "list", "time", "number"}
+
+
+def _metadata_type_to_json_schema(field_type: str | None) -> Dict[str, Any]:
+    """Map UI auto-metadata types to JSON Schema fragments."""
+    if field_type not in SUPPORTED_METADATA_TYPES:
+        field_type = "string"
+    if field_type == "list":
+        return {"type": "array", "items": {"type": "string"}}
+    if field_type == "time":
+        return {"type": "string", "format": "date-time"}
+    if field_type == "number":
+        return {"type": "number"}
+    return {"type": "string"}
+
+
 def convert_conditions(metadata_condition):
     if metadata_condition is None:
         metadata_condition = {}
@@ -300,6 +316,10 @@ def dedupe_list(values: list) -> list:
     return deduped
 
 
+def _is_supported_metadata_value(value) -> bool:
+    return isinstance(value, (str, int, float))
+
+
 def update_metadata_to(metadata, meta):
     if not meta:
         return metadata
@@ -314,11 +334,11 @@ def update_metadata_to(metadata, meta):
 
     for k, v in meta.items():
         if isinstance(v, list):
-            v = [vv for vv in v if isinstance(vv, str)]
+            v = [vv for vv in v if _is_supported_metadata_value(vv)]
             if not v:
                 continue
             v = dedupe_list(v)
-        if not isinstance(v, list) and not isinstance(v, str):
+        if not isinstance(v, list) and not _is_supported_metadata_value(v):
             continue
         if k not in metadata:
             metadata[k] = v
@@ -346,11 +366,16 @@ def metadata_schema(metadata: dict|list|None) -> Dict[str, Any]:
             continue
 
         prop_schema = {
-            "description": item.get("description", "")
+            **_metadata_type_to_json_schema(item.get("type")),
+            "description": item.get("description", ""),
         }
         if "enum" in item and item["enum"]:
-            prop_schema["enum"] = item["enum"]
-            prop_schema["type"] = "string"
+            if prop_schema.get("type") == "array":
+                prop_schema.setdefault("items", {"type": "string"})["enum"] = item[
+                    "enum"
+                ]
+            else:
+                prop_schema["enum"] = item["enum"]
 
         properties[key] = prop_schema
 
@@ -382,6 +407,8 @@ def _is_metadata_list(obj: list) -> bool:
             return False
         if "enum" in item and not isinstance(item["enum"], list):
             return False
+        if "type" in item and item["type"] not in SUPPORTED_METADATA_TYPES:
+            return False
         if "description" in item and not isinstance(item["description"], str):
             return False
         if "descriptions" in item and not isinstance(item["descriptions"], str):
@@ -398,6 +425,7 @@ def turn2jsonschema(obj: dict | list) -> Dict[str, Any]:
             description = item.get("description", item.get("descriptions", ""))
             normalized_item = {
                 "key": item.get("key"),
+                "type": item.get("type", "string"),
                 "description": description,
             }
             if "enum" in item:
