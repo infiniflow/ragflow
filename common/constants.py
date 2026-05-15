@@ -16,7 +16,7 @@
 
 import os
 from enum import Enum, IntEnum
-from strenum import StrEnum
+from enum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"
@@ -117,6 +117,7 @@ class FileSource(StrEnum):
     RSS = "rss"
     S3 = "s3"
     NOTION = "notion"
+    REST_API = "rest_api"
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"

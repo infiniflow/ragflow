@@ -27,6 +27,32 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 
 ---
 
+## Deprecated API Aliases
+
+The following v0.24.0 REST API paths are deprecated. They remain available through the backward compatibility layer, but new integrations should use the replacement endpoints.
+
+| Deprecated endpoint | Replacement endpoint |
+|---------------------|----------------------|
+| **POST** `/api/v1/chats_openai/{chat_id}/chat/completions` | **POST** `/api/v1/openai/{chat_id}/chat/completions` |
+| **PUT** `/api/v1/chats/{chat_id}/sessions/{session_id}` | **PATCH** `/api/v1/chats/{chat_id}/sessions/{session_id}` |
+| **POST** `/api/v1/chats/{chat_id}/completions` | **POST** `/api/v1/chat/completions` |
+| **POST** `/api/v1/sessions/related_questions` | **POST** `/api/v1/chat/recommandation` |
+| **PUT** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` | **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` |
+| **GET** `/v1/system/healthz` | **GET** `/api/v1/system/healthz` |
+| **POST** `/api/v1/file/upload` | **POST** `/api/v1/files` |
+| **POST** `/api/v1/file/create` | **POST** `/api/v1/files` |
+| **GET** `/api/v1/file/list` | **GET** `/api/v1/files` |
+| **GET** `/api/v1/file/root_folder` | **GET** `/api/v1/files` |
+| **GET** `/api/v1/file/parent_folder` | **GET** `/api/v1/files/{file_id}/parent` |
+| **GET** `/api/v1/file/all_parent_folder` | **GET** `/api/v1/files/{file_id}/ancestors` |
+| **POST** `/api/v1/file/rm` | **DELETE** `/api/v1/files` |
+| **POST** `/api/v1/file/rename` | **POST** `/api/v1/files/move` |
+| **GET** `/api/v1/file/get/{file_id}` | **GET** `/api/v1/files/{file_id}` |
+| **POST** `/api/v1/file/mv` | **POST** `/api/v1/files/move` |
+| **POST** `/api/v1/file/convert` | **POST** `/api/v1/files/link-to-datasets` |
+
+---
+
 ## OpenAI-Compatible API
 
 ---

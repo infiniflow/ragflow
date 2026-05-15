@@ -370,8 +370,6 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 	}
 
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
-	timestamp := time.Now().UnixMilli()
-
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
 	newID := common.GenerateUUID()
@@ -402,9 +400,6 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 			memory.TenantLLMID = &llmID
 		}
 	}
-	memory.CreateTime = &timestamp
-	memory.UpdateTime = &timestamp
-
 	if err := s.memoryDAO.Create(memory); err != nil {
 		return nil, errors.New("could not create new memory")
 	}

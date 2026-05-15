@@ -7,7 +7,8 @@
     "chat": "chat/completions",
     "models": "models",
     "embedding": "embeddings",
-    "rerank": "rerank"
+    "rerank": "rerank",
+    "ocr": "ocr/paddleocr"
   },
   "class": "baidu",
   "models": [
@@ -73,6 +74,13 @@
       "max_tokens": 32768,
       "model_types": [
         "rerank"
+      ]
+    },
+    {
+      "name": "paddleocr-vl-0.9b",
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
       ]
     }
   ]

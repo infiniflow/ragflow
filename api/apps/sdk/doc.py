@@ -16,9 +16,10 @@
 import logging
 from io import BytesIO
 
-from quart import request, send_file
+from quart import send_file
 
-from api.db.db_models import APIToken, Document, Task
+from api.apps import login_required
+from api.db.db_models import Document, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
@@ -51,8 +52,8 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
-@token_required
-async def download(tenant_id, dataset_id, document_id):
+@login_required
+async def download(dataset_id, document_id):
     """
     Download a document from a dataset.
     ---
@@ -90,8 +91,6 @@ async def download(tenant_id, dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -110,36 +109,52 @@ async def download(tenant_id, dataset_id, document_id):
     )
 
 
-@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
-async def download_doc(document_id):
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
-        return get_error_data_result(message="Authorization is not valid!")
-    token = token[1]
-    logging.info("Beta API token lookup attempted for document download")
-    objs = APIToken.query(beta=token)
-    if not objs:
-        logging.warning("Beta API token lookup failed for document download: invalid API key")
-        return get_error_data_result(message='Authentication error: API key is invalid!"')
-    if len(objs) > 1:
-        logging.error("Beta API token lookup is ambiguous for document download: matches=%s", len(objs))
-        return get_error_data_result(message="Authentication error: API key configuration is ambiguous.")
-    tenant_id = objs[0].tenant_id
-    logging.info("Beta API token authorized for document download: tenant_id=%s", tenant_id)
+DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
+DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
 
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def download_document(document_id):
+    """
+    Download a document.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
-    if not KnowledgebaseService.query(id=doc[0].kb_id, tenant_id=tenant_id):
-        logging.warning(
-            "cross-tenant access denied for document download: tenant_id=%s kb_id=%s document_id=%s",
-            tenant_id,
-            doc[0].kb_id,
-            document_id,
-        )
-        return get_error_data_result(message="You do not have access to this document.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
@@ -153,11 +168,6 @@ async def download_doc(document_id):
         attachment_filename=doc[0].name,
         mimetype="application/octet-stream",  # Set a default MIME type
     )
-
-
-DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
-DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
-
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
@@ -492,7 +502,12 @@ async def retrieval_test(tenant_id):
 
         rerank_mdl = None
         if req.get("tenant_rerank_id"):
-            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"])
+            allowed_rerank_tenant_ids = {tenant_id, *[dataset.tenant_id for dataset in kbs]}
+            rerank_model_config = get_model_config_by_id(
+                req["tenant_rerank_id"],
+                allowed_tenant_ids=allowed_rerank_tenant_ids,
+                requester_tenant_id=tenant_id,
+            )
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
         elif req.get("rerank_id"):
             rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])

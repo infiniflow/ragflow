@@ -552,6 +552,34 @@ func (n NvidiaModel) Rerank(modelName *string, query string, documents []string,
 	return &rerankResponse, nil
 }
 
+// TranscribeAudio transcribe audio
+func (n *NvidiaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (z *NvidiaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (n *NvidiaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (z *NvidiaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *NvidiaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
 // ListModels calls /v1/models on the configured NVIDIA NIM base URL
 // and returns the list of available model ids. The endpoint is
 // OpenAI-compatible, so the parsing follows the same shape used by
@@ -633,4 +661,12 @@ func (n NvidiaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 func (n NvidiaModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := n.ListModels(apiConfig)
 	return err
+}
+
+func (z *NvidiaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *NvidiaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

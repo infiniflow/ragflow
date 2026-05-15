@@ -73,6 +73,26 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCoHereModel(baseURL, urlSuffix), nil
 	case "fishaudio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
+	case "mistral":
+		return NewMistralModel(baseURL, urlSuffix), nil
+	case "upstage":
+		return NewUpstageModel(baseURL, urlSuffix), nil
+	case "stepfun":
+		return NewStepFunModel(baseURL, urlSuffix), nil
+	case "baichuan":
+		return NewBaichuanModel(baseURL, urlSuffix), nil
+	case "jina":
+		return NewJinaModel(baseURL, urlSuffix), nil
+	case "localai":
+		return NewLocalAIModel(baseURL, urlSuffix), nil
+	case "longcat":
+		return NewLongCatModel(baseURL, urlSuffix), nil
+	case "novita":
+		return NewNovitaModel(baseURL, urlSuffix), nil
+	case "voyage":
+		return NewVoyageModel(baseURL, urlSuffix), nil
+	case "paddleocr":
+		return NewPaddleOCRModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

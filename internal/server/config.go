@@ -723,6 +723,23 @@ func FromConfigFile(configPath string) error {
 			}
 		}
 
+		if v.IsSet("minio_0") {
+			minioConfig := v.Sub("minio_0")
+			if minioConfig != nil {
+				if globalConfig.StorageEngine.Minio == nil {
+					globalConfig.StorageEngine.Minio = &MinioConfig{
+						Host:       minioConfig.GetString("host"),
+						User:       minioConfig.GetString("user"),
+						Password:   minioConfig.GetString("password"),
+						Secure:     minioConfig.GetBool("secure"),
+						PrefixPath: minioConfig.GetString("prefix_path"),
+						Verify:     minioConfig.GetBool("verify"),
+						Bucket:     minioConfig.GetString("bucket"),
+					}
+				}
+			}
+		}
+
 		if v.IsSet("s3") {
 			s3Config := v.Sub("s3")
 			if s3Config != nil {

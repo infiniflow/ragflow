@@ -30,7 +30,7 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService *service.DatasetsService
+	datasetsService *service.DatasetService
 }
 
 type listDatasetsExt struct {
@@ -40,7 +40,7 @@ type listDatasetsExt struct {
 }
 
 // NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetsService) *DatasetsHandler {
+func NewDatasetsHandler(datasetsService *service.DatasetService) *DatasetsHandler {
 	return &DatasetsHandler{datasetsService: datasetsService}
 }
 
@@ -131,6 +131,27 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	}
 
 	result, code, err := h.datasetsService.CreateDataset(&req, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
+// GetDataset handles GET /api/v1/datasets/:dataset_id.
+func (h *DatasetsHandler) GetDataset(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	result, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
