@@ -756,13 +756,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     idx_nm = index_name(tenant_ids[0])
                     for i, ck in enumerate(kbinfos["chunks"]):
                         cid = ck.get("chunk_id")
-                        if cid:
-                            data = retriever.dataStore.get(cid, idx_nm, [ck.get("kb_id")])
-                            if data:
-                                for k in data:
-                                    if k.endswith("_vec"):
-                                        kbinfos["chunks"][i]["vector"] = data[k]
-                                        break
+                        if not cid:
+                            continue
+                        data = retriever.dataStore.get(cid, idx_nm, [ck.get("kb_id")])
+                        if not data:
+                            continue
+                        for k in data:
+                            if k.endswith("_vec"):
+                                kbinfos["chunks"][i]["vector"] = data[k]
+                                break
                     chunk_v = [ck["vector"] for ck in kbinfos["chunks"]]
                 answer, idx = retriever.insert_citations(
                     answer,
@@ -1558,13 +1560,15 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             idx_nm = index_name(tenant_ids[0])
             for i, ck in enumerate(kbinfos["chunks"]):
                 cid = ck.get("chunk_id")
-                if cid:
-                    data = retriever.dataStore.get(cid, idx_nm, [ck.get("kb_id")])
-                    if data:
-                        for k in data:
-                            if k.endswith("_vec"):
-                                kbinfos["chunks"][i]["vector"] = data[k]
-                                break
+                if not cid:
+                    continue
+                data = retriever.dataStore.get(cid, idx_nm, [ck.get("kb_id")])
+                if not data:
+                    continue
+                for k in data:
+                    if k.endswith("_vec"):
+                        kbinfos["chunks"][i]["vector"] = data[k]
+                        break
             chunk_v = [ck["vector"] for ck in kbinfos["chunks"]]
         answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], chunk_v, embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
