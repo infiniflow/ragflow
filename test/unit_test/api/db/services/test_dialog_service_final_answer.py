@@ -310,6 +310,10 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
 
     # Stub out the heavy service/model calls
     monkeypatch.setattr(
+        dialog_service, "get_model_type_by_name",
+        lambda _tid, _llm_id: "chat"
+    )
+    monkeypatch.setattr(
         dialog_service, "get_model_config_from_provider_instance",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
