@@ -358,9 +358,18 @@ RAGFlow(user)> list datasets;
 ```
 
 ### 6.23 Text to Speech
-
 ```
 RAGFlow(user)> tts with 'speech-2.8-hd@test@minimax' text 'He who desires but acts not, breeds pestilence.' play format 'wav' save './internal' param '{"voice_setting": {"voice_id": "English_radiant_girl", "speed": 1, "vol": 1, "pitch": 0}, "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "wav", "channel": 1}, "output_format": "hex"}'
 Saved to directory: /home/infiniflow/Documents/development/ragflow/internal/speech-2.8-hd_output.wav
 SUCCESS
+```
+
+### 6.24 Audio to Speech
+```
+RAGFlow(user)> asr with 'FunAudioLLM/SenseVoiceSmall@test@siliconflow' audio './internal/test.wav' param ''
++----------------------------------------------------------------------------------------------------------------------+
+| text                                                                                                                 |
++----------------------------------------------------------------------------------------------------------------------+
+| The examination and testimony of the experts enabled the commission to conclude that five shots may have been fired. |
++----------------------------------------------------------------------------------------------------------------------+
 ```
