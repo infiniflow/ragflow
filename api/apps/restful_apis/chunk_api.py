@@ -43,8 +43,24 @@ from common.constants import LLMType, ParserType, RetCode
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
 from common.tag_feature_utils import validate_tag_features
-from rag.app.qa import beAdoc, rmPrefix
-from rag.nlp import rag_tokenizer, search
+
+
+def _search():
+    from rag.nlp import search
+
+    return search
+
+
+def _rag_tokenizer():
+    from rag.nlp import rag_tokenizer
+
+    return rag_tokenizer
+
+
+def _qa_helpers():
+    from rag.app.qa import beAdoc, rmPrefix
+
+    return beAdoc, rmPrefix
 
 
 class Chunk(BaseModel):
@@ -107,6 +123,7 @@ def _get_dataset_tenant_id(dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def list_chunks(tenant_id, dataset_id, document_id):
+    search = _search()
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
@@ -191,6 +208,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
+    search = _search()
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
@@ -214,6 +232,8 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def add_chunk(tenant_id, dataset_id, document_id):
+    search = _search()
+    rag_tokenizer = _rag_tokenizer()
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
@@ -303,6 +323,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def rm_chunk(tenant_id, dataset_id, document_id):
+    search = _search()
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
@@ -350,6 +371,9 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
+    search = _search()
+    rag_tokenizer = _rag_tokenizer()
+    beAdoc, rmPrefix = _qa_helpers()
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
@@ -436,6 +460,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def switch_chunks(tenant_id, dataset_id, document_id):
+    search = _search()
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
