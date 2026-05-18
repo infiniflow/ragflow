@@ -39,17 +39,34 @@ from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 @login_required
 async def update_connector(connector_id):
     req = await get_request_json()
+    if isinstance(req, dict) and isinstance(req.get("data"), dict):
+        req = req["data"]
+
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
 
+    should_sleep = False
     if req:
-        conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
-        conn["id"] = connector_id
-        ConnectorService.update_by_id(connector_id, conn)
+        update_fields = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
+        if update_fields:
+            update_fields["id"] = connector_id
+            ConnectorService.update_by_id(connector_id, update_fields)
+            should_sleep = True
 
-    await asyncio.sleep(1)
+        if req.get("reschedule"):
+            ConnectorService.cancel_tasks(connector_id)
+            ConnectorService.schedule_tasks(connector_id)
+        elif req.get("status") in [TaskStatus.CANCEL, "CANCEL"]:
+            ConnectorService.cancel_tasks(connector_id)
+        elif req.get("status") in [TaskStatus.SCHEDULE, "SCHEDULE"]:
+            ConnectorService.schedule_tasks(connector_id)
+
+    if should_sleep:
+        await asyncio.sleep(1)
     e, conn = ConnectorService.get_by_id(connector_id)
+    if not e:
+        return get_data_error_result(message="Can't find this Connector!")
 
     return get_json_result(data=conn.to_dict())
 
@@ -68,9 +85,9 @@ async def create_connector():
             "input_type": InputType.POLL,
             "config": req["config"],
             "refresh_freq": int(req.get("refresh_freq", 5)),
-            "prune_freq": int(req.get("prune_freq", 720)),
+            "prune_freq": int(req.get("prune_freq", 5)),
             "timeout_secs": int(req.get("timeout_secs", 60 * 29)),
-            "status": TaskStatus.SCHEDULE,
+            "status": TaskStatus.UNSTART,
         }
         ConnectorService.save(**conn)
 
@@ -103,17 +120,6 @@ def list_logs(connector_id):
     return get_json_result(data={"total": total, "logs": arr})
 
 
-@manager.route("/connectors/<connector_id>/resume", methods=["POST"])  # noqa: F821
-@login_required
-async def resume(connector_id):
-    req = await get_request_json()
-    if req.get("resume"):
-        ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
-    else:
-        ConnectorService.resume(connector_id, TaskStatus.CANCEL)
-    return get_json_result(data=True)
-
-
 @manager.route("/connectors/<connector_id>/rebuild", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
@@ -128,7 +134,7 @@ async def rebuild(connector_id):
 @manager.route("/connectors/<connector_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm_connector(connector_id):
-    ConnectorService.resume(connector_id, TaskStatus.CANCEL)
+    ConnectorService.cancel_tasks(connector_id)
     ConnectorService.delete_by_id(connector_id)
     return get_json_result(data=True)
 
