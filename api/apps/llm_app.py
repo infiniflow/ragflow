@@ -25,8 +25,6 @@ from api.db.services.llm_service import LLMService
 from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
-from rag.utils.base64_image import test_image
-from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
 
 def _resolve_my_llm_is_tools(o_dict: dict) -> bool:
@@ -78,6 +76,8 @@ def factories():
 @validate_request("llm_factory", "api_key")
 async def set_api_key():
     req = await get_request_json()
+    from rag.llm import ChatModel, EmbeddingModel, RerankModel
+
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
@@ -178,6 +178,8 @@ async def set_api_key():
 @validate_request("llm_factory")
 async def add_llm():
     req = await get_request_json()
+    from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
+
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
@@ -318,6 +320,8 @@ async def add_llm():
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.IMAGE2TEXT.value:
+            from rag.utils.base64_image import test_image
+
             assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
             mdl = CvModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
             try:
