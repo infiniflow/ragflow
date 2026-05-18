@@ -13,9 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import logging
 
-from common.constants import ActiveStatusEnum
+from common.constants import ActiveStatusEnum, LLMType
 from common.settings import FACTORY_LLM_INFOS
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -142,6 +143,22 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
 
     Returns (success, error_message).
     """
+    if provider_name == "infiniflow" and instance_name == "default" and model_name == "deepdoc":
+        return True, None
+
+    if model_type == "ocr" and provider_name == "infiniflow" and instance_name == "default" and model_name == "deepdoc":
+        return True, None
+
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    is_tei_builtin_embedding = (
+            model_type == LLMType.EMBEDDING.value
+            and "tei-" in compose_profiles
+            and model_name == os.getenv("TEI_MODEL", "")
+            and (provider_name == "Builtin" or provider_name is None)
+    )
+    if is_tei_builtin_embedding:
+        return True, None
+
     # Check provider
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
