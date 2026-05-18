@@ -50,7 +50,6 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
-	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
@@ -63,23 +62,22 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
-		authHandler:          authHandler,
-		userHandler:          userHandler,
-		tenantHandler:        tenantHandler,
-		documentHandler:      documentHandler,
-		datasetsHandler:      datasetsHandler,
-		systemHandler:        systemHandler,
-		knowledgebaseHandler: knowledgebaseHandler,
-		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
-		chatHandler:          chatHandler,
-		chatSessionHandler:   chatSessionHandler,
-		connectorHandler:     connectorHandler,
-		searchHandler:        searchHandler,
-		fileHandler:          fileHandler,
-		memoryHandler:        memoryHandler,
-		skillSearchHandler:   skillSearchHandler,
-		providerHandler:      providerHandler,
+		authHandler:        authHandler,
+		userHandler:        userHandler,
+		tenantHandler:      tenantHandler,
+		documentHandler:    documentHandler,
+		datasetsHandler:    datasetsHandler,
+		systemHandler:      systemHandler,
+		chunkHandler:       chunkHandler,
+		llmHandler:         llmHandler,
+		chatHandler:        chatHandler,
+		chatSessionHandler: chatSessionHandler,
+		connectorHandler:   connectorHandler,
+		searchHandler:      searchHandler,
+		fileHandler:        fileHandler,
+		memoryHandler:      memoryHandler,
+		skillSearchHandler: skillSearchHandler,
+		providerHandler:    providerHandler,
 	}
 }
 
@@ -159,6 +157,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+				documents.POST("/parse", r.documentHandler.ParseDocuments)
 			}
 
 			// Chat routes
@@ -177,6 +176,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+
+				// Dataset documents
+				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 			}
 
 			// Search routes

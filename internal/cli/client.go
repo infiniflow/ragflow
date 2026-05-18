@@ -203,6 +203,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RunBenchmark(cmd)
 	case "list_datasets":
 		return c.ListDatasets(cmd)
+	case "list_dataset_documents":
+		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
 	case "create_token":

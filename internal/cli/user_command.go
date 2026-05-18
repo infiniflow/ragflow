@@ -391,7 +391,63 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list datasets failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// ListDatasetDocumentUserCommand lists dataset documents
+func (c *RAGFlowClient) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	// Determine auth kind based on whether API token is being used
+	if c.HTTPClient.LoginToken == "" && !c.HTTPClient.useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no dataset id")
+	}
+
+	page := 1
+	pageSize := 10
+	keywords := ""
+	returnEmptyMetadata := "true"
+	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("GET", url, "web", nil, nil, iterations)
+	}
+
+	// Normal mode
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListDocumentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -2056,7 +2112,10 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	shouldSave, _ := cmd.Params["save"].(bool)
 	saveDir, _ := cmd.Params["save_path"].(string)
 
-	fileName := fmt.Sprintf("%s_output.%s", modelName, explicitFormat)
+	// format file name
+	safeModelName := strings.ReplaceAll(modelName, "/", "_")
+	safeModelName = strings.ReplaceAll(safeModelName, ":", "-")
+	fileName := fmt.Sprintf("%s_output.%s", safeModelName, explicitFormat)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -2196,7 +2255,9 @@ func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	result.Code = rawResult.Code
-	result.Message = rawResult.Data["text"].(string) // TODO
+	result.Data = []map[string]interface{}{
+		{"text": rawResult.Data["text"].(string)},
+	}
 	result.Duration = resp.Duration
 
 	return &result, nil

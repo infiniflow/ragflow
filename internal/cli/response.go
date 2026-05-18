@@ -85,6 +85,42 @@ func (r *CommonDataResponse) PrintOut() {
 	}
 }
 
+type ListDocumentsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListDocumentsResponse) Type() string {
+	return "list_documents"
+}
+
+func (r *ListDocumentsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListDocumentsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListDocumentsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["docs"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type SimpleResponse struct {
 	Code         int    `json:"code"`
 	Message      string `json:"message"`

@@ -672,8 +672,8 @@ func (z *VllmModel) TranscribeAudioWithSender(modelName *string, file *string, a
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (o *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (o *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 

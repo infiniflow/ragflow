@@ -692,3 +692,26 @@ http://localhost:8080/layout-parsing
 | `PADDLEOCR_ACCESS_TOKEN` | Access token for official API | `None` | Only when using official API |
 
 Environment variables can be used for auto-provisioning, but are not required if configuring via UI. When environment variables are set, these values are used to auto-provision a PaddleOCR model for the tenant on first use.
+
+
+### How do I use Ollama with RAGFlow for local LLM inference?
+
+RAGFlow supports Ollama as a local model provider for private, offline inference.
+
+**Step 1: Start Ollama and pull a model**
+
+```bash
+export OLLAMA_HOST=0.0.0.0
+ollama serve
+ollama pull llama3
+```
+
+**Step 2: Add Ollama in RAGFlow**
+
+1. Go to **Settings** > **Model providers** > **Ollama**.
+2. Set the Base URL to `http://host.docker.internal:11434` (Docker) or `http://localhost:11434` (bare-metal).
+3. Enter the model name (e.g., `llama3`) and click **Save**.
+
+**Step 3: Use Ollama in your assistant**
+
+- Open an assistant's **Configuration** page and select the Ollama model under **Chat model**.

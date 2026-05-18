@@ -30,7 +30,7 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService *service.DatasetsService
+	datasetsService *service.DatasetService
 }
 
 type listDatasetsExt struct {
@@ -40,7 +40,7 @@ type listDatasetsExt struct {
 }
 
 // NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetsService) *DatasetsHandler {
+func NewDatasetsHandler(datasetsService *service.DatasetService) *DatasetsHandler {
 	return &DatasetsHandler{datasetsService: datasetsService}
 }
 
