@@ -97,6 +97,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
+		apiNoAuth.GET("/system/configs", r.systemHandler.GetConfigs)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 
 		// User login channels endpoint
@@ -114,17 +115,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
 		// User info endpoint
-		authorized.GET("/v1/user/info", r.userHandler.Info)
+		// authorized.GET("/v1/user/info", r.userHandler.Info)
 		// User tenant info endpoint
-		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
+		// authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
 		// Tenant list endpoint
 		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
 		// User settings endpoint
-		authorized.POST("/v1/user/setting", r.userHandler.Setting)
+		// authorized.POST("/v1/user/setting", r.userHandler.Setting)
 		// User change password endpoint
 		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
 		// User set tenant info endpoint
-		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
+		// authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
@@ -136,18 +137,35 @@ func (r *Router) Setup(engine *gin.Engine) {
 				auth.POST("/logout", r.userHandler.Logout)
 			}
 
+			// Legacy user routes under /api/v1/user/*
+			user := v1.Group("/user")
+			{
+				user.GET("/logout", r.userHandler.Logout)
+				user.GET("/info", r.userHandler.Info)
+				user.GET("/tenant_info", r.tenantHandler.TenantInfo)
+				user.POST("/setting", r.userHandler.Setting)
+				user.POST("/setting/password", r.userHandler.ChangePassword)
+				user.POST("/set_tenant_info", r.userHandler.SetTenantInfo)
+			}
+
 			// Users routes
 			users := v1.Group("/users")
 			{
 				users.GET("/me", r.userHandler.Info)
 				// User settings endpoint
 				users.PATCH("/me", r.userHandler.Setting)
+				// User tenant info endpoint
+				users.GET("/me/models", r.tenantHandler.TenantInfo)
+				// User set tenant info endpoint
+				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
 			}
 
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
 			}
+
+			v1.GET("/tenant/list", r.tenantHandler.TenantList)
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -198,6 +216,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
+				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
@@ -286,6 +305,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+			}
+
+			connector := v1.Group("/connectors")
+			{
+				connector.GET("/", r.connectorHandler.ListConnectors)
 			}
 
 			system := v1.Group("/system")
