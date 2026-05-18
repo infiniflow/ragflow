@@ -554,19 +554,19 @@ def test_empty_filter_list_returns_1eq1():
 @pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_equal_string_uses_lowercase(infinity_translator):
     cond = infinity_translator.translate({"key": "tag", "op": "=", "value": "Alpha"})
-    assert cond == f"JSON_EXTRACT_STRING(meta_fields, '$.tag') = 'alpha'"
+    assert cond == "JSON_EXTRACT_STRING(meta_fields, '$.tag') = 'alpha'"
 
 
 @pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_equal_numeric_keeps_number(infinity_translator):
     cond = infinity_translator.translate({"key": "score", "op": "=", "value": "5"})
-    assert cond == f"JSON_EXTRACT_DOUBLE(meta_fields, '$.score') = 5"
+    assert cond == "JSON_EXTRACT_DOUBLE(meta_fields, '$.score') = 5"
 
 
 @pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_equal_date_passes_unparsed(infinity_translator):
     cond = infinity_translator.translate({"key": "published", "op": "=", "value": "2025-01-15"})
-    assert cond == f"JSON_EXTRACT_STRING(meta_fields, '$.published') = '2025-01-15'"
+    assert cond == "JSON_EXTRACT_STRING(meta_fields, '$.published') = '2025-01-15'"
 
 
 @pytest.mark.skipif(_is_es(), reason="Infinity-only test")
@@ -587,7 +587,7 @@ def test_infinity_not_equal_numeric(infinity_translator):
 def test_infinity_range_operators(infinity_translator, op, sql_op):
     cond = infinity_translator.translate({"key": "score", "op": op, "value": "10"})
     assert sql_op in cond
-    assert f"JSON_EXTRACT_DOUBLE(meta_fields, '$.score')" in cond
+    assert "JSON_EXTRACT_DOUBLE(meta_fields, '$.score')" in cond
 
 
 @pytest.mark.skipif(_is_es(), reason="Infinity-only test")

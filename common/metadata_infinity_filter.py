@@ -19,8 +19,7 @@
 from __future__ import annotations
 
 import ast
-import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 SUPPORTED_OPERATORS: frozenset[str] = frozenset(
     {

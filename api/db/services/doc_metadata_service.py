@@ -816,7 +816,7 @@ class DocMetadataService:
         base ``doc_ids`` rather than fetching the entire metadata table.
         """
         if not kb_ids or not filters:
-            logging.debug(f"Metadata filter skipped: empty kb_ids or filters")
+            logging.debug("Metadata filter skipped: empty kb_ids or filters")
             return None
 
         try:
