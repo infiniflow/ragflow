@@ -158,7 +158,7 @@ jobs:
 
       - name: Run unit test
         run: |
-          uv sync --python 3.12 --group test --frozen
+          uv sync --python 3.13 --group test --frozen
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
@@ -222,7 +222,7 @@ jobs:
                # Patch entrypoint.sh for coverage
                sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
                cd ..
-               uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
+               uv sync --python 3.13 --group test --frozen && uv pip install -e sdk/python
 
 
       - name: Start ragflow:nightly for Infinity

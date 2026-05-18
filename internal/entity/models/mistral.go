@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -573,8 +574,8 @@ func (z *MistralModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -583,19 +584,99 @@ func (z *MistralModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (z *MistralModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if (urls == nil || *urls == "") && (content == nil || len(content) == 0) {
+		return nil, fmt.Errorf("file url or content is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.OCR)
+
+	var docURL string
+	if urls != nil && *urls != "" {
+		docURL = *urls
+	} else {
+		mimeType := http.DetectContentType(content)
+		base64Str := base64.StdEncoding.EncodeToString(content)
+		docURL = fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str)
+	}
+
+	reqData := map[string]interface{}{
+		"model": *modelName,
+		"document": map[string]interface{}{
+			"type":         "document_url",
+			"document_url": docURL,
+		},
+	}
+
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Mistral OCR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var mistralResp struct {
+		Pages []struct {
+			Index    int    `json:"index"`
+			Markdown string `json:"markdown"`
+		} `json:"pages"`
+	}
+
+	if err = json.Unmarshal(body, &mistralResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response json: %w", err)
+	}
+
+	var fullMarkdown strings.Builder
+	for _, page := range mistralResp.Pages {
+		fullMarkdown.WriteString(page.Markdown)
+		fullMarkdown.WriteString("\n\n")
+	}
+
+	resultText := strings.TrimSpace(fullMarkdown.String())
+
+	return &OCRFileResponse{
+		Text: &resultText,
+	}, nil
 }
 
-// ParseFile parse file
 func (z *MistralModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	//TODO implement me
+	panic("implement me")
 }
 
 func (z *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("no such method", z.Name())
 }
 
 func (z *MistralModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("no such method", z.Name())
 }

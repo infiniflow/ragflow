@@ -29,9 +29,6 @@ from functools import partial, wraps
 import jwt
 from quart import Response, jsonify, request
 
-from agent.canvas import Canvas
-from agent.component import LLM
-from agent.dsl_migration import normalize_chunker_dsl
 from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
@@ -60,12 +57,10 @@ from api.utils.api_utils import (
     validate_request,
 )
 from common import settings
+from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
-from rag.flow.pipeline import Pipeline
-from rag.nlp import search
-from rag.utils.redis_conn import REDIS_CONN
 
 
 def _require_canvas_access_sync(func):
@@ -194,6 +189,8 @@ def list_agent_sessions(agent_id, tenant_id):
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
 async def create_agent_session(agent_id, tenant_id):
+    from agent.canvas import Canvas
+
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
     release_mode = bool(req.get("release", request.args.get("release", False)))
@@ -521,6 +518,8 @@ async def upload_agent_file(agent_id, tenant_id):
 @_require_canvas_access_sync
 def get_agent_component_input_form(agent_id, component_id, tenant_id):
     try:
+        from agent.canvas import Canvas
+
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
             return get_data_error_result(message="canvas not found.")
@@ -538,6 +537,9 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
 async def debug_agent_component(agent_id, component_id, tenant_id):
     req = await get_request_json()
     try:
+        from agent.canvas import Canvas
+        from agent.component import LLM
+
         _, user_canvas = UserCanvasService.get_by_id(agent_id)
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         canvas.reset()
@@ -596,6 +598,8 @@ def get_agent(agent_id, tenant_id):
             released_versions.sort(key=lambda version: version.update_time, reverse=True)
             last_publish_time = released_versions[0].update_time
 
+    from agent.dsl_migration import normalize_chunker_dsl
+
     canvas["dsl"] = normalize_chunker_dsl(canvas.get("dsl", {}))
     canvas["last_publish_time"] = last_publish_time
 
@@ -641,6 +645,8 @@ def get_agent_version(agent_id, version_id, tenant_id):
 @_require_canvas_access_async
 async def get_agent_logs(agent_id, message_id, tenant_id):
     try:
+        from rag.utils.redis_conn import REDIS_CONN
+
         binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
         if not binary:
             return get_json_result(data={})
@@ -718,6 +724,8 @@ async def update_agent(agent_id, tenant_id):
 @_require_canvas_access_async
 async def reset_agent(agent_id, tenant_id):
     try:
+        from agent.canvas import Canvas
+
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
             return get_data_error_result(message="canvas not found.")
@@ -746,6 +754,8 @@ async def reset_agent(agent_id, tenant_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def rerun_agent(tenant_id):
+    from rag.nlp import search
+
     req = await get_request_json()
     doc = PipelineOperationLogService.get_documents_info(req["id"])
     if not doc:
@@ -783,11 +793,26 @@ async def rerun_agent(tenant_id):
 async def test_db_connection():
     req = await get_request_json()
     try:
+        safe_host = assert_host_is_safe(req["host"])
+    except ValueError as exc:
+        logging.warning(
+            "Rejected test_db_connection: unsafe host %r (db_type=%s, user=%s): %s",
+            req.get("host"), req.get("db_type"), current_user.id, exc,
+        )
+        return get_data_error_result(message=str(exc))
+    except OSError as exc:
+        logging.warning(
+            "Rejected test_db_connection: cannot resolve host %r (db_type=%s, user=%s): %s",
+            req.get("host"), req.get("db_type"), current_user.id, exc,
+        )
+        logging.debug("Full resolver exception for host %r", req.get("host"), exc_info=True)
+        return get_data_error_result(message=f"Could not resolve host {req.get('host')!r}.")
+    try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(
                 req["database"],
                 user=req["username"],
-                host=req["host"],
+                host=safe_host,
                 port=req["port"],
                 password=req["password"],
             )
@@ -797,7 +822,7 @@ async def test_db_connection():
             db = MySQLDatabase(
                 req["database"],
                 user=req["username"],
-                host=req["host"],
+                host=safe_host,
                 port=req["port"],
                 password=req["password"],
                 charset="utf8mb4",
@@ -808,7 +833,7 @@ async def test_db_connection():
             db = PostgresqlDatabase(
                 req["database"],
                 user=req["username"],
-                host=req["host"],
+                host=safe_host,
                 port=req["port"],
                 password=req["password"],
             )
@@ -819,7 +844,7 @@ async def test_db_connection():
 
             connection_string = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                f"SERVER={req['host']},{req['port']};"
+                f"SERVER={safe_host},{req['port']};"
                 f"DATABASE={req['database']};"
                 f"UID={req['username']};"
                 f"PWD={req['password']};"
@@ -838,7 +863,7 @@ async def test_db_connection():
 
             conn_str = (
                 f"DATABASE={req['database']};"
-                f"HOSTNAME={req['host']};"
+                f"HOSTNAME={safe_host};"
                 f"PORT={req['port']};"
                 f"PROTOCOL=TCPIP;"
                 f"UID={req['username']};"
@@ -847,7 +872,7 @@ async def test_db_connection():
             logging.info(
                 "DATABASE=%s;HOSTNAME=%s;PORT=%s;PROTOCOL=TCPIP;UID=%s;PWD=****;",
                 req["database"],
-                req["host"],
+                safe_host,
                 req["port"],
                 req["username"],
             )
@@ -873,7 +898,7 @@ async def test_db_connection():
                 auth = trino.BasicAuthentication(req.get("username") or "ragflow", req["password"])
 
             conn = trino.dbapi.connect(
-                host=req["host"],
+                host=safe_host,
                 port=int(req["port"] or 8080),
                 user=req["username"] or "ragflow",
                 catalog=catalog,
@@ -1026,6 +1051,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
         if cvs.canvas_category == CanvasCategory.DataFlow:
+            from rag.flow.pipeline import Pipeline
+
             task_id = get_uuid()
             Pipeline(
                 dsl_str,
@@ -1048,6 +1075,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return get_json_result(data={"message_id": task_id})
 
         try:
+            from agent.canvas import Canvas
+
             canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
@@ -1333,6 +1362,8 @@ async def webhook(agent_id: str):
         now = time.time()
 
         try:
+            from rag.utils.redis_conn import REDIS_CONN
+
             res = REDIS_CONN.lua_token_bucket(
                 keys=[key],
                 args=[capacity, rate, now, cost],
@@ -1440,6 +1471,8 @@ async def webhook(agent_id: str):
     if not isinstance(cvs.dsl, str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
+        from agent.canvas import Canvas
+
         canvas = Canvas(dsl, cvs.user_id, agent_id, canvas_id=agent_id)
     except Exception as e:
         resp=get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e))
@@ -1693,6 +1726,8 @@ async def webhook(agent_id: str):
     response_cfg = webhook_cfg.get("response", {})
 
     def append_webhook_trace(agent_id: str, start_ts: float,event: dict, ttl=600):
+        from rag.utils.redis_conn import REDIS_CONN
+
         key = f"webhook-trace-{agent_id}-logs"
 
         raw = REDIS_CONN.get(key)
@@ -1892,6 +1927,8 @@ async def webhook_trace(agent_id: str):
     webhook_id = request.args.get("webhook_id")
 
     key = f"webhook-trace-{agent_id}-logs"
+    from rag.utils.redis_conn import REDIS_CONN
+
     raw = REDIS_CONN.get(key)
 
     if since_ts is None:

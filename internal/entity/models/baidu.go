@@ -3,6 +3,8 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -611,8 +613,8 @@ func (z *BaiduModel) TranscribeAudioWithSender(modelName *string, file *string, 
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (b *BaiduModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (b *BaiduModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
@@ -621,13 +623,99 @@ func (z *BaiduModel) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 // OCRFile OCR file
-func (b *BaiduModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+type qianfanOCRResponse struct {
+	Id     string `json:"id"`
+	Result struct {
+		LayoutParsingResults []struct {
+			Markdown struct {
+				Text string `json:"text"`
+			} `json:"markdown"`
+		} `json:"layoutParsingResults"`
+	} `json:"result"`
 }
 
-// ParseFile parse file
-func (z *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if (fileURL == nil || *fileURL == "") && (content == nil || len(content) == 0) {
+		return nil, fmt.Errorf("image url or content is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", b.BaseURL[region], b.URLSuffix.OCR)
+
+	reqData := map[string]interface{}{
+		"model": *modelName,
+	}
+
+	if fileURL != nil && *fileURL != "" {
+		reqData["file"] = *fileURL
+		if strings.HasSuffix(strings.ToLower(*fileURL), ".pdf") {
+			reqData["fileType"] = 0 // PDF
+		} else {
+			reqData["fileType"] = 1 // img
+		}
+	} else if content != nil && len(content) > 0 {
+		reqData["file"] = base64.StdEncoding.EncodeToString(content)
+
+		mimeType := http.DetectContentType(content)
+		if strings.Contains(mimeType, "pdf") {
+			reqData["fileType"] = 0 // PDF
+		} else {
+			reqData["fileType"] = 1 // img
+		}
+	}
+
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var apiResponse qianfanOCRResponse
+	if err = json.Unmarshal(body, &apiResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response json: %w", err)
+	}
+
+	var extractedText string
+	if len(apiResponse.Result.LayoutParsingResults) > 0 {
+		extractedText = apiResponse.Result.LayoutParsingResults[0].Markdown.Text
+	} else {
+		return nil, fmt.Errorf("no parsing results returned from API")
+	}
+
+	var ocrResponse = OCRFileResponse{
+		Text: &extractedText,
+	}
+
+	return &ocrResponse, nil
 }
 
 func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -694,10 +782,14 @@ func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
+func (z *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("no such method", z.Name())
+}
+
 func (z *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("no such method", z.Name())
 }
 
 func (z *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("no such method", z.Name())
 }

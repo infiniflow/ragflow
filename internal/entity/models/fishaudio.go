@@ -176,8 +176,8 @@ func (f *FishAudioModel) TranscribeAudioWithSender(modelName *string, file *stri
 	return fmt.Errorf("%s, no such method", f.Name())
 }
 
-// AudioSpeech convert audio to text
-func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("FishAudio API key is missing")
 	}
@@ -197,13 +197,13 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 		"text": *audioContent,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -238,7 +238,7 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig, sender func(*string, *string) error) error {
+func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return fmt.Errorf("FishAudio API key is missing")
 	}
@@ -258,13 +258,13 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 		"text": *audioContent,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)

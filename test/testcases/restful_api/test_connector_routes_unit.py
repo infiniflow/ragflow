@@ -201,6 +201,10 @@ def _load_connector_app(monkeypatch):
             return []
 
         @staticmethod
+        def accessible(*_args, **_kwargs):
+            return True
+
+        @staticmethod
         def resume(*_args, **_kwargs):
             return True
 
@@ -246,6 +250,7 @@ def _load_connector_app(monkeypatch):
         SERVER_ERROR=500,
         RUNNING=102,
         PERMISSION_ERROR=403,
+        AUTHENTICATION_ERROR=109,
     )
     constants_mod.TaskStatus = SimpleNamespace(SCHEDULE="schedule", CANCEL="cancel")
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
@@ -418,6 +423,42 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     assert rm_res["data"] is True
     assert ("conn-rm", module.TaskStatus.CANCEL) in resume_calls
     assert delete_calls == ["conn-rm"]
+
+
+@pytest.mark.p2
+def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
+    """Verify per-id connector routes stop before body parsing or service access."""
+    module = _load_connector_app(monkeypatch)
+
+    touched = []
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda cid, uid: False)
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda *_args: touched.append("get_by_id"))
+    monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda *_args: touched.append("list_sync_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "resume", lambda *_args: touched.append("resume"))
+    monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda *_args: touched.append("delete_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda *_args: touched.append("update_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: touched.append("rebuild"))
+
+    def _get_request_json():
+        touched.append("get_request_json")
+        return _AwaitableValue({"resume": True, "config": {"x": 1}})
+
+    monkeypatch.setattr(module, "get_request_json", _get_request_json)
+
+    responses = [
+        _run(module.update_connector("conn-victim")),
+        module.get_connector("conn-victim"),
+        module.list_logs("conn-victim"),
+        _run(module.resume("conn-victim")),
+        _run(module.rebuild("conn-victim")),
+        module.rm_connector("conn-victim"),
+        _run(module.test_connector("conn-victim")),
+    ]
+
+    assert all(res["code"] == module.RetCode.AUTHENTICATION_ERROR for res in responses)
+    assert all(res["message"] == "No authorization." for res in responses)
+    assert all(res["data"] is False for res in responses)
+    assert touched == []
 
 
 @pytest.mark.p2

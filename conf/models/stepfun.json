@@ -91,7 +91,7 @@
       ]
     },
     {
-      "name": "step-tts-2 ",
+      "name": "step-tts-2",
       "max_tokens": 8192,
       "model_types": [
         "tts"

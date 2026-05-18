@@ -598,9 +598,8 @@ def aggregate_tags(dataset_ids: list[str], tenant_id: str):
 
     merged = {}
     for kb_tenant_id, kb_ids in dataset_ids_by_tenant.items():
-        for bucket in settings.retriever.all_tags(kb_tenant_id, kb_ids):
-            tag = bucket["value"]
-            merged[tag] = merged.get(tag, 0) + bucket["count"]
+        for tag, count in settings.retriever.all_tags(kb_tenant_id, kb_ids):
+            merged[tag] = merged.get(tag, 0) + count
 
     return True, [{"value": tag, "count": count} for tag, count in merged.items()]
 
@@ -1344,6 +1343,7 @@ async def search_datasets(tenant_id: str, req: dict):
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
     if meta_data_filter:
+        logging.debug(f"Metadata filter: {meta_data_filter}, question: {question}, chat_mdl={'None' if chat_mdl is None else chat_mdl.llm_name}")
         local_doc_ids = await apply_meta_data_filter(
             meta_data_filter,
             None,

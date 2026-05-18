@@ -450,7 +450,7 @@ func (l *LongCatModel) TranscribeAudioWithSender(modelName *string, file *string
 }
 
 // AudioSpeech (TTS) is not exposed by the LongCat API.
-func (l *LongCatModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+func (l *LongCatModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 

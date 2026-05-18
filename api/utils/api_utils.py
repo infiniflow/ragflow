@@ -439,6 +439,7 @@ def get_parser_config(chunk_method, parser_config):
                     "category",
                 ],
                 "method": "light",
+                "batch_chunk_token_size": 4096,
             },
             "parent_child": {
                 "use_parent_child": False,
