@@ -15,7 +15,7 @@
   "models": [
     {
       "name": "deepseek-ai/DeepSeek-V3.2",
-      "max_tokens": "32768",
+      "max_tokens": 32768,
       "model_types": [
         "chat"
       ],
