@@ -1,9 +1,10 @@
 """Box connector"""
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Generator
 
-from box_sdk_gen import BoxClient
+from box_sdk_gen import AccessToken, BoxClient, BoxOAuth, OAuthConfig
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
@@ -20,6 +21,29 @@ class BoxConnector(LoadConnector, PollConnector):
         self.folder_id = "0" if not folder_id else folder_id
         self.use_marker = use_marker
         self.box_client: BoxClient | None = None
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "BoxConnector":
+        credentials = config.get("credentials") or {}
+        box_tokens = credentials.get("box_tokens")
+        if not box_tokens:
+            raise ConnectorMissingCredentialError("Box tokens are required.")
+        token_payload = json.loads(box_tokens) if isinstance(box_tokens, str) else box_tokens
+        auth = BoxOAuth(
+            OAuthConfig(
+                client_id=token_payload["client_id"],
+                client_secret=token_payload["client_secret"],
+            )
+        )
+        auth.token_storage.store(
+            AccessToken(
+                access_token=token_payload["access_token"],
+                refresh_token=token_payload["refresh_token"],
+            )
+        )
+        connector = cls(folder_id=config.get("folder_id", "0"))
+        connector.load_credentials(auth)
+        return connector
 
     def load_credentials(self, auth: Any):
         self.box_client = BoxClient(auth=auth)

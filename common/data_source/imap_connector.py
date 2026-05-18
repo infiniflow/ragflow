@@ -23,6 +23,7 @@ from common.data_source.interfaces import (
     CheckpointedConnectorWithPermSync,
     CredentialsConnector,
     CredentialsProviderInterface,
+    StaticCredentialsProvider,
 )
 from common.data_source.models import (
     BasicExpertInfo,
@@ -315,6 +316,22 @@ class ImapConnector(
         return checkpoint
 
     # impls for BaseConnector
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "ImapConnector":
+        connector = cls(
+            host=config.get("imap_host"),
+            port=config.get("imap_port"),
+            mailboxes=config.get("imap_mailbox"),
+        )
+        connector.set_credentials_provider(
+            StaticCredentialsProvider(
+                tenant_id=None,
+                connector_name=DocumentSource.IMAP,
+                credential_json=config.get("credentials") or {},
+            )
+        )
+        return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self._credentials = credentials

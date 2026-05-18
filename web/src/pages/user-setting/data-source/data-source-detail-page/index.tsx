@@ -17,7 +17,6 @@ import { FieldValues } from 'react-hook-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
-  DataSourceKey,
   getCommonExtraDefaultValues,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
@@ -216,17 +215,15 @@ const SourceDetailPage = () => {
             />
           </div>
           <div className="max-w-[1200px] flex justify-end gap-2">
-            {detail?.source === DataSourceKey.REST_API && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleTest}
-                disabled={testLoading}
-                loading={testLoading}
-              >
-                {t('setting.restApiTestConnection')}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTest}
+              disabled={testLoading}
+              loading={testLoading}
+            >
+              {t('setting.dataSourceTestConnection')}
+            </Button>
             <Button
               type="button"
               onClick={onSubmit}

@@ -26,6 +26,13 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         self.sharepoint_client = None
         self.graph_client = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "SharePointConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load SharePoint credentials"""
         try:

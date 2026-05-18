@@ -181,6 +181,24 @@ class GitlabConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.include_code_files = include_code_files
         self.gitlab_client: gitlab.Gitlab | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "GitlabConnector":
+        credentials = config.get("credentials") or {}
+        connector = cls(
+            project_owner=config.get("project_owner"),
+            project_name=config.get("project_name"),
+            include_mrs=config.get("include_mrs", False),
+            include_issues=config.get("include_issues", False),
+            include_code_files=config.get("include_code_files", False),
+        )
+        connector.load_credentials(
+            {
+                "gitlab_access_token": credentials.get("gitlab_access_token"),
+                "gitlab_url": config.get("gitlab_url"),
+            }
+        )
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.gitlab_client = gitlab.Gitlab(
             credentials["gitlab_url"], private_token=credentials["gitlab_access_token"]

@@ -226,12 +226,12 @@ export const useTestDataSource = () => {
     try {
       const { data } = await testDataSource(id);
       if (data.code === 0) {
-        message.success(t('setting.restApiTestSuccess'));
+        message.success(t('setting.dataSourceTestSuccess'));
       } else {
-        message.error(data.message || t('setting.restApiTestFailed'));
+        message.error(data.message || t('setting.dataSourceTestFailed'));
       }
     } catch {
-      message.error(t('setting.restApiTestFailed'));
+      message.error(t('setting.dataSourceTestFailed'));
     } finally {
       setLoading(false);
     }

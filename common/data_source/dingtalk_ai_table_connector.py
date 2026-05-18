@@ -85,6 +85,18 @@ class DingTalkAITableConnector(LoadConnector, PollConnector, SlimConnectorWithPe
         config.region_id = "central"
         return NotableClient(config)
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "DingTalkAITableConnector":
+        credentials = config.get("credentials") or {}
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            table_id=config.get("table_id"),
+            operator_id=config.get("operator_id"),
+            batch_size=batch_size,
+        )
+        connector.load_credentials({"access_token": credentials["access_token"]})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """
         Load DingTalk credentials.

@@ -8,6 +8,12 @@ from common.data_source.config import INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, Documen
 from common.data_source.google_util.auth import get_google_creds
 from common.data_source.google_util.constant import DB_CREDENTIALS_PRIMARY_ADMIN_KEY, MISSING_SCOPES_ERROR_STR, SCOPE_INSTRUCTIONS, USER_FIELDS
 from common.data_source.google_util.resource import get_admin_service, get_gmail_service
+from common.data_source.exceptions import (
+    ConnectorMissingCredentialError,
+    ConnectorValidationError,
+    CredentialExpiredError,
+    InsufficientPermissionsError,
+)
 from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval, clean_string
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
 from common.data_source.models import BasicExpertInfo, Document, ExternalAccess, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument, TextSection
@@ -170,6 +176,13 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             raise RuntimeError("Creds missing, should not call this property before calling load_credentials")
         return self._creds
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "GmailConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, str] | None:
         """Load Gmail credentials."""
         primary_admin_email = credentials[DB_CREDENTIALS_PRIMARY_ADMIN_KEY]
@@ -180,6 +193,38 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             source=DocumentSource.GMAIL,
         )
         return new_creds_dict
+
+    def validate_connector_settings(self) -> None:
+        if self._creds is None:
+            raise ConnectorMissingCredentialError("Gmail credentials not loaded.")
+
+        try:
+            gmail_service = get_gmail_service(self.creds, self.primary_admin_email)
+            gmail_service.users().labels().list(
+                userId=self.primary_admin_email,
+                maxResults=1,
+            ).execute()
+        except HttpError as e:
+            status_code = e.resp.status if e.resp else None
+            if status_code == 401:
+                raise CredentialExpiredError(
+                    "Invalid or expired Gmail credentials (401)."
+                ) from e
+            if status_code == 403:
+                raise InsufficientPermissionsError(
+                    "Gmail app lacks required permissions (403)."
+                ) from e
+            raise ConnectorValidationError(
+                f"Unexpected Gmail error (status={status_code}): {e}"
+            ) from e
+        except Exception as e:
+            if MISSING_SCOPES_ERROR_STR in str(e):
+                raise InsufficientPermissionsError(
+                    "Gmail credentials are missing required scopes."
+                ) from e
+            raise ConnectorValidationError(
+                f"Unexpected error during Gmail validation: {e}"
+            ) from e
 
     def _get_all_user_emails(self) -> list[str]:
         """Get all user emails for Google Workspace domain."""

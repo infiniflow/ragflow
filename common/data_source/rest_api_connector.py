@@ -446,6 +446,20 @@ class RestAPIConnector(LoadConnector, PollConnector):
 
         return cfg
 
+    @classmethod
+    def build_connector(cls, config: Dict[str, Any]) -> "RestAPIConnector":
+        cfg = cls.parse_storage_config(config)
+        connector = cls.from_parsed_config(cfg, max_pages=min(cfg.max_pages, 10))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
+    def validate_connector_settings(self) -> None:
+        try:
+            logging.info("Validating REST API connector by fetching first page")
+            _ = next(self._page_iter_for_validation())
+        except StopIteration:
+            pass
+
     # -- LoadConnector / PollConnector interface -----------------------------
 
     def load_from_state(self) -> Generator[List[Document], None, None]:

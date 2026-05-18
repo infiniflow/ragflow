@@ -65,6 +65,18 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         logging.info(f"Setting allow_images to {allow_images}.")
         self._allow_images = allow_images
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "WebDAVConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            base_url=config["base_url"],
+            remote_path=config.get("remote_path", "/"),
+            batch_size=batch_size,
+        )
+        connector.set_allow_images(config.get("allow_images", False))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load credentials and initialize WebDAV client
         

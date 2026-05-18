@@ -1402,6 +1402,10 @@ Example: Virtual Hosted Style`,
       restApiTestSuccess: 'REST API connector validated successfully.',
       restApiTestFailed:
         'REST API connector validation failed. Please check your configuration and logs.',
+      dataSourceTestConnection: 'Test connection',
+      dataSourceTestSuccess: 'Data source connection validated successfully.',
+      dataSourceTestFailed:
+        'Data source connection validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',

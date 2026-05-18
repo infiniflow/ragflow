@@ -137,6 +137,26 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
     # Connector lifecycle helpers
     # -------------------------------------------------------------------------
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "JiraConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            jira_base_url=config["base_url"],
+            project_key=config.get("project_key"),
+            jql_query=config.get("jql_query"),
+            batch_size=batch_size,
+            include_comments=config.get("include_comments", True),
+            include_attachments=config.get("include_attachments", False),
+            labels_to_skip=config.get("labels_to_skip"),
+            comment_email_blacklist=config.get("comment_email_blacklist"),
+            scoped_token=config.get("scoped_token", False),
+            attachment_size_limit=config.get("attachment_size_limit"),
+            timezone_offset=config.get("timezone_offset"),
+            time_buffer_seconds=config.get("time_buffer_seconds"),
+        )
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Instantiate the Jira client using either an API token or username/password."""
         jira_url_for_client = self.jira_base_url

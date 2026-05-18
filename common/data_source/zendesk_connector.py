@@ -374,6 +374,12 @@ class ZendeskConnector(
         self.content_tags: dict[str, str] = {}
         self.calls_per_minute = calls_per_minute
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "ZendeskConnector":
+        connector = cls(content_type=config.get("zendesk_content_type"))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         # Subdomain is actually the whole URL
         subdomain = (
