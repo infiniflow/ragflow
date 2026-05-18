@@ -4446,21 +4446,21 @@
                     "llm_name": "Qwen3-Reranker-8B",
                     "tags": "TEXT RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
                     "llm_name": "Qwen3-Reranker-4B",
                     "tags": "TEXT RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
                     "llm_name": "Qwen3-Reranker-0.6B",
                     "tags": "TEXT RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -4502,7 +4502,7 @@
                     "llm_name": "jina-reranker-m0",
                     "tags": "TEXT RE-RANK,10K",
                     "max_tokens": 10240,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -4516,7 +4516,7 @@
                     "llm_name": "bce-reranker-base_v1",
                     "tags": "TEXT RE-RANK",
                     "max_tokens": 512,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -4530,7 +4530,7 @@
                     "llm_name": "bge-reranker-v2-m3",
                     "tags": "TEXT RE-RANK",
                     "max_tokens": 8192,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -6228,13 +6228,13 @@
                     "llm_name": "baai/bge-reranker-v2-m3",
                     "tags": "RE-RANK,8K",
                     "max_tokens": 8000,
-                    "model_type": "reranker"
+                    "model_type": "rerank"
                 },
                 {
                     "llm_name": "qwen/qwen3-reranker-8b",
                     "tags": "RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker"
+                    "model_type": "rerank"
                 }
             ]
         },
