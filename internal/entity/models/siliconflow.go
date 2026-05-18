@@ -372,7 +372,7 @@ func (z *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 }
 
 type siliconflowEmbeddingResponse struct {
-	Object []string                   `json:"object"`
+	Object string                     `json:"object"`
 	Model  string                     `json:"model"`
 	Data   []siliconflowEmbeddingData `json:"data"`
 	Usage  siliconflowUsage           `json:"usage"`

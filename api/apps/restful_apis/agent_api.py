@@ -60,6 +60,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from common import settings
+from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
@@ -783,11 +784,26 @@ async def rerun_agent(tenant_id):
 async def test_db_connection():
     req = await get_request_json()
     try:
+        safe_host = assert_host_is_safe(req["host"])
+    except ValueError as exc:
+        logging.warning(
+            "Rejected test_db_connection: unsafe host %r (db_type=%s, user=%s): %s",
+            req.get("host"), req.get("db_type"), current_user.id, exc,
+        )
+        return get_data_error_result(message=str(exc))
+    except OSError as exc:
+        logging.warning(
+            "Rejected test_db_connection: cannot resolve host %r (db_type=%s, user=%s): %s",
+            req.get("host"), req.get("db_type"), current_user.id, exc,
+        )
+        logging.debug("Full resolver exception for host %r", req.get("host"), exc_info=True)
+        return get_data_error_result(message=f"Could not resolve host {req.get('host')!r}.")
+    try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(
                 req["database"],
                 user=req["username"],
-                host=req["host"],
+                host=safe_host,
                 port=req["port"],
                 password=req["password"],
             )
@@ -797,7 +813,7 @@ async def test_db_connection():
             db = MySQLDatabase(
                 req["database"],
                 user=req["username"],
-                host=req["host"],
+                host=safe_host,
                 port=req["port"],
                 password=req["password"],
                 charset="utf8mb4",
@@ -808,7 +824,7 @@ async def test_db_connection():
             db = PostgresqlDatabase(
                 req["database"],
                 user=req["username"],
-                host=req["host"],
+                host=safe_host,
                 port=req["port"],
                 password=req["password"],
             )
@@ -819,7 +835,7 @@ async def test_db_connection():
 
             connection_string = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-                f"SERVER={req['host']},{req['port']};"
+                f"SERVER={safe_host},{req['port']};"
                 f"DATABASE={req['database']};"
                 f"UID={req['username']};"
                 f"PWD={req['password']};"
@@ -838,7 +854,7 @@ async def test_db_connection():
 
             conn_str = (
                 f"DATABASE={req['database']};"
-                f"HOSTNAME={req['host']};"
+                f"HOSTNAME={safe_host};"
                 f"PORT={req['port']};"
                 f"PROTOCOL=TCPIP;"
                 f"UID={req['username']};"
@@ -847,7 +863,7 @@ async def test_db_connection():
             logging.info(
                 "DATABASE=%s;HOSTNAME=%s;PORT=%s;PROTOCOL=TCPIP;UID=%s;PWD=****;",
                 req["database"],
-                req["host"],
+                safe_host,
                 req["port"],
                 req["username"],
             )
@@ -873,7 +889,7 @@ async def test_db_connection():
                 auth = trino.BasicAuthentication(req.get("username") or "ragflow", req["password"])
 
             conn = trino.dbapi.connect(
-                host=req["host"],
+                host=safe_host,
                 port=int(req["port"] or 8080),
                 user=req["username"] or "ragflow",
                 catalog=catalog,
