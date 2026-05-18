@@ -73,7 +73,7 @@ export const formSchema = z
             batch_chunk_token_size: z
               .number()
               .int()
-              .positive()
+              .min(512)
               .max(8196)
               .optional(),
           })

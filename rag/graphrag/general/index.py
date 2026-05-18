@@ -64,7 +64,7 @@ def _positive_int_config(config: dict, key: str, default: int) -> int:
     except (TypeError, ValueError):
         logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
         return default
-    if value <= 0:
+    if value < 512 or value > 8196:
         logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
         return default
     return value
@@ -291,7 +291,7 @@ async def run_graphrag_for_kb(
 
     if total_chunks == 0 and not subgraphs:
         callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
-        return {"ok_docs": [], "failed_docs": doc_ids, "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
+        return {"ok_docs": [], "failed_docs": [(doc_id, "no available chunks") for doc_id in doc_ids], "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
 
     if has_canceled(row["id"]):
         callback(msg=f"Task {row['id']} cancelled after document processing.")
