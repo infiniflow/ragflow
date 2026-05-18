@@ -151,12 +151,12 @@ async def test_run_task_logic_skips_empty_sync_batches(monkeypatch):
         lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not be called for empty batches"),
     )
 
-    await _FakeSync((iter(()), []))._run_task_logic(_make_task())
+    await _FakeSync(iter(([],)))._run_task_logic(_make_task())
 
 
 @pytest.mark.anyio
 @pytest.mark.p2
-async def test_run_task_logic_skips_empty_sync_batches_even_with_snapshot_tuple(monkeypatch):
+async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
     _patch_common_dependencies(monkeypatch)
     monkeypatch.setattr(
         sync_data_source.SyncLogsService,
@@ -174,10 +174,7 @@ async def test_run_task_logic_skips_empty_sync_batches_even_with_snapshot_tuple(
         lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not be called for empty batches"),
     )
 
-    file_list = [types.SimpleNamespace(id="doc-1")]
-    await _FakeSync((iter(()), file_list))._run_task_logic(_make_task())
-
-    assert file_list == [types.SimpleNamespace(id="doc-1")]
+    await _FakeSync(iter(([], [],)))._run_task_logic(_make_task())
 
 
 @pytest.mark.anyio
