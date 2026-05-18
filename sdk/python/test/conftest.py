@@ -19,8 +19,6 @@ import os
 import pytest
 import requests
 
-from api.apps.restful_apis.models_api import set_default_models
-
 HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9380")
 ZHIPU_AI_API_KEY = os.getenv("ZHIPU_AI_API_KEY")
 if ZHIPU_AI_API_KEY is None:
@@ -155,7 +153,7 @@ def add_model_instance(auth):
 
     add_success = get_added_models(auth, "ZHIPU-AI")
     if not add_success:
-        pytest.exit(f"Critical error in add_model_instance: add model failed")
+        pytest.exit("Critical error in add_model_instance: add model failed")
 
 
 def get_tenant_info(auth):
@@ -173,7 +171,6 @@ def set_tenant_info(get_auth):
     auth = get_auth
     try:
         add_model_instance(auth)
-        tenant_id = get_tenant_info(auth)
     except Exception as e:
         pytest.exit(f"Error in set_tenant_info: {str(e)}")
     url = HOST_ADDRESS + "/api/v1/models/default"
