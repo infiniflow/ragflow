@@ -47,5 +47,10 @@ class TenantModelService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def batch_update_model_status(cls, model_ids, status):
+        return cls.model.update(status=status).where(cls.model.id.in_(model_ids)).execute()
+
+    @classmethod
+    @DB.connection_context()
     def delete_by_id(cls, model_id):
         return cls.model.delete().where(cls.model.id == model_id).execute()

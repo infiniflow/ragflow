@@ -460,13 +460,13 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
         return False, f"No instance found for provider '{provider_name}' and instance '{instance_name}'"
 
     # Check if model record already exists in tenant_model table
-    model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(
+    model_obj_list = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(
         provider_obj.id, instance_obj.id, model_name
     )
 
-    if model_obj:
+    if model_obj_list:
         # Model record exists — update its status
-        TenantModelService.update_by_id(model_obj.id, {"status": status})
+        TenantModelService.batch_update_model_status([m.id for m in model_obj_list], status)
     else:
         # Model record does not exist
         if status == ActiveStatusEnum.ACTIVE.value:
