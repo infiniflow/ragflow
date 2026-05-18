@@ -215,10 +215,10 @@ def add_models(auth):
 def add_model_instance(auth):
     add_provider_api = HOST_ADDRESS + "/api/v1/providers"
     authorization = {"Authorization": auth}
-    add_provider_response = requests.post(url=add_provider_api, headers=authorization, json={"provider_name": "ZHIPU-AI"})
+    add_provider_response = requests.put(url=add_provider_api, headers=authorization, json={"provider_name": "ZHIPU-AI"})
     add_provider_res = add_provider_response.json()
     if add_provider_res.get("code") != 0:
-        pytest.exit(f"Critical error in add_model_instance: {add_provider_res.get('message')}")
+        pytest.exit(f"Critical error in add model provider: {add_provider_res.get('message')}")
 
     add_instance_api = HOST_ADDRESS + "/api/v1/providers/ZHIPU-AI/instances"
     add_instance_response = requests.post(url=add_instance_api, headers=authorization, json={
@@ -229,11 +229,11 @@ def add_model_instance(auth):
     })
     add_instance_res = add_instance_response.json()
     if add_instance_res.get("code") != 0:
-        pytest.exit(f"Critical error in add_model_instance: {add_instance_res.get('message')}")
+        pytest.exit(f"Critical error in add model instance: {add_instance_res.get('message')}")
 
     add_success = get_added_models(auth, "ZHIPU-AI")
     if not add_success:
-        pytest.exit("Critical error in add_model_instance: add model failed")
+        pytest.exit("Critical error in check added model: add model failed")
 
 
 def get_tenant_info(auth):
