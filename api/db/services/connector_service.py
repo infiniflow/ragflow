@@ -22,7 +22,7 @@ from anthropic import BaseModel
 from peewee import SQL, fn
 
 from api.db import InputType
-from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
+from api.db.db_models import DB, Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.document_service import DocMetadataService
@@ -31,6 +31,9 @@ from common.misc_utils import get_uuid
 from common.constants import ConnectorTaskType, TaskStatus
 from common.settings import TIMEZONE
 from common.time_utils import current_timestamp, timestamp_to_date
+
+LOGGER = logging.getLogger(__name__)
+
 
 class ConnectorService(CommonService):
     model = Connector
@@ -61,6 +64,31 @@ class ConnectorService(CommonService):
             connector_id,
             TaskStatus.CANCEL,
         )
+
+    @classmethod
+    @DB.connection_context()
+    def accessible(cls, connector_id: str, user_id: str) -> bool:
+        """Return whether the user can access the connector's tenant."""
+        e, connector = cls.get_by_id(connector_id)
+        if not e:
+            LOGGER.warning("connector access denied: connector not found connector_id=%s user_id=%s", connector_id, user_id)
+            return False
+
+        if connector.tenant_id == user_id:
+            return True
+
+        from api.db.services.user_service import TenantService
+
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(user_id)
+        has_access = any(tenant["tenant_id"] == connector.tenant_id for tenant in joined_tenants)
+        if not has_access:
+            LOGGER.warning(
+                "connector access denied: tenant mismatch connector_id=%s user_id=%s tenant_id=%s",
+                connector_id,
+                user_id,
+                connector.tenant_id,
+            )
+        return has_access
 
     @classmethod
     def schedule_tasks(cls, connector_id):
