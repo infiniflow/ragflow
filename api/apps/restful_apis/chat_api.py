@@ -47,6 +47,7 @@ from api.utils.api_utils import (
 )
 from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from common.constants import LLMType, RetCode, StatusEnum
+from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
@@ -794,6 +795,18 @@ async def delete_sessions(chat_id):
             if not ConversationService.query(id=sid, dialog_id=chat_id):
                 errors.append(f"The chat doesn't own the session {sid}")
                 continue
+            ok, conv = ConversationService.get_by_id(sid)
+            if ok:
+                for msg in conv.message or []:
+                    for file in msg.get("files") or []:
+                        file_id = file.get("id")
+                        created_by = file.get("created_by")
+                        if not file_id or not created_by:
+                            continue
+                        try:
+                            settings.STORAGE_IMPL.rm(f"{created_by}-downloads", file_id)
+                        except Exception:
+                            logging.warning("Failed to delete chat upload blob %s/%s", created_by, file_id)
             ConversationService.delete_by_id(sid)
             success_count += 1
         all_errors = errors + duplicate_messages
