@@ -28,7 +28,7 @@ import json_repair
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
-from strenum import StrEnum
+from enum import StrEnum
 
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response

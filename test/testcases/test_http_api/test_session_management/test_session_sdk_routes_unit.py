@@ -123,7 +123,7 @@ def _load_session_module(monkeypatch):
 
     # Mock common.constants module
     from enum import Enum
-    from strenum import StrEnum
+    from enum import StrEnum
 
     class _StubLLMType(StrEnum):
         CHAT = "chat"
