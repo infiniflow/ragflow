@@ -312,10 +312,8 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	return sender(&endOfStream, nil)
 }
 
-type togetherAIModelsResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
+type togetherAIModelInfo struct {
+	ID string `json:"id"`
 }
 
 func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -358,13 +356,13 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result togetherAIModelsResponse
+	var result []togetherAIModelInfo
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
-	for _, model := range result.Data {
+	models := make([]string, 0, len(result))
+	for _, model := range result {
 		if model.ID != "" {
 			models = append(models, model.ID)
 		}

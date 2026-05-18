@@ -171,11 +171,9 @@ func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
 		if r.URL.Path != "/models" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []map[string]interface{}{
-				{"id": "openai/gpt-oss-20b"},
-				{"id": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
-			},
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{"id": "openai/gpt-oss-20b"},
+			{"id": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
 		})
 	})
 	defer srv.Close()
