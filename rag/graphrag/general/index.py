@@ -55,7 +55,6 @@ from common.doc_store.doc_store_base import OrderByExpr
 
 
 DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 4096
-GRAPHRAG_CHUNK_LIST_BATCH_SIZE = 1024
 
 
 def _positive_int_config(config: dict, key: str, default: int) -> int:
@@ -184,24 +183,14 @@ async def run_graphrag_for_kb(
         chunks = []
         current_chunk = ""
 
-        raw_chunks = []
-        offset = 0
-        while True:
-            batch = list(settings.retriever.chunk_list(
-                doc_id,
-                tenant_id,
-                [kb_id],
-                max_count=offset + GRAPHRAG_CHUNK_LIST_BATCH_SIZE,
-                offset=offset,
-                fields=fields_for_chunks,
-                sort_by_position=True,
-            ))
-            if not batch:
-                break
-            raw_chunks.extend(batch)
-            if len(batch) < GRAPHRAG_CHUNK_LIST_BATCH_SIZE:
-                break
-            offset += len(batch)
+        raw_chunks = list(settings.retriever.chunk_list(
+            doc_id,
+            tenant_id,
+            [kb_id],
+            fields=fields_for_chunks,
+            sort_by_position=True,
+            retrieve_all=True
+        ))
 
         callback(msg=f"[GraphRAG] chunk_list returned {len(raw_chunks)} raw chunks for doc:{doc_id}")
 
