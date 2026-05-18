@@ -499,7 +499,7 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	}
 
 	if req.ForgettingPolicy != nil {
-		fp := ForgettingPolicy(strings.ToLower(*req.ForgettingPolicy))
+		fp := ForgettingPolicy(strings.ToUpper(strings.TrimSpace(*req.ForgettingPolicy)))
 		if !validForgettingPolicies[fp] {
 			return nil, fmt.Errorf("forgetting policy '%s' is not supported", *req.ForgettingPolicy)
 		}
