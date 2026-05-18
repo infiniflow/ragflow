@@ -905,7 +905,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       NER: Use spaCy NER and rule-based keyword extraction to extract entities and relationships. No LLM is required for extraction itself, making it fast and resource-efficient.`,
       graphRagBatchChunkTokenSize: 'Batch chunk token size',
       graphRagBatchChunkTokenSizeTip:
-        'The chunk token limit used when batching multiple raw chunks before knowledge graph extraction.',
+        'The token limit for each batch of chunks sent to the LLM for knowledge graph entity and relation extraction. Not applied to NER.',
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',

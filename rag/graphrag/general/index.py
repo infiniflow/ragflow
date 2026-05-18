@@ -54,7 +54,7 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 
-DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 4096
+DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 8196
 GRAPHRAG_CHUNK_LIST_BATCH_SIZE = 1024
 
 
