@@ -995,7 +995,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
             if not doc_ids_filter:
                 return RetCode.SUCCESS, "", [], return_empty_metadata
 
-    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else [], return_empty_metadata
+    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else None, return_empty_metadata
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
