@@ -3,13 +3,7 @@
 Verifies the shape of the produced filter expressions for both ES DSL and
 Infinity SQL, and confirms that coercion rules (lower-casing, list-membership,
 date detection) are consistent between the two backends.
-
-Execution is controlled by DOC_ENGINE environment variable:
-- DOC_ENGINE=infinity: runs Infinity tests, skips ES tests
-- DOC_ENGINE=es (or unset): runs ES tests, skips Infinity tests
 """
-
-import os
 
 import pytest
 
@@ -24,16 +18,6 @@ from common.metadata_infinity_filter import (
     plan_pushdown,
     extract_doc_ids,
 )
-
-DOC_ENGINE = os.getenv("DOC_ENGINE", "es")
-
-
-def _is_infinity():
-    return DOC_ENGINE == "infinity"
-
-
-def _is_es():
-    return DOC_ENGINE != "infinity"
 
 
 # ---------------------------------------------------------------------------
@@ -162,11 +146,10 @@ def test_supported_operator_set_matches_documentation():
 
 
 # ===========================================================================
-# ES-only tests (skipped when DOC_ENGINE=infinity)
+# ES-only tests
 # ===========================================================================
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_equal_translates_to_term_with_lowercased_value(es_translator):
     """String equality runs against ``.keyword`` so multi-word phrases match."""
     from common.metadata_es_filter import META_FIELDS_PREFIX
@@ -180,7 +163,6 @@ def test_equal_translates_to_term_with_lowercased_value(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_equal_parses_numeric_literal(es_translator):
     """Numeric values stay on the parent path — no ``.keyword`` sub-field exists for ``long``."""
     from common.metadata_es_filter import META_FIELDS_PREFIX
@@ -192,7 +174,6 @@ def test_equal_parses_numeric_literal(es_translator):
     assert clauses == [{"term": {_field("score"): 5}}]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_equal_multiword_uses_keyword_subfield(es_translator):
     """Regression: multi-word string values must match via .keyword sub-field."""
     from common.metadata_es_filter import META_FIELDS_PREFIX
@@ -215,7 +196,6 @@ def test_equal_multiword_uses_keyword_subfield(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_not_equal_requires_field_to_exist(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -235,7 +215,6 @@ def test_not_equal_requires_field_to_exist(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 @pytest.mark.parametrize(
     "op,es_key",
     [(">", "gt"), ("<", "lt"), ("≥", "gte"), ("≤", "lte")],
@@ -259,14 +238,12 @@ def test_range_operator_translation(es_translator, op, es_key):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_range_passes_iso_date_through_unparsed(es_translator):
     clauses = es_translator.translate({"key": "published", "op": "≥", "value": "2025-01-15"}).to_clauses()
     range_clause = clauses[0]["bool"]["must"][1]
     assert range_clause == {"range": {"meta_fields.published": {"gte": "2025-01-15"}}}
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_in_operator_csv_value_lowercased(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -288,7 +265,6 @@ def test_in_operator_csv_value_lowercased(es_translator):
     assert clauses == [_string_terms_should(_field("status"), ["active", "pending"])]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_in_operator_python_list_literal(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -310,7 +286,6 @@ def test_in_operator_python_list_literal(es_translator):
     assert clauses == [_string_terms_should(_field("status"), ["open", "closed"])]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_in_operator_numeric_members_keep_terms(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -321,7 +296,6 @@ def test_in_operator_numeric_members_keep_terms(es_translator):
     assert clauses == [{"terms": {_field("year"): [2024, 2025]}}]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_not_in_negates_with_existence_guard(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -350,7 +324,6 @@ def test_not_in_negates_with_existence_guard(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_contains_uses_case_insensitive_wildcard(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -370,7 +343,6 @@ def test_contains_uses_case_insensitive_wildcard(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_contains_escapes_user_wildcards(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -382,7 +354,6 @@ def test_contains_escapes_user_wildcards(es_translator):
     assert pattern == "*a\\*b\\?c*"
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_not_contains_negates_with_exists(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -409,7 +380,6 @@ def test_not_contains_negates_with_exists(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_start_with_uses_prefix(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -422,7 +392,6 @@ def test_start_with_uses_prefix(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_end_with_uses_trailing_wildcard(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -434,7 +403,6 @@ def test_end_with_uses_trailing_wildcard(es_translator):
     assert pattern == "*.pdf"
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_empty_matches_missing_or_blank(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -455,7 +423,6 @@ def test_empty_matches_missing_or_blank(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_not_empty_requires_exists_and_excludes_blank(es_translator):
     from common.metadata_es_filter import META_FIELDS_PREFIX
 
@@ -473,7 +440,6 @@ def test_not_empty_requires_exists_and_excludes_blank(es_translator):
     ]
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_unknown_operator_raises(es_translator):
     from common.metadata_es_filter import UnsupportedMetaFilter
 
@@ -482,7 +448,6 @@ def test_unknown_operator_raises(es_translator):
     assert "regex" in exc.value.reason
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_missing_key_raises(es_translator):
     from common.metadata_es_filter import UnsupportedMetaFilter
 
@@ -490,7 +455,6 @@ def test_missing_key_raises(es_translator):
         es_translator.translate({"op": "=", "value": "x"})
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_scalar_op_with_list_value_raises(es_translator):
     from common.metadata_es_filter import UnsupportedMetaFilter
 
@@ -498,7 +462,6 @@ def test_scalar_op_with_list_value_raises(es_translator):
         es_translator.translate({"key": "tag", "op": "=", "value": ["a", "b"]})
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_string_op_with_empty_value_raises(es_translator):
     from common.metadata_es_filter import UnsupportedMetaFilter
 
@@ -506,7 +469,6 @@ def test_string_op_with_empty_value_raises(es_translator):
         es_translator.translate({"key": "tag", "op": "contains", "value": ""})
 
 
-@pytest.mark.skipif(_is_infinity(), reason="ES-only test")
 def test_membership_with_empty_csv_raises(es_translator):
     from common.metadata_es_filter import UnsupportedMetaFilter
 
@@ -515,11 +477,10 @@ def test_membership_with_empty_csv_raises(es_translator):
 
 
 # ===========================================================================
-# Infinity-only tests (skipped when DOC_ENGINE != infinity)
+# Infinity-only tests
 # ===========================================================================
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_build_infinity_filter_and_logic():
     body = build_infinity_filter(
         [
@@ -532,7 +493,6 @@ def test_build_infinity_filter_and_logic():
     assert "alpha" in body
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_build_infinity_filter_or_logic():
     body = build_infinity_filter(
         [
@@ -546,44 +506,38 @@ def test_build_infinity_filter_or_logic():
     assert "beta" in body
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_empty_filter_list_returns_1eq1():
     body = build_infinity_filter([], "and")
     assert body == "1=1"
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_equal_string_uses_lowercase(infinity_translator):
     cond = infinity_translator.translate({"key": "tag", "op": "=", "value": "Alpha"})
-    assert cond == "JSON_EXTRACT_STRING(meta_fields, '$.tag') = 'alpha'"
+    assert cond == "JSON_CONTAINS(meta_fields, '$.tag', '\"Alpha\"')"
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_equal_numeric_keeps_number(infinity_translator):
     cond = infinity_translator.translate({"key": "score", "op": "=", "value": "5"})
-    assert cond == "JSON_EXTRACT_DOUBLE(meta_fields, '$.score') = 5"
+    assert cond == "JSON_CONTAINS(meta_fields, '$.score', 5)"
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_equal_date_passes_unparsed(infinity_translator):
     cond = infinity_translator.translate({"key": "published", "op": "=", "value": "2025-01-15"})
-    assert cond == "JSON_EXTRACT_STRING(meta_fields, '$.published') = '2025-01-15'"
+    assert cond == "JSON_CONTAINS(meta_fields, '$.published', '\"2025-01-15\"')"
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_not_equal_string(infinity_translator):
     cond = infinity_translator.translate({"key": "tag", "op": "≠", "value": "alpha"})
-    assert "JSON_EXTRACT_STRING" in cond
+    assert "JSON_CONTAINS" in cond
     assert "alpha" in cond
+    assert "NOT" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_not_equal_numeric(infinity_translator):
     cond = infinity_translator.translate({"key": "score", "op": "≠", "value": "5"})
-    assert "DOUBLE" in cond and "!=" in cond and "5" in cond
+    assert "JSON_CONTAINS" in cond and "NOT" in cond and "5" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 @pytest.mark.parametrize("op,sql_op", [(">", ">"), ("<", "<"), ("≥", ">="), ("≤", "<=")])
 def test_infinity_range_operators(infinity_translator, op, sql_op):
     cond = infinity_translator.translate({"key": "score", "op": op, "value": "10"})
@@ -591,14 +545,12 @@ def test_infinity_range_operators(infinity_translator, op, sql_op):
     assert "JSON_EXTRACT_DOUBLE(meta_fields, '$.score')" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_range_string_value(infinity_translator):
     cond = infinity_translator.translate({"key": "published", "op": "≥", "value": "2025-01-15"})
     assert ">=" in cond
     assert "2025-01-15" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_in_csv_lowercased(infinity_translator):
     cond = infinity_translator.translate({"key": "status", "op": "in", "value": "Active,Pending"})
     assert "JSON_CONTAINS" in cond
@@ -606,7 +558,6 @@ def test_infinity_in_csv_lowercased(infinity_translator):
     assert "pending" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_in_python_list(infinity_translator):
     cond = infinity_translator.translate({"key": "status", "op": "in", "value": "['Open', 'Closed']"})
     assert "JSON_CONTAINS" in cond
@@ -614,7 +565,6 @@ def test_infinity_in_python_list(infinity_translator):
     assert "closed" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_in_numeric_members(infinity_translator):
     cond = infinity_translator.translate({"key": "year", "op": "in", "value": "[2024, 2025]"})
     assert "JSON_CONTAINS" in cond
@@ -622,13 +572,11 @@ def test_infinity_in_numeric_members(infinity_translator):
     assert "2025" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_not_in_csv(infinity_translator):
     cond = infinity_translator.translate({"key": "status", "op": "not in", "value": "active,pending"})
     assert "NOT JSON_CONTAINS" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_contains_uses_JSON_CONTAINS(infinity_translator):
     """Infinity 'contains' uses JSON_CONTAINS for JSON array membership."""
     cond = infinity_translator.translate({"key": "version", "op": "contains", "value": "earth"})
@@ -636,7 +584,6 @@ def test_infinity_contains_uses_JSON_CONTAINS(infinity_translator):
     assert "earth" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_contains_escapes_quotes(infinity_translator):
     """Special characters in contains value are escaped for JSON_CONTAINS."""
     cond = infinity_translator.translate({"key": "title", "op": "contains", "value": "a%b_c"})
@@ -644,7 +591,6 @@ def test_infinity_contains_escapes_quotes(infinity_translator):
     assert "a%b_c" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_not_contains_uses_JSON_CONTAINS(infinity_translator):
     """Infinity 'not contains' uses JSON_CONTAINS with NOT."""
     cond = infinity_translator.translate({"key": "version", "op": "not contains", "value": "earth"})
@@ -652,14 +598,12 @@ def test_infinity_not_contains_uses_JSON_CONTAINS(infinity_translator):
     assert "NOT" in cond or "not" in cond.lower()
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_start_with(infinity_translator):
     cond = infinity_translator.translate({"key": "name", "op": "start with", "value": "pre"})
     assert "LIKE" in cond
     assert "'pre%" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_end_with(infinity_translator):
     """Infinity 'end with' uses LIKE with trailing wildcard."""
     cond = infinity_translator.translate({"key": "file", "op": "end with", "value": ".pdf"})
@@ -667,58 +611,49 @@ def test_infinity_end_with(infinity_translator):
     assert "%.pdf" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_empty(infinity_translator):
     cond = infinity_translator.translate({"key": "notes", "op": "empty", "value": ""})
     assert "JSON_EXTRACT_STRING" in cond
     assert '""' in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_not_empty(infinity_translator):
     cond = infinity_translator.translate({"key": "notes", "op": "not empty", "value": ""})
     assert "JSON_EXTRACT_STRING" in cond
     assert "!=" in cond
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_unknown_operator_raises(infinity_translator):
     with pytest.raises(ValueError) as exc:
         infinity_translator.translate({"key": "tag", "op": "regex", "value": "^foo"})
     assert "regex" in str(exc.value)
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_missing_key_raises(infinity_translator):
     with pytest.raises(ValueError):
         infinity_translator.translate({"op": "=", "value": "x"})
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_invalid_key_format_raises(infinity_translator):
     with pytest.raises(ValueError, match="invalid key format"):
         infinity_translator.translate({"key": "a;b", "op": "=", "value": "x"})
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_key_with_brace_raises(infinity_translator):
     with pytest.raises(ValueError, match="invalid key format"):
         infinity_translator.translate({"key": "field$}", "op": "=", "value": "x"})
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_scalar_op_with_list_value_raises(infinity_translator):
     with pytest.raises(ValueError):
         infinity_translator.translate({"key": "tag", "op": "=", "value": ["a", "b"]})
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_string_op_with_empty_value_raises(infinity_translator):
     with pytest.raises(ValueError):
         infinity_translator.translate({"key": "tag", "op": "contains", "value": ""})
 
 
-@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_membership_with_empty_csv_raises(infinity_translator):
     with pytest.raises(ValueError):
         infinity_translator.translate({"key": "tag", "op": "in", "value": ""})
