@@ -158,6 +158,10 @@ func replicateInputFromMessages(messages []Message, chatModelConfig *ChatConfig)
 		if chatModelConfig.TopP != nil {
 			input["top_p"] = *chatModelConfig.TopP
 		}
+		// Replicate model inputs are model-specific. Forward only the
+		// common prompt-model fields above; Stop is intentionally
+		// omitted because upstream behavior is undefined for many
+		// hosted models.
 	}
 	return input
 }

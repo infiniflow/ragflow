@@ -1,11 +1,11 @@
 {
   "name": "Replicate",
   "url": {
-    "default": "https://api.replicate.com/v1"
+    "default": "https://api.replicate.com"
   },
   "url_suffix": {
-    "chat": "predictions",
-    "models": "models"
+    "chat": "v1/predictions",
+    "models": "v1/models"
   },
   "class": "replicate",
   "models": [

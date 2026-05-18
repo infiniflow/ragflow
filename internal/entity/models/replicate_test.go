@@ -12,7 +12,7 @@ import (
 func newReplicateForTest(baseURL string) *ReplicateModel {
 	return NewReplicateModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "predictions", Models: "models"},
+		URLSuffix{Chat: "v1/predictions", Models: "v1/models"},
 	)
 }
 
@@ -50,7 +50,7 @@ func TestReplicatePromptFromMessages(t *testing.T) {
 
 func TestReplicateChatHappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/predictions" {
+		if r.URL.Path != "/v1/predictions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
@@ -62,7 +62,8 @@ func TestReplicateChatHappyPath(t *testing.T) {
 		raw, _ := io.ReadAll(r.Body)
 		var body map[string]interface{}
 		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("body: %v", err)
+			t.Errorf("body: %v", err)
+			return
 		}
 		if body["version"] != "meta/meta-llama-3-70b-instruct" {
 			t.Errorf("version=%v", body["version"])
@@ -80,6 +81,8 @@ func TestReplicateChatHappyPath(t *testing.T) {
 		if input["max_new_tokens"] != float64(128) {
 			t.Errorf("max_new_tokens=%v", input["max_new_tokens"])
 		}
+		// Stop is deliberately filtered out because Replicate model
+		// inputs are model-specific and upstream support is undefined.
 		if input["stop"] != nil {
 			t.Errorf("unexpected stop=%v", input["stop"])
 		}
@@ -117,14 +120,14 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 			t.Errorf("Authorization=%q", got)
 		}
 		switch r.URL.Path {
-		case "/predictions":
+		case "/v1/predictions":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "processing",
 				"urls": map[string]string{
-					"get": "http://" + r.Host + "/predictions/p1",
+					"get": "http://" + r.Host + "/v1/predictions/p1",
 				},
 			})
-		case "/predictions/p1":
+		case "/v1/predictions/p1":
 			getCount++
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "succeeded",
@@ -170,13 +173,14 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 	streamURL = streamSrv.URL
 
 	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/predictions" {
+		if r.URL.Path != "/v1/predictions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		raw, _ := io.ReadAll(r.Body)
 		var body map[string]interface{}
 		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("body: %v", err)
+			t.Errorf("body: %v", err)
+			return
 		}
 		if body["stream"] != true {
 			t.Errorf("stream=%v", body["stream"])
@@ -212,7 +216,7 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 
 func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/models" {
+		if r.URL.Path != "/v1/models" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
