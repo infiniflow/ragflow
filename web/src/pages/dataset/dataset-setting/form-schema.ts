@@ -70,6 +70,7 @@ export const formSchema = z
             method: z.string().optional(),
             resolution: z.boolean().optional(),
             community: z.boolean().optional(),
+            batch_chunk_token_size: z.number().int().positive().optional(),
           })
           .refine(
             (data) => {

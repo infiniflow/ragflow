@@ -54,6 +54,23 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 
+DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 4096
+GRAPHRAG_CHUNK_LIST_BATCH_SIZE = 1024
+
+
+def _positive_int_config(config: dict, key: str, default: int) -> int:
+    value = config.get(key, default)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
+        return default
+    if value <= 0:
+        logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
+        return default
+    return value
+
+
 def _select_extractor(graphrag_config: dict):
     """Return the extractor class matching ``graphrag_config["method"]``.
 
@@ -232,6 +249,8 @@ async def run_graphrag_for_kb(
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = asyncio.get_running_loop().time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
+    graphrag_config = kb_parser_config.get("graphrag", {})
+    batch_chunk_token_size = _positive_int_config(graphrag_config, "batch_chunk_token_size", DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
 
     if not doc_ids:
         logging.info(f"Fetching all docs for {kb_id}")
@@ -259,21 +278,30 @@ async def run_graphrag_for_kb(
         chunks = []
         current_chunk = ""
 
-        # DEBUG: Obtener todos los chunks primero
-        raw_chunks = list(settings.retriever.chunk_list(
-            doc_id,
-            tenant_id,
-            [kb_id],
-            max_count=10000,  # FIX: Aumentar límite para procesar todos los chunks
-            fields=fields_for_chunks,
-            sort_by_position=True,
-        ))
+        raw_chunks = []
+        offset = 0
+        while True:
+            batch = list(settings.retriever.chunk_list(
+                doc_id,
+                tenant_id,
+                [kb_id],
+                max_count=offset + GRAPHRAG_CHUNK_LIST_BATCH_SIZE,
+                offset=offset,
+                fields=fields_for_chunks,
+                sort_by_position=True,
+            ))
+            if not batch:
+                break
+            raw_chunks.extend(batch)
+            if len(batch) < GRAPHRAG_CHUNK_LIST_BATCH_SIZE:
+                break
+            offset += len(batch)
 
-        callback(msg=f"[DEBUG] chunk_list() returned {len(raw_chunks)} raw chunks for doc {doc_id}")
+        callback(msg=f"[GraphRAG] chunk_list returned {len(raw_chunks)} raw chunks for doc:{doc_id}")
 
         for d in raw_chunks:
             content = d["content_with_weight"]
-            if num_tokens_from_string(current_chunk + content) < 4096:
+            if num_tokens_from_string(current_chunk + content) < batch_chunk_token_size:
                 current_chunk += content
             else:
                 if current_chunk:
@@ -285,16 +313,7 @@ async def run_graphrag_for_kb(
 
         return chunks
 
-    all_doc_chunks: dict[str, list[str]] = {}
     total_chunks = 0
-    for doc_id in doc_ids:
-        chunks = load_doc_chunks(doc_id)
-        all_doc_chunks[doc_id] = chunks
-        total_chunks += len(chunks)
-
-    if total_chunks == 0:
-        callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
-        return {"ok_docs": [], "failed_docs": doc_ids, "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
 
     semaphore = asyncio.Semaphore(max_parallel_docs)
 
@@ -302,18 +321,13 @@ async def run_graphrag_for_kb(
     failed_docs: list[tuple[str, str]] = []  # (doc_id, error)
 
     async def build_one(doc_id: str):
+        nonlocal total_chunks
+
         if has_canceled(row["id"]):
             callback(msg=f"Task {row['id']} cancelled, stopping execution.")
             raise TaskCanceledException(f"Task {row['id']} was cancelled")
 
-        chunks = all_doc_chunks.get(doc_id, [])
-        if not chunks:
-            callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
-            return
-
-        kg_extractor = _select_extractor(kb_parser_config.get("graphrag", {}))
-
-        deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
+        kg_extractor = _select_extractor(graphrag_config)
 
         async with semaphore:
             # CHECKPOINT: bounded by semaphore so doc-store lookups respect max_parallel_docs
@@ -323,6 +337,13 @@ async def run_graphrag_for_kb(
                 callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
                 return
             try:
+                chunks = load_doc_chunks(doc_id)
+                total_chunks += len(chunks)
+                if not chunks:
+                    callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
+                    return
+
+                deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
                 msg = f"[GraphRAG] build_subgraph doc:{doc_id}"
                 callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")
 
@@ -372,6 +393,10 @@ async def run_graphrag_for_kb(
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
+
+    if total_chunks == 0 and not subgraphs:
+        callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
+        return {"ok_docs": [], "failed_docs": doc_ids, "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
 
     if has_canceled(row["id"]):
         callback(msg=f"Task {row['id']} cancelled after document processing.")
