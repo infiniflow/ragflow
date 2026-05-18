@@ -205,7 +205,7 @@ class TestDatasetCreate:
         payload = {"name": name, "embedding_model": embedding_model}
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert f"not found" in str(exception_info.value), str(exception_info.value)
+        assert "not found" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
