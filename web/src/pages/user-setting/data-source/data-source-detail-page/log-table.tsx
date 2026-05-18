@@ -198,7 +198,7 @@ export const DataSourceLogsTable = ({
 
   const handleToDataSetDetail = useCallback(
     (id: string) => {
-      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
+      navigate(`${Routes.Dataset}/${id}`);
     },
     [navigate],
   );
@@ -265,7 +265,7 @@ export const DataSourceLogsTable = ({
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={6} className="h-24 text-center">
+              <TableCell colSpan={5} className="h-24 text-center">
                 {t('common.noData')}
               </TableCell>
             </TableRow>

@@ -15,7 +15,12 @@ import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { DataSourceKey, useDataSourceInfo } from './constant';
-import { IDataSorceInfo, IDataSource, IDataSourceBase } from './interface';
+import {
+  IDataSorceInfo,
+  IDataSource,
+  IDataSourceBase,
+  IDataSourceLog,
+} from './interface';
 
 export const useListDataSource = () => {
   const { dataSourceInfo } = useDataSourceInfo();
@@ -132,19 +137,20 @@ export const useLogListDataSource = (autoRefresh: boolean) => {
   const [currentQueryParameters] = useSearchParams();
   const id = currentQueryParameters.get('id');
 
-  const { data, isFetching } = useQuery<{ logs: IDataSource[]; total: number }>(
-    {
-      queryKey: ['data-source-logs', id, pagination, autoRefresh],
-      refetchInterval: autoRefresh ? 15 * 1000 : false,
-      queryFn: async () => {
-        const { data } = await getDataSourceLogs(id as string, {
-          page_size: pagination.pageSize,
-          page: pagination.current,
-        });
-        return data.data;
-      },
+  const { data, isFetching } = useQuery<{
+    logs: IDataSourceLog[];
+    total: number;
+  }>({
+    queryKey: ['data-source-logs', id, pagination, autoRefresh],
+    refetchInterval: autoRefresh ? 15 * 1000 : false,
+    queryFn: async () => {
+      const { data } = await getDataSourceLogs(id as string, {
+        page_size: pagination.pageSize,
+        page: pagination.current,
+      });
+      return data.data;
     },
-  );
+  });
   return {
     data: data?.logs,
     isFetching,
