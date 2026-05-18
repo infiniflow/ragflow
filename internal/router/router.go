@@ -97,7 +97,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
-		apiNoAuth.GET("/system/configs", r.systemHandler.GetConfigs)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 
 		// User login channels endpoint
@@ -115,17 +114,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
 		// User info endpoint
-		// authorized.GET("/v1/user/info", r.userHandler.Info)
+		authorized.GET("/v1/user/info", r.userHandler.Info)
 		// User tenant info endpoint
-		// authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
+		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
 		// Tenant list endpoint
 		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
 		// User settings endpoint
-		// authorized.POST("/v1/user/setting", r.userHandler.Setting)
+		authorized.POST("/v1/user/setting", r.userHandler.Setting)
 		// User change password endpoint
 		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
 		// User set tenant info endpoint
-		// authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
+		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
 
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
@@ -135,17 +134,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				// User logout endpoint
 				auth.POST("/logout", r.userHandler.Logout)
-			}
-
-			// Legacy user routes under /api/v1/user/*
-			user := v1.Group("/user")
-			{
-				user.GET("/logout", r.userHandler.Logout)
-				user.GET("/info", r.userHandler.Info)
-				user.GET("/tenant_info", r.tenantHandler.TenantInfo)
-				user.POST("/setting", r.userHandler.Setting)
-				user.POST("/setting/password", r.userHandler.ChangePassword)
-				user.POST("/set_tenant_info", r.userHandler.SetTenantInfo)
 			}
 
 			// Users routes
