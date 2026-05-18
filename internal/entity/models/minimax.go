@@ -201,7 +201,7 @@ func (z *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

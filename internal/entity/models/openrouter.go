@@ -109,8 +109,10 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 			reqBody["do_sample"] = *chatModelConfig.DoSample
 		}
 
-		reqBody["reasoning"] = map[string]interface{}{
-			"effort": "low",
+		if chatModelConfig.Effort != nil {
+			reqBody["reasoning"] = map[string]interface{}{
+				"effort": chatModelConfig.Effort,
+			}
 		}
 	}
 
