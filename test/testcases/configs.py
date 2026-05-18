@@ -65,6 +65,7 @@ DEFAULT_PARSER_CONFIG = {
             "category",
         ],
         "method": "light",
+        "batch_chunk_token_size": 4096,
     },
     "parent_child": {
         "use_parent_child": False,
