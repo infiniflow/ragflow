@@ -252,7 +252,11 @@ def _load_connector_app(monkeypatch):
         PERMISSION_ERROR=403,
         AUTHENTICATION_ERROR=109,
     )
-    constants_mod.TaskStatus = SimpleNamespace(SCHEDULE="schedule", CANCEL="cancel")
+    constants_mod.TaskStatus = SimpleNamespace(
+        UNSTART="unstart",
+        SCHEDULE="schedule",
+        CANCEL="cancel",
+    )
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     config_mod = ModuleType("common.data_source.config")
@@ -384,6 +388,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     assert save_calls[-1]["id"] == "generated-id"
     assert save_calls[-1]["tenant_id"] == "tenant-1"
     assert save_calls[-1]["input_type"] == module.InputType.POLL
+    assert save_calls[-1]["status"] == module.TaskStatus.UNSTART
     assert res["data"]["id"] == "generated-id"
 
     list_res = module.list_connector()
