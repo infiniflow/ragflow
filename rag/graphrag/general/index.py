@@ -55,19 +55,44 @@ from common.doc_store.doc_store_base import OrderByExpr
 
 
 DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 4096
+DEFAULT_GRAPHRAG_RETRY_ATTEMPTS = 2
+DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS = 2.0
+DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_SECONDS = 0
+DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_PER_CHUNK_SECONDS = 600
+DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_MIN_TIMEOUT_SECONDS = 120
+DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS = 180
+DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS = 1800
+DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS = 1800
 
 
-def _positive_int_config(config: dict, key: str, default: int) -> int:
+def _bounded_int_config(config: dict, key: str, default: int, minimum: int, maximum: int) -> int:
     value = config.get(key, default)
     try:
         value = int(value)
     except (TypeError, ValueError):
         logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
         return default
-    if value < 512 or value > 8196:
+    if value < minimum or value > maximum:
         logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
         return default
     return value
+
+
+def _bounded_float_config(config: dict, key: str, default: float, minimum: float, maximum: float) -> float:
+    value = config.get(key, default)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
+        return default
+    if value < minimum or value > maximum:
+        logging.warning("Invalid GraphRAG config %s=%r, using default %s", key, value, default)
+        return default
+    return value
+
+
+def _positive_int_config(config: dict, key: str, default: int) -> int:
+    return _bounded_int_config(config, key, default, 512, 8196)
 
 
 def _select_extractor(graphrag_config: dict):
@@ -95,6 +120,46 @@ def _has_cancel_and_exit(task_id: str, message: str, callback=None) -> None:
     if callback:
         callback(msg=message)
     raise TaskCanceledException(f"Task {task_id} was cancelled")
+
+
+async def _run_with_retry(
+    label: str,
+    coro_factory,
+    *,
+    attempts: int,
+    timeout_seconds: int | float,
+    backoff_seconds: float,
+    callback=None,
+    task_id: str = "",
+):
+    attempts = max(1, attempts)
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before {label}.", callback)
+        try:
+            if timeout_seconds and timeout_seconds > 0:
+                return await asyncio.wait_for(coro_factory(), timeout=timeout_seconds)
+            return await coro_factory()
+        except (TaskCanceledException, asyncio.CancelledError):
+            raise
+        except asyncio.TimeoutError as e:
+            last_error = e
+            error_msg = f"timeout after {timeout_seconds}s"
+        except Exception as e:
+            last_error = e
+            error_msg = repr(e)
+
+        if attempt >= attempts:
+            if callback:
+                callback(msg=f"[GraphRAG] {label} FAILED after {attempt}/{attempts} attempts: {error_msg}")
+            raise last_error
+
+        wait = backoff_seconds * (2 ** (attempt - 1))
+        if callback:
+            callback(msg=f"[GraphRAG] {label} failed attempt {attempt}/{attempts}: {error_msg}; retrying in {wait:.1f}s")
+        logging.warning("GraphRAG %s failed attempt %s/%s: %s", label, attempt, attempts, error_msg)
+        if wait > 0:
+            await asyncio.sleep(wait)
 
 
 async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
@@ -160,11 +225,36 @@ async def run_graphrag_for_kb(
 ) -> dict:
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
     task_id = row["id"]
-    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = asyncio.get_running_loop().time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
     graphrag_config = kb_parser_config.get("graphrag", {})
     batch_chunk_token_size = _positive_int_config(graphrag_config, "batch_chunk_token_size", DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
+    retry_attempts = _bounded_int_config(graphrag_config, "retry_attempts", DEFAULT_GRAPHRAG_RETRY_ATTEMPTS, 1, 10)
+    retry_backoff_seconds = _bounded_float_config(graphrag_config, "retry_backoff_seconds", DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS, 0.0, 600.0)
+    build_subgraph_timeout_seconds = _bounded_int_config(
+        graphrag_config,
+        "build_subgraph_timeout_seconds",
+        DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_SECONDS,
+        0,
+        86400,
+    )
+    build_subgraph_timeout_per_chunk_seconds = _bounded_int_config(
+        graphrag_config,
+        "build_subgraph_timeout_per_chunk_seconds",
+        DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_PER_CHUNK_SECONDS,
+        1,
+        86400,
+    )
+    build_subgraph_min_timeout_seconds = _bounded_int_config(
+        graphrag_config,
+        "build_subgraph_min_timeout_seconds",
+        DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_MIN_TIMEOUT_SECONDS,
+        1,
+        86400,
+    )
+    merge_timeout_seconds = _bounded_int_config(graphrag_config, "merge_timeout_seconds", DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS, 0, 86400)
+    resolution_timeout_seconds = _bounded_int_config(graphrag_config, "resolution_timeout_seconds", DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS, 0, 86400)
+    community_timeout_seconds = _bounded_int_config(graphrag_config, "community_timeout_seconds", DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS, 0, 86400)
 
     if not doc_ids:
         logging.info(f"Fetching all docs for {kb_id}")
@@ -247,14 +337,19 @@ async def run_graphrag_for_kb(
                     callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
                     return
 
-                deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
-                msg = f"[GraphRAG] build_subgraph doc:{doc_id}"
-                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")
+                deadline = build_subgraph_timeout_seconds or max(
+                    build_subgraph_min_timeout_seconds,
+                    len(chunks) * build_subgraph_timeout_per_chunk_seconds,
+                )
+                label = f"build_subgraph doc:{doc_id}"
+                msg = f"[GraphRAG] {label}"
+                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s, attempts={retry_attempts})")
 
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
-                    sg = await asyncio.wait_for(
-                        generate_subgraph(
+                    sg = await _run_with_retry(
+                        label,
+                        lambda: generate_subgraph(
                             kg_extractor,
                             tenant_id,
                             kb_id,
@@ -267,11 +362,15 @@ async def run_graphrag_for_kb(
                             callback,
                             task_id=task_id
                         ),
-                        timeout=deadline,
+                        attempts=retry_attempts,
+                        timeout_seconds=deadline,
+                        backoff_seconds=retry_backoff_seconds,
+                        callback=callback,
+                        task_id=task_id,
                     )
                 except asyncio.TimeoutError:
-                    failed_docs.append((doc_id, "timeout"))
-                    callback(msg=f"{msg} FAILED: timeout")
+                    failed_docs.append((doc_id, f"timeout after {deadline}s"))
+                    callback(msg=f"{msg} FAILED: timeout after {deadline}s")
                     return
                 if sg:
                     subgraphs[doc_id] = sg
@@ -281,6 +380,7 @@ async def run_graphrag_for_kb(
                     callback(msg=f"{msg} empty")
             except TaskCanceledException as canceled:
                 callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {canceled}")
+                raise
             except Exception as e:
                 failed_docs.append((doc_id, repr(e)))
                 callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {e!r}")
@@ -332,14 +432,29 @@ async def run_graphrag_for_kb(
             sg = subgraphs[doc_id]
             union_nodes.update(set(sg.nodes()))
 
-            new_graph = await merge_subgraph(
-                tenant_id,
-                kb_id,
-                doc_id,
-                sg,
-                embedding_model,
-                callback,
-            )
+            try:
+                new_graph = await _run_with_retry(
+                    f"merge_subgraph doc:{doc_id}",
+                    lambda: merge_subgraph(
+                        tenant_id,
+                        kb_id,
+                        doc_id,
+                        sg,
+                        embedding_model,
+                        callback,
+                    ),
+                    attempts=retry_attempts,
+                    timeout_seconds=merge_timeout_seconds,
+                    backoff_seconds=retry_backoff_seconds,
+                    callback=callback,
+                    task_id=task_id,
+                )
+            except TaskCanceledException:
+                raise
+            except Exception as e:
+                failed_docs.append((doc_id, f"merge failed: {e!r}"))
+                callback(msg=f"[GraphRAG] merge_subgraph doc:{doc_id} FAILED: {e!r}")
+                raise
             if new_graph is not None:
                 final_graph = new_graph
 
@@ -397,15 +512,23 @@ async def run_graphrag_for_kb(
 
         if resolution_pending:
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before entity resolution.", callback)
-            await resolve_entities(
-                final_graph,
-                subgraph_nodes,
-                tenant_id,
-                kb_id,
-                None,
-                chat_model,
-                embedding_model,
-                callback,
+            await _run_with_retry(
+                "entity resolution",
+                lambda: resolve_entities(
+                    final_graph,
+                    subgraph_nodes,
+                    tenant_id,
+                    kb_id,
+                    None,
+                    chat_model,
+                    embedding_model,
+                    callback,
+                    task_id=task_id,
+                ),
+                attempts=retry_attempts,
+                timeout_seconds=resolution_timeout_seconds,
+                backoff_seconds=retry_backoff_seconds,
+                callback=callback,
                 task_id=task_id,
             )
             set_phase_marker(kb_id, PHASE_RESOLUTION)
@@ -414,14 +537,22 @@ async def run_graphrag_for_kb(
 
         if community_pending:
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before community extraction.", callback)
-            await extract_community(
-                final_graph,
-                tenant_id,
-                kb_id,
-                None,
-                chat_model,
-                embedding_model,
-                callback,
+            await _run_with_retry(
+                "community extraction",
+                lambda: extract_community(
+                    final_graph,
+                    tenant_id,
+                    kb_id,
+                    None,
+                    chat_model,
+                    embedding_model,
+                    callback,
+                    task_id=task_id,
+                ),
+                attempts=retry_attempts,
+                timeout_seconds=community_timeout_seconds,
+                backoff_seconds=retry_backoff_seconds,
+                callback=callback,
                 task_id=task_id,
             )
             set_phase_marker(kb_id, PHASE_COMMUNITY)
