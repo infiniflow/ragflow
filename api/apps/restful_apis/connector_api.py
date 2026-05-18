@@ -135,19 +135,24 @@ def rm_connector(connector_id):
 
 @manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("source")
 async def test_connector(connector_id):
-    """Validate connector configuration without persisting changes or triggering sync."""
+    """Validate connector configuration from the request body without persisting."""
     from common.data_source import build_connector_for_source
     from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 
-    ok, conn = ConnectorService.get_by_id(connector_id)
-    if not ok:
-        return get_data_error_result(message="Can't find this Connector!")
+    req = await get_request_json()
+    source = req["source"]
+    config = req.get("config") or {}
+    if not isinstance(config, dict):
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config must be an object.")
 
-    config = conn.config or {}
+    ok, conn = ConnectorService.get_by_id(connector_id)
+    if ok and conn.tenant_id != current_user.id:
+        return get_json_result(code=RetCode.PERMISSION_ERROR, message="You don't own this connector.")
 
     def _validate() -> None:
-        connector = build_connector_for_source(conn.source, config)
+        connector = build_connector_for_source(source, config)
         connector.validate_connector_settings()
 
     try:

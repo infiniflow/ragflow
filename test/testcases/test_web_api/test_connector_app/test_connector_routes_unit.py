@@ -421,6 +421,36 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
 
 @pytest.mark.p2
+def test_connector_test_route_with_unsaved_source(monkeypatch):
+    module = _load_connector_app(monkeypatch)
+
+    class _FakeConnector:
+        def validate_connector_settings(self):
+            return None
+
+    monkeypatch.setattr(
+        "common.data_source.build_connector_for_source",
+        lambda source, config: _FakeConnector(),
+    )
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": {"feed_url": "https://example.com"}}),
+    )
+    ok_res = _run(module.test_connector("new"))
+    assert ok_res["data"] is True
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": "bad"}),
+    )
+    bad_config_res = _run(module.test_connector("new"))
+    assert bad_config_res["code"] == module.RetCode.ARGUMENT_ERROR
+
+
+@pytest.mark.p2
 def test_connector_oauth_helper_functions(monkeypatch):
     module = _load_connector_app(monkeypatch)
 

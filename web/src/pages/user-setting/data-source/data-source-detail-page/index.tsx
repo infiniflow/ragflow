@@ -14,6 +14,7 @@ import { t } from 'i18next';
 import { CirclePause, Repeat } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
+import { useSearchParams } from 'react-router';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
@@ -32,6 +33,8 @@ import { DataSourceLogsTable } from './log-table';
 
 const SourceDetailPage = () => {
   const formRef = useRef<DynamicFormRef>(null);
+  const [searchParams] = useSearchParams();
+  const connectorId = searchParams.get('id')!;
 
   const { data: detail } = useFetchDataSourceDetail();
   const { handleResume } = useDataSourceResume();
@@ -145,7 +148,10 @@ const SourceDetailPage = () => {
   }, [detail, runSchedule]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
-  const { loading: testLoading, handleTest } = useTestDataSource(formRef);
+  const { loading: testLoading, handleTest } = useTestDataSource(
+    formRef,
+    connectorId,
+  );
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();

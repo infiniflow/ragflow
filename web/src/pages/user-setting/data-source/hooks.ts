@@ -218,21 +218,22 @@ export const useDataSourceRebuild = () => {
 
 export const useTestDataSource = (
   formRef: RefObject<DynamicFormRef | null>,
+  connectorId: string,
 ) => {
-  const [currentQueryParameters] = useSearchParams();
-  const id = currentQueryParameters.get('id');
   const [loading, setLoading] = useState(false);
 
   const handleTest = useCallback(async () => {
-    if (!id) return;
+    const values = formRef.current?.getFilteredValues();
+    const source = values?.source;
+    if (!source) return;
+
     setLoading(true);
     try {
-      const values = formRef.current?.getFilteredValues();
-      const config = values?.config;
-      const { data } = await testDataSource(
-        id,
-        config && typeof config === 'object' ? { config } : undefined,
-      );
+      const config =
+        values?.config && typeof values.config === 'object'
+          ? values.config
+          : {};
+      const { data } = await testDataSource(connectorId, { source, config });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
       } else {
@@ -243,7 +244,7 @@ export const useTestDataSource = (
     } finally {
       setLoading(false);
     }
-  }, [formRef, id]);
+  }, [formRef, connectorId]);
 
   return { loading, handleTest };
 };

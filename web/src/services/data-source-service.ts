@@ -39,7 +39,7 @@ export const featchDataSourceDetail = (id: string) =>
 
 export const testDataSource = (
   id: string,
-  data?: { config?: Record<string, unknown> },
+  data: { source: string; config?: Record<string, unknown> },
 ) => request.post(api.dataSourceTest(id), { data });
 
 export const startGoogleDriveWebAuth = (payload: {
