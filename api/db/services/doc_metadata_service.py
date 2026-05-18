@@ -937,8 +937,8 @@ class DocMetadataService:
                 return doc_ids
             finally:
                 settings.docStoreConn.connPool.release_conn(inf_conn)
-        except Exception as e:
-            logging.error(f"Infinity metadata filter failed: {e}")
+        except Exception:
+            logging.warning("Metadata filter push-down failed; falling back to in-memory filter", exc_info=True)
             return None
 
     @classmethod

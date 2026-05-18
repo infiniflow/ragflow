@@ -7,12 +7,13 @@ date detection) are consistent between the two backends.
 Execution is controlled by DOC_ENGINE environment variable:
 - DOC_ENGINE=infinity: runs Infinity tests, skips ES tests
 - DOC_ENGINE=es (or unset): runs ES tests, skips Infinity tests
-- No DOC_ENGINE: runs all tests
 """
 
 import os
 
 import pytest
+
+pytestmark = pytest.mark.p2
 
 from common.metadata_es_filter import MetaFilterTranslator as ESMetaFilterTranslator
 from common.metadata_infinity_filter import (
