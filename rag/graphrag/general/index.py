@@ -159,6 +159,7 @@ async def run_graphrag_for_kb(
     max_parallel_docs: int = 4,
 ) -> dict:
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
+    task_id = row["id"]
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = asyncio.get_running_loop().time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
@@ -226,20 +227,20 @@ async def run_graphrag_for_kb(
     async def build_one(doc_id: str):
         nonlocal total_chunks
 
-        _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled, stopping execution.", callback)
+        _has_cancel_and_exit(task_id, f"Task {task_id} cancelled, stopping execution.", callback)
 
         kg_extractor = _select_extractor(graphrag_config)
 
         async with semaphore:
             # CHECKPOINT: bounded by semaphore so doc-store lookups respect max_parallel_docs
-            _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before loading checkpoint for doc {doc_id}.", callback)
+            _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before loading checkpoint for doc {doc_id}.", callback)
             existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
             if existing_sg:
                 subgraphs[doc_id] = existing_sg
                 callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
                 return
             try:
-                _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before loading chunks for doc {doc_id}.", callback)
+                _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before loading chunks for doc {doc_id}.", callback)
                 chunks = load_doc_chunks(doc_id)
                 total_chunks += len(chunks)
                 if not chunks:
@@ -250,7 +251,7 @@ async def run_graphrag_for_kb(
                 msg = f"[GraphRAG] build_subgraph doc:{doc_id}"
                 callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")
 
-                _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before subgraph generation for doc {doc_id}.", callback)
+                _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
                     sg = await asyncio.wait_for(
                         generate_subgraph(
@@ -264,7 +265,7 @@ async def run_graphrag_for_kb(
                             chat_model,
                             embedding_model,
                             callback,
-                            task_id=row["id"]
+                            task_id=task_id
                         ),
                         timeout=deadline,
                     )
@@ -284,7 +285,7 @@ async def run_graphrag_for_kb(
                 failed_docs.append((doc_id, repr(e)))
                 callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {e!r}")
 
-    _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before processing documents.", callback)
+    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before processing documents.", callback)
 
     tasks = [asyncio.create_task(build_one(doc_id)) for doc_id in doc_ids]
     try:
@@ -300,7 +301,7 @@ async def run_graphrag_for_kb(
         callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
         return {"ok_docs": [], "failed_docs": [(doc_id, "no available chunks") for doc_id in doc_ids], "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
 
-    _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled after document processing.", callback)
+    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled after document processing.", callback)
 
     ok_docs = [d for d in doc_ids if d in subgraphs]
     final_graph = None
@@ -317,17 +318,17 @@ async def run_graphrag_for_kb(
         return {"ok_docs": [], "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
     kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value="batch_merge", timeout=1200)
-    _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before acquiring merge lock.", callback)
+    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring merge lock.", callback)
     await kb_lock.spin_acquire()
     callback(msg=f"[GraphRAG] kb:{kb_id} merge lock acquired")
 
     try:
-        _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before merging subgraphs.", callback)
+        _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before merging subgraphs.", callback)
 
         union_nodes: set = set()
 
         for doc_id in ok_docs:
-            _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before merging subgraph for doc {doc_id}.", callback)
+            _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before merging subgraph for doc {doc_id}.", callback)
             sg = subgraphs[doc_id]
             union_nodes.update(set(sg.nodes()))
 
@@ -366,14 +367,14 @@ async def run_graphrag_for_kb(
         callback(msg=f"[GraphRAG] kb:{kb_id} all requested phases already complete; nothing to do.")
         return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
-    _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before resolution/community extraction.", callback)
+    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before resolution/community extraction.", callback)
 
-    _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before acquiring post-merge lock.", callback)
+    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring post-merge lock.", callback)
     await kb_lock.spin_acquire()
     callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
 
     try:
-        _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before resolution/community extraction.", callback)
+        _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before resolution/community extraction.", callback)
 
         # Resume path: no docs were merged this round but pending phases
         # require the previously-persisted graph. Load it from the doc store.
@@ -395,7 +396,7 @@ async def run_graphrag_for_kb(
             subgraph_nodes = set(final_graph.nodes())
 
         if resolution_pending:
-            _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before entity resolution.", callback)
+            _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before entity resolution.", callback)
             await resolve_entities(
                 final_graph,
                 subgraph_nodes,
@@ -405,14 +406,14 @@ async def run_graphrag_for_kb(
                 chat_model,
                 embedding_model,
                 callback,
-                task_id=row["id"],
+                task_id=task_id,
             )
             set_phase_marker(kb_id, PHASE_RESOLUTION)
         elif with_resolution:
             callback(msg=f"[GraphRAG] kb:{kb_id} resolution already completed previously, skipping.")
 
         if community_pending:
-            _has_cancel_and_exit(row["id"], f"Task {row['id']} cancelled before community extraction.", callback)
+            _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before community extraction.", callback)
             await extract_community(
                 final_graph,
                 tenant_id,
@@ -421,7 +422,7 @@ async def run_graphrag_for_kb(
                 chat_model,
                 embedding_model,
                 callback,
-                task_id=row["id"],
+                task_id=task_id,
             )
             set_phase_marker(kb_id, PHASE_COMMUNITY)
         elif with_community:
