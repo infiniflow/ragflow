@@ -1,0 +1,85 @@
+{
+  "name": "Anthropic",
+  "url": {
+    "default": "https://api.anthropic.com"
+  },
+  "url_suffix": {
+    "chat": "v1/messages",
+    "models": "v1/models"
+  },
+  "class": "anthropic",
+  "models": [
+    {
+      "name": "claude-opus-4-5-20251101",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-opus-4-1-20250805",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-opus-4-20250514",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-5-20250929",
+      "max_tokens": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-20250514",
+      "max_tokens": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-haiku-4-5-20251001",
+      "max_tokens": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-3-7-sonnet-20250219",
+      "max_tokens": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-3-5-sonnet-20241022",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-3-5-haiku-20241022",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    }
+  ]
+}
