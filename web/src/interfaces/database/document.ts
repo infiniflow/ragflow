@@ -67,6 +67,7 @@ interface Raptor {
 }
 
 interface GraphRag {
+  batch_chunk_token_size?: number;
   community?: boolean;
   entity_types?: string[];
   method?: string;

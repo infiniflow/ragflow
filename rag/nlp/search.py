@@ -753,7 +753,13 @@ class Dealer:
                    kb_ids: list[str], max_count=1024,
                    offset=0,
                    fields=["docnm_kwd", "content_with_weight", "img_id"],
-                   sort_by_position: bool = False):
+                   sort_by_position: bool = False,
+                   retrieve_all: bool = False):
+        """Return chunks for a document.
+
+        By default, preserve the historical max_count cap. When retrieve_all is
+        True, keep paging until the doc store returns fewer rows than requested.
+        """
         condition = {"doc_id": doc_id}
 
         fields_set = set(fields or [])
@@ -771,8 +777,9 @@ class Dealer:
 
         res = []
         bs = 128
-        for p in range(offset, max_count, bs):
-            limit = min(bs, max_count - p)
+        p = offset
+        while retrieve_all or p < max_count:
+            limit = bs if retrieve_all else min(bs, max_count - p)
             if limit <= 0:
                 break
             es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, limit, index_name(tenant_id),
@@ -785,6 +792,7 @@ class Dealer:
             chunk_count = len(dict_chunks)
             if chunk_count == 0 or chunk_count < limit:
                 break
+            p += limit
         return res
 
     def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
