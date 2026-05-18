@@ -19,7 +19,15 @@
 from __future__ import annotations
 
 import ast
+import re
 from typing import Any, Dict, List, Sequence
+
+_KEY_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_key(key: str, flt: Dict[str, Any]) -> None:
+    if not _KEY_PATTERN.match(key):
+        raise ValueError(f"invalid key format (must be identifier-like): {flt}")
 
 SUPPORTED_OPERATORS: frozenset[str] = frozenset(
     {
@@ -57,6 +65,7 @@ class MetaFilterTranslator:
 
         if not key or not isinstance(key, str):
             raise ValueError(f"filter is missing a string key: {flt}")
+        _validate_key(key, flt)
         if op not in SUPPORTED_OPERATORS:
             raise ValueError(f"unknown operator: {op!r}, filter: {flt}")
 

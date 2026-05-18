@@ -921,7 +921,8 @@ class DocMetadataService:
 
         try:
             sql_filter = build_infinity_filter(filters, logic)
-            kb_filter = "kb_id IN (" + ", ".join([f"'{k}'" for k in kb_ids]) + ")"
+            escaped_kb_ids = [k.replace("'", "''") for k in kb_ids]
+            kb_filter = "kb_id IN (" + ", ".join([f"'{k}'" for k in escaped_kb_ids]) + ")"
             where_clause = f"{kb_filter} AND {sql_filter}"
             logging.debug(f"Infinity metadata filter: {where_clause}")
 

@@ -694,6 +694,18 @@ def test_infinity_missing_key_raises(infinity_translator):
 
 
 @pytest.mark.skipif(_is_es(), reason="Infinity-only test")
+def test_infinity_invalid_key_format_raises(infinity_translator):
+    with pytest.raises(ValueError, match="invalid key format"):
+        infinity_translator.translate({"key": "a;b", "op": "=", "value": "x"})
+
+
+@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
+def test_infinity_key_with_brace_raises(infinity_translator):
+    with pytest.raises(ValueError, match="invalid key format"):
+        infinity_translator.translate({"key": "field$}", "op": "=", "value": "x"})
+
+
+@pytest.mark.skipif(_is_es(), reason="Infinity-only test")
 def test_infinity_scalar_op_with_list_value_raises(infinity_translator):
     with pytest.raises(ValueError):
         infinity_translator.translate({"key": "tag", "op": "=", "value": ["a", "b"]})
