@@ -27,21 +27,6 @@ from common.constants import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 
 
-def _llm_registries():
-    # rag.llm imports provider implementations and optional native ML stacks.
-    # Most LLM settings endpoints only list database metadata, so defer the
-    # heavy import until verification/instantiation is requested.
-    from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
-
-    return EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
-
-
-def _test_image():
-    from rag.utils.base64_image import test_image
-
-    return test_image
-
-
 def _resolve_my_llm_is_tools(o_dict: dict) -> bool:
     decode_api_key_config = getattr(TenantLLMService, "_decode_api_key_config", None)
     if callable(decode_api_key_config):
@@ -91,7 +76,8 @@ def factories():
 @validate_request("llm_factory", "api_key")
 async def set_api_key():
     req = await get_request_json()
-    EmbeddingModel, ChatModel, RerankModel, _, _, _, _ = _llm_registries()
+    from rag.llm import ChatModel, EmbeddingModel, RerankModel
+
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
@@ -192,7 +178,8 @@ async def set_api_key():
 @validate_request("llm_factory")
 async def add_llm():
     req = await get_request_json()
-    EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel = _llm_registries()
+    from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
+
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
@@ -333,10 +320,12 @@ async def add_llm():
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.IMAGE2TEXT.value:
+            from rag.utils.base64_image import test_image
+
             assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
             mdl = CvModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
             try:
-                image_data = _test_image()
+                image_data = test_image
                 m, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.describe, image_data),
                     timeout=timeout_seconds,

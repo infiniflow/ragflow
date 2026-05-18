@@ -26,15 +26,6 @@ from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.user_service import TenantService
 
 
-def _llm_registries():
-    # Importing rag.llm loads optional provider SDKs and native ML libraries.
-    # Keep that cost out of API startup; instantiate registries only when a
-    # model is actually used.
-    from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
-
-    return ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
-
-
 class LLMFactoriesService(CommonService):
     model = LLMFactories
 
@@ -191,7 +182,8 @@ class TenantLLMService(CommonService):
     def model_instance(cls, model_config: dict, lang="Chinese", **kwargs):
         if not model_config:
             raise LookupError("Model config is required")
-        ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel = _llm_registries()
+        from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
+
         kwargs.update({"provider": model_config["llm_factory"]})
         api_key = model_config.get("api_key_payload", model_config["api_key"])
         if model_config["model_type"] == LLMType.EMBEDDING.value:

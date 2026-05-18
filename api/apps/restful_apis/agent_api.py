@@ -62,42 +62,6 @@ from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
 
 
-def _canvas_cls():
-    from agent.canvas import Canvas
-
-    return Canvas
-
-
-def _llm_cls():
-    from agent.component import LLM
-
-    return LLM
-
-
-def _normalize_chunker_dsl(dsl):
-    from agent.dsl_migration import normalize_chunker_dsl
-
-    return normalize_chunker_dsl(dsl)
-
-
-def _pipeline_cls():
-    from rag.flow.pipeline import Pipeline
-
-    return Pipeline
-
-
-def _search():
-    from rag.nlp import search
-
-    return search
-
-
-def _redis_conn():
-    from rag.utils.redis_conn import REDIS_CONN
-
-    return REDIS_CONN
-
-
 def _require_canvas_access_sync(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -224,7 +188,8 @@ def list_agent_sessions(agent_id, tenant_id):
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
 async def create_agent_session(agent_id, tenant_id):
-    Canvas = _canvas_cls()
+    from agent.canvas import Canvas
+
     req = await get_request_json()
     user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
     release_mode = bool(req.get("release", request.args.get("release", False)))
@@ -552,7 +517,8 @@ async def upload_agent_file(agent_id, tenant_id):
 @_require_canvas_access_sync
 def get_agent_component_input_form(agent_id, component_id, tenant_id):
     try:
-        Canvas = _canvas_cls()
+        from agent.canvas import Canvas
+
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
             return get_data_error_result(message="canvas not found.")
@@ -570,8 +536,9 @@ def get_agent_component_input_form(agent_id, component_id, tenant_id):
 async def debug_agent_component(agent_id, component_id, tenant_id):
     req = await get_request_json()
     try:
-        Canvas = _canvas_cls()
-        LLM = _llm_cls()
+        from agent.canvas import Canvas
+        from agent.component import LLM
+
         _, user_canvas = UserCanvasService.get_by_id(agent_id)
         canvas = Canvas(json.dumps(user_canvas.dsl), tenant_id, canvas_id=user_canvas.id)
         canvas.reset()
@@ -630,7 +597,9 @@ def get_agent(agent_id, tenant_id):
             released_versions.sort(key=lambda version: version.update_time, reverse=True)
             last_publish_time = released_versions[0].update_time
 
-    canvas["dsl"] = _normalize_chunker_dsl(canvas.get("dsl", {}))
+    from agent.dsl_migration import normalize_chunker_dsl
+
+    canvas["dsl"] = normalize_chunker_dsl(canvas.get("dsl", {}))
     canvas["last_publish_time"] = last_publish_time
 
     if canvas.get("canvas_category") == CanvasCategory.DataFlow:
@@ -675,7 +644,8 @@ def get_agent_version(agent_id, version_id, tenant_id):
 @_require_canvas_access_async
 async def get_agent_logs(agent_id, message_id, tenant_id):
     try:
-        REDIS_CONN = _redis_conn()
+        from rag.utils.redis_conn import REDIS_CONN
+
         binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
         if not binary:
             return get_json_result(data={})
@@ -753,7 +723,8 @@ async def update_agent(agent_id, tenant_id):
 @_require_canvas_access_async
 async def reset_agent(agent_id, tenant_id):
     try:
-        Canvas = _canvas_cls()
+        from agent.canvas import Canvas
+
         exists, user_canvas = UserCanvasService.get_by_id(agent_id)
         if not exists:
             return get_data_error_result(message="canvas not found.")
@@ -782,7 +753,8 @@ async def reset_agent(agent_id, tenant_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def rerun_agent(tenant_id):
-    search = _search()
+    from rag.nlp import search
+
     req = await get_request_json()
     doc = PipelineOperationLogService.get_documents_info(req["id"])
     if not doc:
@@ -1063,7 +1035,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         dsl_str = json.dumps(replica_dsl, ensure_ascii=False)
 
         if cvs.canvas_category == CanvasCategory.DataFlow:
-            Pipeline = _pipeline_cls()
+            from rag.flow.pipeline import Pipeline
+
             task_id = get_uuid()
             Pipeline(
                 dsl_str,
@@ -1086,7 +1059,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return get_json_result(data={"message_id": task_id})
 
         try:
-            Canvas = _canvas_cls()
+            from agent.canvas import Canvas
+
             canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)
@@ -1372,7 +1346,8 @@ async def webhook(agent_id: str):
         now = time.time()
 
         try:
-            REDIS_CONN = _redis_conn()
+            from rag.utils.redis_conn import REDIS_CONN
+
             res = REDIS_CONN.lua_token_bucket(
                 keys=[key],
                 args=[capacity, rate, now, cost],
@@ -1480,7 +1455,8 @@ async def webhook(agent_id: str):
     if not isinstance(cvs.dsl, str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
-        Canvas = _canvas_cls()
+        from agent.canvas import Canvas
+
         canvas = Canvas(dsl, cvs.user_id, agent_id, canvas_id=agent_id)
     except Exception as e:
         resp=get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e))
@@ -1734,7 +1710,8 @@ async def webhook(agent_id: str):
     response_cfg = webhook_cfg.get("response", {})
 
     def append_webhook_trace(agent_id: str, start_ts: float,event: dict, ttl=600):
-        REDIS_CONN = _redis_conn()
+        from rag.utils.redis_conn import REDIS_CONN
+
         key = f"webhook-trace-{agent_id}-logs"
 
         raw = REDIS_CONN.get(key)
@@ -1934,7 +1911,8 @@ async def webhook_trace(agent_id: str):
     webhook_id = request.args.get("webhook_id")
 
     key = f"webhook-trace-{agent_id}-logs"
-    REDIS_CONN = _redis_conn()
+    from rag.utils.redis_conn import REDIS_CONN
+
     raw = REDIS_CONN.get(key)
 
     if since_ts is None:
