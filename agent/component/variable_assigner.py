@@ -92,12 +92,12 @@ class VariableAssigner(ComponentBase,ABC):
             return ""
         elif isinstance(variable,dict):
             return {}
+        elif isinstance(variable,bool):
+            return False
         elif isinstance(variable,int):
             return 0
         elif isinstance(variable,float):
             return 0.0
-        elif isinstance(variable,bool):
-            return False
         else:
             return None
 
