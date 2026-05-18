@@ -387,6 +387,7 @@ DEFAULT_PARSER_CONFIG_FOR_TEST = {
             "category",
         ],
         "method": "light",
+        "batch_chunk_token_size": 4096,
     },
 }
 
