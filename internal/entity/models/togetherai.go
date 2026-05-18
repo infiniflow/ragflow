@@ -67,29 +67,6 @@ func (t *TogetherAIModel) baseURLForRegion(region string) (string, error) {
 	return strings.TrimSuffix(base, "/"), nil
 }
 
-type togetherAIChatChoice struct {
-	Message      togetherAIChatMessage `json:"message"`
-	Delta        togetherAIChatMessage `json:"delta"`
-	FinishReason string                `json:"finish_reason"`
-}
-
-type togetherAIChatMessage struct {
-	Content          string `json:"content"`
-	ReasoningContent string `json:"reasoning_content"`
-	Reasoning        string `json:"reasoning"`
-}
-
-type togetherAIChatResponse struct {
-	Choices []togetherAIChatChoice `json:"choices"`
-	Error   interface{}            `json:"error"`
-}
-
-type togetherAIModelsResponse struct {
-	Data []struct {
-		ID string `json:"id"`
-	} `json:"data"`
-}
-
 func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -137,6 +114,23 @@ func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat), nil
+}
+
+type togetherAIChatMessage struct {
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content"`
+	Reasoning        string `json:"reasoning"`
+}
+
+type togetherAIChatChoice struct {
+	Message      togetherAIChatMessage `json:"message"`
+	Delta        togetherAIChatMessage `json:"delta"`
+	FinishReason string                `json:"finish_reason"`
+}
+
+type togetherAIChatResponse struct {
+	Choices []togetherAIChatChoice `json:"choices"`
+	Error   interface{}            `json:"error"`
 }
 
 func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -206,6 +200,8 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 	}, nil
 }
 
+const togetherAIStreamTimeout = 10 * time.Minute
+
 func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
@@ -233,7 +229,13 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewBuffer(jsonData))
+	// ResponseHeaderTimeout caps the initial header wait. This context
+	// also caps the body-read phase so a stalled SSE stream cannot hold
+	// the caller's goroutine and connection indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), togetherAIStreamTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -308,6 +310,12 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
+}
+
+type togetherAIModelsResponse struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
 }
 
 func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
