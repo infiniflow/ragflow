@@ -157,6 +157,7 @@ def add_model_instance(auth):
 
 
 def get_tenant_info(auth):
+    # todo deprecated
     url = HOST_ADDRESS + "/api/v1/users/me/models"
     authorization = {"Authorization": auth}
     response = requests.get(url=url, headers=authorization)
