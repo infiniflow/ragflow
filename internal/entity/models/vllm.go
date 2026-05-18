@@ -36,11 +36,6 @@ type VllmModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (v *VllmModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewVllmModel creates a new Vllm AI model instance
 func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	return &VllmModel{
@@ -552,9 +547,120 @@ func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Rerank calculates similarity scores between query and documents
+// vllmRerankRequest mirrors vLLM's Jina/Cohere-compatible /v1/rerank
+// payload. Unlike NVIDIA NIM (which wraps each passage as {text: "..."}),
+// vLLM accepts documents as a flat []string.
+type vllmRerankRequest struct {
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+	TopN      int      `json:"top_n"`
+}
+
+// vllmRerankResponse maps the Jina-style results array. The `document`
+// field is intentionally ignored — callers reconstruct text from the
+// original input via Index.
+type vllmRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+}
+
+// Rerank scores documents against the query using a vLLM rerank model
+// served at /v1/rerank (stable since vLLM v0.7). Mirrors the contract
+// of NvidiaModel.Rerank: defaults top_n to len(documents) so callers
+// get a score per input, shrinks to RerankConfig.TopN only when set
+// and smaller. Returned RerankResult entries are in the API's ranking
+// order; callers that need original-input order sort by Index. The
+// Authorization header is sent only when APIConfig.ApiKey is non-empty,
+// matching the existing Embed/ListModels behaviour for this local
+// driver.
 func (z *VllmModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+
+	reqBody := vllmRerankRequest{
+		Model:     *modelName,
+		Query:     query,
+		Documents: documents,
+		TopN:      topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("vLLM rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed vllmRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	for _, r := range parsed.Results {
+		if r.Index < 0 || r.Index >= len(documents) {
+			return nil, fmt.Errorf("unexpected rerank index %d for %d inputs", r.Index, len(documents))
+		}
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          r.Index,
+			RelevanceScore: r.RelevanceScore,
+		})
+	}
+
+	return &rerankResponse, nil
 }
 
 // TranscribeAudio transcribe audio
@@ -566,8 +672,8 @@ func (z *VllmModel) TranscribeAudioWithSender(modelName *string, file *string, a
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (o *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (o *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
@@ -576,6 +682,19 @@ func (z *VllmModel) AudioSpeechWithSender(modelName *string, audioContent *strin
 }
 
 // OCRFile OCR file
-func (m *VllmModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *VllmModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *VllmModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VllmModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VllmModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

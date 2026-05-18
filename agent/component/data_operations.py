@@ -73,7 +73,7 @@ class DataOperations(ComponentBase,ABC):
                 continue
         if self._param.operations == "select_keys":
             self._select_keys()
-        elif self._param.operations == "recursive_eval":
+        elif self._param.operations == "literal_eval":
             self._literal_eval()
         elif self._param.operations == "combine":
             self._combine()

@@ -77,8 +77,8 @@ class RAGFlowPdfParser:
         if layout_recognizer_type not in ["onnx", "ascend"]:
             raise RuntimeError("Unsupported layout recognizer type.")
 
-        if hasattr(self, "model_speciess"):
-            recognizer_domain = "layout." + self.model_speciess
+        if hasattr(self, "model_species"):
+            recognizer_domain = "layout." + self.model_species
         else:
             recognizer_domain = "layout"
 

@@ -192,7 +192,7 @@ async def add_llm():
 
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
-        # Assemble ark_api_key endpoint_id into api_key
+        # Assemble ark_api_key model_id into api_key; keep endpoint_id in backend payload for compatibility
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
     elif factory == "Tencent Cloud":
@@ -247,19 +247,6 @@ async def add_llm():
 
     elif factory == "OpenDataLoader":
         api_key = apikey_json(["api_key", "provider_order"])
-
-    existing_llm = None
-    existing_api_key = None
-    if req.get("api_key") is None:
-        existing_llms = TenantLLMService.query(tenant_id=current_user.id, llm_factory=factory, llm_name=llm_name)
-        if existing_llms:
-            existing_llm = existing_llms[0]
-            existing_api_key, _, existing_api_key_payload = TenantLLMService._decode_api_key_config(existing_llm.api_key)
-            if existing_api_key_payload is not None:
-                existing_api_key = existing_api_key_payload
-
-    if req.get("api_key") is None:
-        api_key = existing_api_key if existing_api_key is not None else "x"
 
     llm = {
         "tenant_id": current_user.id,

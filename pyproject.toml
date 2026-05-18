@@ -1,12 +1,17 @@
 [project]
 name = "ragflow"
-version = "0.25.2"
+version = "0.25.4"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.13,<3.15"
 dependencies = [
+    # discord-py==2.3.2 unconditionally imports audioop in discord/player.py at module-
+    # load time. audioop was removed from the CPython stdlib in Python 3.13 (PEP 594),
+    # so any import of the discord package raises ImportError on Python 3.13 — even in
+    # tests that never use voice features. audioop-lts provides the module as a backport.
+    "audioop-lts>=0.2.1",
     "aiosmtplib>=5.0.0",
     "akshare>=1.15.78,<2.0.0",
     "anthropic==0.34.1",
@@ -50,7 +55,7 @@ dependencies = [
     "groq==0.9.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.7.0-dev6",
+    "infinity-sdk==0.7.0",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.35.0",
@@ -74,7 +79,7 @@ dependencies = [
     "opencv-python-headless==4.10.0.84",
     "opendal>=0.45.0,<0.46.0",
     "opensearch-py==2.7.1",
-    "ormsgpack==1.5.0",
+    "ormsgpack>=1.5.0",
     "pdfplumber==0.10.4",
     "pluginlib>=0.10.0",
     "psycopg2-binary>=2.9.11,<3.0.0",
@@ -108,7 +113,6 @@ dependencies = [
     "agentrun-sdk>=0.0.16,<1.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
     "sqlglotrs==0.9.0",
-    "strenum==0.4.15",
     "tavily-python==0.5.1",
     "tencentcloud-sdk-python==3.0.1478",
     "tika==2.6.0",
@@ -180,7 +184,6 @@ test = [
     "pycryptodomex==3.20.0",
     "pytest-playwright>=0.7.2",
     "codecov>=2.1.13",
-    "tensorflow-cpu>=2.17.0",
 ]
 
 [tool.uv]
@@ -188,10 +191,30 @@ constraint-dependencies = [
     # CVE-2026-30922: Denial of Service via unbounded recursion in ASN.1 decoding (CVSS 7.5 HIGH)
     # pyasn1 < 0.6.3 is vulnerable; pulled in transitively via google-auth / rsa / pyasn1-modules
     "pyasn1>=0.6.3",
+    # Python 3.13 added pathlib.PurePath.parser as a public class attribute holding
+    # the posixpath/ntpath module. trio<0.26 introspects all Path class attributes to
+    # generate async forwards and raises TypeError on any non-callable attribute it
+    # encounters (fixed in trio 0.26 by skipping non-callables). Pulled in transitively
+    # via selenium-wire -> trio-websocket -> trio.
+    "trio>=0.26.0",
 ]
+override-dependencies = [
+    # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
+    # attrs 23.x is backward-compatible; moodlepy works fine at runtime with it.
+    "attrs>=23.2.0",
+]
+# trio 0.26+ (Python 3.13 compatible) is not yet on the Aliyun mirror.
+# Mark PyPI as explicit so it is used only for packages listed in [tool.uv.sources].
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+explicit = true
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
+
+[tool.uv.sources]
+trio = [{ index = "pypi" }]
 
 [tool.setuptools]
 packages = [

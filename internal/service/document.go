@@ -175,8 +175,8 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-// ListDocumentsByKBID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByKBID(kbID string, page, pageSize int) ([]*DocumentResponse, int64, error) {
+// ListDocumentsByDatasetID list documents by knowledge base ID
+func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*DocumentResponse, int64, error) {
 	offset := (page - 1) * pageSize
 	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
 	if err != nil {
@@ -207,6 +207,13 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	return responses, total, nil
 }
 
+func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) error {
+	// create document parse id
+	// save to task table
+	// send to message queue
+	return nil
+}
+
 // toResponse convert model.Document to DocumentResponse
 func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 	createdAt := ""
@@ -223,7 +230,12 @@ func (s *DocumentService) toResponse(doc *entity.Document) *DocumentResponse {
 	}
 	updatedAt := ""
 	if doc.UpdateTime != nil {
-		updatedAt = time.Unix(*doc.UpdateTime, 0).Format("2006-01-02 15:04:05")
+		// Accept both historical second-based values and current millisecond-based values.
+		ts := *doc.UpdateTime
+		if ts > 1000000000000 {
+			ts /= 1000
+		}
+		updatedAt = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
 	}
 	return &DocumentResponse{
 		ID:              doc.ID,
