@@ -124,7 +124,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert res.status_code == 200
     payload = res.json()
 
-    assert payload["object"] == "chat.completion", payload
+    assert payload.get("object") == "chat.completion", payload
     assert isinstance(payload["choices"], list) and payload["choices"], payload
     first_choice = payload["choices"][0]
     assert first_choice.get("finish_reason") == "stop", payload

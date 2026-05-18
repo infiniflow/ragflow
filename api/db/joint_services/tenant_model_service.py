@@ -280,11 +280,17 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
     pure_model_name, instance_name, provider_name = split_model_name(model_name)
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
-        raise LookupError(f"Provider {provider_name} not found.")
+        raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found.")
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_objs = TenantModelService.get_by_provider_id_and_instance_id_and_model_name(provider_obj.id, instance_obj.id, pure_model_name)
     if not model_objs:
-        raise LookupError(f"Model {pure_model_name} not found.")
+        fac_list = [f for f in settings.FACTORY_LLM_INFOS if f["name"] == provider_name]
+        if not fac_list:
+            raise LookupError(f"Model provider config not found: {provider_name}")
+        llm_list = [llm for llm in fac_list[0]["llm"] if llm["llm_name"] == pure_model_name]
+        if not llm_list:
+            raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
+        return [llm_list[0]["model_type"]]
     return [model_obj.model_type for model_obj in model_objs]
