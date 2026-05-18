@@ -89,6 +89,7 @@ interface Parentchild {
 }
 
 interface Graphrag {
+  batch_chunk_token_size?: number;
   entity_types: string[];
   method: string;
   use_graphrag: boolean;
