@@ -51,7 +51,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 
 ```bash
 # Install Python dependencies
-uv sync --python 3.12 --all-extras
+uv sync --python 3.13 --all-extras
 uv run python3 download_deps.py
 pre-commit install
 
@@ -118,7 +118,7 @@ RAGFlow supports switching between Elasticsearch (default) and Infinity:
 
 ## Development Environment Requirements
 
-- Python 3.10-3.12
+- Python 3.10-3.13
 - Node.js >=18.20.4
 - Docker & Docker Compose
 - uv package manager

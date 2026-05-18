@@ -32,12 +32,14 @@ import (
 // DocumentHandler document handler
 type DocumentHandler struct {
 	documentService *service.DocumentService
+	datasetService  *service.DatasetService
 }
 
 // NewDocumentHandler create document handler
-func NewDocumentHandler(documentService *service.DocumentService) *DocumentHandler {
+func NewDocumentHandler(documentService *service.DocumentService, datasetService *service.DatasetService) *DocumentHandler {
 	return &DocumentHandler{
 		documentService: documentService,
+		datasetService:  datasetService,
 	}
 }
 
@@ -198,34 +200,21 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 }
 
 // ListDocuments document list
-// @Summary Document List
-// @Description Get paginated document list
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Param page query int false "page number" default(1)
-// @Param page_size query int false "items per page" default(10)
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/document/list [post]
+
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+
+	datasetID := c.Param("dataset_id")
+	pageStr := c.Query("page")
+	pageSizeStr := c.Query("page_size")
+	page, _ := strconv.Atoi(pageStr)
+	pageSize, _ := strconv.Atoi(pageSizeStr)
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(datasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
-
-	kbID := c.Query("kb_id")
-	if kbID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    1,
-			"message": "Lack of KB ID",
-			"data":    false,
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
 	if page < 1 {
 		page = 1
@@ -235,7 +224,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	// Use kbID to filter documents
-	documents, total, err := h.documentService.ListDocumentsByKBID(kbID, page, pageSize)
+	documents, total, err := h.documentService.ListDocumentsByDatasetID(datasetID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    1,
@@ -481,5 +470,38 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    true,
+	})
+}
+
+type ParseDocumentRequest struct {
+	Documents []string `json:"documents" binding:"required"`
+	DatasetID string   `json:"dataset_id" binding:"required"`
+}
+
+func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
+	var req ParseDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(req.DatasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
+		return
+	}
+
+	err := h.documentService.ParseDocuments(req.DatasetID, userID, req.Documents)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 	})
 }

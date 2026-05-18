@@ -594,8 +594,8 @@ func (z *UpstageModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *UpstageModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *UpstageModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -604,6 +604,19 @@ func (z *UpstageModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (z *UpstageModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *UpstageModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+// ParseFile parse file
+func (z *UpstageModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *UpstageModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *UpstageModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

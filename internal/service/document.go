@@ -175,8 +175,8 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-// ListDocumentsByKBID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByKBID(kbID string, page, pageSize int) ([]*DocumentResponse, int64, error) {
+// ListDocumentsByDatasetID list documents by knowledge base ID
+func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*DocumentResponse, int64, error) {
 	offset := (page - 1) * pageSize
 	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
 	if err != nil {
@@ -205,6 +205,13 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	}
 
 	return responses, total, nil
+}
+
+func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) error {
+	// create document parse id
+	// save to task table
+	// send to message queue
+	return nil
 }
 
 // toResponse convert model.Document to DocumentResponse

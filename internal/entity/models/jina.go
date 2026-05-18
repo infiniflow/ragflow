@@ -378,8 +378,8 @@ func (z *JinaModel) TranscribeAudioWithSender(modelName *string, file *string, a
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *JinaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *JinaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -388,6 +388,19 @@ func (z *JinaModel) AudioSpeechWithSender(modelName *string, audioContent *strin
 }
 
 // OCRFile OCR file
-func (z *JinaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *JinaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+// ParseFile parse file
+func (z *JinaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *JinaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *JinaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

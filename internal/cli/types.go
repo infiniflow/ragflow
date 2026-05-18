@@ -149,9 +149,11 @@ const (
 	TokenChunk
 	TokenChunks
 	TokenDocument
+	TokenDocuments
 	TokenTag
 	TokenRegion
 	TokenURL
+	TokenTask
 	TokenTasks
 	TokenLog
 	TokenLevel
