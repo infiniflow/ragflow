@@ -800,13 +800,12 @@ async def delete_sessions(chat_id):
                 for msg in conv.message or []:
                     for file in msg.get("files") or []:
                         file_id = file.get("id")
-                        created_by = file.get("created_by")
-                        if not file_id or not created_by:
+                        if not file_id:
                             continue
                         try:
-                            settings.STORAGE_IMPL.rm(f"{created_by}-downloads", file_id)
+                            settings.STORAGE_IMPL.rm(f"{current_user.id}-downloads", file_id)
                         except Exception:
-                            logging.warning("Failed to delete chat upload blob %s/%s", created_by, file_id)
+                            logging.warning("Failed to delete chat upload blob %s/%s", current_user.id, file_id)
             ConversationService.delete_by_id(sid)
             success_count += 1
         all_errors = errors + duplicate_messages
