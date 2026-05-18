@@ -1,3 +1,4 @@
+import { DynamicFormRef } from '@/components/dynamic-form';
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
@@ -12,7 +13,7 @@ import dataSourceService, {
 } from '@/services/data-source-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
-import { useCallback, useMemo, useState } from 'react';
+import { RefObject, useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { DataSourceKey, useDataSourceInfo } from './constant';
 import { IDataSorceInfo, IDataSource, IDataSourceBase } from './interface';
@@ -215,7 +216,9 @@ export const useDataSourceRebuild = () => {
   return { handleRebuild };
 };
 
-export const useTestDataSource = () => {
+export const useTestDataSource = (
+  formRef: RefObject<DynamicFormRef | null>,
+) => {
   const [currentQueryParameters] = useSearchParams();
   const id = currentQueryParameters.get('id');
   const [loading, setLoading] = useState(false);
@@ -224,7 +227,12 @@ export const useTestDataSource = () => {
     if (!id) return;
     setLoading(true);
     try {
-      const { data } = await testDataSource(id);
+      const values = formRef.current?.getFilteredValues();
+      const config = values?.config;
+      const { data } = await testDataSource(
+        id,
+        config && typeof config === 'object' ? { config } : undefined,
+      );
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
       } else {
@@ -235,7 +243,7 @@ export const useTestDataSource = () => {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [formRef, id]);
 
   return { loading, handleTest };
 };

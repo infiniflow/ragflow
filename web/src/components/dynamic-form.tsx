@@ -112,6 +112,7 @@ interface DynamicFormProps<T extends FieldValues> {
 export interface DynamicFormRef {
   submit: () => void;
   getValues: (name?: string) => any;
+  getFilteredValues: () => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
@@ -810,6 +811,7 @@ const DynamicForm = {
             })();
           },
           getValues: form.getValues,
+          getFilteredValues: () => filterActiveValues(form.getValues()),
           reset: (values?: T) => {
             if (values) {
               form.reset(values);

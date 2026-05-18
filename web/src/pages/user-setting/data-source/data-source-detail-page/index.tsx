@@ -145,7 +145,7 @@ const SourceDetailPage = () => {
   }, [detail, runSchedule]);
 
   const { addLoading, handleAddOk } = useAddDataSource({ isEdit: true });
-  const { loading: testLoading, handleTest } = useTestDataSource();
+  const { loading: testLoading, handleTest } = useTestDataSource(formRef);
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();

@@ -37,8 +37,10 @@ export const getDataSourceLogs = (id: string, params?: any) =>
 export const featchDataSourceDetail = (id: string) =>
   request.get(api.dataSourceDetail(id));
 
-export const testDataSource = (id: string) =>
-  request.post(api.dataSourceTest(id));
+export const testDataSource = (
+  id: string,
+  data?: { config?: Record<string, unknown> },
+) => request.post(api.dataSourceTest(id), { data });
 
 export const startGoogleDriveWebAuth = (payload: {
   credentials: string;
