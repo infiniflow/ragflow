@@ -650,7 +650,7 @@ func (h *KnowledgebaseHandler) InsertDatasetFromFile(c *gin.Context) {
 
 	// Get the document engine and insert
 	docEngine := engine.Get()
-	result, err := docEngine.InsertDataset(c.Request.Context(), debugFormat.Chunks, debugFormat.TableNamePrefix, debugFormat.KnowledgebaseID)
+	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, debugFormat.TableNamePrefix, debugFormat.KnowledgebaseID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

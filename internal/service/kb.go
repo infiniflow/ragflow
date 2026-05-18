@@ -111,7 +111,7 @@ func (s *KnowledgebaseService) CreateDatasetInDocEngine(req *CreateDatasetTableR
 
 	// Call document engine to create table
 	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateDataset(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
+	err = s.docEngine.CreateChunkStore(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -131,11 +131,18 @@ func (s *KnowledgebaseService) DeleteDatasetInDocEngine(kbID string) (common.Err
 		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
 	}
 
-	// Build table name: ragflow_<tenant_id>_<kb_id>
-	tableName := fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
+	// Build table name based on engine type
+	// ES: ragflow_<TenantID>
+	// Infinity: ragflow_<TenantID>_<kbID>
+	var fullTableName string
+	if s.docEngine.GetType() == "elasticsearch" {
+		fullTableName = fmt.Sprintf("ragflow_%s", kb.TenantID)
+	} else {
+		fullTableName = fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
+	}
 
 	// Call document engine to delete table
-	err = s.docEngine.DropTable(context.Background(), tableName)
+	err = s.docEngine.DropStore(context.Background(), fullTableName)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}
@@ -285,7 +292,7 @@ func (s *KnowledgebaseService) Accessible(kbID, userID string) bool {
 
 // RemoveTag removes a tag from documents in a dataset
 func (s *KnowledgebaseService) RemoveTag(condition map[string]interface{}, newValue map[string]interface{}, indexName, kbID string) error {
-	return s.docEngine.UpdateDataset(context.Background(), condition, newValue, indexName, kbID)
+	return s.docEngine.UpdateChunks(context.Background(), condition, newValue, indexName, kbID)
 }
 
 // GetByID retrieves a knowledge base by ID

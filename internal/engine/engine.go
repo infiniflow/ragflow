@@ -35,23 +35,23 @@ type DocEngine interface {
 	// Search
 	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
 
-	// Dataset operations
-	CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
-	InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
-	UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error
+	// Chunk store operations
+	CreateChunkStore(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
+	InsertChunks(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
+	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error
 
 	// Chunk operations
 	GetChunk(ctx context.Context, indexName, chunkID string, kbIDs []string) (interface{}, error)
 
 	// Document metadata operations
-	CreateMetadata(ctx context.Context, indexName string) error
+	CreateMetadataStore(ctx context.Context, indexName string) error
 	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
 	UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error
 
 	// Operations for both dataset and metadata tables
 	Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error)
-	DropTable(ctx context.Context, indexName string) error
-	TableExists(ctx context.Context, indexName string) (bool, error)
+	DropStore(ctx context.Context, indexName string) error
+	StoreExists(ctx context.Context, indexName string) (bool, error)
 
 	// Document operations (used by skill indexing)
 	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error

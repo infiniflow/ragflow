@@ -27,14 +27,14 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// CreateDataset creates an index
-func (e *elasticsearchEngine) CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
+// CreateChunkStore creates an index
+func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
 
 	// Check if index already exists
-	exists, err := e.TableExists(ctx, indexName)
+	exists, err := e.StoreExists(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
@@ -257,14 +257,14 @@ func getDefaultSkillMapping() map[string]interface{} {
 	}
 }
 
-// DropTable deletes an index
-func (e *elasticsearchEngine) DropTable(ctx context.Context, indexName string) error {
+// DropStore deletes an index
+func (e *elasticsearchEngine) DropStore(ctx context.Context, indexName string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
 
 	// Check if index exists
-	exists, err := e.TableExists(ctx, indexName)
+	exists, err := e.StoreExists(ctx, indexName)
 	if err != nil {
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
@@ -295,8 +295,8 @@ func (e *elasticsearchEngine) DropTable(ctx context.Context, indexName string) e
 	return nil
 }
 
-// TableExists checks if index exists
-func (e *elasticsearchEngine) TableExists(ctx context.Context, indexName string) (bool, error) {
+// StoreExists checks if index exists
+func (e *elasticsearchEngine) StoreExists(ctx context.Context, indexName string) (bool, error) {
 	if indexName == "" {
 		return false, fmt.Errorf("index name cannot be empty")
 	}
@@ -325,38 +325,8 @@ func (e *elasticsearchEngine) TableExists(ctx context.Context, indexName string)
 	return false, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 }
 
-// CreateMetadata creates the document metadata index
-func (e *elasticsearchEngine) CreateMetadata(ctx context.Context, indexName string) error {
+// CreateMetadataStore creates the document metadata index
+func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, indexName string) error {
 	// TODO
 	return nil
-}
-
-// InsertDataset inserts documents into a dataset index
-func (e *elasticsearchEngine) InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error) {
-	// TODO
-	return []string{}, nil
-}
-
-// InsertMetadata inserts documents into tenant's metadata index
-func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error) {
-	// TODO
-	return []string{}, nil
-}
-
-// UpdateDataset updates a chunk by condition
-func (e *elasticsearchEngine) UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error {
-	// TODO
-	return nil
-}
-
-// UpdateMetadata updates document metadata in tenant's metadata index
-func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error {
-	// TODO
-	return nil
-}
-
-// Delete deletes rows from either a dataset index or metadata index
-func (e *elasticsearchEngine) Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
-	// TODO
-	return 0, nil
 }

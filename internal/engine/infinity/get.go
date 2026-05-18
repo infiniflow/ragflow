@@ -20,7 +20,10 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
+	"regexp"
+	"sort"
 	"strings"
+	"unicode"
 
 	"ragflow/internal/utility"
 
@@ -300,4 +303,218 @@ func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[
 // GetFields is a method wrapper for infinityEngine to satisfy DocEngine interface
 func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
 	return GetFields(chunks, fields)
+}
+
+// GetAggregation aggregates chunk values by field name.
+// Input: [{"docnm_kwd": "docA"}, {"docnm_kwd": "docA"}, {"docnm_kwd": "docB"}]
+//
+// GetAggregation(chunks, "docnm_kwd") returns:
+//
+//	[{"key": "docA", "count": 2}, {"key": "docB", "count": 1}]
+//
+// For tag_kwd field, splits values by "###" separator.
+// For other fields, uses comma separation.
+func (e *infinityEngine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
+	if len(chunks) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	// Check if field exists in first chunk
+	hasField := false
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		return []map[string]interface{}{}
+	}
+
+	// Count occurrences
+	tagCounts := make(map[string]int)
+	for _, chunk := range chunks {
+		value, ok := chunk[fieldName]
+		if !ok || value == nil {
+			continue
+		}
+
+		// Handle string value
+		if valueStr, ok := value.(string); ok {
+			if valueStr == "" {
+				continue
+			}
+
+			var tags []string
+			// Split by "###" for tag_kwd field
+			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
+				for _, tag := range strings.Split(valueStr, "###") {
+					tag = strings.TrimSpace(tag)
+					if tag != "" {
+						tags = append(tags, tag)
+					}
+				}
+			} else {
+				// Fallback to comma separation
+				for _, tag := range strings.Split(valueStr, ",") {
+					tag = strings.TrimSpace(tag)
+					if tag != "" {
+						tags = append(tags, tag)
+					}
+				}
+			}
+
+			for _, tag := range tags {
+				tagCounts[tag]++
+			}
+			continue
+		}
+
+		// Handle list value
+		if valueList, ok := value.([]interface{}); ok {
+			for _, item := range valueList {
+				if itemStr, ok := item.(string); ok {
+					tag := strings.TrimSpace(itemStr)
+					if tag != "" {
+						tagCounts[tag]++
+					}
+				}
+			}
+		}
+	}
+
+	if len(tagCounts) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	// Convert to slice and sort by count descending
+	type tagCountPair struct {
+		tag   string
+		count int
+	}
+	pairs := make([]tagCountPair, 0, len(tagCounts))
+	for tag, count := range tagCounts {
+		pairs = append(pairs, tagCountPair{tag, count})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].count > pairs[j].count
+	})
+
+	// Convert to []map[string]interface{} directly
+	result := make([]map[string]interface{}, len(pairs))
+	for i, p := range pairs {
+		result[i] = map[string]interface{}{"key": p.tag, "count": p.count}
+	}
+
+	return result
+}
+
+// GetDocIDs extracts document IDs from search results.
+// Extracts "id" field from each chunk and returns as a list.
+func (e *infinityEngine) GetDocIDs(chunks []map[string]interface{}) []string {
+	if len(chunks) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if id, ok := chunk["id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// GetHighlight generates highlighted text snippets for search results.
+// Matches keywords in text and wraps them with <em> tags.
+func (e *infinityEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
+	result := make(map[string]string)
+	if len(chunks) == 0 || len(keywords) == 0 {
+		return result
+	}
+
+	// Check if field exists
+	hasField := false
+	for _, chunk := range chunks {
+		if _, ok := chunk[fieldName]; ok {
+			hasField = true
+			break
+		}
+	}
+	if !hasField {
+		// Try alternative field names
+		if fieldName == "content_with_weight" {
+			if _, ok := chunks[0]["content"]; ok {
+				fieldName = "content"
+				hasField = true
+			}
+		}
+	}
+	if !hasField {
+		return result
+	}
+
+	emTag := regexp.MustCompile(`<em>[^<>]+</em>`)
+
+	for _, chunk := range chunks {
+		id := ""
+		if idVal, ok := chunk["id"].(string); ok {
+			id = idVal
+		}
+
+		txt, ok := chunk[fieldName].(string)
+		if !ok || txt == "" {
+			continue
+		}
+
+		// Check if already highlighted
+		if emTag.MatchString(txt) {
+			result[id] = txt
+			continue
+		}
+
+		// Replace newlines with spaces
+		txt = regexp.MustCompile(`[\r\n]`).ReplaceAllString(txt, " ")
+
+		// Split by sentence delimiters
+		delimiters := regexp.MustCompile(`[.?!;\n]`)
+		segments := delimiters.Split(txt, -1)
+
+		var highlightedSegments []string
+		for _, segment := range segments {
+			// Check if segment is English or contains keywords
+			englishCount := 0
+			totalCount := 0
+			for _, r := range segment {
+				if unicode.IsLetter(r) {
+					totalCount++
+					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+						englishCount++
+					}
+				}
+			}
+			isEnglish := totalCount > 0 && float64(englishCount)/float64(totalCount) > 0.5
+			segmentToCheck := segment
+			if isEnglish {
+				// For English: match whole words with boundaries
+				for _, kw := range keywords {
+					re := regexp.MustCompile(`(^|[ .?/'\"\(\)!,:;-])` + regexp.QuoteMeta(kw) + `([ .?/'\"\(\)!,:;-]|$)`)
+					segmentToCheck = re.ReplaceAllString(segmentToCheck, "$1<em>"+kw+"</em>$2")
+				}
+			} else {
+				// For non-English: simple substring match
+				for _, kw := range keywords {
+					segmentToCheck = strings.ReplaceAll(segmentToCheck, kw, "<em>"+kw+"</em>")
+				}
+			}
+			if strings.Contains(segmentToCheck, "<em>") {
+				highlightedSegments = append(highlightedSegments, segmentToCheck)
+			}
+		}
+
+		if len(highlightedSegments) > 0 {
+			result[id] = strings.Join(highlightedSegments, "...")
+		}
+	}
+
+	return result
 }

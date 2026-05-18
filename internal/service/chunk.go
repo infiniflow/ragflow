@@ -890,7 +890,7 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 		"id": req.ChunkID,
 	}
 
-	err = s.docEngine.UpdateDataset(ctx, condition, d, indexName, req.DatasetID)
+	err = s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID)
 	if err != nil {
 		return fmt.Errorf("failed to update chunk: %w", err)
 	}

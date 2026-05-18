@@ -557,27 +557,3 @@ func AddMustNot(query map[string]interface{}, clauses ...map[string]interface{})
 		}
 	}
 }
-
-// GetFields is not implemented for Elasticsearch
-func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	common.Warn("GetFields not implemented for Elasticsearch")
-	return nil
-}
-
-// GetAggregation is not implemented for Elasticsearch
-func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
-	common.Warn("GetAggregation not implemented for Elasticsearch")
-	return nil
-}
-
-// GetHighlight is not implemented for Elasticsearch
-func (e *elasticsearchEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
-	common.Warn("GetHighlight not implemented for Elasticsearch")
-	return nil
-}
-
-// GetDocIDs is not implemented for Elasticsearch
-func (e *elasticsearchEngine) GetDocIDs(chunks []map[string]interface{}) []string {
-	common.Warn("GetDocIDs not implemented for Elasticsearch")
-	return nil
-}
