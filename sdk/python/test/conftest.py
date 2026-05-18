@@ -195,7 +195,7 @@ def set_tenant_info(get_auth):
         headers=authorization,
         json={
             "model_provider": "Builtin",
-            "model_instance": "",
+            "model_instance": "Local",
             "model_type": "embedding",
             "model_name": "BAAI/bge-small-en-v1.5"
         })
