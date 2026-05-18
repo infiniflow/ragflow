@@ -170,10 +170,11 @@ def get_tenant_info(auth):
 @pytest.fixture(scope="session", autouse=True)
 def set_tenant_info(get_auth):
     auth = get_auth
-    try:
-        add_model_instance(auth)
-    except Exception as e:
-        pytest.exit(f"Error in set_tenant_info: {str(e)}")
+    if not get_added_models(auth, "ZHIPU-AI"):
+        try:
+            add_model_instance(auth)
+        except Exception as e:
+            pytest.exit(f"Error in set_tenant_info: {str(e)}")
     url = HOST_ADDRESS + "/api/v1/models/default"
     authorization = {"Authorization": get_auth}
     # set chat model

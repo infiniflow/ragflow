@@ -215,10 +215,10 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
 
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
-        raise LookupError(f"Provider {provider_name} not found.")
+        raise LookupError(f"Provider {provider_name} not found for model {model_name}.")
     instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_name)
     if not instance_obj:
-        raise LookupError(f"Instance {instance_name} not found.")
+        raise LookupError(f"Instance {instance_name} not found for model {model_name}.")
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(provider_obj.id, instance_obj.id, model_type_val, pure_model_name)
 
     import json

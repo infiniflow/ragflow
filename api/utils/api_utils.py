@@ -603,6 +603,8 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, s
     """
     try:
         get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_id)
+    except LookupError as e:
+        return False, str(e)
     except OperationalError as e:
         logging.exception(e)
         return False, "Database operation failed"
