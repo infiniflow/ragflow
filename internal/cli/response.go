@@ -85,6 +85,42 @@ func (r *CommonDataResponse) PrintOut() {
 	}
 }
 
+type ListDocumentsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListDocumentsResponse) Type() string {
+	return "list_documents"
+}
+
+func (r *ListDocumentsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListDocumentsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListDocumentsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["docs"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type SimpleResponse struct {
 	Code         int    `json:"code"`
 	Message      string `json:"message"`
@@ -313,6 +349,44 @@ func (r *EmbeddingsResponse) PrintOut() {
 
 	if r.Code == 0 {
 		PrintTableSimpleByFormat(data, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type SegmentResponse struct {
+	Segments []map[string]interface{} `json:"segments"`
+}
+
+type TaskResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *TaskResponse) Type() string {
+	return "task"
+}
+
+func (r *TaskResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *TaskResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *TaskResponse) PrintOut() {
+	if r.Code == 0 {
+		segmentsRaw := r.Data["segments"].([]interface{})
+		segments := make([]map[string]interface{}, len(segmentsRaw))
+		for i, v := range segmentsRaw {
+			segments[i] = v.(map[string]interface{})
+		}
+		PrintTableSimpleByFormat(segments, r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)

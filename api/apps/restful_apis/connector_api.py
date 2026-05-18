@@ -35,9 +35,23 @@ from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user
 from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _connector_auth_error(connector_id: str, user_id: str):
+    """Return the connector authorization failure response and log the denial."""
+    LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
+    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 async def update_connector(connector_id):
+    """Update an accessible connector's polling configuration."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = await get_request_json()
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
@@ -57,6 +71,7 @@ async def update_connector(connector_id):
 @manager.route("/connectors", methods=["POST"])  # noqa: F821
 @login_required
 async def create_connector():
+    """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
         req["id"] = get_uuid()
@@ -83,12 +98,17 @@ async def create_connector():
 @manager.route("/connectors", methods=["GET"])  # noqa: F821
 @login_required
 def list_connector():
+    """List connectors owned by the current tenant."""
     return get_json_result(data=ConnectorService.list(current_user.id))
 
 
 @manager.route("/connectors/<connector_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_connector(connector_id):
+    """Return connector details when the current user can access it."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
@@ -98,6 +118,10 @@ def get_connector(connector_id):
 @manager.route("/connectors/<connector_id>/logs", methods=["GET"])  # noqa: F821
 @login_required
 def list_logs(connector_id):
+    """List sync logs for a connector the current user can access."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = request.args.to_dict(flat=True)
     arr, total = SyncLogsService.list_sync_tasks(connector_id, int(req.get("page", 1)), int(req.get("page_size", 15)))
     return get_json_result(data={"total": total, "logs": arr})
@@ -106,6 +130,10 @@ def list_logs(connector_id):
 @manager.route("/connectors/<connector_id>/resume", methods=["POST"])  # noqa: F821
 @login_required
 async def resume(connector_id):
+    """Resume or cancel sync for an accessible connector."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = await get_request_json()
     if req.get("resume"):
         ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
@@ -116,9 +144,15 @@ async def resume(connector_id):
 
 @manager.route("/connectors/<connector_id>/rebuild", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("kb_id")
 async def rebuild(connector_id):
+    """Schedule a rebuild for an accessible connector and knowledge base."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = await get_request_json()
+    if "kb_id" not in req:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
+
     err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
@@ -128,6 +162,10 @@ async def rebuild(connector_id):
 @manager.route("/connectors/<connector_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm_connector(connector_id):
+    """Delete an accessible connector after canceling its sync tasks."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     ConnectorService.resume(connector_id, TaskStatus.CANCEL)
     ConnectorService.delete_by_id(connector_id)
     return get_json_result(data=True)
@@ -141,6 +179,9 @@ async def test_connector(connector_id):
     For the REST API connector, this uses `RestAPIConnector.validate_config`
     against the existing saved configuration.
     """
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     from common.data_source.rest_api_connector import RestAPIConnector
     from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 

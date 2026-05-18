@@ -32,7 +32,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
-from strenum import StrEnum
+from enum import StrEnum
 
 
 class LaunchMode(StrEnum):

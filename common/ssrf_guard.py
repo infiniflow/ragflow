@@ -170,3 +170,42 @@ def assert_url_is_safe(
         raise ValueError(f"Hostname {hostname!r} resolved to no addresses.")
 
     return hostname, resolved_ip
+
+
+def assert_host_is_safe(host: str) -> str:
+    """Raise ``ValueError`` if *host* resolves to a non-public IP (SSRF guard for raw host/port connections).
+
+    This is the host-level counterpart of :func:`assert_url_is_safe`, intended
+    for callers that connect via database drivers or other non-HTTP protocols
+    where there is no URL to parse.
+
+    Returns the first validated public IP string so the caller can pin it if needed.
+    """
+    if not host:
+        raise ValueError("Host must not be empty.")
+
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        logger.warning("SSRF guard could not resolve host=%r reason=%s", host, exc)
+        raise ValueError(f"Could not resolve host {host!r}: {exc}") from exc
+
+    resolved_ip: str | None = None
+    for _family, _type, _proto, _canonname, sockaddr in addr_infos:
+        raw_ip = ipaddress.ip_address(sockaddr[0])
+        eff_ip = _effective_ip(raw_ip)
+        if not eff_ip.is_global:
+            logger.warning(
+                "SSRF guard blocked host: host=%r resolved to non-public address=%s",
+                host,
+                raw_ip,
+            )
+            raise ValueError(f"Host resolves to a non-public address ({raw_ip}), which is not allowed.")
+        if resolved_ip is None:
+            resolved_ip = str(raw_ip)
+
+    if resolved_ip is None:
+        logger.warning("SSRF guard blocked host: host=%r resolved to no addresses", host)
+        raise ValueError(f"Host {host!r} resolved to no addresses.")
+
+    return resolved_ip

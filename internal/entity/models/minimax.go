@@ -36,11 +36,6 @@ type MinimaxModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (z *MinimaxModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewMinimaxModel creates a new Minimax model instance
 func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
 	return &MinimaxModel{
@@ -206,7 +201,7 @@ func (z *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 
 	var region = "default"
 
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
@@ -463,8 +458,8 @@ func (z *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("MiniMax API key is missing")
 	}
@@ -478,14 +473,19 @@ func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	}
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.TTS)
-	
+
 	reqBody := map[string]interface{}{
 		"model": modelName,
 		"text":  audioContent,
 	}
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["audio_setting"] = map[string]interface{}{
+			"format": ttsConfig.Format,
 		}
 	}
 	reqBody["stream"] = false
@@ -547,7 +547,6 @@ func (z *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	}, nil
 }
 
-// tts with 'speech-2.8-hd@test@minimax' text 'If that day, out position was switched, would our fate, be different?' voice 'English_expressive_narrator' param '{"voice_setting": {"voice_id": "English_expressive_narrator", "speed": 1, "vol": 1, "pitch": 0}, "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "wav", "channel": 1}, "output_format": "hex"}'
 func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return fmt.Errorf("MiniMax API key is missing")
@@ -581,6 +580,13 @@ func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 		}
 	}
 	reqBody["stream"] = false
+
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["audio_setting"] = map[string]interface{}{
+			"format": ttsConfig.Format,
+		}
+	}
+
 	reqBody["stream"] = true
 
 	jsonData, err := json.Marshal(reqBody)
@@ -656,6 +662,19 @@ func (z *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *MinimaxModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *MinimaxModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MinimaxModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

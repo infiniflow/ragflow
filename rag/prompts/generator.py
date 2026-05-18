@@ -494,6 +494,28 @@ async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summ
 
 
 async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None) -> dict:
+    """Generate metadata filter conditions from a user query using an LLM.
+
+    Args:
+        chat_mdl: LLM bundle for generating filters
+        meta_data: Dict of {key: set of values} - e.g. {"character": {"Caocao", "Liubei"}, "year": {2026}}
+        query: User question (e.g. "Caocao in 2026")
+        constraints: Optional dict of {key: operator} to constrain which op to use for a key
+
+    Returns:
+        Dict with "logic" ("and"/"or") and "conditions" list.
+        Example return value:
+            {
+                "logic": "and",
+                "conditions": [
+                    {"key": "year", "value": "2026", "op": "="},
+                    {"key": "character", "value": "Caocao", "op": "="}
+                ]
+            }
+
+    The LLM is prompted with the available metadata keys and values, and is asked to
+    generate filter conditions that match the user's query semantics.
+    """
     meta_data_structure = {}
     for key, values in meta_data.items():
         meta_data_structure[key] = list(values.keys()) if isinstance(values, dict) else values
