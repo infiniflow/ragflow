@@ -280,7 +280,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"pipeline_id":      stringValue(doc.PipelineID),
 		"pipeline_name":    stringValue(doc.PipelineName),
 		"nickname":         stringValue(doc.Nickname),
-		"parser_config":    doc.ParserConfig,
+		"parser_config":    decodeJSONMap(string(doc.ParserConfig)),
 		"meta_fields":      metaFields,
 		"create_time":      int64(0),
 		"create_date":      "",
@@ -302,6 +302,19 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 	}
 
 	return item
+}
+
+func decodeJSONMap(raw string) map[string]interface{} {
+	if strings.TrimSpace(raw) == "" {
+		return map[string]interface{}{}
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return map[string]interface{}{}
+	}
+
+	return data
 }
 
 func mapRunStatus(run *string) string {
