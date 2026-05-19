@@ -1,6 +1,8 @@
 from agent.sandbox import client as sandbox_client
 from agent.sandbox.providers.self_managed import SelfManagedProvider
 
+pytestmark = pytest.mark.p2
+
 
 def test_client_defaults_to_self_managed(monkeypatch):
     class FakeSettingsService:
@@ -10,7 +12,7 @@ def test_client_defaults_to_self_managed(monkeypatch):
 
     monkeypatch.setattr(sandbox_client, "SystemSettingsService", FakeSettingsService)
     monkeypatch.setattr(SelfManagedProvider, "initialize", lambda self, config: True)
-    sandbox_client._provider_manager = None
+    monkeypatch.setattr(sandbox_client, "_provider_manager", None)
 
     provider_manager = sandbox_client.get_provider_manager()
 
