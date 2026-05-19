@@ -15,6 +15,7 @@
 #
 import base64
 import datetime
+import logging
 import re
 
 import xxhash
@@ -358,7 +359,14 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.nlp import rag_tokenizer, search
 
+    logging.info(
+        f"split_chunk start: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+    )
+
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        logging.warning(
+            f"split_chunk forbidden: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} tenant_id={tenant_id}"
+        )
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
@@ -377,16 +385,34 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message="`split_point` must be an integer character offset")
 
     index = search.index_name(dataset_tenant_id)
-    source = settings.docStoreConn.get(chunk_id, index, [dataset_id])
+    try:
+        source = settings.docStoreConn.get(chunk_id, index, [dataset_id])
+    except Exception as exc:
+        if "NotFoundError" in str(exc):
+            logging.warning(
+                f"split_chunk source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+            )
+            return get_error_data_result(message=f"Chunk {chunk_id} not found in document {document_id}.")
+        logging.exception(exc)
+        return server_error_response(exc)
     if source is None or str(source.get("doc_id", source.get("document_id"))) != str(document_id):
+        logging.warning(
+            f"split_chunk source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+        )
         return get_error_data_result(message=f"Chunk {chunk_id} not found in document {document_id}.")
     content = source.get("content_with_weight", "")
     if split_point <= 0 or split_point >= len(content):
+        logging.warning(
+            f"split_chunk invalid offset: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point} len={len(content)}"
+        )
         return get_error_data_result(message=f"`split_point` must be in the open range (0, {len(content)}).")
 
     left_content = content[:split_point]
     right_content = content[split_point:]
     if is_content_empty(left_content) or is_content_empty(right_content):
+        logging.warning(
+            f"split_chunk empty half: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point}"
+        )
         return get_error_data_result(message="Both halves must have non-empty content; choose a different `split_point`.")
 
     important_kwd = source.get("important_kwd", []) or []
@@ -411,6 +437,9 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
     for half_content in (left_content, right_content):
         new_chunk_id = xxhash.xxh64((half_content + document_id).encode("utf-8")).hexdigest()
         if new_chunk_id == chunk_id:
+            logging.warning(
+                f"split_chunk id collision with source: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point}"
+            )
             return get_error_data_result(message="Split produced an id collision with the source chunk; choose a different `split_point`.")
         d = {
             "id": new_chunk_id,
@@ -439,19 +468,56 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
 
     new_ids = [c["id"] for c in new_chunks]
     if len(set(new_ids)) != len(new_ids):
+        logging.warning(
+            f"split_chunk duplicate halves: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point}"
+        )
         return get_error_data_result(message="Split produced duplicate ids; choose a different `split_point`.")
 
+    # Write sequence: insert the two halves first, then delete the source
+    # and adjust counters. If anything after the insert fails, roll back the
+    # newly-inserted halves on a best-effort basis so we never leave the
+    # store with both the source and the new halves visible, or with drifted
+    # chunk counters.
     settings.docStoreConn.insert(new_chunks, index, dataset_id)
-    deleted = settings.docStoreConn.delete(
-        {"doc_id": document_id, "id": [chunk_id]},
-        index,
-        dataset_id,
-    )
-    if deleted != 1:
-        return get_error_data_result(message=f"split_chunk deleted source chunks {deleted}, expect 1")
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"doc_id": document_id, "id": [chunk_id]},
+            index,
+            dataset_id,
+        )
+        if deleted != 1:
+            raise RuntimeError(
+                f"split_chunk deleted source chunks {deleted}, expect 1"
+            )
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, total_tokens, 2, 0)
+        try:
+            DocumentService.decrement_chunk_num(document_id, dataset_id, 1, 1, 0)
+        except Exception:
+            # Counter inserts succeeded but decrement failed: revert the
+            # increment so the document/knowledgebase counters do not drift.
+            DocumentService.decrement_chunk_num(doc.id, doc.kb_id, total_tokens, 2, 0)
+            raise
+    except Exception as exc:
+        logging.error(
+            f"split_chunk post-insert failure, rolling back: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point} new_ids={new_ids} error={exc}"
+        )
+        try:
+            settings.docStoreConn.delete(
+                {"doc_id": document_id, "id": new_ids},
+                index,
+                dataset_id,
+            )
+        except Exception as rb_exc:
+            logging.error(
+                f"split_chunk rollback failed to delete new chunks: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} new_ids={new_ids} error={rb_exc}"
+            )
+        if isinstance(exc, RuntimeError):
+            return get_error_data_result(message=str(exc))
+        return server_error_response(exc)
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, total_tokens, 2, 0)
-    DocumentService.decrement_chunk_num(document_id, dataset_id, 1, 1, 0)
+    logging.info(
+        f"split_chunk success: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point} new_ids={new_ids} deleted={deleted}"
+    )
 
     key_mapping = {
         "id": "id",
