@@ -404,7 +404,11 @@ func (x *XinferenceModel) AudioSpeechWithSender(modelName *string, audioContent 
 	return fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (x *XinferenceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (x *XinferenceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XinferenceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
@@ -461,4 +465,12 @@ func (x *XinferenceModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 func (x *XinferenceModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := x.ListModels(apiConfig)
 	return err
+}
+
+func (x *XinferenceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XinferenceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
