@@ -1295,3 +1295,14 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	responseWithCode(c, message, http.StatusOK, errCode)
 }
+
+// ListIngestionTasks
+func (h *Handler) ListIngestionTasks(c *gin.Context) {
+	tasks, err := h.service.ListIngestionTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, tasks, "")
+}

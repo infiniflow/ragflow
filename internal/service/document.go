@@ -228,7 +228,24 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 		if doc == nil {
 			return fmt.Errorf("document %s not found", docID)
 		}
-		// create task for each document
+		//
+		////ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+		////DocumentID string  `gorm:"column:document_id;size:32;not null;index" json:"document_id"`
+		////UserID     string  `gorm:"column:user_id;size:32;not null;" json:"user_id"`
+		////Config     JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
+		////TryCount   int     `gorm:"column:try_count;default:0" json:"try_count"`
+		//
+		//// create task for each document
+		//task := &entity.IngestionTask{
+		//	ID:         uuid.New().String(),
+		//	DocumentID: docID,
+		//	UserID:     userID,
+		//	Config:     nil,
+		//}
+		//if err := s.memoryDAO.Create(memory); err != nil {
+		//	return nil, errors.New("could not create new memory")
+		//}
+
 		// save the task to database
 		// create a record in the task table
 		if doc.Status != nil && *doc.Status != "0" {

@@ -1702,6 +1702,11 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	return common.CodeLicenseValid, ""
 }
 
+func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
+	// TODO: Implement with sandbox manager
+	return []map[string]interface{}{}, nil
+}
+
 // InitDefaultAdmin initialize default admin user
 // This matches Python's init_default_admin behavior
 func (s *Service) InitDefaultAdmin() error {

@@ -443,6 +443,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenTask, Value: ident}
 	case "TASKS":
 		return Token{Type: TokenTasks, Value: ident}
+	case "INGESTION":
+		return Token{Type: TokenIngestion, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":
