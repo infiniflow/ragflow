@@ -20,6 +20,8 @@ import pytest
 
 from api.utils.api_utils import build_document_download_url
 
+pytestmark = pytest.mark.p2
+
 
 class TestBuildDocumentDownloadUrl:
     """Behavioral tests for the chunk-response download URL helper (issue #14771)."""
