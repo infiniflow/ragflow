@@ -367,7 +367,7 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
     model_info_map: dict = {}
     for model_record in model_records:
         if model_info_map.get(model_record.model_name):
-            model_info_map[model_record.model_name]["model_type"].append(model_record.status)
+            model_info_map[model_record.model_name]["model_type"].append(model_record.model_type)
         else:
             model_info_map[model_record.model_name] = {
                 "status": model_record.status,
