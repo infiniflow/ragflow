@@ -1,3 +1,4 @@
+import CopyToClipboard from '@/components/copy-to-clipboard';
 import {
   FormControl,
   FormField,
@@ -22,7 +23,20 @@ export function ApiKeyField({ placeholder }: IApiKeyFieldProps) {
         <FormItem>
           <FormLabel>{t('flow.apiKey')}</FormLabel>
           <FormControl>
-            <Input type="password" {...field} placeholder={placeholder}></Input>
+            <Input
+              type="password"
+              {...field}
+              placeholder={placeholder}
+              suffix={
+                field.value ? (
+                  <CopyToClipboard
+                    text={String(field.value)}
+                    type="button"
+                    tabIndex={-1}
+                  />
+                ) : null
+              }
+            ></Input>
           </FormControl>
           <FormMessage />
         </FormItem>
