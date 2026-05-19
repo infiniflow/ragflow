@@ -236,11 +236,7 @@ export const useTestDataSource = (
       const { data } = await testDataSource(connectorId, { source, config });
       if (data.code === 0) {
         message.success(t('setting.dataSourceTestSuccess'));
-      } else {
-        message.error(data.message || t('setting.dataSourceTestFailed'));
       }
-    } catch {
-      message.error(t('setting.dataSourceTestFailed'));
     } finally {
       setLoading(false);
     }
