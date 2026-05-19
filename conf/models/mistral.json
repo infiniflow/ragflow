@@ -1,12 +1,13 @@
 {
   "name": "Mistral",
   "url": {
-    "default": "https://api.mistral.ai/v1"
+    "default": "https://api.mistral.ai"
   },
   "url_suffix": {
-    "chat": "chat/completions",
-    "models": "models",
-    "embedding": "embeddings"
+    "chat": "v1/chat/completions",
+    "models": "v1/models",
+    "embedding": "v1/embeddings",
+    "ocr": "v1/ocr"
   },
   "class": "mistral",
   "models": [
@@ -93,6 +94,13 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "mistral-ocr-2512",
+      "max_tokens": 8192,
+      "model_types": [
+        "ocr"
       ]
     }
   ]

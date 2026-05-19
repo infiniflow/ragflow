@@ -85,6 +85,14 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     assert "canvas" in list_empty_payload["data"], list_empty_payload
     assert "total" in list_empty_payload["data"], list_empty_payload
 
+    paged_list = rest_client.get(
+        "/agents",
+        params={"title": "missing_restful_agent", "desc": "true", "page_size": 1},
+    )
+    assert paged_list.status_code == 200
+    paged_list_payload = paged_list.json()
+    assert paged_list_payload["code"] == 0, paged_list_payload
+
     missing_dsl = rest_client.post("/agents", json={"title": "missing_dsl_agent"})
     assert missing_dsl.status_code == 200
     missing_dsl_payload = missing_dsl.json()
@@ -105,6 +113,12 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     assert duplicate_payload["code"] == 102, duplicate_payload
     assert "already exists" in duplicate_payload["message"], duplicate_payload
 
+    invalid_update = rest_client.put("/agents/invalid-agent-id", json={"title": "updated", "dsl": MINIMAL_DSL})
+    assert invalid_update.status_code == 200
+    invalid_update_payload = invalid_update.json()
+    assert invalid_update_payload["code"] == 103, invalid_update_payload
+    assert "Make sure you have permission to access the agent." in invalid_update_payload["message"], invalid_update_payload
+
     get_res = rest_client.get(f"/agents/{agent_id}")
     assert get_res.status_code == 200
     get_payload = get_res.json()
@@ -121,6 +135,12 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     list_after_update_payload = list_after_update.json()
     assert list_after_update_payload["code"] == 0, list_after_update_payload
     assert list_after_update_payload["data"]["total"] >= 1, list_after_update_payload
+
+    invalid_delete = rest_client.delete("/agents/invalid-agent-id")
+    assert invalid_delete.status_code == 200
+    invalid_delete_payload = invalid_delete.json()
+    assert invalid_delete_payload["code"] == 103, invalid_delete_payload
+    assert "Only the owner of the agent is authorized for this operation." in invalid_delete_payload["message"], invalid_delete_payload
 
     delete_res = rest_client.delete(f"/agents/{agent_id}")
     assert delete_res.status_code == 200
@@ -188,8 +208,11 @@ def test_agent_chat_completion_nonstream(rest_client, create_agent_resource):
     payload = res.json()
     assert payload["code"] == 0, payload
     assert isinstance(payload["data"], dict), payload
+    assert payload["data"].get("session_id") == session_id, payload
     assert isinstance(payload["data"].get("data"), dict), payload
-    assert "content" in payload["data"]["data"], payload
+    content = payload["data"]["data"].get("content", "")
+    assert content, payload
+    assert "hello" in content, payload
 
 
 @pytest.mark.p2

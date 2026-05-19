@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import asyncio
-import binascii
 import logging
 import re
 import time
@@ -51,6 +50,7 @@ from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
+from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
 
@@ -64,6 +64,53 @@ def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     if len(kb_ids or []) == 1:
         return kb_ids[0]
     return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
+
+
+async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
+    """
+    Citation prep: on the ES backend the main retrieval call deliberately
+    skips fetching the chunk embedding. insert_citations needs it, so we
+    pull the vectors for just the candidate chunks right before computing
+    answer-vs-chunk similarity. Chunks without an ES chunk_id (e.g. web
+    search results) keep whatever placeholder they were given. Other
+    backends still carry vectors in the chunk, so we skip the round-trip.
+    """
+    if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+        return
+    if not chunks:
+        return
+    dim = 0
+    for ck in chunks:
+        v = ck.get("vector")
+        if isinstance(v, list) and v:
+            dim = len(v)
+            break
+    if not dim:
+        return
+    # Skip chunks that already have a non-zero vector (e.g. parent chunks
+    # produced by retrieval_by_children copy the child vector inline).
+    chunk_ids = []
+    for ck in chunks:
+        cid = ck.get("chunk_id")
+        if not cid:
+            continue
+        v = ck.get("vector") or []
+        if any(x for x in v):
+            continue
+        chunk_ids.append(cid)
+    if not chunk_ids:
+        return
+    try:
+        vectors = await retriever.fetch_chunk_vectors(chunk_ids, tenant_ids, kb_ids, dim)
+    except Exception as e:  # noqa: BLE001 - degrade gracefully on hydrate failure
+        logger.warning("fetch_chunk_vectors failed; citations will use placeholders: %s", e)
+        return
+    if not vectors:
+        return
+    for ck in chunks:
+        cid = ck.get("chunk_id")
+        if cid and cid in vectors:
+            ck["vector"] = vectors[cid]
 
 def _normalize_internet_flag(value):
     if isinstance(value, bool):
@@ -735,7 +782,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if "max_tokens" in gen_conf:
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
-    def decorate_answer(answer):
+    async def decorate_answer(answer):
         nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
 
         refs = []
@@ -749,6 +796,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             idx = set([])
             normalized_answer = normalize_arabic_digits(answer) or ""
             if embd_mdl and not CITATION_MARKER_PATTERN.search(normalized_answer):
+                # Main retrieval no longer ships chunk vectors back from ES.
+                # Pull them on demand for the chunks we are about to cite.
+                await _hydrate_chunk_vectors(retriever, kbinfos.get("chunks", []), tenant_ids, dialog.kb_ids)
                 answer, idx = retriever.insert_citations(
                     answer,
                     [ck["content_ltks"] for ck in kbinfos["chunks"]],
@@ -841,7 +891,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
         full_answer = last_state.full_text if last_state else ""
         if full_answer:
-            final = decorate_answer(_extract_visible_answer(thought + full_answer))
+            final = await decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
             yield final
@@ -852,7 +902,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
-        res = decorate_answer(answer)
+        res = await decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
 
@@ -1377,14 +1427,7 @@ def tts(tts_mdl, text):
     text = clean_tts_text(text)
     if not text:
         return None
-    bin = b""
-    try:
-        for chunk in tts_mdl.tts(text):
-            bin += chunk
-    except Exception as e:
-        logging.error(f"TTS failed: {e}, text={text!r}")
-        return None
-    return binascii.hexlify(bin).decode("utf-8")
+    return synthesize_with_cache(tts_mdl, text)
 
 
 class _ThinkStreamState:
@@ -1542,8 +1585,11 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     msg = [{"role": "user", "content": question}]
 
-    def decorate_answer(answer):
+    async def decorate_answer(answer):
         nonlocal knowledges, kbinfos, sys_prompt
+        # Main retrieval no longer ships chunk vectors back from ES. Pull
+        # them on demand for the chunks we are about to cite.
+        await _hydrate_chunk_vectors(retriever, kbinfos.get("chunks", []), tenant_ids, kb_ids)
         answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]], embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]
@@ -1570,7 +1616,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             continue
         yield {"answer": value, "reference": {}, "final": False}
     full_answer = last_state.full_text if last_state else ""
-    final = decorate_answer(_extract_visible_answer(full_answer))
+    final = await decorate_answer(_extract_visible_answer(full_answer))
     final["final"] = True
     yield final
 

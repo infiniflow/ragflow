@@ -285,6 +285,15 @@ func (p *Parser) parseIdentifier() (string, error) {
 	return p.curToken.Value, nil
 }
 
+func (p *Parser) parseVariableValue() (string, error) {
+	switch p.curToken.Type {
+	case TokenIdentifier, TokenQuotedString, TokenInteger, TokenFloat:
+		return p.curToken.Value, nil
+	default:
+		return "", fmt.Errorf("expected variable value, got %s", p.curToken.Value)
+	}
+}
+
 func (p *Parser) parseNumber() (int, error) {
 	if p.curToken.Type != TokenInteger {
 		return 0, fmt.Errorf("expected number, got %s", p.curToken.Value)

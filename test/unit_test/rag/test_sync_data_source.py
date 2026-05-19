@@ -133,7 +133,53 @@ def _patch_common_dependencies(monkeypatch):
 
 @pytest.mark.anyio
 @pytest.mark.p2
-async def test_run_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
+async def test_run_task_logic_skips_empty_sync_batches(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not be called for empty batches"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: pytest.fail("get_by_id should not be called for empty batches"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not be called for empty batches"),
+    )
+
+    await _FakeSync(iter(([],)))._run_task_logic(_make_task())
+
+
+@pytest.mark.anyio
+@pytest.mark.p2
+async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
+    _patch_common_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "increase_docs",
+        lambda *_args, **_kwargs: pytest.fail("increase_docs should not be called for empty batches"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.KnowledgebaseService,
+        "get_by_id",
+        lambda *_args, **_kwargs: pytest.fail("get_by_id should not be called for empty batches"),
+    )
+    monkeypatch.setattr(
+        sync_data_source.SyncLogsService,
+        "duplicate_and_parse",
+        lambda *_args, **_kwargs: pytest.fail("duplicate_and_parse should not be called for empty batches"),
+    )
+
+    await _FakeSync(iter(([], [],)))._run_task_logic(_make_task())
+
+
+@pytest.mark.anyio
+@pytest.mark.p2
+async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     cleanup_calls = []
 
     _patch_common_dependencies(monkeypatch)
@@ -148,7 +194,14 @@ async def test_run_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
         _fake_cleanup,
     )
 
-    await _FakeSync((iter(()), []))._run_task_logic(_make_task())
+    task = {**_make_task(), "task_type": sync_data_source.ConnectorTaskType.PRUNE}
+    sync = _FakeSync(iter(()))
+    sync.conf["sync_deleted_files"] = True
+    sync.connector = types.SimpleNamespace(
+        retrieve_all_slim_docs_perm_sync=lambda: iter(([],))
+    )
+
+    await sync._run_task_logic(task)
 
     assert cleanup_calls == [
         (
@@ -166,7 +219,7 @@ async def test_run_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
 
 @pytest.mark.anyio
 @pytest.mark.p2
-async def test_run_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch):
+async def test_run_prune_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch):
     cleanup_calls = []
 
     _patch_common_dependencies(monkeypatch)
@@ -182,7 +235,14 @@ async def test_run_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch):
     )
 
     file_list = [types.SimpleNamespace(id="doc-1")]
-    await _FakeSync((iter(()), file_list))._run_task_logic(_make_task())
+    task = {**_make_task(), "task_type": sync_data_source.ConnectorTaskType.PRUNE}
+    sync = _FakeSync(iter(()))
+    sync.conf["sync_deleted_files"] = True
+    sync.connector = types.SimpleNamespace(
+        retrieve_all_slim_docs_perm_sync=lambda: iter((file_list,))
+    )
+
+    await sync._run_task_logic(task)
 
     assert cleanup_calls == [
         (
@@ -285,12 +345,13 @@ async def test_rdbms_generate_keeps_deleted_file_snapshot_without_timestamp_colu
         }
     )
 
-    document_generator, file_list = await sync._generate(task)
+    document_generator = await sync._generate(task)
     connector = _FakeRDBMSConnector.instance
 
     assert connector is not None
     assert connector.load_from_state_called is True
     assert connector.load_from_cursor_range_called is False
+    file_list = sync._collect_prune_snapshot(task)
     assert connector.retrieve_all_slim_docs_perm_sync_called is True
     assert file_list is not None
     assert [doc.id for doc in file_list] == ["row-1"]
@@ -447,14 +508,15 @@ async def test_dropbox_generate_returns_snapshot_when_sync_deleted_enabled(monke
         }
     )
 
-    document_generator, file_list = await sync._generate(task)
+    document_generator = await sync._generate(task)
     connector = _FakeDropboxConnector.instance
 
     assert list(document_generator) == [["poll-sync"]]
+    file_list = sync._collect_prune_snapshot(task)
     assert [doc.id for doc in file_list] == ["dropbox:id-1", "dropbox:id-2"]
     assert connector.credentials == {"dropbox_access_token": "token-1"}
     assert connector.retrieve_all_slim_docs_perm_sync_called is True
-    assert connector.snapshot_called_before_poll is True
+    assert connector.snapshot_called_before_poll is False
     assert connector.poll_source_call[0] == poll_start.timestamp()
     assert connector.poll_source_call[1] >= poll_start.timestamp()
 
@@ -477,11 +539,12 @@ async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
         }
     )
 
-    document_generator, file_list = await sync._generate(task)
+    document_generator = await sync._generate(task)
     connector = _FakeDropboxConnector.instance
 
     assert list(document_generator) == [["full-sync"]]
-    assert file_list is None
     assert connector.load_from_state_called is True
-    assert connector.retrieve_all_slim_docs_perm_sync_called is False
+    file_list = sync._collect_prune_snapshot(task)
+    assert [doc.id for doc in file_list] == ["dropbox:id-1", "dropbox:id-2"]
+    assert connector.retrieve_all_slim_docs_perm_sync_called is True
     assert connector.poll_source_called is False

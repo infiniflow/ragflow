@@ -18,7 +18,6 @@ import io
 import base64
 import pickle
 from api.utils.common import bytes_to_string, string_to_bytes
-from common.config_utils import get_base_config
 
 safe_module = {
     'numpy',
@@ -54,8 +53,4 @@ def deserialize_b64(src):
     src = base64.b64decode(
         string_to_bytes(src) if isinstance(
             src, str) else src)
-    use_deserialize_safe_module = get_base_config(
-        'use_deserialize_safe_module', False)
-    if use_deserialize_safe_module:
-        return restricted_loads(src)
-    return pickle.loads(src)
+    return restricted_loads(src)
