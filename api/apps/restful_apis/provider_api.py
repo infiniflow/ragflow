@@ -240,7 +240,7 @@ def list_provider_models(provider_name: str):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/models/<model_name>", methods=["GET"])  # noqa: F821
+@manager.route("/providers/<provider_name>/models/<path:model_name>", methods=["GET"])  # noqa: F821
 @login_required
 def show_provider_model(provider_name: str, model_name: str):
     """
@@ -628,7 +628,7 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models/<model_name>", methods=["PATCH"])  # noqa: F821
+@manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def enable_or_disable_model(tenant_id: str = None, provider_name: str = None, instance_name: str = None, model_name: str = None):
@@ -698,7 +698,7 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/providers/<provider_name>/instances/<instance_name>/models/<model_name>", methods=["POST"])  # noqa: F821
+@manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def chat_to_model(tenant_id: str = None, provider_name: str = None, instance_name: str = None, model_name: str = None):
