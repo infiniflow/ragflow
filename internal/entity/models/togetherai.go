@@ -67,6 +67,10 @@ func (t *TogetherAIModel) baseURLForRegion(region string) (string, error) {
 	return strings.TrimSuffix(base, "/"), nil
 }
 
+type togetherAIReasoningOptions struct {
+	Enabled bool `json:"enabled"`
+}
+
 func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -94,6 +98,11 @@ func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stre
 		}
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
+		}
+		if chatModelConfig.Thinking != nil {
+			reqBody["reasoning"] = togetherAIReasoningOptions{
+				Enabled: *chatModelConfig.Thinking,
+			}
 		}
 		if chatModelConfig.Effort != nil && strings.Contains(strings.ToLower(modelName), "gpt-oss") {
 			reqBody["reasoning_effort"] = *chatModelConfig.Effort

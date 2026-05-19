@@ -107,6 +107,47 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
+	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "Qwen/Qwen3.5-9B" {
+			t.Errorf("model=%v", body["model"])
+		}
+		reasoning, ok := body["reasoning"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("reasoning=%T, want object", body["reasoning"])
+		}
+		if reasoning["enabled"] != false {
+			t.Errorf("reasoning.enabled=%v, want false", reasoning["enabled"])
+		}
+		if _, ok := body["reasoning_effort"]; ok {
+			t.Errorf("reasoning_effort should not be sent for non-GPT-OSS model: %v", body["reasoning_effort"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content": "pong",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := false
+	resp, err := newTogetherAIForTest(srv.URL).ChatWithMessages(
+		"Qwen/Qwen3.5-9B",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if *resp.Answer != "pong" {
+		t.Errorf("Answer=%q", *resp.Answer)
+	}
+}
+
 func TestTogetherAIChatRequiresModelName(t *testing.T) {
 	apiKey := "test-key"
 	_, err := newTogetherAIForTest("http://unused").ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
