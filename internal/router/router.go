@@ -165,6 +165,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
 				documents.POST("/parse", r.documentHandler.ParseDocuments)
 			}
+			v1.GET("/thumbnails", r.documentHandler.GetDocumentThumbnails)
 
 			// Chat routes
 			chats := v1.Group("/chats")
@@ -178,15 +179,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
-				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
-				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
-				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.chunkHandler.RetrievalTest)
 
-				// Dataset documents
-				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				dataset := datasets.Group("/:dataset_id")
+				{
+					dataset.GET("", r.datasetsHandler.GetDataset)
+					dataset.GET("/graph", r.datasetsHandler.GetKnowledgeGraph)
+					dataset.DELETE("/graph", r.datasetsHandler.DeleteKnowledgeGraph)
+
+					documents := dataset.Group("/documents")
+					{
+						documents.GET("", r.documentHandler.ListDocuments)
+						documents.POST("", r.documentHandler.UploadDatasetDocuments)
+					}
+				}
 			}
 
 			// Search routes

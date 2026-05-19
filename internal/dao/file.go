@@ -487,3 +487,9 @@ func (dao *FileDAO) addFileFromKB(doc *entity.Document, datasetFolderID, tenantI
 
 	return nil
 }
+
+// AddFileFromKB adds a file record from knowledge base document.
+// This is the exported wrapper for knowledge-base document uploads.
+func (dao *FileDAO) AddFileFromKB(doc *entity.Document, datasetFolderID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
+	return dao.addFileFromKB(doc, datasetFolderID, tenantID, file2DocumentDAO)
+}

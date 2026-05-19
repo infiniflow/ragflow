@@ -17,23 +17,42 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	"image/png"
+	"io"
+	"mime/multipart"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"ragflow/internal/entity"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 
 	"ragflow/internal/server"
+
+	"github.com/zeebo/xxh3"
 )
 
 // DocumentService document service
 type DocumentService struct {
 	documentDAO *dao.DocumentDAO
 	kbDAO       *dao.KnowledgebaseDAO
+	fileService *FileService
 	docEngine   engine.DocEngine
 	engineType  server.EngineType
 	metadataSvc *MetadataService
@@ -45,10 +64,454 @@ func NewDocumentService() *DocumentService {
 	return &DocumentService{
 		documentDAO: dao.NewDocumentDAO(),
 		kbDAO:       dao.NewKnowledgebaseDAO(),
+		fileService: NewFileService(),
 		docEngine:   engine.Get(),
 		engineType:  cfg.DocEngine.Type,
 		metadataSvc: NewMetadataService(),
 	}
+}
+
+const datasetDocumentNameLimit = 255
+const (
+	maxBlobSizeThumbnail  = 50 * 1024 * 1024
+	maxBlobSizePDF        = 100 * 1024 * 1024
+	thumbnailBase64Prefix = "data:image/png;base64,"
+)
+
+var documentRunStatusMap = map[string]string{
+	"0":       "UNSTART",
+	"1":       "RUNNING",
+	"2":       "CANCEL",
+	"3":       "DONE",
+	"4":       "FAIL",
+	"UNSTART": "UNSTART",
+	"RUNNING": "RUNNING",
+	"CANCEL":  "CANCEL",
+	"DONE":    "DONE",
+	"FAIL":    "FAIL",
+}
+
+// UploadDatasetLocalDocuments uploads one or more local files into a dataset.
+func (s *DocumentService) UploadDatasetLocalDocuments(datasetID, tenantID, parentPath string, fileHeaders []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("can't find this dataset")
+	}
+	if !s.kbDAO.Accessible(datasetID, tenantID) {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+	if len(fileHeaders) == 0 {
+		return nil, common.CodeArgumentError, fmt.Errorf("No file selected!")
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
+	}
+
+	kbFolder, err := s.fileService.getOrCreateKnowledgebaseFolder(tenantID, kb.Name)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to get dataset folder: %w", err)
+	}
+
+	safeParentPath := strings.TrimSpace(utility.SanitizeFilename(parentPath))
+	uploadedDocs := make([]map[string]interface{}, 0, len(fileHeaders))
+
+	for _, fileHeader := range fileHeaders {
+		if err := s.checkTenantUploadLimit(tenantID); err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if fileHeader == nil || fileHeader.Filename == "" {
+			return nil, common.CodeArgumentError, fmt.Errorf("No file selected!")
+		}
+		if len([]byte(fileHeader.Filename)) > datasetDocumentNameLimit {
+			return nil, common.CodeArgumentError, fmt.Errorf("File name must be %d bytes or less.", datasetDocumentNameLimit)
+		}
+
+		src, err := fileHeader.Open()
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to open uploaded file: %w", err)
+		}
+		data, err := io.ReadAll(src)
+		src.Close()
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to read file data: %w", err)
+		}
+		blob := repairPotentialBrokenPDF(fileHeader.Filename, data)
+		thumbnail := generateThumbnail(fileHeader.Filename, blob)
+		contentHash := computeContentHash(blob)
+
+		filename := fileHeader.Filename
+		uniqueName, err := s.duplicateDocumentName(datasetID, filename)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		fileType := utility.FilenameType(uniqueName)
+		if fileType == utility.FileTypeOTHER {
+			return nil, common.CodeArgumentError, fmt.Errorf("This type of file has not been supported yet!")
+		}
+
+		location := uniqueName
+		if safeParentPath != "" {
+			location = safeParentPath + "/" + uniqueName
+		}
+		for storageImpl.ObjExist(datasetID, location) {
+			location += "_"
+		}
+		if err := storageImpl.Put(datasetID, location, blob); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to store file: %w", err)
+		}
+
+		doc, err := s.insertDatasetDocument(kb, tenantID, uniqueName, location, blob, fileType, sourceTypeLocal, contentHash, thumbnail)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if err := s.fileService.fileDAO.AddFileFromKB(doc, kbFolder.ID, tenantID, s.fileService.file2DocumentDAO); err != nil {
+			return nil, common.CodeServerError, err
+		}
+
+		uploadedDocs = append(uploadedDocs, mapDocumentForUpload(doc, "0"))
+	}
+
+	return uploadedDocs, common.CodeSuccess, nil
+}
+
+// UploadDatasetEmptyDocument creates an empty document in a dataset.
+func (s *DocumentService) UploadDatasetEmptyDocument(datasetID, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("can't find this dataset")
+	}
+	if !s.kbDAO.Accessible(datasetID, tenantID) {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("File name can't be empty.")
+	}
+	if len([]byte(name)) > datasetDocumentNameLimit {
+		return nil, common.CodeArgumentError, fmt.Errorf("File name must be %d bytes or less.", datasetDocumentNameLimit)
+	}
+
+	uniqueName, err := s.duplicateDocumentName(datasetID, name)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	kbFolder, err := s.fileService.getOrCreateKnowledgebaseFolder(tenantID, kb.Name)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to get dataset folder: %w", err)
+	}
+
+	doc, err := s.insertDatasetDocument(kb, tenantID, uniqueName, "", nil, "virtual", sourceTypeLocal, "", "")
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if err := s.fileService.fileDAO.AddFileFromKB(doc, kbFolder.ID, tenantID, s.fileService.file2DocumentDAO); err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	return mapDocumentForUpload(doc, ""), common.CodeSuccess, nil
+}
+
+const sourceTypeLocal = "local"
+
+func (s *DocumentService) duplicateDocumentName(datasetID, name string) (string, error) {
+	return common.DuplicateName(func(candidate string, _ string) bool {
+		docs, err := s.documentDAO.GetByNameAndKBID(candidate, datasetID)
+		return err == nil && len(docs) > 0
+	}, name, datasetID)
+}
+
+func (s *DocumentService) insertDatasetDocument(kb *entity.Knowledgebase, tenantID, name, location string, blob []byte, fileType, sourceType, contentHash, thumbnail string) (*entity.Document, error) {
+	parserID := kb.ParserID
+	switch {
+	case fileType == utility.FileTypeVISUAL:
+		parserID = "picture"
+	case fileType == utility.FileTypeAURAL:
+		parserID = "audio"
+	case strings.HasSuffix(strings.ToLower(name), ".ppt") || strings.HasSuffix(strings.ToLower(name), ".pptx") || strings.HasSuffix(strings.ToLower(name), ".pages"):
+		parserID = "presentation"
+	case strings.HasSuffix(strings.ToLower(name), ".eml"):
+		parserID = "email"
+	}
+
+	docName := name
+	doc := &entity.Document{
+		ID:           common.GenerateUUID(),
+		KbID:         kb.ID,
+		ParserID:     parserID,
+		PipelineID:   kb.PipelineID,
+		ParserConfig: entity.JSONMap(common.GetParserConfig(kb.ParserID, map[string]interface{}(kb.ParserConfig))),
+		SourceType:   sourceType,
+		Type:         fileType,
+		CreatedBy:    tenantID,
+		Name:         &docName,
+		Location:     func() *string { loc := location; return &loc }(),
+		Size:         int64(len(blob)),
+		ContentHash:  stringPtrIfNotEmpty(contentHash),
+		Thumbnail:    stringPtrIfNotEmpty(thumbnail),
+		Suffix:       strings.TrimPrefix(strings.ToLower(filepath.Ext(name)), "."),
+		Run:          func() *string { s := "0"; return &s }(),
+		Status:       func() *string { s := "1"; return &s }(),
+	}
+
+	if err := s.documentDAO.Create(doc); err != nil {
+		return nil, fmt.Errorf("failed to create document: %w", err)
+	}
+	if err := s.kbDAO.AtomicIncreaseDocNumByID(kb.ID); err != nil {
+		return nil, fmt.Errorf("failed to update dataset document count: %w", err)
+	}
+	return doc, nil
+}
+
+func mapDocumentForUpload(doc *entity.Document, runStatus string) map[string]interface{} {
+	if doc == nil {
+		return nil
+	}
+
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return map[string]interface{}{}
+	}
+
+	var mapped map[string]interface{}
+	if err := json.Unmarshal(raw, &mapped); err != nil {
+		return map[string]interface{}{}
+	}
+
+	if mapped == nil {
+		mapped = make(map[string]interface{})
+	}
+
+	keyMapping := map[string]string{
+		"chunk_num": "chunk_count",
+		"kb_id":     "dataset_id",
+		"token_num": "token_count",
+		"parser_id": "chunk_method",
+	}
+
+	renamed := make(map[string]interface{}, len(mapped))
+	for key, value := range mapped {
+		if newKey, ok := keyMapping[key]; ok {
+			renamed[newKey] = value
+			continue
+		}
+		renamed[key] = value
+	}
+
+	status := runStatus
+	if status == "" {
+		if runValue, ok := renamed["run"].(string); ok {
+			status = runValue
+		}
+	}
+	if mappedStatus, ok := documentRunStatusMap[status]; ok {
+		renamed["run"] = mappedStatus
+	}
+
+	return renamed
+}
+
+func (s *DocumentService) checkTenantUploadLimit(tenantID string) error {
+	limitStr := strings.TrimSpace(os.Getenv("MAX_FILE_NUM_PER_USER"))
+	if limitStr == "" {
+		return nil
+	}
+
+	limit, err := strconv.ParseInt(limitStr, 10, 64)
+	if err != nil || limit <= 0 {
+		return nil
+	}
+
+	count, err := s.documentDAO.CountByTenantID(tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to get document count: %w", err)
+	}
+	if count >= limit {
+		return fmt.Errorf("Exceed the maximum file number of a free user!")
+	}
+
+	return nil
+}
+
+func computeContentHash(blob []byte) string {
+	if len(blob) == 0 {
+		return ""
+	}
+
+	sum := xxh3.Hash128(blob)
+	return fmt.Sprintf("%x", sum.Bytes())
+}
+
+func stringPtrIfNotEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func repairPotentialBrokenPDF(filename string, blob []byte) []byte {
+	if len(blob) == 0 || len(blob) > maxBlobSizePDF {
+		return blob
+	}
+	if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+		return blob
+	}
+	if bytes.HasPrefix(blob, []byte("%PDF-")) && bytes.Contains(blob, []byte("%%EOF")) {
+		return blob
+	}
+
+	gsPath, err := exec.LookPath("gs")
+	if err != nil {
+		return blob
+	}
+
+	tempDir, err := os.MkdirTemp("", "ragflow-pdf-repair-*")
+	if err != nil {
+		return blob
+	}
+	defer os.RemoveAll(tempDir)
+
+	inputPath := filepath.Join(tempDir, "input.pdf")
+	outputPath := filepath.Join(tempDir, "output.pdf")
+	if err := os.WriteFile(inputPath, blob, 0o600); err != nil {
+		return blob
+	}
+
+	cmd := exec.Command(
+		gsPath,
+		"-o", outputPath,
+		"-sDEVICE=pdfwrite",
+		"-dPDFSETTINGS=/prepress",
+		inputPath,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_ = output
+		return blob
+	}
+
+	repaired, err := os.ReadFile(outputPath)
+	if err != nil || len(repaired) == 0 {
+		return blob
+	}
+	return repaired
+}
+
+func generateThumbnail(filename string, blob []byte) string {
+	if len(blob) == 0 || len(blob) > maxBlobSizeThumbnail {
+		return ""
+	}
+
+	if strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+		return generatePDFThumbnail(blob)
+	}
+	if isThumbnailImage(filename) {
+		return generateImageThumbnail(blob)
+	}
+
+	return ""
+}
+
+func isThumbnailImage(filename string) bool {
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".jpg"), strings.HasSuffix(lower, ".jpeg"), strings.HasSuffix(lower, ".png"),
+		strings.HasSuffix(lower, ".gif"), strings.HasSuffix(lower, ".ico"), strings.HasSuffix(lower, ".webp"):
+		return true
+	default:
+		return false
+	}
+}
+
+func generateImageThumbnail(blob []byte) string {
+	img, _, err := image.Decode(bytes.NewReader(blob))
+	if err != nil {
+		return ""
+	}
+
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+
+	const maxDim = 30
+	newWidth, newHeight := width, height
+	if width > maxDim || height > maxDim {
+		if width >= height {
+			newWidth = maxDim
+			newHeight = maxDim * height / width
+		} else {
+			newHeight = maxDim
+			newWidth = maxDim * width / height
+		}
+		if newWidth <= 0 {
+			newWidth = 1
+		}
+		if newHeight <= 0 {
+			newHeight = 1
+		}
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+	for y := 0; y < newHeight; y++ {
+		srcY := bounds.Min.Y + y*height/newHeight
+		for x := 0; x < newWidth; x++ {
+			srcX := bounds.Min.X + x*width/newWidth
+			dst.Set(x, y, img.At(srcX, srcY))
+		}
+	}
+
+	var out bytes.Buffer
+	if err := png.Encode(&out, dst); err != nil {
+		return ""
+	}
+	return thumbnailBase64Prefix + base64.StdEncoding.EncodeToString(out.Bytes())
+}
+
+func generatePDFThumbnail(blob []byte) string {
+	gsPath, err := exec.LookPath("gs")
+	if err != nil {
+		return ""
+	}
+
+	tempDir, err := os.MkdirTemp("", "ragflow-pdf-thumb-*")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(tempDir)
+
+	inputPath := filepath.Join(tempDir, "input.pdf")
+	outputPath := filepath.Join(tempDir, "thumbnail.png")
+	if err := os.WriteFile(inputPath, blob, 0o600); err != nil {
+		return ""
+	}
+
+	cmd := exec.Command(
+		gsPath,
+		"-q",
+		"-dBATCH",
+		"-dNOPAUSE",
+		"-dFirstPage=1",
+		"-dLastPage=1",
+		"-sDEVICE=png16m",
+		"-r32",
+		"-sOutputFile="+outputPath,
+		inputPath,
+	)
+	if _, err := cmd.CombinedOutput(); err != nil {
+		return ""
+	}
+
+	thumb, err := os.ReadFile(outputPath)
+	if err != nil || len(thumb) == 0 {
+		return ""
+	}
+	return thumbnailBase64Prefix + base64.StdEncoding.EncodeToString(thumb)
 }
 
 // CreateDocumentRequest create document request
@@ -189,6 +652,32 @@ func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize i
 	}
 
 	return responses, total, nil
+}
+
+// GetDocumentThumbnails returns thumbnail strings keyed by document ID.
+func (s *DocumentService) GetDocumentThumbnails(docIDs []string) (map[string]string, error) {
+	docs, err := s.documentDAO.GetByIDs(docIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	thumbnails := make(map[string]string, len(docIDs))
+	for _, doc := range docs {
+		if doc == nil {
+			continue
+		}
+		if doc.Thumbnail != nil {
+			thumbnails[doc.ID] = *doc.Thumbnail
+		} else {
+			thumbnails[doc.ID] = ""
+		}
+	}
+	for _, docID := range docIDs {
+		if _, ok := thumbnails[docID]; !ok {
+			thumbnails[docID] = ""
+		}
+	}
+	return thumbnails, nil
 }
 
 // GetDocumentsByAuthorID get documents by author ID

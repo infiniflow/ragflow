@@ -83,6 +83,91 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	})
 }
 
+// UploadDatasetDocuments handles dataset document creation/upload.
+func (h *DocumentHandler) UploadDatasetDocuments(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+
+	if !h.datasetService.Accessible(datasetID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	uploadType := strings.ToLower(strings.TrimSpace(c.DefaultQuery("type", "local")))
+	switch uploadType {
+	case "empty":
+		name := ""
+		if strings.Contains(strings.ToLower(c.ContentType()), "application/json") {
+			var req struct {
+				Name string `json:"name"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				jsonError(c, common.CodeArgumentError, err.Error())
+				return
+			}
+			name = req.Name
+		} else {
+			name = c.PostForm("name")
+		}
+
+		data, code, err := h.documentService.UploadDatasetEmptyDocument(datasetID, user.ID, name)
+		if err != nil {
+			jsonError(c, code, err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    data,
+			"message": common.CodeSuccess.Message(),
+		})
+		return
+
+	case "", "local":
+		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+			jsonError(c, common.CodeArgumentError, "Failed to parse multipart form: "+err.Error())
+			return
+		}
+
+		form, err := c.MultipartForm()
+		if err != nil || form == nil {
+			jsonError(c, common.CodeArgumentError, "No file part!")
+			return
+		}
+
+		files := form.File["file"]
+		if len(files) == 0 {
+			jsonError(c, common.CodeArgumentError, "No file selected!")
+			return
+		}
+
+		parentPath := c.PostForm("parent_path")
+		data, code, err := h.documentService.UploadDatasetLocalDocuments(datasetID, user.ID, parentPath, files)
+		if err != nil {
+			jsonError(c, code, err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeSuccess,
+			"data":    data,
+			"message": common.CodeSuccess.Message(),
+		})
+		return
+
+	default:
+		jsonError(c, common.CodeArgumentError, "`type` must be one of \"local\" or \"empty\".")
+		return
+	}
+}
+
 // GetDocumentByID get document by ID
 // @Summary Get Document Info
 // @Description Get document details by ID
@@ -253,6 +338,49 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"total": total,
 			"docs":  docs,
 		},
+	})
+}
+
+// GetDocumentThumbnails returns thumbnails keyed by document ID.
+func (h *DocumentHandler) GetDocumentThumbnails(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	rawIDs := make([]string, 0)
+	if values := c.QueryArray("doc_ids"); len(values) > 0 {
+		rawIDs = append(rawIDs, values...)
+	} else if value := strings.TrimSpace(c.Query("doc_ids")); value != "" {
+		rawIDs = append(rawIDs, strings.Split(value, ",")...)
+	}
+	if len(rawIDs) == 0 {
+		jsonError(c, common.CodeArgumentError, "Lack of \"Document ID\"")
+		return
+	}
+
+	docIDs := make([]string, 0)
+	for _, part := range rawIDs {
+		if id := strings.TrimSpace(part); id != "" {
+			docIDs = append(docIDs, id)
+		}
+	}
+	if len(docIDs) == 0 {
+		jsonError(c, common.CodeArgumentError, "Lack of \"Document ID\"")
+		return
+	}
+
+	thumbnails, err := h.documentService.GetDocumentThumbnails(docIDs)
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    thumbnails,
 	})
 }
 

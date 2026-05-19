@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -33,6 +34,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // FileService file service
@@ -153,6 +155,60 @@ const DatasetFolderName = ".knowledgebase"
 
 // FileSourceDataset represents dataset as file source
 const FileSourceDataset = "knowledgebase"
+
+// getOrCreateKnowledgebaseFolder ensures the dataset folder tree exists for a tenant.
+func (s *FileService) getOrCreateKnowledgebaseFolder(tenantID, kbName string) (*entity.File, error) {
+	rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.initDatasetDocs(rootFolder.ID, tenantID); err != nil {
+		return nil, err
+	}
+
+	kbRootFolder, err := s.fileDAO.GetByParentIDAndName(rootFolder.ID, DatasetFolderName)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		kbRootFolder = &entity.File{
+			ID:         s.generateUUID(),
+			ParentID:   rootFolder.ID,
+			TenantID:   tenantID,
+			CreatedBy:  tenantID,
+			Name:       DatasetFolderName,
+			Type:       FileTypeFolder,
+			Size:       0,
+			SourceType: FileSourceDataset,
+		}
+		if err := s.fileDAO.Insert(kbRootFolder); err != nil {
+			return nil, err
+		}
+	}
+
+	kbFolder, err := s.fileDAO.GetByParentIDAndName(kbRootFolder.ID, kbName)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		kbFolder = &entity.File{
+			ID:         s.generateUUID(),
+			ParentID:   kbRootFolder.ID,
+			TenantID:   tenantID,
+			CreatedBy:  tenantID,
+			Name:       kbName,
+			Type:       FileTypeFolder,
+			Size:       0,
+			SourceType: FileSourceDataset,
+		}
+		if err := s.fileDAO.Insert(kbFolder); err != nil {
+			return nil, err
+		}
+	}
+
+	return kbFolder, nil
+}
 
 // toFileResponse converts file model to response format
 func (s *FileService) toFileResponse(file *entity.File) map[string]interface{} {

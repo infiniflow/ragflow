@@ -43,6 +43,13 @@ func (dao *DocumentDAO) GetByID(id string) (*entity.Document, error) {
 	return &document, nil
 }
 
+// GetByNameAndKBID gets documents by name and knowledge base ID
+func (dao *DocumentDAO) GetByNameAndKBID(name, kbID string) ([]*entity.Document, error) {
+	var documents []*entity.Document
+	err := DB.Where("name = ? AND kb_id = ?", name, kbID).Find(&documents).Error
+	return documents, err
+}
+
 // GetByAuthorID get documents by author ID
 func (dao *DocumentDAO) GetByAuthorID(authorID string, offset, limit int) ([]*entity.Document, int64, error) {
 	var documents []*entity.Document
