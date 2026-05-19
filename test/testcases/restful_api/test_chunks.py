@@ -15,13 +15,10 @@
 #
 
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
 import pytest
 from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
-from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
-from test.testcases.restful_api.helpers.client import RestClient
 
 
 def _assert_created_chunk_id(payload):
