@@ -235,6 +235,7 @@ async def _run_workflow_session(
 
         async def sse():
             nonlocal full_content, reference, final_ans, trace_items, structured_output
+            done_sent = False
             try:
                 async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                     ans["session_id"] = session_id
@@ -276,6 +277,10 @@ async def _run_workflow_session(
                     + json.dumps({"code": 500, "message": str(exc), "data": False}, ensure_ascii=False)
                     + "\n\n"
                 )
+            finally:
+                if not done_sent:
+                    done_sent = True
+                    yield "data:[DONE]\n\n"
 
         return _build_sse_response(sse())
 
