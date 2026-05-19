@@ -57,16 +57,20 @@ from common.doc_store.doc_store_base import OrderByExpr
 DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 4096
 DEFAULT_GRAPHRAG_RETRY_ATTEMPTS = 2
 DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS = 2.0
+DEFAULT_GRAPHRAG_RETRY_BACKOFF_MAX_SECONDS = 60.0
 DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_SECONDS = 0
 DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_PER_CHUNK_SECONDS = 600
 DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_MIN_TIMEOUT_SECONDS = 120
 DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS = 180
 DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS = 1800
 DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS = 1800
+DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS = 0
 
 
 def _bounded_int_config(config: dict, key: str, default: int, minimum: int, maximum: int) -> int:
     value = config.get(key, default)
+    if value is None:
+        return default
     try:
         value = int(value)
     except (TypeError, ValueError):
@@ -80,6 +84,8 @@ def _bounded_int_config(config: dict, key: str, default: int, minimum: int, maxi
 
 def _bounded_float_config(config: dict, key: str, default: float, minimum: float, maximum: float) -> float:
     value = config.get(key, default)
+    if value is None:
+        return default
     try:
         value = float(value)
     except (TypeError, ValueError):
@@ -129,6 +135,7 @@ async def _run_with_retry(
     attempts: int,
     timeout_seconds: int | float,
     backoff_seconds: float,
+    backoff_max_seconds: float,
     callback=None,
     task_id: str = "",
 ):
@@ -154,12 +161,20 @@ async def _run_with_retry(
                 callback(msg=f"[GraphRAG] {label} FAILED after {attempt}/{attempts} attempts: {error_msg}")
             raise last_error
 
-        wait = backoff_seconds * (2 ** (attempt - 1))
+        wait = min(backoff_max_seconds, backoff_seconds * (2 ** (attempt - 1)))
         if callback:
             callback(msg=f"[GraphRAG] {label} failed attempt {attempt}/{attempts}: {error_msg}; retrying in {wait:.1f}s")
         logging.warning("GraphRAG %s failed attempt %s/%s: %s", label, attempt, attempts, error_msg)
         if wait > 0:
             await asyncio.sleep(wait)
+
+
+async def _acquire_lock(lock: RedisDistributedLock, label: str, timeout_seconds: int, callback, task_id: str):
+    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring {label}.", callback)
+    if timeout_seconds > 0:
+        await asyncio.wait_for(lock.spin_acquire(), timeout=timeout_seconds)
+    else:
+        await lock.spin_acquire()
 
 
 async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
@@ -231,6 +246,11 @@ async def run_graphrag_for_kb(
     batch_chunk_token_size = _positive_int_config(graphrag_config, "batch_chunk_token_size", DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
     retry_attempts = _bounded_int_config(graphrag_config, "retry_attempts", DEFAULT_GRAPHRAG_RETRY_ATTEMPTS, 1, 10)
     retry_backoff_seconds = _bounded_float_config(graphrag_config, "retry_backoff_seconds", DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS, 0.0, 600.0)
+    retry_backoff_max_seconds = _bounded_float_config(graphrag_config, "retry_backoff_max_seconds", DEFAULT_GRAPHRAG_RETRY_BACKOFF_MAX_SECONDS, 0.0, 3600.0)
+    build_subgraph_retry_attempts = _bounded_int_config(graphrag_config, "build_subgraph_retry_attempts", retry_attempts, 1, 10)
+    merge_retry_attempts = _bounded_int_config(graphrag_config, "merge_retry_attempts", retry_attempts, 1, 10)
+    resolution_retry_attempts = _bounded_int_config(graphrag_config, "resolution_retry_attempts", retry_attempts, 1, 10)
+    community_retry_attempts = _bounded_int_config(graphrag_config, "community_retry_attempts", retry_attempts, 1, 10)
     build_subgraph_timeout_seconds = _bounded_int_config(
         graphrag_config,
         "build_subgraph_timeout_seconds",
@@ -255,6 +275,7 @@ async def run_graphrag_for_kb(
     merge_timeout_seconds = _bounded_int_config(graphrag_config, "merge_timeout_seconds", DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS, 0, 86400)
     resolution_timeout_seconds = _bounded_int_config(graphrag_config, "resolution_timeout_seconds", DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS, 0, 86400)
     community_timeout_seconds = _bounded_int_config(graphrag_config, "community_timeout_seconds", DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS, 0, 86400)
+    lock_acquire_timeout_seconds = _bounded_int_config(graphrag_config, "lock_acquire_timeout_seconds", DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS, 0, 86400)
 
     if not doc_ids:
         logging.info(f"Fetching all docs for {kb_id}")
@@ -343,13 +364,16 @@ async def run_graphrag_for_kb(
                 )
                 label = f"build_subgraph doc:{doc_id}"
                 msg = f"[GraphRAG] {label}"
-                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s, attempts={retry_attempts})")
+                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s, attempts={build_subgraph_retry_attempts})")
 
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
-                    sg = await _run_with_retry(
-                        label,
-                        lambda: generate_subgraph(
+                    async def build_subgraph_attempt():
+                        checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+                        if checkpoint_sg:
+                            callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store during retry, skipping LLM extraction.")
+                            return checkpoint_sg
+                        return await generate_subgraph(
                             kg_extractor,
                             tenant_id,
                             kb_id,
@@ -360,11 +384,16 @@ async def run_graphrag_for_kb(
                             chat_model,
                             embedding_model,
                             callback,
-                            task_id=task_id
-                        ),
-                        attempts=retry_attempts,
+                            task_id=task_id,
+                        )
+
+                    sg = await _run_with_retry(
+                        label,
+                        build_subgraph_attempt,
+                        attempts=build_subgraph_retry_attempts,
                         timeout_seconds=deadline,
                         backoff_seconds=retry_backoff_seconds,
+                        backoff_max_seconds=retry_backoff_max_seconds,
                         callback=callback,
                         task_id=task_id,
                     )
@@ -419,7 +448,7 @@ async def run_graphrag_for_kb(
 
     kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value="batch_merge", timeout=1200)
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring merge lock.", callback)
-    await kb_lock.spin_acquire()
+    await _acquire_lock(kb_lock, "merge lock", lock_acquire_timeout_seconds, callback, task_id)
     callback(msg=f"[GraphRAG] kb:{kb_id} merge lock acquired")
 
     try:
@@ -443,9 +472,10 @@ async def run_graphrag_for_kb(
                         embedding_model,
                         callback,
                     ),
-                    attempts=retry_attempts,
+                    attempts=merge_retry_attempts,
                     timeout_seconds=merge_timeout_seconds,
                     backoff_seconds=retry_backoff_seconds,
+                    backoff_max_seconds=retry_backoff_max_seconds,
                     callback=callback,
                     task_id=task_id,
                 )
@@ -485,7 +515,7 @@ async def run_graphrag_for_kb(
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before resolution/community extraction.", callback)
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring post-merge lock.", callback)
-    await kb_lock.spin_acquire()
+    await _acquire_lock(kb_lock, "post-merge lock", lock_acquire_timeout_seconds, callback, task_id)
     callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
 
     try:
@@ -512,10 +542,11 @@ async def run_graphrag_for_kb(
 
         if resolution_pending:
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before entity resolution.", callback)
-            await _run_with_retry(
-                "entity resolution",
-                lambda: resolve_entities(
-                    final_graph,
+
+            async def run_resolution_attempt():
+                graph_for_resolution = final_graph.copy()
+                await resolve_entities(
+                    graph_for_resolution,
                     subgraph_nodes,
                     tenant_id,
                     kb_id,
@@ -524,10 +555,16 @@ async def run_graphrag_for_kb(
                     embedding_model,
                     callback,
                     task_id=task_id,
-                ),
-                attempts=retry_attempts,
+                )
+                return graph_for_resolution
+
+            final_graph = await _run_with_retry(
+                "entity resolution",
+                run_resolution_attempt,
+                attempts=resolution_retry_attempts,
                 timeout_seconds=resolution_timeout_seconds,
                 backoff_seconds=retry_backoff_seconds,
+                backoff_max_seconds=retry_backoff_max_seconds,
                 callback=callback,
                 task_id=task_id,
             )
@@ -537,10 +574,10 @@ async def run_graphrag_for_kb(
 
         if community_pending:
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before community extraction.", callback)
-            await _run_with_retry(
-                "community extraction",
-                lambda: extract_community(
-                    final_graph,
+
+            async def run_community_attempt():
+                await extract_community(
+                    final_graph.copy(),
                     tenant_id,
                     kb_id,
                     None,
@@ -548,10 +585,15 @@ async def run_graphrag_for_kb(
                     embedding_model,
                     callback,
                     task_id=task_id,
-                ),
-                attempts=retry_attempts,
+                )
+
+            await _run_with_retry(
+                "community extraction",
+                run_community_attempt,
+                attempts=community_retry_attempts,
                 timeout_seconds=community_timeout_seconds,
                 backoff_seconds=retry_backoff_seconds,
+                backoff_max_seconds=retry_backoff_max_seconds,
                 callback=callback,
                 task_id=task_id,
             )
