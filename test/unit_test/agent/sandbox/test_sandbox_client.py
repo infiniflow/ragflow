@@ -1,3 +1,4 @@
+import pytest
 from agent.sandbox import client as sandbox_client
 from agent.sandbox.providers.self_managed import SelfManagedProvider
 
