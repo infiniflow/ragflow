@@ -997,6 +997,8 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     monkeypatch.setattr(module, "decrypt", lambda value: f"dec:{value}")
     monkeypatch.setattr(module, "generate_password_hash", lambda value: f"hash:{value}")
     update_calls = {}
+    audit_warnings = []
+    monkeypatch.setattr(module.logging, "warning", lambda *args, **kwargs: audit_warnings.append(args))
 
     def _update_by_id(user_id, payload):
         update_calls["user_id"] = user_id
@@ -1010,9 +1012,12 @@ def test_logout_setting_profile_matrix_unit(monkeypatch):
     assert update_calls["user_id"] == "current-user"
     assert update_calls["payload"]["password"] == "hash:dec:new-password"
     assert update_calls["payload"]["nickname"] == "neo"
-    assert update_calls["payload"]["theme"] == "dark"
+    assert "theme" not in update_calls["payload"]
     assert "email" not in update_calls["payload"]
     assert "status" not in update_calls["payload"]
+    assert audit_warnings
+    assert audit_warnings[-1][1] == "current-user"
+    assert audit_warnings[-1][2] == ["email", "status", "theme"]
 
     _set_request_json(monkeypatch, module, {"nickname": "neo"})
 
