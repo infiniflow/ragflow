@@ -26,11 +26,7 @@ Configure sandbox providers from the admin page:
 - `ssh`: Runs code on a remote machine over SSH.
 - `aliyun_codeinterpreter` and `e2b`: Cloud providers.
 
-Image placeholder:
-
-```md
-![Sandbox Settings Screenshot](./sandbox-settings.png)
-```
+<img width="700" alt="Sandbox Settings Screenshot" src="../../../../web/src/assets/admin-sandbox-settings.png" />
 
 ## Provider options
 
