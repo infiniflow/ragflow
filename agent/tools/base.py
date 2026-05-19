@@ -19,6 +19,7 @@ import time
 from copy import deepcopy
 import asyncio
 from functools import partial
+from collections.abc import Mapping
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
 from common.misc_utils import hash_str2int
@@ -58,6 +59,8 @@ class LLMToolPluginCallSession(ToolCallSession):
     async def tool_call_async(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 10) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
         logging.info(f"[ToolCall] invoke name={name} arguments={str(arguments)[:200]}")
+        if not isinstance(arguments, Mapping):
+            raise TypeError(f"Tool arguments for {name} must be an object, got {type(arguments).__name__}")
         st = timer()
         tool_obj = self.tools_map[name]
         if isinstance(tool_obj, MCPToolBinding):
