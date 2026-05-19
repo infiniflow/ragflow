@@ -268,7 +268,6 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 // CreateMetadataInDocEngine creates the document metadata table for a tenant
 func (s *TenantService) CreateMetadataInDocEngine(tenantID string) (common.ErrorCode, error) {
 	// Call document engine to create doc meta table
-	// Table name will be built as "ragflow_doc_meta_{tenantID}" in the engine
 	err := s.docEngine.CreateMetadataStore(context.Background(), tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to create metadata table: %w", err)
@@ -279,11 +278,8 @@ func (s *TenantService) CreateMetadataInDocEngine(tenantID string) (common.Error
 
 // DeleteMetadataInDocEngine deletes the document metadata table for a tenant
 func (s *TenantService) DeleteMetadataInDocEngine(tenantID string) (common.ErrorCode, error) {
-	// Build table name: ragflow_doc_meta_<tenant_id>
-	tableName := fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
-
 	// Call document engine to delete doc meta table
-	err := s.docEngine.DropStore(context.Background(), tableName)
+	err := s.docEngine.DropMetadataStore(context.Background(), tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
 	}

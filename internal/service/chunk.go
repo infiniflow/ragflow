@@ -970,7 +970,7 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
 	}
 
-	deletedCount, err := s.docEngine.Delete(ctx, condition, indexName, doc.KbID)
+	deletedCount, err := s.docEngine.DeleteChunks(ctx, condition, indexName, doc.KbID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
 	}

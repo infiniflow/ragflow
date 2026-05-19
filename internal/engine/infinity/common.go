@@ -18,13 +18,68 @@ package infinity
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
+
+	"go.uber.org/zap"
 )
+
+// dropTable drops a table from Infinity
+func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error {
+	if tableName == "" {
+		return fmt.Errorf("table name cannot be empty")
+	}
+
+	// Check if table exists
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("failed to check table existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("table '%s' does not exist", tableName)
+	}
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+
+	_, err = db.DropTable(tableName, infinity.ConflictTypeError)
+	if err != nil {
+		return fmt.Errorf("failed to drop table: %w", err)
+	}
+
+	common.Info("Infinity dropped table", zap.String("tableName", tableName))
+	return nil
+}
+
+// tableExists checks if a table exists in Infinity
+func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (bool, error) {
+	if tableName == "" {
+		return false, fmt.Errorf("table name cannot be empty")
+	}
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return false, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	// Try to get the table - if it exists, no error
+	_, err = db.GetTable(tableName)
+	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check table existence: %w", err)
+	}
+	return true, nil
+}
 
 // fieldInfo represents a field in the infinity mapping schema
 type fieldInfo struct {
@@ -236,4 +291,19 @@ func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) 
 		}
 	}
 	return false, nil
+}
+
+// buildChunkTableName returns the chunk table name for a dataset
+// Skill Table: table name is just baseName (e.g., "skill_abc123_def456")
+// Regular chunk Table: table name is {baseName}_{datasetID}
+func buildChunkTableName(baseName, datasetID string) string {
+	if datasetID == "skill" {
+		return baseName
+	}
+	return fmt.Sprintf("%s_%s", baseName, datasetID)
+}
+
+// buildMetadataTableName returns the metadata table name for a tenant
+func buildMetadataTableName(tenantID string) string {
+	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }

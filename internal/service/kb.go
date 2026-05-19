@@ -131,18 +131,9 @@ func (s *KnowledgebaseService) DeleteDatasetInDocEngine(kbID string) (common.Err
 		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
 	}
 
-	// Build table name based on engine type
-	// ES: ragflow_<TenantID>
-	// Infinity: ragflow_<TenantID>_<kbID>
-	var fullTableName string
-	if s.docEngine.GetType() == "elasticsearch" {
-		fullTableName = fmt.Sprintf("ragflow_%s", kb.TenantID)
-	} else {
-		fullTableName = fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
-	}
-
 	// Call document engine to delete table
-	err = s.docEngine.DropStore(context.Background(), fullTableName)
+	err = s.docEngine.DropChunkStore(context.Background(), fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
+
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}
