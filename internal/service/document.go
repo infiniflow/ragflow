@@ -212,6 +212,30 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 	// create document parse id
 	// save to task table
 	// send to message queue
+
+	// deduplicate the document id
+	uniqueDocIDs := common.Deduplicate(docIDs)
+	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
+		return fmt.Errorf("no documents to parse")
+	}
+
+	// query database, if the document ids are valid
+	for _, docID := range uniqueDocIDs {
+		doc, err := s.documentDAO.GetByID(docID)
+		if err != nil {
+			return fmt.Errorf("failed to get document: %w", err)
+		}
+		if doc == nil {
+			return fmt.Errorf("document %s not found", docID)
+		}
+		// create task for each document
+		// save the task to database
+		// create a record in the task table
+		if doc.Status != nil && *doc.Status != "0" {
+			return fmt.Errorf("document %s is already parsed", docID)
+		}
+	}
+
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
 	return nil
 }
