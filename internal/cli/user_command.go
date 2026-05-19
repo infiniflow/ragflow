@@ -2381,11 +2381,16 @@ func (c *RAGFlowClient) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 
 	filename, ok = cmd.Params["file"].(string)
 	if ok {
-		// read file and convert to base64
-		var err error
-		fileContent, err = os.ReadFile(filename)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file: %w", err)
+		// For online file
+		if strings.HasPrefix(filename, "http://") || strings.HasPrefix(filename, "https://") {
+			fileURL = filename
+		} else {
+			// read file and convert to base64
+			var err error
+			fileContent, err = os.ReadFile(filename)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read file: %w", err)
+			}
 		}
 	} else {
 		fileURL, ok = cmd.Params["url"].(string)
