@@ -284,6 +284,10 @@ func newXinferenceEmbedServer(t *testing.T, handler func(t *testing.T, body map[
 			t.Errorf("path=%s, want /v1/embeddings", r.URL.Path)
 			return
 		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization=%q, want empty when no API key configured", got)
+			return
+		}
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("read body: %v", err)

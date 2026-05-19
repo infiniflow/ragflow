@@ -380,12 +380,10 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 	return sender(&endOfStream, nil)
 }
 
-// xinferenceEmbeddingResponse mirrors the OpenAI-compatible response
-// shape Xinference returns from /v1/embeddings: a data array whose
-// entries carry the original input index alongside the vector.
+// Index is *int so a missing JSON field is distinguishable from index 0.
 type xinferenceEmbeddingResponse struct {
 	Data []struct {
-		Index     int       `json:"index"`
+		Index     *int      `json:"index"`
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
 }
@@ -467,14 +465,21 @@ func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *AP
 	embeddings := make([]EmbeddingData, len(texts))
 	seen := make([]bool, len(texts))
 	for _, d := range parsed.Data {
-		if d.Index < 0 || d.Index >= len(texts) {
-			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", d.Index, len(texts))
+		if d.Index == nil {
+			return nil, fmt.Errorf("xinference: missing embedding index in response item")
 		}
-		if seen[d.Index] {
-			return nil, fmt.Errorf("xinference: duplicate embedding index %d", d.Index)
+		idx := *d.Index
+		if idx < 0 || idx >= len(texts) {
+			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", idx, len(texts))
 		}
-		embeddings[d.Index] = EmbeddingData{Embedding: d.Embedding, Index: d.Index}
-		seen[d.Index] = true
+		if len(d.Embedding) == 0 {
+			return nil, fmt.Errorf("xinference: missing embedding vector for response item at index %d", idx)
+		}
+		if seen[idx] {
+			return nil, fmt.Errorf("xinference: duplicate embedding index %d", idx)
+		}
+		embeddings[idx] = EmbeddingData{Embedding: d.Embedding, Index: idx}
+		seen[idx] = true
 	}
 	for i, ok := range seen {
 		if !ok {
