@@ -363,8 +363,17 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
 
     # Get model records for this instance from tenant_model table
     model_records = TenantModelService.get_models_by_instance_id(instance_obj.id)
-    # Build a map of model_name -> status
-    model_status_map = {m.model_name: m.status for m in model_records}
+    # Build a map of model_name -> status, type
+    model_info_map: dict = {}
+    for model_record in model_records:
+        if model_info_map.get(model_record.model_name):
+            model_info_map[model_record.model_name]["model_type"].append(model_record.status)
+        else:
+            model_info_map[model_record.model_name] = {
+                "status": model_record.status,
+                "model_type": [model_record.model_type],
+                "extra": model_record.extra
+            }
 
     # List all models from the LLM dictionary for this provider
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
@@ -378,17 +387,17 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
             "name": llm["llm_name"],
             "model_type": llm["model_type"],
             "max_tokens": llm.get("max_tokens"),
-            "status": model_status_map.get(llm["llm_name"], "active"),
+            "status": model_info_map.get(llm["llm_name"], {}).get("status", "active"),
         })
     factory_models = [m["name"] for m in models]
-    for model_record in model_records:
-        if model_record.model_name not in factory_models:
-            extra_fields = json.loads(model_record.extra) if model_record.extra else {}
+    for model_name, model_info_dict in model_info_map.items():
+        if model_name not in factory_models:
+            extra_fields = json.loads(model_info_dict["extra"]) if model_info_dict["extra"] else {}
             models.append({
-                "name": model_record.model_name,
-                "model_type": model_record.model_type,
+                "name": model_name,
+                "model_type": model_info_dict["model_type"],
                 "max_tokens": extra_fields.get("max_tokens", 8192),
-                "status": model_record.status,
+                "status": model_info_dict["status"],
             })
 
     return True, models
