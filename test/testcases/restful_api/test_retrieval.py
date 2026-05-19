@@ -15,7 +15,6 @@
 #
 
 from concurrent.futures import ThreadPoolExecutor
-from time import sleep
 import pytest
 import requests
 from test.testcases.configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
@@ -124,6 +123,32 @@ def _retrieval_has_question(rest_client, dataset_id, question):
     if payload["code"] != 0:
         return False
     return len(payload["data"]["chunks"]) > 0
+
+
+@wait_for(20, 1, "Retrieval indexing timeout waiting for chunk presence in RESTful batch 10 tests")
+def _retrieval_has_chunks(rest_client, dataset_id, question, chunk_ids):
+    res = rest_client.post("/retrieval", json={"question": question, "dataset_ids": [dataset_id]})
+    if res.status_code != 200:
+        return False
+    payload = res.json()
+    if payload["code"] != 0:
+        return False
+    retrieved_ids = {chunk["id"] for chunk in payload["data"]["chunks"]}
+    expected_ids = set(chunk_ids)
+    return expected_ids.issubset(retrieved_ids)
+
+
+@wait_for(20, 1, "Retrieval indexing timeout waiting for chunk deletion in RESTful batch 10 tests")
+def _retrieval_lacks_chunks(rest_client, dataset_id, question, chunk_ids):
+    res = rest_client.post("/retrieval", json={"question": question, "dataset_ids": [dataset_id]})
+    if res.status_code != 200:
+        return False
+    payload = res.json()
+    if payload["code"] != 0:
+        return False
+    retrieved_ids = {chunk["id"] for chunk in payload["data"]["chunks"]}
+    expected_ids = set(chunk_ids)
+    return expected_ids.isdisjoint(retrieved_ids)
 
 
 @pytest.mark.p2
@@ -285,23 +310,12 @@ def test_deleted_chunk_not_in_retrieval_contract(rest_client, create_document):
     assert add_payload["code"] == 0, add_payload
     chunk_id = add_payload["data"]["chunk"]["id"]
 
-    _retrieval_has_question(rest_client, dataset_id, content)
-    before_delete = rest_client.post("/retrieval", json={"question": content, "dataset_ids": [dataset_id]})
-    assert before_delete.status_code == 200
-    before_delete_payload = before_delete.json()
-    assert before_delete_payload["code"] == 0, before_delete_payload
-    assert chunk_id in [chunk["id"] for chunk in before_delete_payload["data"]["chunks"]], before_delete_payload
+    _retrieval_has_chunks(rest_client, dataset_id, content, [chunk_id])
 
     delete_res = rest_client.delete(base_path, json={"chunk_ids": [chunk_id]})
     assert delete_res.status_code == 200
     assert delete_res.json()["code"] == 0
-    sleep(1)
-
-    after_delete = rest_client.post("/retrieval", json={"question": content, "dataset_ids": [dataset_id]})
-    assert after_delete.status_code == 200
-    after_delete_payload = after_delete.json()
-    assert after_delete_payload["code"] == 0, after_delete_payload
-    assert chunk_id not in [chunk["id"] for chunk in after_delete_payload["data"]["chunks"]], after_delete_payload
+    _retrieval_lacks_chunks(rest_client, dataset_id, content, [chunk_id])
 
 
 @pytest.mark.p2
@@ -316,28 +330,12 @@ def test_deleted_chunks_batch_not_in_retrieval_contract(rest_client, create_docu
         add_payload = add_res.json()
         assert add_payload["code"] == 0, add_payload
         chunk_ids.append(add_payload["data"]["chunk"]["id"])
-    sleep(2)
-
-    before_delete = rest_client.post("/retrieval", json={"question": "BATCH_DELETE_TEST_CHUNK", "dataset_ids": [dataset_id]})
-    assert before_delete.status_code == 200
-    before_delete_payload = before_delete.json()
-    assert before_delete_payload["code"] == 0, before_delete_payload
-    retrieved_ids = [chunk["id"] for chunk in before_delete_payload["data"]["chunks"]]
-    for chunk_id in chunk_ids:
-        assert chunk_id in retrieved_ids, before_delete_payload
+    _retrieval_has_chunks(rest_client, dataset_id, "BATCH_DELETE_TEST_CHUNK", chunk_ids)
 
     delete_res = rest_client.delete(base_path, json={"chunk_ids": chunk_ids})
     assert delete_res.status_code == 200
     assert delete_res.json()["code"] == 0
-    sleep(1)
-
-    after_delete = rest_client.post("/retrieval", json={"question": "BATCH_DELETE_TEST_CHUNK", "dataset_ids": [dataset_id]})
-    assert after_delete.status_code == 200
-    after_delete_payload = after_delete.json()
-    assert after_delete_payload["code"] == 0, after_delete_payload
-    after_ids = [chunk["id"] for chunk in after_delete_payload["data"]["chunks"]]
-    for chunk_id in chunk_ids:
-        assert chunk_id not in after_ids, after_delete_payload
+    _retrieval_lacks_chunks(rest_client, dataset_id, "BATCH_DELETE_TEST_CHUNK", chunk_ids)
 
 
 @pytest.mark.p2
