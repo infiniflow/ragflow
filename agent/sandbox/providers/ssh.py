@@ -608,6 +608,10 @@ class SSHProvider(SandboxProvider):
             remote_path = posixpath.join(current_dir, name)
             relative_path = posixpath.join(relative_dir, name) if relative_dir else name
             mode = entry.st_mode
+            if mode is None:
+                mode = sftp.lstat(remote_path).st_mode
+            if mode is None:
+                raise RuntimeError(f"Unable to determine artifact entry type: {relative_path}")
 
             if stat.S_ISLNK(mode):
                 raise RuntimeError(f"Artifact symlinks are not allowed: {relative_path}")
