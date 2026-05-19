@@ -257,6 +257,8 @@ markers = [
 ]
 
 # Test collection and runtime configuration
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
     "error",  # Treat warnings as errors
     "ignore::DeprecationWarning",  # Ignore specific warnings
@@ -269,7 +271,9 @@ addopts = [
     "--strict-markers",  # Enforce marker definitions
     "--tb=short",  # Simplified traceback
     "--disable-warnings",  # Disable warnings
-    "--color=yes"  # Colored output
+    "--color=yes",  # Colored output
+    "-p",
+    "no:anyio",  # anyio's pytest plugin conflicts with pytest-asyncio on Py3.13
 ]
 
 
