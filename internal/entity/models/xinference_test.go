@@ -14,8 +14,8 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 	return NewXinferenceModel(
 		map[string]string{"default": baseURL},
 		URLSuffix{
-			Chat:   "chat/completions",
-			Models: "models",
+			Chat:   "v1/chat/completions",
+			Models: "v1/models",
 		},
 	)
 }
@@ -41,10 +41,10 @@ func TestNormalizeXinferenceBaseURL(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"http://127.0.0.1:9997", "http://127.0.0.1:9997/v1"},
-		{"http://127.0.0.1:9997/", "http://127.0.0.1:9997/v1"},
-		{"http://127.0.0.1:9997/v1", "http://127.0.0.1:9997/v1"},
-		{" http://127.0.0.1:9997/v1/ ", "http://127.0.0.1:9997/v1"},
+		{"http://127.0.0.1:9997", "http://127.0.0.1:9997"},
+		{"http://127.0.0.1:9997/", "http://127.0.0.1:9997"},
+		{"http://127.0.0.1:9997/v1", "http://127.0.0.1:9997"},
+		{" http://127.0.0.1:9997/v1/ ", "http://127.0.0.1:9997"},
 	}
 	for _, tc := range cases {
 		if got := normalizeXinferenceBaseURL(tc.in); got != tc.want {
@@ -273,7 +273,7 @@ func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
-	x := NewXinferenceModel(map[string]string{}, URLSuffix{Chat: "chat/completions"})
+	x := NewXinferenceModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := x.ChatWithMessages("qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil)

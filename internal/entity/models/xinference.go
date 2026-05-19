@@ -40,7 +40,8 @@ var xinferenceStreamIdleTimeout = 60 * time.Second
 // Xinference exposes an OpenAI-compatible API under <endpoint>/v1. The
 // tenant may configure either the root endpoint (http://127.0.0.1:9997)
 // or the OpenAI-compatible endpoint (http://127.0.0.1:9997/v1); the
-// driver normalizes both to the latter before adding URLSuffix values.
+// driver normalizes both to the root endpoint before adding URLSuffix
+// values that match Xinference docs, such as v1/chat/completions.
 // Authentication is optional: no-auth deployments ignore API keys, while
 // auth-enabled deployments require Authorization: Bearer <api_key>.
 type XinferenceModel struct {
@@ -110,9 +111,9 @@ func normalizeXinferenceBaseURL(base string) string {
 		return trimmed
 	}
 	if strings.HasSuffix(trimmed, "/v1") {
-		return trimmed
+		return strings.TrimSuffix(trimmed, "/v1")
 	}
-	return trimmed + "/v1"
+	return trimmed
 }
 
 func setXinferenceAuth(req *http.Request, apiConfig *APIConfig) {
