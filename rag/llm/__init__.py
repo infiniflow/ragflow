@@ -18,24 +18,8 @@
 
 import importlib
 import inspect
-import os
 
-import litellm
-from strenum import StrEnum
-
-
-def _configure_litellm_transport() -> None:
-    """
-    LiteLLM's aiohttp transport keeps loop-bound ClientSession objects. RAGFlow
-    may run LLM calls from different event loops, so default to httpx transport.
-    """
-    disable_aiohttp = os.getenv("RAGFLOW_DISABLE_LITELLM_AIOHTTP_TRANSPORT", "true").lower()
-    if disable_aiohttp in {"1", "true", "yes", "on"}:
-        os.environ.setdefault("DISABLE_AIOHTTP_TRANSPORT", "True")
-        litellm.disable_aiohttp_transport = True
-
-
-_configure_litellm_transport()
+from enum import StrEnum
 
 
 class SupportedLiteLLMProvider(StrEnum):
