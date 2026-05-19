@@ -654,6 +654,8 @@ class BaiChuanChat(Base):
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
             **gen_conf,
         )
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             if is_chinese([ans]):
@@ -800,6 +802,8 @@ class MistralChat(Base):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
             if is_chinese(ans):
