@@ -352,6 +352,127 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     return get_result(message=f"deleted {chunk_number} chunks")
 
 
+@manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>/split", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
+    from rag.nlp import rag_tokenizer, search
+
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
+    if not dataset_tenant_id:
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
+    doc = DocumentService.query(id=document_id, kb_id=dataset_id)
+    if not doc:
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
+    doc = doc[0]
+    if doc.parser_id == ParserType.QA:
+        return get_error_data_result(message="Splitting is not supported for Q&A documents.")
+    req = await get_request_json()
+    if not req or "split_point" not in req:
+        return get_error_data_result(message="`split_point` is required")
+    split_point = req.get("split_point")
+    if not isinstance(split_point, int) or isinstance(split_point, bool):
+        return get_error_data_result(message="`split_point` must be an integer character offset")
+
+    index = search.index_name(dataset_tenant_id)
+    source = settings.docStoreConn.get(chunk_id, index, [dataset_id])
+    if source is None or str(source.get("doc_id", source.get("document_id"))) != str(document_id):
+        return get_error_data_result(message=f"Chunk {chunk_id} not found in document {document_id}.")
+    content = source.get("content_with_weight", "")
+    if split_point <= 0 or split_point >= len(content):
+        return get_error_data_result(message=f"`split_point` must be in the open range (0, {len(content)}).")
+
+    left_content = content[:split_point]
+    right_content = content[split_point:]
+    if is_content_empty(left_content) or is_content_empty(right_content):
+        return get_error_data_result(message="Both halves must have non-empty content; choose a different `split_point`.")
+
+    important_kwd = source.get("important_kwd", []) or []
+    question_kwd = source.get("question_kwd", []) or []
+    tag_kwd = source.get("tag_kwd", []) or []
+    tag_feas = source.get("tag_feas")
+    important_tks = rag_tokenizer.tokenize(" ".join(important_kwd))
+    question_tks = rag_tokenizer.tokenize("\n".join(question_kwd))
+
+    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
+    if tenant_embd_id:
+        model_config = get_model_config_by_id(tenant_embd_id)
+    else:
+        embd_id = DocumentService.get_embd_id(document_id)
+        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_mdl = TenantLLMService.model_instance(model_config)
+
+    now_str = str(datetime.datetime.now()).replace("T", " ")[:19]
+    now_ts = datetime.datetime.now().timestamp()
+    new_chunks = []
+    total_tokens = 0
+    for half_content in (left_content, right_content):
+        new_chunk_id = xxhash.xxh64((half_content + document_id).encode("utf-8")).hexdigest()
+        if new_chunk_id == chunk_id:
+            return get_error_data_result(message="Split produced an id collision with the source chunk; choose a different `split_point`.")
+        d = {
+            "id": new_chunk_id,
+            "content_with_weight": half_content,
+            "content_ltks": rag_tokenizer.tokenize(half_content),
+        }
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+        d["important_kwd"] = important_kwd
+        d["important_tks"] = important_tks
+        d["question_kwd"] = question_kwd
+        d["question_tks"] = question_tks
+        if tag_kwd:
+            d["tag_kwd"] = tag_kwd
+        if tag_feas is not None:
+            d["tag_feas"] = tag_feas
+        d["create_time"] = now_str
+        d["create_timestamp_flt"] = now_ts
+        d["kb_id"] = dataset_id
+        d["docnm_kwd"] = doc.name
+        d["doc_id"] = document_id
+        v, c = embd_mdl.encode([doc.name, half_content if not question_kwd else "\n".join(question_kwd)])
+        v = 0.1 * v[0] + 0.9 * v[1]
+        d[f"q_{len(v)}_vec"] = v.tolist()
+        new_chunks.append(d)
+        total_tokens += c
+
+    new_ids = [c["id"] for c in new_chunks]
+    if len(set(new_ids)) != len(new_ids):
+        return get_error_data_result(message="Split produced duplicate ids; choose a different `split_point`.")
+
+    settings.docStoreConn.insert(new_chunks, index, dataset_id)
+    deleted = settings.docStoreConn.delete(
+        {"doc_id": document_id, "id": [chunk_id]},
+        index,
+        dataset_id,
+    )
+    if deleted != 1:
+        return get_error_data_result(message=f"split_chunk deleted source chunks {deleted}, expect 1")
+
+    DocumentService.increment_chunk_num(doc.id, doc.kb_id, total_tokens, 2, 0)
+    DocumentService.decrement_chunk_num(document_id, dataset_id, 1, 1, 0)
+
+    key_mapping = {
+        "id": "id",
+        "content_with_weight": "content",
+        "doc_id": "document_id",
+        "important_kwd": "important_keywords",
+        "tag_kwd": "tag_kwd",
+        "question_kwd": "questions",
+        "kb_id": "dataset_id",
+        "create_timestamp_flt": "create_timestamp",
+        "create_time": "create_time",
+        "document_keyword": "document",
+    }
+    renamed = []
+    for d in new_chunks:
+        rc = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
+        _ = Chunk(**rc)
+        renamed.append(rc)
+    return get_result(data={"chunks": renamed})
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
