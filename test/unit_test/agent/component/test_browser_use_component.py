@@ -14,11 +14,38 @@
 #  limitations under the License.
 #
 
+import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
 from api.db import FileType
-from agent.component import browser as browser_use_module
+
+
+def _install_cv2_stub_if_unavailable():
+    try:
+        import cv2  # noqa: F401
+        return
+    except Exception:
+        pass
+    stub = types.ModuleType("cv2")
+    stub.INTER_LINEAR = 1
+    stub.INTER_CUBIC = 2
+    stub.BORDER_CONSTANT = 0
+    stub.BORDER_REPLICATE = 1
+
+    def _module_getattr(name):
+        if name.isupper():
+            return 0
+        raise RuntimeError("cv2 runtime call is unavailable in this test environment")
+
+    stub.__getattr__ = _module_getattr
+    sys.modules["cv2"] = stub
+
+
+_install_cv2_stub_if_unavailable()
+
+from agent.component import browser as browser_use_module  # noqa: E402
 
 
 class _FakeCanvas:
