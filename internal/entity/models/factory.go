@@ -63,6 +63,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOllamaModel(baseURL, urlSuffix), nil
 	case "openai":
 		return NewOpenAIModel(baseURL, urlSuffix), nil
+	case "azure-openai":
+		return NewAzureOpenAIModel(baseURL, urlSuffix), nil
 	case "nvidia":
 		return NewNvidiaModel(baseURL, urlSuffix), nil
 	case "openrouter":
