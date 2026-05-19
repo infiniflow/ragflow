@@ -6,6 +6,8 @@ import pytest
 from agent.sandbox.providers.ssh import SSHProvider
 from agent.sandbox.result_protocol import RESULT_MARKER_PREFIX
 
+pytestmark = pytest.mark.p3
+
 
 class _FakeWritableFile:
     def __init__(self, sftp, path: str):
