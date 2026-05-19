@@ -22,7 +22,10 @@ from api.utils.api_utils import build_document_download_url
 
 
 class TestBuildDocumentDownloadUrl:
+    """Behavioral tests for the chunk-response download URL helper (issue #14771)."""
+
     def test_returns_canonical_path(self):
+        """Happy path: both ids present yields the SDK file-stream route path."""
         assert build_document_download_url("ds_abc", "doc_123") == "/api/v1/datasets/ds_abc/documents/doc_123"
 
     @pytest.mark.parametrize(
@@ -37,9 +40,9 @@ class TestBuildDocumentDownloadUrl:
         ],
     )
     def test_returns_none_when_either_id_missing(self, dataset_id, document_id):
+        """Missing/empty ids return None so callers don't advertise an unusable URL."""
         assert build_document_download_url(dataset_id, document_id) is None
 
     def test_does_not_url_encode_caller_inputs(self):
-        # Caller-supplied ids are pasted verbatim — matches how Flask/Quart route
-        # patterns expose ids elsewhere in the API surface.
+        """Inputs are pasted verbatim, matching how Flask/Quart route patterns work."""
         assert build_document_download_url("ds/with/slash", "doc?bad") == "/api/v1/datasets/ds/with/slash/documents/doc?bad"
