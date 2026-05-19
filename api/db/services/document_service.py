@@ -88,7 +88,7 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.name == name)
         if keywords:
             docs = docs.where(fn.LOWER(cls.model.name).contains(keywords.lower()))
-        if doc_ids:
+        if doc_ids is not None:
             docs = docs.where(cls.model.id.in_(doc_ids))
         if suffix:
             docs = docs.where(cls.model.suffix.in_(suffix))
@@ -143,7 +143,7 @@ class DocumentService(CommonService):
                 .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)
                 .where(cls.model.kb_id == kb_id)
             )
-        if doc_ids:
+        if doc_ids is not None:
             docs = docs.where(cls.model.id.in_(doc_ids))
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))

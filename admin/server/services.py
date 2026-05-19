@@ -331,35 +331,64 @@ class ServiceMgr:
 
 class SettingsMgr:
     @staticmethod
+    def _format_setting(setting):
+        return {
+            "data_type": setting.data_type,
+            "name": setting.name,
+            "setting_type": "config",
+            "value": setting.value,
+        }
+
+    @staticmethod
+    def _validate_value(name: str, data_type: str, value: str):
+        data_type = data_type.lower()
+        value = str(value)
+        if data_type == "string":
+            return
+        if data_type == "integer":
+            try:
+                int(value)
+            except ValueError:
+                raise AdminException(f"Invalid integer value for {name}: {value}")
+            return
+        if data_type in {"bool", "boolean"}:
+            if value not in {"true", "false"}:
+                raise AdminException(f"Invalid bool value for {name}: expected true or false")
+            return
+        if data_type == "json":
+            try:
+                json.loads(value)
+            except json.JSONDecodeError:
+                raise AdminException(f"Invalid JSON value for {name}")
+            return
+        raise AdminException(f"Unsupported data type for {name}: {data_type}")
+
+    @staticmethod
+    def _infer_data_type(name: str):
+        if name.startswith("sandbox."):
+            return "json"
+        if name.endswith(".enabled"):
+            return "bool"
+        return "string"
+
+    @staticmethod
     def get_all():
-        settings = SystemSettingsService.get_all()
+        settings = SystemSettingsService.get_all(reverse=False, order_by="name")
         result = []
         for setting in settings:
-            result.append(
-                {
-                    "name": setting.name,
-                    "source": setting.source,
-                    "data_type": setting.data_type,
-                    "value": setting.value,
-                }
-            )
+            result.append(SettingsMgr._format_setting(setting))
         return result
 
     @staticmethod
     def get_by_name(name: str):
         settings = SystemSettingsService.get_by_name(name)
         if len(settings) == 0:
-            raise AdminException(f"Can't get setting: {name}")
+            settings = SystemSettingsService.get_by_name_prefix(name)
+            if len(settings) == 0:
+                raise AdminException(f"Can't get setting: {name}")
         result = []
         for setting in settings:
-            result.append(
-                {
-                    "name": setting.name,
-                    "source": setting.source,
-                    "data_type": setting.data_type,
-                    "value": setting.value,
-                }
-            )
+            result.append(SettingsMgr._format_setting(setting))
         return result
 
     @staticmethod
@@ -367,6 +396,7 @@ class SettingsMgr:
         settings = SystemSettingsService.get_by_name(name)
         if len(settings) == 1:
             setting = settings[0]
+            SettingsMgr._validate_value(name, setting.data_type, value)
             setting.value = value
             setting_dict = setting.to_dict()
             SystemSettingsService.update_by_name(name, setting_dict)
@@ -376,12 +406,8 @@ class SettingsMgr:
             # Create new setting if it doesn't exist
 
             # Determine data_type based on name and value
-            if name.startswith("sandbox."):
-                data_type = "json"
-            elif name.endswith(".enabled"):
-                data_type = "boolean"
-            else:
-                data_type = "string"
+            data_type = SettingsMgr._infer_data_type(name)
+            SettingsMgr._validate_value(name, data_type, value)
 
             new_setting = {
                 "name": name,
