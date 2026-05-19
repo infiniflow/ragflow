@@ -561,14 +561,14 @@ class FileService(CommonService):
 
     @staticmethod
     def parse_docs(file_objs, user_id):
-        exe = ThreadPoolExecutor(max_workers=12)
-        threads = []
-        for file in file_objs:
-            threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
+        with ThreadPoolExecutor(max_workers=12) as exe:
+            threads = []
+            for file in file_objs:
+                threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
 
-        res = []
-        for th in threads:
-            res.append(th.result())
+            res = []
+            for th in threads:
+                res.append(th.result())
 
         return "\n\n".join(res)
 
@@ -705,7 +705,7 @@ class FileService(CommonService):
 
             # Pre-resolve the full redirect chain so that AsyncWebCrawler never
             # follows a server-sent redirect to an unvalidated (potentially
-            # internal) host.  Each hop is SSRF-checked before being followed;
+            # internal) host. Each hop is SSRF-checked before being followed;
             # the validated (hostname, ip) pairs are pinned via Chromium's
             # --host-resolver-rules so the browser cannot re-resolve any of them
             # through a fresh DNS query.
@@ -741,7 +741,7 @@ class FileService(CommonService):
                 )
 
             # Build a single MAP rule string covering every validated hostname
-            # in the redirect chain.  Chromium uses the pinned IP for each,
+            # in the redirect chain. Chromium uses the pinned IP for each,
             # skipping DNS entirely and eliminating the rebinding window.
             _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
 
@@ -793,19 +793,19 @@ class FileService(CommonService):
         def image_to_base64(file):
             return "data:{};base64,{}".format(file["mime_type"],
                                         base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
-        exe = ThreadPoolExecutor(max_workers=5)
-        threads = []
-        imgs = []
-        for file in files:
-            if file["mime_type"].find("image") >=0:
-                if raw:
-                    imgs.append(FileService.get_blob(file["created_by"], file["id"]))
-                else:
-                    threads.append(exe.submit(image_to_base64, file))
-                continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
-    
-        if raw:
-            return [th.result() for th in threads], imgs
-        else:
-            return [th.result() for th in threads]
+        with ThreadPoolExecutor(max_workers=5) as exe:
+            threads = []
+            imgs = []
+            for file in files:
+                if file["mime_type"].find("image") >=0:
+                    if raw:
+                        imgs.append(FileService.get_blob(file["created_by"], file["id"]))
+                    else:
+                        threads.append(exe.submit(image_to_base64, file))
+                    continue
+                threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"], layout_recognize))
+
+            if raw:
+                return [th.result() for th in threads], imgs
+            else:
+                return [th.result() for th in threads]

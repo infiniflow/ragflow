@@ -123,7 +123,7 @@ def _load_session_module(monkeypatch):
 
     # Mock common.constants module
     from enum import Enum
-    from strenum import StrEnum
+    from enum import StrEnum
 
     class _StubLLMType(StrEnum):
         CHAT = "chat"
@@ -466,8 +466,20 @@ def _load_session_module(monkeypatch):
                 "id": self.id
             }
 
-    def _get_model_config_by_id(tenant_model_id: int) -> dict:
-        return _MockModelConfig2("tenant-1", "model-1").to_dict()
+    def _get_model_config_by_id(
+        tenant_model_id: int,
+        allowed_tenant_ids=None,
+        requester_tenant_id=None,
+    ) -> dict:
+        mock_tenant_id = "tenant-1"
+        if allowed_tenant_ids is not None:
+            if isinstance(allowed_tenant_ids, str):
+                allowed_tenant_ids = {allowed_tenant_ids}
+            else:
+                allowed_tenant_ids = {str(tenant_id) for tenant_id in allowed_tenant_ids if tenant_id}
+            if mock_tenant_id not in allowed_tenant_ids and str(requester_tenant_id) != mock_tenant_id:
+                raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
+        return _MockModelConfig2(mock_tenant_id, "model-1").to_dict()
 
     def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
@@ -758,7 +770,10 @@ def _load_agent_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.apps.services.canvas_replica_service", canvas_replica_mod)
 
     file_service_mod = ModuleType("api.db.services.file_service")
-    file_service_mod.FileService = SimpleNamespace(upload_info=lambda *_args, **_kwargs: {})
+    file_service_mod.FileService = SimpleNamespace(
+        upload_info=lambda *_args, **_kwargs: {},
+        get_blob=lambda *_args, **_kwargs: b"",
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
 
     api_service_mod = ModuleType("api.db.services.api_service")
@@ -1201,7 +1216,119 @@ def test_agent_completions_stream_and_nonstream_unit(monkeypatch):
         "c4": {},
     }
     assert [item["component_id"] for item in res["data"]["data"]["trace"]] == ["c2", "c3", "c4"]
-    
+
+
+class _FakeUploadFileField:
+    def __init__(self, filename: str):
+        self.filename = filename
+
+
+class _FakeRequestFiles:
+    def __init__(self, filenames: list[str]):
+        self._filenames = filenames
+
+    def get(self, key, default=None):
+        if key == "file" and self._filenames:
+            return _FakeUploadFileField(self._filenames[0])
+        return default
+
+    def getlist(self, key):
+        if key == "file":
+            return [_FakeUploadFileField(n) for n in self._filenames]
+        return []
+
+
+@pytest.mark.p2
+def test_agent_file_download_and_upload_unit(monkeypatch):
+    module = _load_agent_api_module(monkeypatch)
+    monkeypatch.setattr(module, "Response", _StubResponse)
+
+    get_blob_calls = []
+
+    def _get_blob(tenant_id, file_id):
+        get_blob_calls.append((tenant_id, file_id))
+        return b"file-bytes"
+
+    monkeypatch.setattr(module.FileService, "get_blob", _get_blob)
+    monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args({"id": "doc-99"})))
+
+    resp = _run(inspect.unwrap(module.download_agent_file)("tenant-1"))
+    assert isinstance(resp, _StubResponse)
+    assert resp.body == b"file-bytes"
+    assert get_blob_calls == [("tenant-1", "doc-99")]
+
+    upload_calls = []
+
+    def _upload_info(tenant_id, file_obj, url=None):
+        upload_calls.append((tenant_id, getattr(file_obj, "filename", None), url))
+        return {"id": tenant_id, "file": getattr(file_obj, "filename", None), "url": url}
+
+    monkeypatch.setattr(module.FileService, "upload_info", _upload_info)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=_Args({"url": "https://example.com/a.png"}),
+            files=_AwaitableValue(_FakeRequestFiles(["one.png"])),
+        ),
+    )
+    res = _run(
+        inspect.unwrap(module.upload_agent_file)(
+            agent_id="agent-1",
+            tenant_id="tenant-1",
+        )
+    )
+    assert res["code"] == 0
+    assert res["data"]["file"] == "one.png"
+    assert upload_calls == [("tenant-1", "one.png", "https://example.com/a.png")]
+
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=_Args({}),
+            files=_AwaitableValue(_FakeRequestFiles(["a.png", "b.png"])),
+        ),
+    )
+    upload_calls.clear()
+    res = _run(
+        inspect.unwrap(module.upload_agent_file)(
+            agent_id="agent-1",
+            tenant_id="tenant-1",
+        )
+    )
+    assert res["code"] == 0
+    assert len(res["data"]) == 2
+    assert set(upload_calls) == {
+        ("tenant-1", "a.png", None),
+        ("tenant-1", "b.png", None),
+    }
+
+    def _boom(*_a, **_k):
+        raise ValueError("upload failed")
+
+    monkeypatch.setattr(module.FileService, "upload_info", _boom)
+    monkeypatch.setattr(
+        module,
+        "request",
+        SimpleNamespace(
+            args=_Args({}),
+            files=_AwaitableValue(_FakeRequestFiles(["bad.png"])),
+        ),
+    )
+    res = _run(
+        inspect.unwrap(module.upload_agent_file)(
+            agent_id="agent-1",
+            tenant_id="tenant-1",
+        )
+    )
+    assert res["code"] != 0
+
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_k: False)
+    res = _run(module.upload_agent_file(agent_id="agent-1"))
+    assert res["code"] == module.RetCode.OPERATING_ERROR
+    assert "permission" in res["message"].lower()
+
 
 @pytest.mark.p2
 def test_delete_routes_partial_duplicate_unit(monkeypatch):

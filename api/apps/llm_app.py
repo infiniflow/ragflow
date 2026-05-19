@@ -25,8 +25,6 @@ from api.db.services.llm_service import LLMService
 from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.constants import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
-from rag.utils.base64_image import test_image
-from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
 
 def _resolve_my_llm_is_tools(o_dict: dict) -> bool:
@@ -78,6 +76,8 @@ def factories():
 @validate_request("llm_factory", "api_key")
 async def set_api_key():
     req = await get_request_json()
+    from rag.llm import ChatModel, EmbeddingModel, RerankModel
+
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
@@ -178,6 +178,8 @@ async def set_api_key():
 @validate_request("llm_factory")
 async def add_llm():
     req = await get_request_json()
+    from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
+
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
@@ -192,7 +194,7 @@ async def add_llm():
 
     if factory == "VolcEngine":
         # For VolcEngine, due to its special authentication method
-        # Assemble ark_api_key endpoint_id into api_key
+        # Assemble ark_api_key model_id into api_key; keep endpoint_id in backend payload for compatibility
         api_key = apikey_json(["ark_api_key", "endpoint_id"])
 
     elif factory == "Tencent Cloud":
@@ -247,19 +249,6 @@ async def add_llm():
 
     elif factory == "OpenDataLoader":
         api_key = apikey_json(["api_key", "provider_order"])
-
-    existing_llm = None
-    existing_api_key = None
-    if req.get("api_key") is None:
-        existing_llms = TenantLLMService.query(tenant_id=current_user.id, llm_factory=factory, llm_name=llm_name)
-        if existing_llms:
-            existing_llm = existing_llms[0]
-            existing_api_key, _, existing_api_key_payload = TenantLLMService._decode_api_key_config(existing_llm.api_key)
-            if existing_api_key_payload is not None:
-                existing_api_key = existing_api_key_payload
-
-    if req.get("api_key") is None:
-        api_key = existing_api_key if existing_api_key is not None else "x"
 
     llm = {
         "tenant_id": current_user.id,
@@ -326,11 +315,13 @@ async def add_llm():
                 if len(arr) == 0:
                     raise Exception("Not known.")
             except KeyError:
-                msg += f"{factory} dose not support this model({factory}/{mdl_nm})"
+                msg += f"{factory} does not support this model({factory}/{mdl_nm})"
             except Exception as e:
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
         case LLMType.IMAGE2TEXT.value:
+            from rag.utils.base64_image import test_image
+
             assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
             mdl = CvModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
             try:

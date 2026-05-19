@@ -32,7 +32,7 @@ import numpy as np
 import pdfplumber
 import requests
 from PIL import Image
-from strenum import StrEnum
+from enum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines

@@ -713,6 +713,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
       chunkMethodPlaceholder: 'Please select a chunking method.',
+      tableColumnMode: 'Column mode',
+      tableColumnModeAuto: 'Auto',
+      tableColumnModeManual: 'Manual',
+      tableColumnModeAutoDescription:
+        'All columns are included in chunk text and stored as metadata (RAGFlow default).',
+      tableColumnRoles: 'Column roles',
+      tableColumnRolesTip:
+        'Choose which columns to include in chunk text (indexed for vector and full-text search), in metadata only (filterable), or both. Changes apply to new parses; re-parse existing documents for roles to take effect.',
+      tableColumnRoleIndexing: 'Indexing',
+      tableColumnRoleMetadata: 'Metadata',
+      tableColumnRoleBoth: 'Both',
+      tableColumnRolesEmpty:
+        'Upload and parse a CSV or Excel file to begin configuring column roles.',
+      tableColumnRolesReparseTip:
+        'Re-parse existing documents for the new column roles to take effect.',
       parserLabel: {
         naive: 'General',
         qa: 'Q&A',
@@ -846,6 +861,11 @@ The above is the content you need to summarize.`,
       thresholdTip:
         'In RAPTOR, chunks are clustered by their semantic similarity. The Threshold parameter sets the minimum similarity required for chunks to be grouped together. A higher Threshold means fewer chunks in each cluster, while a lower one means more.',
       thresholdMessage: 'Threshold is required',
+      clusteringMethod: 'Clustering method',
+      clusteringMethodTip:
+        'Select the RAPTOR clustering method. AHC can use a larger max cluster value, but may require more memory on large inputs.',
+      clusteringMethodGmm: 'GMM',
+      clusteringMethodAhc: 'AHC',
       maxCluster: 'Max cluster',
       maxClusterTip: 'The maximum number of clusters to create.',
       maxClusterMessage: 'Max cluster is required',
@@ -881,7 +901,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       graphRagMethod: 'Method',
       graphRagMethodTip: `
       Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships.</br>
+      NER: Use spaCy NER and rule-based keyword extraction to extract entities and relationships. No LLM is required for extraction itself, making it fast and resource-efficient.`,
+      graphRagBatchChunkTokenSize: 'Batch chunk token size',
+      graphRagBatchChunkTokenSizeTip:
+        'The token limit for each batch of chunks sent to the LLM for knowledge graph entity and relation extraction. Not applied to NER.',
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
       community: 'Community reports',
@@ -1057,6 +1081,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       light: 'Light',
       dark: 'Dark',
       enableStreaming: 'Enable streaming responses',
+      muteWidget: 'Mute widget sounds',
       comingSoon: 'Coming soon',
       fullScreenTitle: 'Full embed',
       fullScreenDescription:
@@ -1344,6 +1369,42 @@ Example: Virtual Hosted Style`,
         'Column to use as unique document ID. If not specified, a hash of the content will be used.',
       postgresqlTimestampColumnTip:
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
+      rest_apiDescription:
+        'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      restApiQueryParamsTip:
+        'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
+      restApiHeadersTip:
+        'Optional JSON object of additional HTTP headers to send with every request.',
+      restApiItemsPathTip:
+        'Field name or JSONPath to the array of items in the response. Leave empty to auto-detect (tries "items", "results", "data", etc.).',
+      restApiIdFieldTip:
+        'Field path within each item used to build a stable document ID. Leave empty to auto-generate from content hash.',
+      restApiContentFieldsTip:
+        'Comma-separated list of item fields to concatenate into the document content.',
+      restApiMetadataFieldsTip:
+        'Comma-separated list of item fields to store as metadata.',
+      restApiNextCursorPathTip:
+        'JSONPath expression that resolves to the next-page cursor in the API response.',
+      restApiPollTimestampFieldTip:
+        'Field path in each item that represents the last updated time, used for incremental sync.',
+      restApiRequestBodyTip:
+        'Optional JSON body to send for POST requests. Used together with query params and pagination.',
+      restApiRequestDelayTip:
+        'Delay in seconds between consecutive page requests. Helps avoid rate limiting from the API. Set to 0 to disable.',
+      restApiValidationApiKeyRequired:
+        'API key is required when Auth Type is API Key (Header).',
+      restApiValidationApiKeyHeaderNameRequired:
+        'API key header name is required when Auth Type is API Key (Header).',
+      restApiValidationBearerTokenRequired:
+        'Bearer token is required when Auth Type is Bearer Token.',
+      restApiValidationBasicUsernameRequired:
+        'Username is required when Auth Type is Basic Auth.',
+      restApiValidationBasicPasswordRequired:
+        'Password is required when Auth Type is Basic Auth.',
+      restApiTestConnection: 'Test connection',
+      restApiTestSuccess: 'REST API connector validated successfully.',
+      restApiTestFailed:
+        'REST API connector validation failed. Please check your configuration and logs.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -1464,8 +1525,8 @@ Example: Virtual Hosted Style`,
       FishAudioLink: 'How to use FishAudio',
       TencentCloudLink: 'How to use TencentCloud ASR',
       volcModelNameMessage: 'Please input your model name!',
-      addEndpointID: 'EndpointID of the model',
-      endpointIDMessage: 'Please input your EndpointID of the model',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Please input your Model ID of the model',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Please input your ARK_API_KEY',
       bedrockModelNameMessage: 'Please input your model name!',
@@ -1677,6 +1738,12 @@ Example: Virtual Hosted Style`,
         author: 'Author',
         sectionTitle: 'Section title',
       },
+      editTags: 'Edit tags',
+      editTagsDescription:
+        'Add tags to organize and filter your agents. Press Enter or comma to add.',
+      tagsPlaceholder: 'Add a tag and press Enter',
+      tagSuggestionsLabel: 'Existing tags',
+      removeTagAriaLabel: 'Remove {{tag}}',
       includeHeadingContent: 'Separate parent-heading content',
       includeHeadingContentTip:
         'When enabled, chunks include only their heading path and content; content immediately following a parent heading is kept as a separate chunk.',

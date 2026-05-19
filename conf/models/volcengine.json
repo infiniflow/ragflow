@@ -22,7 +22,7 @@
       }
     },
     {
-      "name": "doubao-embedding-vision-250615",
+      "name": "doubao-embedding-vision-251215",
       "max_tokens": 131072,
       "model_types": [
         "embedding"

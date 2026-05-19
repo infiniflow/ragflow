@@ -158,7 +158,7 @@ jobs:
 
       - name: Run unit test
         run: |
-          uv sync --python 3.12 --group test --frozen
+          uv sync --python 3.13 --group test --frozen
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
@@ -222,7 +222,7 @@ jobs:
                # Patch entrypoint.sh for coverage
                sed -i '/"\$PY" api\/ragflow_server.py \${INIT_SUPERUSER_ARGS} &/c\   echo "Ensuring coverage is installed..."\n      "$PY" -m pip install coverage -i https://mirrors.aliyun.com/pypi/simple\n     export COVERAGE_FILE=/ragflow/logs/.coverage\n        echo "Starting ragflow_server with coverage..."\n        "$PY" -m coverage run --source=./api/apps --omit="*/tests/*,*/migrations/*" -a api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &' ./entrypoint.sh
                cd ..
-               uv sync --python 3.12 --group test --frozen && uv pip install -e sdk/python
+               uv sync --python 3.13 --group test --frozen && uv pip install -e sdk/python
 
 
       - name: Start ragflow:nightly for Infinity
@@ -240,23 +240,14 @@ jobs:
           echo "Start to run test sdk on Infinity"
           source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-infinity-sdk.xml test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
-      - name: Run web api tests against Infinity
+      - name: Run New RESTFUL api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api/test_chunk_feedback 2>&1 | tee infinity_web_api_test.log
-
-      - name: Run http api tests against Infinity
-        run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
-            echo "Waiting for service to be available... (last exit code: $?)"
-            sleep 5
-          done
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
+          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Infinity
         env:
@@ -432,24 +423,15 @@ jobs:
           done
           echo "Start to run test sdk on Elasticsearch"
           source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --junitxml=pytest-infinity-sdk.xml --cov=sdk/python/ragflow_sdk --cov-branch --cov-report=xml:coverage-es-sdk.xml test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
-
-      - name: Run web api tests against Elasticsearch
+      
+      - name: Run New RESTFUL api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_web_api 2>&1 | tee es_web_api_test.log
-
-      - name: Run http api tests against Elasticsearch
-        run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
-            echo "Waiting for service to be available... (last exit code: $?)"
-            sleep 5
-          done
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
+          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
 
       - name: RAGFlow CLI retrieval test Elasticsearch
         env:
