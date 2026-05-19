@@ -31,7 +31,7 @@ func (IngestionTask) TableName() string {
 }
 
 type IngestionTaskLog struct {
-	ID     string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	ID     int    `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	TaskID string `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
 	Stage  int    `gorm:"column:top_k;default:0;not null;index" json:"tenant_id"`
 	BaseModel

@@ -29,26 +29,32 @@ import (
 	"ragflow/internal/engine"
 
 	"ragflow/internal/server"
+
+	"github.com/google/uuid"
 )
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO *dao.DocumentDAO
-	kbDAO       *dao.KnowledgebaseDAO
-	docEngine   engine.DocEngine
-	engineType  server.EngineType
-	metadataSvc *MetadataService
+	documentDAO      *dao.DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	ingestionTaskDAO *dao.IngestionDAO
+	ingestionLogDAO  *dao.IngestionLogDAO
+	docEngine        engine.DocEngine
+	engineType       server.EngineType
+	metadataSvc      *MetadataService
 }
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
 	return &DocumentService{
-		documentDAO: dao.NewDocumentDAO(),
-		kbDAO:       dao.NewKnowledgebaseDAO(),
-		docEngine:   engine.Get(),
-		engineType:  cfg.DocEngine.Type,
-		metadataSvc: NewMetadataService(),
+		documentDAO:      dao.NewDocumentDAO(),
+		ingestionTaskDAO: dao.NewIngestionDAO(),
+		ingestionLogDAO:  dao.NewIngestionLogDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		docEngine:        engine.Get(),
+		engineType:       cfg.DocEngine.Type,
+		metadataSvc:      NewMetadataService(),
 	}
 }
 
@@ -208,7 +214,12 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	return responses, total, nil
 }
 
-func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) error {
+type ParseDocumentResponse struct {
+	DocumentID string  `json:"document_id"`
+	Result     *string `json:"result"`
+}
+
+func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
 	// create document parse id
 	// save to task table
 	// send to message queue
@@ -216,45 +227,66 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
-		return fmt.Errorf("no documents to parse")
+		return nil, fmt.Errorf("no documents to parse")
 	}
+
+	var responses []*ParseDocumentResponse
 
 	// query database, if the document ids are valid
 	for _, docID := range uniqueDocIDs {
 		doc, err := s.documentDAO.GetByID(docID)
 		if err != nil {
-			return fmt.Errorf("failed to get document: %w", err)
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
 		}
 		if doc == nil {
-			return fmt.Errorf("document %s not found", docID)
+			errorMessage := "no such document"
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
 		}
-		//
-		////ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-		////DocumentID string  `gorm:"column:document_id;size:32;not null;index" json:"document_id"`
-		////UserID     string  `gorm:"column:user_id;size:32;not null;" json:"user_id"`
-		////Config     JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
-		////TryCount   int     `gorm:"column:try_count;default:0" json:"try_count"`
-		//
-		//// create task for each document
-		//task := &entity.IngestionTask{
-		//	ID:         uuid.New().String(),
-		//	DocumentID: docID,
-		//	UserID:     userID,
-		//	Config:     nil,
-		//}
-		//if err := s.memoryDAO.Create(memory); err != nil {
-		//	return nil, errors.New("could not create new memory")
-		//}
+
+		if doc.Status != nil && *doc.Status != "0" {
+			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		// create task for each document
+		task := &entity.IngestionTask{
+			ID:         uuid.New().String(),
+			DocumentID: docID,
+			UserID:     userID,
+			Config:     nil,
+			TryCount:   1,
+		}
 
 		// save the task to database
-		// create a record in the task table
-		if doc.Status != nil && *doc.Status != "0" {
-			return fmt.Errorf("document %s is already parsed", docID)
+		err = s.ingestionTaskDAO.Create(task)
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
 		}
+
+		// Send task to message queue
+		
 	}
 
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
-	return nil
+	return responses, nil
 }
 
 // toResponse convert model.Document to DocumentResponse
