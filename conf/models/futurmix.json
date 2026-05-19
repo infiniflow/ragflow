@@ -1,0 +1,58 @@
+{
+  "name": "FuturMix",
+  "url": {
+    "default": "https://futurmix.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions"
+  },
+  "class": "futurmix",
+  "models": [
+    {
+      "name": "gpt-4o",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "gpt-4o-mini",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-3-5-sonnet",
+      "max_tokens": 200000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-3-5-haiku",
+      "max_tokens": 200000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "gemini-1.5-pro",
+      "max_tokens": 2000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "deepseek-v3",
+      "max_tokens": 64000,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
