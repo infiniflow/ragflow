@@ -406,7 +406,7 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("api key is required")
 	}
 
-	if modelName == nil || *modelName == "" {
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
