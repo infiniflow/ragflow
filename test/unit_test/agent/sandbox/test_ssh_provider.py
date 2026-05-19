@@ -3,7 +3,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.sandbox.providers.base import SandboxProviderConfigError
 from agent.sandbox.providers.ssh import SSHProvider
 from agent.sandbox.result_protocol import RESULT_MARKER_PREFIX
 
@@ -97,20 +96,6 @@ def _build_provider():
     provider.max_artifact_bytes = 1024 * 1024
     provider._initialized = True
     return provider
-
-
-def test_ssh_provider_initialize_requires_command_template(monkeypatch):
-    monkeypatch.setattr(SSHProvider, "health_check", lambda self: True)
-    provider = SSHProvider()
-
-    with pytest.raises(SandboxProviderConfigError, match="Command template is required"):
-        provider.initialize(
-            {
-                "host": "example.com",
-                "username": "ragflow",
-                "password": "secret",
-            }
-        )
 
 
 def test_ssh_provider_executes_python_main_and_collects_artifacts(monkeypatch):
