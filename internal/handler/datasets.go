@@ -236,7 +236,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	exists, err := docEngine.TableExists(c.Request.Context(), indexName)
+	exists, err := docEngine.ChunkStoreExists(c.Request.Context(), indexName, datasetID)
 	if err != nil {
 		jsonError(c, common.CodeServerError, err.Error())
 		return
@@ -335,7 +335,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	if _, err := docEngine.Delete(c.Request.Context(), map[string]interface{}{
+	if _, err := docEngine.DeleteChunks(c.Request.Context(), map[string]interface{}{
 		"knowledge_graph_kwd": []string{"graph", "subgraph", "entity", "relation", "community_report"},
 	}, indexName, datasetID); err != nil {
 		jsonError(c, common.CodeServerError, err.Error())
