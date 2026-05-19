@@ -28,7 +28,7 @@ import json_repair
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
-from enum import StrEnum
+from strenum import StrEnum
 
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
@@ -1364,6 +1364,7 @@ class LiteLLMBase(ABC):
         return self.provider == SupportedLiteLLMProvider.DeepSeek
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
+        gen_conf = gen_conf or {}
         hist = list(history) if history else []
         if system:
             if not hist or hist[0].get("role") != "system":
@@ -1403,6 +1404,7 @@ class LiteLLMBase(ABC):
         assert False, "Shouldn't be here."
 
     async def async_chat_streamly(self, system, history, gen_conf, **kwargs):
+        gen_conf = gen_conf or {}
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
