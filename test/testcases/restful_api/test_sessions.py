@@ -146,9 +146,46 @@ def test_chat_completion_nonstream_with_session(rest_client, create_chat):
     completion_payload = completion_res.json()
     assert completion_payload["code"] == 0, completion_payload
     assert isinstance(completion_payload["data"], dict), completion_payload
+    for key in ["answer", "reference", "audio_binary", "id", "session_id"]:
+        assert key in completion_payload["data"], completion_payload
     assert completion_payload["data"]["session_id"] == session_id, completion_payload
+
+
+@pytest.mark.p2
+def test_chat_completion_nonstream_with_chat_without_session(rest_client, create_chat):
+    chat_id = create_chat("restful_completion_nonstream_without_session_chat")
+
+    completion_res = rest_client.post(
+        "/chat/completions",
+        json={
+            "chat_id": chat_id,
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+        },
+        timeout=60,
+    )
+    assert completion_res.status_code == 200
+    completion_payload = completion_res.json()
+    assert completion_payload["code"] == 0, completion_payload
+    assert isinstance(completion_payload["data"], dict), completion_payload
+    assert completion_payload["data"]["session_id"], completion_payload
+
+
+@pytest.mark.p2
+def test_chat_completion_nonstream_without_chat(rest_client):
+    completion_res = rest_client.post(
+        "/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+        },
+        timeout=60,
+    )
+    assert completion_res.status_code == 200
+    completion_payload = completion_res.json()
+    assert completion_payload["code"] == 0, completion_payload
+    assert isinstance(completion_payload["data"], dict), completion_payload
     assert "answer" in completion_payload["data"], completion_payload
-    assert "reference" in completion_payload["data"], completion_payload
 
 
 @pytest.mark.p2
@@ -203,6 +240,20 @@ def test_chat_completion_validation_errors(rest_client, create_chat):
     missing_chat_for_session_payload = missing_chat_for_session.json()
     assert missing_chat_for_session_payload["code"] == 102, missing_chat_for_session_payload
     assert "`chat_id` is required when `session_id` is provided." in missing_chat_for_session_payload["message"], missing_chat_for_session_payload
+
+    invalid_session = rest_client.post(
+        "/chat/completions",
+        json={
+            "chat_id": chat_id,
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": False,
+            "session_id": "invalid_session",
+        },
+    )
+    assert invalid_session.status_code == 200
+    invalid_session_payload = invalid_session.json()
+    assert invalid_session_payload["code"] == 102, invalid_session_payload
+    assert "Session not found!" in invalid_session_payload["message"], invalid_session_payload
 
     invalid_chat = rest_client.post(
         "/chat/completions",
