@@ -48,9 +48,35 @@ func TestReplicatePromptFromMessages(t *testing.T) {
 	}
 }
 
-func TestReplicateChatHappyPath(t *testing.T) {
+func TestReplicatePredictionEndpoint(t *testing.T) {
+	m := newReplicateForTest("https://api.example.test")
+
+	endpoint, version, err := m.predictionEndpoint(&APIConfig{}, "meta/meta-llama-3-70b-instruct")
+	if err != nil {
+		t.Fatalf("official endpoint: %v", err)
+	}
+	if endpoint != "https://api.example.test/v1/models/meta/meta-llama-3-70b-instruct/predictions" {
+		t.Errorf("official endpoint=%q", endpoint)
+	}
+	if version != "" {
+		t.Errorf("official version=%q want empty", version)
+	}
+
+	endpoint, version, err = m.predictionEndpoint(&APIConfig{}, "replicate/hello-world:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa")
+	if err != nil {
+		t.Fatalf("version endpoint: %v", err)
+	}
+	if endpoint != "https://api.example.test/v1/predictions" {
+		t.Errorf("version endpoint=%q", endpoint)
+	}
+	if version != "replicate/hello-world:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa" {
+		t.Errorf("version=%q", version)
+	}
+}
+
+func TestReplicateOfficialChatHappyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/predictions" {
+		if r.URL.Path != "/v1/models/meta/meta-llama-3-70b-instruct/predictions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
@@ -65,8 +91,8 @@ func TestReplicateChatHappyPath(t *testing.T) {
 			t.Errorf("body: %v", err)
 			return
 		}
-		if body["version"] != "meta/meta-llama-3-70b-instruct" {
-			t.Errorf("version=%v", body["version"])
+		if body["version"] != nil {
+			t.Errorf("official model requests must not send version=%v", body["version"])
 		}
 		if body["stream"] != false {
 			t.Errorf("stream=%v", body["stream"])
@@ -113,6 +139,42 @@ func TestReplicateChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
+	const version = "replicate/hello-world:5c7d5dc6dd8bf75c1acaa8565735e7986bc5b66206b55cca93cb72c9bf15ccaa"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/predictions" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		var body map[string]interface{}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("body: %v", err)
+			return
+		}
+		if body["version"] != version {
+			t.Errorf("version=%v", body["version"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "succeeded",
+			"output": "ok",
+		})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	resp, err := newReplicateForTest(srv.URL).ChatWithMessages(
+		version,
+		[]Message{{Role: "user", Content: "hello"}},
+		&APIConfig{ApiKey: &apiKey}, nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if *resp.Answer != "ok" {
+		t.Errorf("Answer=%q", *resp.Answer)
+	}
+}
+
 func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 	var getCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +182,7 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 			t.Errorf("Authorization=%q", got)
 		}
 		switch r.URL.Path {
-		case "/v1/predictions":
+		case "/v1/models/meta/meta-llama-3-70b-instruct/predictions":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "processing",
 				"urls": map[string]string{
@@ -173,7 +235,7 @@ func TestReplicateStreamHappyPath(t *testing.T) {
 	streamURL = streamSrv.URL
 
 	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/predictions" {
+		if r.URL.Path != "/v1/models/meta/meta-llama-3-70b-instruct/predictions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		raw, _ := io.ReadAll(r.Body)

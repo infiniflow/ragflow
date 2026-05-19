@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -105,6 +106,35 @@ func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, 
 		return "", err
 	}
 	return fmt.Sprintf("%s/%s", baseURL, suffix), nil
+}
+
+func replicateUsesVersionEndpoint(modelName string) bool {
+	name := strings.TrimSpace(modelName)
+	return !strings.Contains(name, "/") || strings.Contains(name, ":")
+}
+
+func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName string) (string, string, error) {
+	if replicateUsesVersionEndpoint(modelName) {
+		endpoint, err := r.endpoint(apiConfig, r.URLSuffix.Chat)
+		return endpoint, modelName, err
+	}
+
+	parts := strings.Split(modelName, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("replicate: official model name must be owner/name")
+	}
+
+	modelsPrefix := strings.TrimSuffix(r.URLSuffix.Models, "models")
+	if modelsPrefix == "" {
+		modelsPrefix = "v1/"
+	}
+	officialSuffix := fmt.Sprintf("%smodels/%s/%s/predictions",
+		modelsPrefix,
+		url.PathEscape(parts[0]),
+		url.PathEscape(parts[1]),
+	)
+	endpoint, err := r.endpoint(apiConfig, officialSuffix)
+	return endpoint, "", err
 }
 
 func replicateMessageContent(content interface{}) string {
@@ -193,11 +223,13 @@ func replicateOutputToString(output interface{}) (string, error) {
 	}
 }
 
-func (r *ReplicateModel) createPrediction(ctx context.Context, url string, modelName string, input map[string]interface{}, stream bool, apiKey string, preferWait bool) (*replicatePrediction, error) {
+func (r *ReplicateModel) createPrediction(ctx context.Context, url string, version string, input map[string]interface{}, stream bool, apiKey string, preferWait bool) (*replicatePrediction, error) {
 	body := map[string]interface{}{
-		"version": modelName,
-		"input":   input,
-		"stream":  stream,
+		"input":  input,
+		"stream": stream,
+	}
+	if version != "" {
+		body["version"] = version
 	}
 
 	jsonData, err := json.Marshal(body)
@@ -315,7 +347,7 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := r.endpoint(apiConfig, r.URLSuffix.Chat)
+	url, version, err := r.predictionEndpoint(apiConfig, modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +355,7 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	prediction, err := r.createPrediction(ctx, url, modelName, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
+	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -360,12 +392,12 @@ func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	url, err := r.endpoint(apiConfig, r.URLSuffix.Chat)
+	url, version, err := r.predictionEndpoint(apiConfig, modelName)
 	if err != nil {
 		return err
 	}
 
-	prediction, err := r.createPrediction(context.Background(), url, modelName, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
+	prediction, err := r.createPrediction(context.Background(), url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
 	if err != nil {
 		return err
 	}
