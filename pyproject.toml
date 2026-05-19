@@ -92,6 +92,7 @@ dependencies = [
     "pypdf>=6.10.2",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
+    "paramiko>=3.5.1",
     "python-pptx>=1.0.2,<2.0.0",
     # "pywencai>=0.13.1,<1.0.0",  # Temporarily disabled: conflicts with agentrun-sdk (pydash>=8), needed for agent/tools/wencai.py
     "qianfan==0.4.6",
