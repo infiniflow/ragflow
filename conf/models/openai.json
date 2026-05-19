@@ -27,6 +27,22 @@
       ]
     },
     {
+      "name": "gpt-5.4-mini",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "gpt-5.4-nano",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
       "name": "gpt-5.2-pro",
       "max_tokens": 400000,
       "model_types": [

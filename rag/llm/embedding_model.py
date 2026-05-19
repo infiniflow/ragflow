@@ -17,6 +17,7 @@ import json
 import os
 import threading
 from abc import ABC
+from contextlib import contextmanager
 from urllib.parse import urljoin
 
 import dashscope
@@ -31,6 +32,76 @@ from common.token_utils import num_tokens_from_string, truncate, total_token_cou
 from common import settings
 import logging
 import base64
+
+logger = logging.getLogger(__name__)
+
+
+def _dashscope_base_url_for_log(base_url: str) -> str:
+    """Log host/path only (no query string) so secrets in URLs are not printed."""
+    return base_url.split("?", 1)[0].strip()[:256]
+
+
+def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
+    """
+    Resolve the DashScope *native* HTTP API root for Tongyi-Qianwen (Qwen) text embeddings.
+
+    RAGFlow often stores an OpenAI-compatible base URL (e.g. ``.../compatible-mode/v1``) for
+    the same provider. The ``dashscope`` Python SDK used by ``TextEmbedding.call`` does *not*
+    use that path; it expects ``https://<host>/api/v1`` instead.
+
+    Users outside mainland China are directed to the international endpoint
+    (``dashscope-intl.aliyuncs.com``); domestic traffic uses ``dashscope.aliyuncs.com``.
+    When ``base_url`` already points at the native API root (ends with ``/api/v1``), it is
+    returned unchanged so custom or regional deployments keep working.
+    """
+    if not base_url:
+        return None
+    u = base_url.strip().rstrip("/")
+    safe = _dashscope_base_url_for_log(u)
+    if u.endswith("/api/v1"):
+        logger.debug("DashScope Tongyi-Qianwen embedding: using native API base as configured (%s)", safe)
+        return u
+    # International (Singapore) DashScope — required for overseas Tongyi-Qianwen accounts.
+    if "dashscope-intl.aliyuncs.com" in u:
+        resolved = "https://dashscope-intl.aliyuncs.com/api/v1"
+        logger.info(
+            "DashScope Tongyi-Qianwen embedding: mapped configured base_url to intl native API (%s -> %s)",
+            safe,
+            resolved,
+        )
+        return resolved
+    # China mainland DashScope default host.
+    if "dashscope.aliyuncs.com" in u:
+        resolved = "https://dashscope.aliyuncs.com/api/v1"
+        logger.info(
+            "DashScope Tongyi-Qianwen embedding: mapped configured base_url to CN native API (%s -> %s)",
+            safe,
+            resolved,
+        )
+        return resolved
+    logger.warning(
+        "DashScope Tongyi-Qianwen embedding: base_url is set but not recognized as a DashScope host; "
+        "using SDK default endpoint (%s)",
+        safe,
+    )
+    return None
+
+
+@contextmanager
+def _dashscope_native_api_url_scope(url: str | None):
+    """
+    Temporarily set ``dashscope.base_http_api_url`` for the duration of a single SDK call,
+    then restore the previous value. Narrows the window where concurrent threads see a mismatch.
+    """
+    if not url:
+        yield
+        return
+    prev = getattr(dashscope, "base_http_api_url", None)
+    dashscope.base_http_api_url = url
+    try:
+        yield
+    finally:
+        dashscope.base_http_api_url = prev
 
 
 class Base(ABC):
@@ -197,11 +268,21 @@ class BaiChuanEmbed(OpenAIEmbed):
 
 
 class QWenEmbed(Base):
+    """
+    Embeddings for Alibaba Tongyi-Qianwen via the DashScope ``TextEmbedding`` API.
+
+    ``base_url`` comes from the user's embedding-model configuration (often the same host
+    as the OpenAI-compatible chat endpoint). This class maps known DashScope hosts to the
+    native ``/api/v1`` base URL so international and China endpoints both work.
+    """
+
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="text_embedding_v2", **kwargs):
+    def __init__(self, key, model_name="text_embedding_v2", base_url=None, **kwargs):
         self.key = key
         self.model_name = model_name
+        # Native API root for the SDK; None if base_url is absent or not a known DashScope host.
+        self._dashscope_http_api_url = _dashscope_native_http_api_url(base_url)
 
     def encode(self, texts: list):
         import time
@@ -214,10 +295,12 @@ class QWenEmbed(Base):
         texts = [truncate(t, 2048) for t in texts]
         for i in range(0, len(texts), batch_size):
             retry_max = 5
-            resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
+            with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
+                resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
             while (resp["output"] is None or resp["output"].get("embeddings") is None) and retry_max > 0:
                 time.sleep(10)
-                resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
+                with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
+                    resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
                 retry_max -= 1
             if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
                 if resp.get("message"):
@@ -237,7 +320,8 @@ class QWenEmbed(Base):
         return np.array(res), token_count
 
     def encode_queries(self, text):
-        resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
+        with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
+            resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
         try:
             return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:

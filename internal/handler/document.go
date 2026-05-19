@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -32,12 +34,14 @@ import (
 // DocumentHandler document handler
 type DocumentHandler struct {
 	documentService *service.DocumentService
+	datasetService  *service.DatasetService
 }
 
 // NewDocumentHandler create document handler
-func NewDocumentHandler(documentService *service.DocumentService) *DocumentHandler {
+func NewDocumentHandler(documentService *service.DocumentService, datasetService *service.DatasetService) *DocumentHandler {
 	return &DocumentHandler{
 		documentService: documentService,
+		datasetService:  datasetService,
 	}
 }
 
@@ -198,34 +202,21 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 }
 
 // ListDocuments document list
-// @Summary Document List
-// @Description Get paginated document list
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Param page query int false "page number" default(1)
-// @Param page_size query int false "items per page" default(10)
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/document/list [post]
+
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
+
+	datasetID := c.Param("dataset_id")
+	pageStr := c.Query("page")
+	pageSizeStr := c.Query("page_size")
+	page, _ := strconv.Atoi(pageStr)
+	pageSize, _ := strconv.Atoi(pageSizeStr)
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(datasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
-
-	kbID := c.Query("kb_id")
-	if kbID == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    1,
-			"message": "Lack of KB ID",
-			"data":    false,
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
 	if page < 1 {
 		page = 1
@@ -235,7 +226,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	// Use kbID to filter documents
-	documents, total, err := h.documentService.ListDocumentsByKBID(kbID, page, pageSize)
+	documents, total, err := h.documentService.ListDocumentsByDatasetID(datasetID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    1,
@@ -252,15 +243,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			metaFields = make(map[string]interface{})
 		}
 
-		docs = append(docs, map[string]interface{}{
-			"id":          doc.ID,
-			"name":        doc.Name,
-			"size":        doc.Size,
-			"type":        doc.Type,
-			"status":      doc.Status,
-			"created_at":  doc.CreatedAt,
-			"meta_fields": metaFields,
-		})
+		docs = append(docs, mapDocumentListItem(doc, metaFields))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -271,6 +254,104 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"docs":  docs,
 		},
 	})
+}
+
+func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+	item := map[string]interface{}{
+		"id":               doc.ID,
+		"dataset_id":       doc.KbID,
+		"name":             stringValue(doc.Name),
+		"thumbnail":        stringValue(doc.Thumbnail),
+		"size":             doc.Size,
+		"type":             doc.Type,
+		"created_by":       doc.CreatedBy,
+		"location":         stringValue(doc.Location),
+		"token_count":      doc.TokenNum,
+		"chunk_count":      doc.ChunkNum,
+		"progress":         doc.Progress,
+		"progress_msg":     stringValue(doc.ProgressMsg),
+		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
+		"process_duration": doc.ProcessDuration,
+		"suffix":           doc.Suffix,
+		"run":              mapRunStatus(doc.Run),
+		"status":           stringValue(doc.Status),
+		"chunk_method":     doc.ParserID,
+		"parser_id":        doc.ParserID,
+		"pipeline_id":      stringValue(doc.PipelineID),
+		"pipeline_name":    stringValue(doc.PipelineName),
+		"nickname":         stringValue(doc.Nickname),
+		"parser_config":    decodeJSONMap(string(doc.ParserConfig)),
+		"meta_fields":      metaFields,
+		"create_time":      int64(0),
+		"create_date":      "",
+		"update_time":      int64(0),
+		"update_date":      "",
+	}
+
+	if doc.CreateTime != nil {
+		item["create_time"] = *doc.CreateTime
+	}
+	if doc.CreateDate != nil {
+		item["create_date"] = doc.CreateDate.Format("2006-01-02 15:04:05")
+	}
+	if doc.UpdateTime != nil {
+		item["update_time"] = *doc.UpdateTime
+	}
+	if doc.UpdateDate != nil {
+		item["update_date"] = doc.UpdateDate.Format("2006-01-02 15:04:05")
+	}
+
+	return item
+}
+
+func decodeJSONMap(raw string) map[string]interface{} {
+	if strings.TrimSpace(raw) == "" {
+		return map[string]interface{}{}
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return map[string]interface{}{}
+	}
+
+	return data
+}
+
+func mapRunStatus(run *string) string {
+	if run == nil {
+		return "UNSTART"
+	}
+
+	switch strings.TrimSpace(*run) {
+	case "0":
+		return "UNSTART"
+	case "1":
+		return "RUNNING"
+	case "2":
+		return "CANCEL"
+	case "3":
+		return "DONE"
+	case "4":
+		return "FAIL"
+	default:
+		return strings.TrimSpace(*run)
+	}
+}
+
+func formatTimePtr(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+
+	return value.Format("2006-01-02 15:04:05")
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	return *value
 }
 
 // GetDocumentsByAuthorID get documents by author ID
@@ -481,5 +562,38 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    true,
+	})
+}
+
+type ParseDocumentRequest struct {
+	Documents []string `json:"documents" binding:"required"`
+	DatasetID string   `json:"dataset_id" binding:"required"`
+}
+
+func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
+	var req ParseDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(req.DatasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
+		return
+	}
+
+	err := h.documentService.ParseDocuments(req.DatasetID, userID, req.Documents)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
 	})
 }

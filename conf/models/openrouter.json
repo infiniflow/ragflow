@@ -8,7 +8,8 @@
     "models": "models",
     "embedding": "embeddings",
     "rerank": "rerank",
-    "balance": "credits"
+    "balance": "credits",
+    "tts": "audio/speech"
   },
   "class": "openrouter",
   "models": [
@@ -44,6 +45,13 @@
         "default_value": true,
         "clear_thinking": true
       }
+    },
+    {
+      "name": "openai/gpt-audio-mini",
+      "max_tokens": 131072,
+      "model_types": [
+        "tts"
+      ]
     }
   ]
 }

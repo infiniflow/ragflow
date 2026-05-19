@@ -35,21 +35,52 @@ from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user
 from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _connector_auth_error(connector_id: str, user_id: str):
+    """Return the connector authorization failure response and log the denial."""
+    LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
+    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
 @login_required
 async def update_connector(connector_id):
+    """Update an accessible connector's polling configuration."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = await get_request_json()
+    if isinstance(req, dict) and isinstance(req.get("data"), dict):
+        req = req["data"]
+
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
 
+    should_sleep = False
     if req:
-        conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
-        conn["id"] = connector_id
-        ConnectorService.update_by_id(connector_id, conn)
+        update_fields = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
+        if update_fields:
+            update_fields["id"] = connector_id
+            ConnectorService.update_by_id(connector_id, update_fields)
+            should_sleep = True
 
-    await asyncio.sleep(1)
+        if req.get("reschedule"):
+            ConnectorService.cancel_tasks(connector_id)
+            ConnectorService.schedule_tasks(connector_id)
+        elif req.get("status") in [TaskStatus.CANCEL, "CANCEL"]:
+            ConnectorService.cancel_tasks(connector_id)
+        elif req.get("status") in [TaskStatus.SCHEDULE, "SCHEDULE"]:
+            ConnectorService.schedule_tasks(connector_id)
+
+    if should_sleep:
+        await asyncio.sleep(1)
     e, conn = ConnectorService.get_by_id(connector_id)
+    if not e:
+        return get_data_error_result(message="Can't find this Connector!")
 
     return get_json_result(data=conn.to_dict())
 
@@ -57,6 +88,7 @@ async def update_connector(connector_id):
 @manager.route("/connectors", methods=["POST"])  # noqa: F821
 @login_required
 async def create_connector():
+    """Create a connector owned by the current tenant."""
     req = await get_request_json()
     if req:
         req["id"] = get_uuid()
@@ -68,9 +100,9 @@ async def create_connector():
             "input_type": InputType.POLL,
             "config": req["config"],
             "refresh_freq": int(req.get("refresh_freq", 5)),
-            "prune_freq": int(req.get("prune_freq", 720)),
+            "prune_freq": int(req.get("prune_freq", 5)),
             "timeout_secs": int(req.get("timeout_secs", 60 * 29)),
-            "status": TaskStatus.SCHEDULE,
+            "status": TaskStatus.UNSTART,
         }
         ConnectorService.save(**conn)
 
@@ -83,12 +115,17 @@ async def create_connector():
 @manager.route("/connectors", methods=["GET"])  # noqa: F821
 @login_required
 def list_connector():
+    """List connectors owned by the current tenant."""
     return get_json_result(data=ConnectorService.list(current_user.id))
 
 
 @manager.route("/connectors/<connector_id>", methods=["GET"])  # noqa: F821
 @login_required
 def get_connector(connector_id):
+    """Return connector details when the current user can access it."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
         return get_data_error_result(message="Can't find this Connector!")
@@ -98,27 +135,26 @@ def get_connector(connector_id):
 @manager.route("/connectors/<connector_id>/logs", methods=["GET"])  # noqa: F821
 @login_required
 def list_logs(connector_id):
+    """List sync logs for a connector the current user can access."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = request.args.to_dict(flat=True)
     arr, total = SyncLogsService.list_sync_tasks(connector_id, int(req.get("page", 1)), int(req.get("page_size", 15)))
     return get_json_result(data={"total": total, "logs": arr})
 
 
-@manager.route("/connectors/<connector_id>/resume", methods=["POST"])  # noqa: F821
-@login_required
-async def resume(connector_id):
-    req = await get_request_json()
-    if req.get("resume"):
-        ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
-    else:
-        ConnectorService.resume(connector_id, TaskStatus.CANCEL)
-    return get_json_result(data=True)
-
-
 @manager.route("/connectors/<connector_id>/rebuild", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("kb_id")
 async def rebuild(connector_id):
+    """Schedule a rebuild for an accessible connector and knowledge base."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     req = await get_request_json()
+    if "kb_id" not in req:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
+
     err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
@@ -128,8 +164,63 @@ async def rebuild(connector_id):
 @manager.route("/connectors/<connector_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 def rm_connector(connector_id):
-    ConnectorService.resume(connector_id, TaskStatus.CANCEL)
+    """Delete an accessible connector after canceling its sync tasks."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
+    ConnectorService.cancel_tasks(connector_id)
     ConnectorService.delete_by_id(connector_id)
+    return get_json_result(data=True)
+
+
+@manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
+@login_required
+async def test_connector(connector_id):
+    """Validate connector configuration without persisting changes or triggering sync.
+
+    For the REST API connector, this uses `RestAPIConnector.validate_config`
+    against the existing saved configuration.
+    """
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
+    from common.data_source.rest_api_connector import RestAPIConnector
+    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
+
+    ok, conn = ConnectorService.get_by_id(connector_id)
+    if not ok:
+        return get_data_error_result(message="Can't find this Connector!")
+
+    if conn.source != DocumentSource.REST_API:
+        return get_json_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="Test endpoint currently supports only REST API connectors.",
+            data=False,
+        )
+
+    config = conn.config or {}
+    credentials = config.get("credentials") or {}
+
+    try:
+        await asyncio.to_thread(
+            RestAPIConnector.validate_config,
+            config=config,
+            credentials=credentials,
+        )
+    except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
+        return get_json_result(
+            code=RetCode.DATA_ERROR,
+            message=str(exc),
+            data=False,
+        )
+    except Exception as exc:
+        logging.exception("REST API connector validation failed: %s", exc)
+        return get_json_result(
+            code=RetCode.SERVER_ERROR,
+            message="REST API connector validation failed, please check logs.",
+            data=False,
+        )
+
     return get_json_result(data=True)
 
 

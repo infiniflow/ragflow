@@ -431,12 +431,16 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenChunks, Value: ident}
 	case "DOCUMENT":
 		return Token{Type: TokenDocument, Value: ident}
+	case "DOCUMENTS":
+		return Token{Type: TokenDocuments, Value: ident}
 	case "TAGS":
 		return Token{Type: TokenTag, Value: ident}
 	case "REGION":
 		return Token{Type: TokenRegion, Value: ident}
 	case "URL":
 		return Token{Type: TokenURL, Value: ident}
+	case "TASK":
+		return Token{Type: TokenTask, Value: ident}
 	case "TASKS":
 		return Token{Type: TokenTasks, Value: ident}
 	case "LOG":
@@ -455,6 +459,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFatal, Value: ident}
 	case "PANIC":
 		return Token{Type: TokenPanic, Value: ident}
+	case "PARAM":
+		return Token{Type: TokenParam, Value: ident}
+	case "PLAY":
+		return Token{Type: TokenPlay, Value: ident}
+	case "FORMAT":
+		return Token{Type: TokenFormat, Value: ident}
+	case "SAVE":
+		return Token{Type: TokenSave, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}
