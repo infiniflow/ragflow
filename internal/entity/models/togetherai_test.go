@@ -163,6 +163,36 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 	}
 }
 
+func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
+	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			`data: {"choices":[{"delta":{"content":"Done"}}],"finish_reason":"stop"}`+"\n",
+		)
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	var chunks []string
+	err := newTogetherAIForTest(srv.URL).ChatStreamlyWithSender(
+		"meta-llama/Llama-3.3-70B-Instruct-Turbo",
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: &apiKey}, nil,
+		func(c *string, _ *string) error {
+			if c != nil {
+				chunks = append(chunks, *c)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if strings.Join(chunks, "") != "Done[DONE]" {
+		t.Errorf("chunks=%q", strings.Join(chunks, ""))
+	}
+}
+
 func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {

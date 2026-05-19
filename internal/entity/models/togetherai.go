@@ -129,8 +129,9 @@ type togetherAIChatChoice struct {
 }
 
 type togetherAIChatResponse struct {
-	Choices []togetherAIChatChoice `json:"choices"`
-	Error   interface{}            `json:"error"`
+	Choices      []togetherAIChatChoice `json:"choices"`
+	Error        interface{}            `json:"error"`
+	FinishReason string                 `json:"finish_reason"`
 }
 
 func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -296,7 +297,7 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 				return err
 			}
 		}
-		if choice.FinishReason != "" {
+		if choice.FinishReason != "" || event.FinishReason != "" {
 			sawTerminal = true
 			break
 		}
