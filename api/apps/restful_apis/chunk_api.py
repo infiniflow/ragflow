@@ -15,6 +15,7 @@
 #
 import base64
 import datetime
+import logging
 import re
 
 import xxhash
@@ -358,7 +359,14 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 async def merge_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import rag_tokenizer, search
 
+    logging.info(
+        f"merge_chunks start: dataset_id={dataset_id} document_id={document_id}"
+    )
+
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        logging.warning(
+            f"merge_chunks forbidden: dataset_id={dataset_id} document_id={document_id} tenant_id={tenant_id}"
+        )
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
@@ -380,14 +388,29 @@ async def merge_chunks(tenant_id, dataset_id, document_id):
     seen = set()
     for cid in chunk_ids:
         if cid in seen:
+            logging.warning(
+                f"merge_chunks duplicate id: dataset_id={dataset_id} document_id={document_id} chunk_id={cid}"
+            )
             return get_error_data_result(message=f"Duplicate chunk id {cid} in `chunk_ids`")
         seen.add(cid)
 
     index = search.index_name(dataset_tenant_id)
     sources = []
     for cid in chunk_ids:
-        chunk = settings.docStoreConn.get(cid, index, [dataset_id])
+        try:
+            chunk = settings.docStoreConn.get(cid, index, [dataset_id])
+        except Exception as exc:
+            if "NotFoundError" in str(exc):
+                logging.warning(
+                    f"merge_chunks source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={cid}"
+                )
+                return get_error_data_result(message=f"Chunk {cid} not found in document {document_id}.")
+            logging.exception(exc)
+            return server_error_response(exc)
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
+            logging.warning(
+                f"merge_chunks source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={cid}"
+            )
             return get_error_data_result(message=f"Chunk {cid} not found in document {document_id}.")
         sources.append(chunk)
 
@@ -417,6 +440,9 @@ async def merge_chunks(tenant_id, dataset_id, document_id):
 
     new_chunk_id = xxhash.xxh64((merged_content + document_id).encode("utf-8")).hexdigest()
     if new_chunk_id in seen:
+        logging.warning(
+            f"merge_chunks id collision: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id}"
+        )
         return get_error_data_result(message="Merged chunk collides with a source chunk id; please edit source content first.")
 
     d = {
@@ -447,20 +473,51 @@ async def merge_chunks(tenant_id, dataset_id, document_id):
     v, c = embd_mdl.encode([doc.name, merged_content if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
+    # Write sequence: insert the merged chunk first, then delete the source
+    # chunks and adjust counters. If anything after the insert fails, roll
+    # back the newly-inserted merged chunk on a best-effort basis so the
+    # store never ends up with both the source chunks and the merged chunk
+    # visible, or with drifted chunk counters.
     settings.docStoreConn.insert([d], index, dataset_id)
-
-    deleted = settings.docStoreConn.delete(
-        {"doc_id": document_id, "id": list(seen)},
-        index,
-        dataset_id,
-    )
-    if deleted != len(seen):
-        return get_error_data_result(
-            message=f"merge_chunks deleted source chunks {deleted}, expect {len(seen)}"
+    try:
+        deleted = settings.docStoreConn.delete(
+            {"doc_id": document_id, "id": list(seen)},
+            index,
+            dataset_id,
         )
+        if deleted != len(seen):
+            raise RuntimeError(
+                f"merge_chunks deleted source chunks {deleted}, expect {len(seen)}"
+            )
+        DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+        try:
+            DocumentService.decrement_chunk_num(document_id, dataset_id, 1, deleted, 0)
+        except Exception:
+            # Counter delete succeeded but decrement failed: revert the
+            # increment so document/knowledgebase counters do not drift.
+            DocumentService.decrement_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+            raise
+    except Exception as exc:
+        logging.error(
+            f"merge_chunks post-insert failure, rolling back: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id} source_ids={list(seen)} error={exc}"
+        )
+        try:
+            settings.docStoreConn.delete(
+                {"doc_id": document_id, "id": [new_chunk_id]},
+                index,
+                dataset_id,
+            )
+        except Exception as rb_exc:
+            logging.error(
+                f"merge_chunks rollback failed to delete merged chunk: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id} error={rb_exc}"
+            )
+        if isinstance(exc, RuntimeError):
+            return get_error_data_result(message=str(exc))
+        return server_error_response(exc)
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
-    DocumentService.decrement_chunk_num(document_id, dataset_id, 1, deleted, 0)
+    logging.info(
+        f"merge_chunks success: dataset_id={dataset_id} document_id={document_id} new_chunk_id={new_chunk_id} source_ids={list(seen)} deleted={deleted}"
+    )
 
     key_mapping = {
         "id": "id",
