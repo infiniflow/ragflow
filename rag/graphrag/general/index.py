@@ -55,6 +55,8 @@ from common.doc_store.doc_store_base import OrderByExpr
 
 
 DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 4096
+MIN_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 512
+MAX_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 8196
 DEFAULT_GRAPHRAG_RETRY_ATTEMPTS = 2
 DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS = 2.0
 DEFAULT_GRAPHRAG_RETRY_BACKOFF_MAX_SECONDS = 60.0
@@ -97,8 +99,8 @@ def _bounded_float_config(config: dict, key: str, default: float, minimum: float
     return value
 
 
-def _positive_int_config(config: dict, key: str, default: int) -> int:
-    return _bounded_int_config(config, key, default, 512, 8196)
+def _batch_chunk_token_size_config(config: dict, key: str, default: int) -> int:
+    return _bounded_int_config(config, key, default, MIN_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE, MAX_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
 
 
 def _select_extractor(graphrag_config: dict):
@@ -243,7 +245,7 @@ async def run_graphrag_for_kb(
     start = asyncio.get_running_loop().time()
     fields_for_chunks = ["content_with_weight", "doc_id"]
     graphrag_config = kb_parser_config.get("graphrag", {})
-    batch_chunk_token_size = _positive_int_config(graphrag_config, "batch_chunk_token_size", DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
+    batch_chunk_token_size = _batch_chunk_token_size_config(graphrag_config, "batch_chunk_token_size", DEFAULT_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
     retry_attempts = _bounded_int_config(graphrag_config, "retry_attempts", DEFAULT_GRAPHRAG_RETRY_ATTEMPTS, 1, 10)
     retry_backoff_seconds = _bounded_float_config(graphrag_config, "retry_backoff_seconds", DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS, 0.0, 600.0)
     retry_backoff_max_seconds = _bounded_float_config(graphrag_config, "retry_backoff_max_seconds", DEFAULT_GRAPHRAG_RETRY_BACKOFF_MAX_SECONDS, 0.0, 3600.0)
