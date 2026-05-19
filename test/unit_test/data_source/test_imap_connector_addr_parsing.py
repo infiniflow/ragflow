@@ -31,6 +31,8 @@ import pytest
 
 from common.data_source.imap_connector import _parse_addrs, _parse_singular_addr
 
+pytestmark = pytest.mark.p2
+
 
 class TestParseAddrs:
     def test_empty_header_returns_empty_list(self):
