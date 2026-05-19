@@ -178,6 +178,9 @@ def rm_connector(connector_id):
 @validate_request("source")
 async def test_connector(connector_id):
     """Validate connector configuration from the request body without persisting."""
+    if not ConnectorService.accessible(connector_id, current_user.id):
+        return _connector_auth_error(connector_id, current_user.id)
+
     from common.data_source import build_connector_for_source
     from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 
