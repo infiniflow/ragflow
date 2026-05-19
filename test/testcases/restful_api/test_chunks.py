@@ -15,12 +15,13 @@
 #
 
 from concurrent.futures import ThreadPoolExecutor
-
+from concurrent.futures import ThreadPoolExecutor
 import pytest
-
 from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
+from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
+from test.testcases.restful_api.helpers.client import RestClient
 
 
 def _assert_created_chunk_id(payload):
@@ -620,3 +621,197 @@ def test_chunk_list_concurrent_contract(rest_client, create_document):
     assert len(results) == 20, results
     assert all(result["code"] == 0 for result in results), results
     assert all(result["data"]["total"] == 5 for result in results), results
+
+
+def _create_chunk_for_update(rest_client, create_document, file_name):
+    dataset_id, document_id = create_document(file_name)
+    base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
+    add_res = rest_client.post(base_path, json={"content": "chunk update test"})
+    assert add_res.status_code == 200, add_res.text
+    add_payload = add_res.json()
+    assert add_payload["code"] == 0, add_payload
+    chunk_id = add_payload["data"]["chunk"]["id"]
+    return dataset_id, document_id, chunk_id, base_path
+
+
+@pytest.mark.p2
+def test_chunk_update_requires_auth(rest_client, create_document):
+    _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_auth.txt")
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        res = client.patch(f"{base_path}/{chunk_id}", json={"content": "updated"})
+        assert res.status_code == 401, (scenario_name, res.text)
+        payload = res.json()
+        assert payload["code"] == 401, (scenario_name, payload)
+        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+
+
+@pytest.mark.p2
+def test_chunk_update_content_and_available_contract(rest_client, create_document):
+    content_cases = [
+        ("content none", {"content": None}, 0, ""),
+        ("content empty", {"content": ""}, 102, "`content` is required"),
+        ("content text", {"content": "update chunk"}, 0, ""),
+        ("content spaces", {"content": " "}, 102, "`content` is required"),
+        ("content punctuation", {"content": "\n!?。；！？\"'"}, 0, ""),
+    ]
+    for scenario_name, payload, expected_code, expected_message in content_cases:
+        _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, f"{scenario_name}.txt")
+        res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
+        assert res.status_code == 200, (scenario_name, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (scenario_name, body)
+        if expected_code != 0:
+            assert body["message"] == expected_message, (scenario_name, body)
+
+    available_cases = [
+        ("available true", {"available": True}, 0, ""),
+        ("available true str", {"available": "True"}, 100, "invalid literal for int()"),
+        ("available one", {"available": 1}, 0, ""),
+        ("available false", {"available": False}, 0, ""),
+        ("available false str", {"available": "False"}, 100, "invalid literal for int()"),
+        ("available zero", {"available": 0}, 0, ""),
+    ]
+    for scenario_name, payload, expected_code, expected_message in available_cases:
+        _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, f"{scenario_name}.txt")
+        res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
+        assert res.status_code == 200, (scenario_name, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (scenario_name, body)
+        if expected_code != 0:
+            assert expected_message in body["message"], (scenario_name, body)
+
+
+@pytest.mark.p2
+def test_chunk_update_keywords_questions_and_tag_contract(rest_client, create_document):
+    _, _, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_fields.txt")
+    cases = [
+        ("important keywords", {"important_keywords": ["a", "b", "c"]}, 0, ""),
+        ("important keywords empty", {"important_keywords": [""]}, 0, ""),
+        ("important keywords int", {"important_keywords": [1]}, 100, "TypeError"),
+        ("important keywords dup", {"important_keywords": ["a", "a"]}, 0, ""),
+        ("important keywords str", {"important_keywords": "abc"}, 102, "`important_keywords` should be a list"),
+        ("important keywords number", {"important_keywords": 123}, 102, "`important_keywords` should be a list"),
+        ("questions", {"questions": ["a", "b", "c"]}, 0, ""),
+        ("questions empty", {"questions": [""]}, 0, ""),
+        ("questions int", {"questions": [1]}, 100, "TypeError"),
+        ("questions dup", {"questions": ["a", "a"]}, 0, ""),
+        ("questions str", {"questions": "abc"}, 102, "`questions` should be a list"),
+        ("questions number", {"questions": 123}, 102, "`questions` should be a list"),
+        ("tag kwd", {"tag_kwd": ["tag1", "tag2"]}, 0, ""),
+        ("tag kwd empty", {"tag_kwd": [""]}, 0, ""),
+        ("tag kwd int in list", {"tag_kwd": [1]}, 102, "`tag_kwd` must be a list of strings"),
+        ("tag kwd dup", {"tag_kwd": ["tag", "tag"]}, 0, ""),
+        ("tag kwd str", {"tag_kwd": "tag"}, 102, "`tag_kwd` should be a list"),
+        ("tag kwd number", {"tag_kwd": 123}, 102, "`tag_kwd` should be a list"),
+    ]
+    for scenario_name, payload, expected_code, expected_message in cases:
+        res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
+        assert res.status_code == 200, (scenario_name, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (scenario_name, body)
+        if expected_code != 0:
+            assert expected_message in body["message"], (scenario_name, body)
+
+
+@pytest.mark.p2
+def test_chunk_update_invalid_target_and_param_contract(rest_client, create_document):
+    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(rest_client, create_document, "chunk_update_invalid_targets.txt")
+
+    invalid_dataset_res = rest_client.patch(
+        f"/datasets/{INVALID_ID_32}/documents/{document_id}/chunks/{chunk_id}",
+        json={"content": "updated"},
+    )
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] in {
+        f"You don't own the dataset {INVALID_ID_32}.",
+        f"Can't find this chunk {chunk_id}",
+    }, invalid_dataset_payload
+
+    invalid_document_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/chunks/{chunk_id}",
+        json={"content": "updated"},
+    )
+    assert invalid_document_res.status_code == 200
+    invalid_document_payload = invalid_document_res.json()
+    assert invalid_document_payload["code"] == 102, invalid_document_payload
+    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+
+    invalid_chunk_res = rest_client.patch(
+        f"{base_path}/{INVALID_ID_32}",
+        json={"content": "updated"},
+    )
+    assert invalid_chunk_res.status_code == 200
+    invalid_chunk_payload = invalid_chunk_res.json()
+    assert invalid_chunk_payload["code"] == 102, invalid_chunk_payload
+    assert invalid_chunk_payload["message"] == f"Can't find this chunk {INVALID_ID_32}", invalid_chunk_payload
+
+    for scenario_name, payload in (
+        ("unknown key", {"unknown_key": "unknown_value"}),
+        ("empty payload", {}),
+    ):
+        res = rest_client.patch(f"{base_path}/{chunk_id}", json=payload)
+        assert res.status_code == 200, (scenario_name, res.text)
+        body = res.json()
+        assert body["code"] == 0, (scenario_name, body)
+
+
+@pytest.mark.p2
+def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_client, create_document):
+    dataset_id, document_id, chunk_id, base_path = _create_chunk_for_update(
+        rest_client, create_document, "chunk_update_repeated_concurrent_deleted.txt"
+    )
+
+    first_res = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "chunk test 1"})
+    assert first_res.status_code == 200
+    assert first_res.json()["code"] == 0
+
+    second_res = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "chunk test 2"})
+    assert second_res.status_code == 200
+    assert second_res.json()["code"] == 0
+
+    get_after_repeat = rest_client.get(f"{base_path}/{chunk_id}")
+    assert get_after_repeat.status_code == 200
+    get_after_repeat_payload = get_after_repeat.json()
+    assert get_after_repeat_payload["code"] == 0, get_after_repeat_payload
+    assert get_after_repeat_payload["data"]["content_with_weight"] == "chunk test 2", get_after_repeat_payload
+
+    chunk_ids = [chunk_id]
+    for index in range(3):
+        add_res = rest_client.post(base_path, json={"content": f"concurrent update {index}"})
+        assert add_res.status_code == 200, add_res.text
+        add_payload = add_res.json()
+        assert add_payload["code"] == 0, add_payload
+        chunk_ids.append(add_payload["data"]["chunk"]["id"])
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for index in range(20):
+            target_id = chunk_ids[index % len(chunk_ids)]
+            futures.append(
+                executor.submit(
+                    lambda cid, i: rest_client.patch(
+                        f"{base_path}/{cid}",
+                        json={"content": f"update chunk test {i}"},
+                    ).json(),
+                    target_id,
+                    index,
+                )
+            )
+        results = [future.result() for future in futures]
+    assert len(results) == 20, results
+    assert all(item["code"] == 0 for item in results), results
+
+    delete_document_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": [document_id]})
+    assert delete_document_res.status_code == 200
+    assert delete_document_res.json()["code"] == 0
+
+    update_after_delete = rest_client.patch(f"{base_path}/{chunk_id}", json={"content": "after delete"})
+    assert update_after_delete.status_code == 200
+    update_after_delete_payload = update_after_delete.json()
+    assert update_after_delete_payload["code"] == 102, update_after_delete_payload
+    assert update_after_delete_payload["message"] in {
+        f"You don't own the document {document_id}.",
+        f"Can't find this chunk {chunk_id}",
+    }, update_after_delete_payload
