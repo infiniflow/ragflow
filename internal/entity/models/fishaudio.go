@@ -24,11 +24,6 @@ type FishAudioModel struct {
 	httpClient *http.Client
 }
 
-func (f *FishAudioModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudioModel {
 	return &FishAudioModel{
 		BaseURL:   baseURL,
@@ -181,8 +176,8 @@ func (f *FishAudioModel) TranscribeAudioWithSender(modelName *string, file *stri
 	return fmt.Errorf("%s, no such method", f.Name())
 }
 
-// AudioSpeech convert audio to text
-func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("FishAudio API key is missing")
 	}
@@ -202,13 +197,13 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 		"text": *audioContent,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -243,7 +238,7 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig, sender func(*string, *string) error) error {
+func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return fmt.Errorf("FishAudio API key is missing")
 	}
@@ -263,13 +258,13 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 		"text": *audioContent,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -341,8 +336,13 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 }
 
 // OCRFile OCR file
-func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
+// ParseFile parse file
+func (z *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -444,4 +444,12 @@ func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 func (f *FishAudioModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := f.ListModels(apiConfig)
 	return err
+}
+
+func (z *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

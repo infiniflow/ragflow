@@ -39,7 +39,6 @@ export default {
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
-  dataSourceResume: (id: string) => `${restAPIv1}/connectors/${id}/resume`,
   dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
   dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -192,8 +191,7 @@ export default {
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
   listAgentTags: `${restAPIv1}/agents/tags`,
-  updateAgentTags: (agentId: string) =>
-    `${restAPIv1}/agents/${agentId}/tags`,
+  updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,

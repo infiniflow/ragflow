@@ -19,11 +19,6 @@ type OpenRouterModel struct {
 	httpClient *http.Client
 }
 
-func (o *OpenRouterModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewOpenRouterModel creates a new OpenRouter AI model instance
 func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRouterModel {
 	return &OpenRouterModel{
@@ -114,8 +109,10 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 			reqBody["do_sample"] = *chatModelConfig.DoSample
 		}
 
-		reqBody["reasoning"] = map[string]interface{}{
-			"effort": "low",
+		if chatModelConfig.Effort != nil {
+			reqBody["reasoning"] = map[string]interface{}{
+				"effort": chatModelConfig.Effort,
+			}
 		}
 	}
 
@@ -543,8 +540,8 @@ func (z *OpenRouterModel) TranscribeAudioWithSender(modelName *string, file *str
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("OpenRouter API key is missing")
 	}
@@ -565,13 +562,13 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 		"input": audioContent,
 	}
 
-	if asrConfig != nil && asrConfig.Params != nil {
-		for key, value := range asrConfig.Params {
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
 			reqBody[key] = value
 		}
 	}
-	if asrConfig != nil && asrConfig.Format != "" {
-		reqBody["response_format"] = asrConfig.Format
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -610,8 +607,13 @@ func (z *OpenRouterModel) AudioSpeechWithSender(modelName *string, audioContent 
 }
 
 // OCRFile OCR file
-func (m *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *OpenRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -725,4 +727,12 @@ func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 func (o *OpenRouterModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := o.Balance(apiConfig)
 	return err
+}
+
+func (z *OpenRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OpenRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

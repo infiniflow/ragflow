@@ -1,0 +1,33 @@
+{
+  "name": "PaddleOCR",
+  "url": {
+    "default": "https://paddleocr.aistudio-app.com/api"
+  },
+  "url_suffix": {
+    "ocr": "v2/ocr/jobs"
+  },
+  "class": "paddleocr",
+  "models": [
+    {
+      "name": "PaddleOCR-VL-1.5",
+      "max_tokens": 16384,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PP-OCRv5",
+      "max_tokens": 16384,
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "PP-StructureV3",
+      "max_tokens": 16384,
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}
