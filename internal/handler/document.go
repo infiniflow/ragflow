@@ -588,7 +588,7 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 		return
 	}
 
-	err := h.documentService.ParseDocuments(datasetID, userID, req.Documents)
+	parseResult, err := h.documentService.ParseDocuments(datasetID, userID, req.Documents)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return
@@ -596,5 +596,6 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
+		"data":    parseResult,
 	})
 }
