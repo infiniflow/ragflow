@@ -272,7 +272,11 @@ func (r *ReplicateModel) createPrediction(ctx context.Context, url string, versi
 }
 
 func replicatePredictionDone(status string) bool {
-	return status == "succeeded" || status == "failed" || status == "canceled"
+	return replicatePredictionSucceeded(status) || status == "failed" || status == "canceled"
+}
+
+func replicatePredictionSucceeded(status string) bool {
+	return status == "succeeded" || status == "successful"
 }
 
 func (r *ReplicateModel) getPrediction(ctx context.Context, url string, apiKey string) (*replicatePrediction, error) {
@@ -363,7 +367,7 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 	if err != nil {
 		return nil, err
 	}
-	if prediction.Status != "succeeded" {
+	if !replicatePredictionSucceeded(prediction.Status) {
 		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
 	}
 
