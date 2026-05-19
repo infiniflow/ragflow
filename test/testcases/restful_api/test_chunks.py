@@ -102,6 +102,9 @@ def test_chunks_add_list_get_update_delete_cycle(rest_client, create_document):
     assert list_payload["code"] == 0, list_payload
     assert list_payload["data"]["total"] == 1, list_payload
     assert list_payload["data"]["chunks"][0]["id"] == chunk_id, list_payload
+    # Issue #14771: chunk listing returns a download URL so callers can fetch
+    # the source document without composing the path themselves.
+    assert list_payload["data"]["chunks"][0]["document_download_url"] == f"/api/v1/datasets/{dataset_id}/documents/{document_id}", list_payload
 
     get_res = rest_client.get(f"{base_path}/{chunk_id}")
     assert get_res.status_code == 200

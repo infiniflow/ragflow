@@ -23,7 +23,7 @@ from test.testcases.utils import wait_for
 
 @pytest.mark.p1
 def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
-    dataset_id, _ = ensure_parsed_document()
+    dataset_id, document_id = ensure_parsed_document()
     res = rest_client.post(
         f"/datasets/{dataset_id}/search",
         json={"question": "test TXT file", "top_k": 5},
@@ -32,6 +32,10 @@ def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     payload = res.json()
     assert payload["code"] == 0, payload
     assert "chunks" in payload["data"], payload
+    for chunk in payload["data"]["chunks"]:
+        # Issue #14771: every chunk surfaces a downloadable URL pointing at the
+        # SDK file-stream endpoint so clients can move from chunk text to source.
+        assert chunk.get("document_download_url") == f"/api/v1/datasets/{dataset_id}/documents/{document_id}", chunk
 
 
 @pytest.mark.p2
@@ -82,7 +86,7 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
 
 @pytest.mark.p2
 def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
-    dataset_id, _ = ensure_parsed_document()
+    dataset_id, document_id = ensure_parsed_document()
     # /api/v1/retrieval is SDK compatibility endpoint registered from chunk_api.py.
     res = rest_client.post(
         "/retrieval",
@@ -92,6 +96,9 @@ def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
     payload = res.json()
     assert payload["code"] == 0, payload
     assert "chunks" in payload["data"], payload
+    for chunk in payload["data"]["chunks"]:
+        # Issue #14771: SDK retrieval response also exposes the download URL.
+        assert chunk.get("document_download_url") == f"/api/v1/datasets/{dataset_id}/documents/{document_id}", chunk
 
 
 @pytest.mark.p2
