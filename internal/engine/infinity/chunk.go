@@ -473,7 +473,7 @@ func (e *infinityEngine) UpdateChunks(ctx context.Context, condition map[string]
 										}
 									}
 									if len(newParts) != len(parts) {
-										idStr := fmt.Sprintf("%v", id)
+										idStr := fmt.Sprintf("'%s'", escapeFilterValue(fmt.Sprintf("%v", id)))
 										if removeOpt[colName] == nil {
 											removeOpt[colName] = make(map[string][]string)
 										}
@@ -1157,7 +1157,7 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 				if existing, exists := allChunks[idVal]; exists {
 					// Merge: keep first non-empty value for each field
 					for k, v := range chunk {
-						if _, has := existing[k]; !has || utility.IsEmpty(v) {
+						if _, has := existing[k]; !has || (utility.IsEmpty(existing[k]) && !utility.IsEmpty(v)) {
 							existing[k] = v
 						}
 					}
