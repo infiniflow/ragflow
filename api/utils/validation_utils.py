@@ -362,6 +362,7 @@ class GraphragConfig(Base):
     method: Annotated[Literal["light", "general", "ner"], Field(default="light")]
     community: Annotated[bool, Field(default=False)]
     resolution: Annotated[bool, Field(default=False)]
+    batch_chunk_token_size: Annotated[int, Field(default=4096, ge=512, le=8196)]
 
 
 class ParentChildConfig(Base):

@@ -35,7 +35,7 @@ func NewSystemSettingsDAO() *SystemSettingsDAO {
 // Returns all system settings records from database
 func (d *SystemSettingsDAO) GetAll() ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Find(&settings).Error
+	err := DB.Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,18 @@ func (d *SystemSettingsDAO) GetAll() ([]entity.SystemSettings, error) {
 // Returns settings records that match the given name
 func (d *SystemSettingsDAO) GetByName(name string) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Where("name = ?", name).Find(&settings).Error
+	err := DB.Where("name = ?", name).Order("name ASC").Find(&settings).Error
+	if err != nil {
+		return nil, err
+	}
+	return settings, nil
+}
+
+// GetByNamePrefix get system settings by name prefix
+// Returns settings records whose names start with the given prefix.
+func (d *SystemSettingsDAO) GetByNamePrefix(namePrefix string) ([]entity.SystemSettings, error) {
+	var settings []entity.SystemSettings
+	err := DB.Where("name LIKE ?", namePrefix+"%").Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}

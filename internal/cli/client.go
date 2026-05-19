@@ -155,6 +155,12 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminVersion(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
+	case "list_variables":
+		return c.ListVariables(cmd)
+	case "show_variable":
+		return c.ShowVariable(cmd)
+	case "set_variable":
+		return c.SetVariable(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "list_agents":

@@ -176,16 +176,16 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*DocumentResponse, int64, error) {
+func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	offset := (page - 1) * pageSize
 	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	responses := make([]*DocumentResponse, len(documents))
+	responses := make([]*entity.DocumentListItem, len(documents))
 	for i, doc := range documents {
-		responses[i] = s.toResponse(doc)
+		responses[i] = doc
 	}
 
 	return responses, total, nil

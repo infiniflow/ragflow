@@ -1,5 +1,5 @@
 {
-  "Name": "Baidu",
+  "name": "Baidu",
   "url": {
     "default": "https://qianfan.baidubce.com/v2"
   },

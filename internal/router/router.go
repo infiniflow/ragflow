@@ -142,12 +142,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me", r.userHandler.Info)
 				// User settings endpoint
 				users.PATCH("/me", r.userHandler.Setting)
+				// User tenant info endpoint
+				users.GET("/me/models", r.tenantHandler.TenantInfo)
+				// User set tenant info endpoint
+				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
 			}
 
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
 			}
+
+			v1.GET("/tenant/list", r.tenantHandler.TenantList)
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -173,6 +179,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
+				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
+				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.chunkHandler.RetrievalTest)
@@ -198,6 +206,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
+				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
@@ -286,6 +295,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+			}
+
+			connector := v1.Group("/connectors")
+			{
+				connector.GET("/", r.connectorHandler.ListConnectors)
 			}
 
 			system := v1.Group("/system")
