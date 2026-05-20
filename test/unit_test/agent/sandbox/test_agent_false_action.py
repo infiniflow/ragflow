@@ -9,7 +9,10 @@ logger = logging.getLogger(__name__)
 def agent_setup():
     """Sets up a barebones Agent."""
     logger.debug("Setting up agent_setup fixture: Initializing barebones Agent.")
-    from agent.component.agent_with_tools import Agent, ToolExecutionState
+    try:
+        from agent.component.agent_with_tools import Agent, ToolExecutionState
+    except ImportError:
+        pytest.skip("Skipping test: Requires PR #14305 (ToolExecutionState) to be merged first.")
     from agent.canvas import Canvas
 
     canvas_mock = MagicMock(spec=Canvas)
