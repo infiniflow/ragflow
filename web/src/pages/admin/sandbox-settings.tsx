@@ -1,17 +1,14 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
-  LucideChevronDown,
   LucideCloud,
   LucideLink,
   LucideLoader2,
-  LucideMonitor,
   LucideSave,
   LucideServer,
-  LucideTerminal,
   LucideZap,
 } from 'lucide-react';
 
@@ -24,11 +21,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -39,7 +31,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
 import {
@@ -57,9 +48,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Provider icons mapping
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
-  local: LucideMonitor,
   self_managed: LucideServer,
-  ssh: LucideTerminal,
   aliyun_codeinterpreter: LucideCloud,
   e2b: LucideZap,
 };
@@ -71,9 +60,6 @@ function AdminSandboxSettings() {
   // State
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({});
-  const [sshAuthMode, setSshAuthMode] = useState<'password' | 'private_key'>(
-    'password',
-  );
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -148,25 +134,13 @@ function AdminSandboxSettings() {
     }
   }, [currentConfig]);
 
-  useEffect(() => {
-    if (selectedProvider !== 'ssh') {
-      return;
-    }
-    const hasPrivateKey = Boolean(
-      String(configValues.private_key ?? '').trim(),
-    );
-    setSshAuthMode(hasPrivateKey ? 'private_key' : 'password');
-  }, [selectedProvider, configValues.private_key]);
-
   // Apply schema defaults when provider schema changes
   useEffect(() => {
     if (providerSchema && Object.keys(providerSchema).length > 0) {
       setConfigValues((prev) => {
         const mergedConfig = { ...prev };
+        // Apply schema defaults for any missing fields
         Object.entries(providerSchema).forEach(([fieldName, schema]) => {
-          if (schema.readonly) {
-            return;
-          }
           if (
             mergedConfig[fieldName] === undefined &&
             schema.default !== undefined
@@ -182,11 +156,8 @@ function AdminSandboxSettings() {
   // Handle provider change
   const handleProviderChange = (providerId: string) => {
     setSelectedProvider(providerId);
-    if (currentConfig?.provider_type === providerId) {
-      setConfigValues(currentConfig.config || {});
-    } else {
-      setConfigValues({});
-    }
+    // Force refetch config and schema from backend when switching providers
+    queryClient.invalidateQueries({ queryKey: ['admin/getSandboxConfig'] });
     queryClient.invalidateQueries({
       queryKey: ['admin/getSandboxProviderSchema'],
     });
@@ -197,50 +168,13 @@ function AdminSandboxSettings() {
     setConfigValues((prev) => ({ ...prev, [fieldName]: value }));
   };
 
-  const handleSshAuthModeChange = (mode: 'password' | 'private_key') => {
-    setSshAuthMode(mode);
-    setConfigValues((prev) => {
-      if (mode === 'password') {
-        return {
-          ...prev,
-          private_key: '',
-          passphrase: '',
-        };
-      }
-      return {
-        ...prev,
-        password: '',
-      };
-    });
-  };
-
-  const buildSubmitConfig = () => {
-    if (selectedProvider !== 'ssh') {
-      return configValues;
-    }
-
-    const nextConfig = { ...configValues };
-    delete nextConfig.command_template;
-
-    if (sshAuthMode === 'password') {
-      nextConfig.private_key = '';
-      nextConfig.passphrase = '';
-    } else {
-      nextConfig.password = '';
-    }
-
-    return nextConfig;
-  };
-
   // Handle save
-  const handleSave = (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-
+  const handleSave = () => {
     if (!selectedProvider) return;
 
     setConfigMutation.mutate({
       providerType: selectedProvider,
-      config: buildSubmitConfig(),
+      config: configValues,
     });
   };
 
@@ -252,7 +186,7 @@ function AdminSandboxSettings() {
     setTestResult(null);
     testConnectionMutation.mutate({
       providerType: selectedProvider,
-      config: buildSubmitConfig(),
+      config: configValues,
     });
   };
 
@@ -265,20 +199,6 @@ function AdminSandboxSettings() {
 
     switch (schema.type) {
       case 'string':
-        if (schema.multiline) {
-          return (
-            <Textarea
-              id={fieldName}
-              placeholder={schema.placeholder}
-              value={value as string}
-              disabled={schema.readonly}
-              onChange={(e) =>
-                handleConfigValueChange(fieldName, e.target.value)
-              }
-              rows={4}
-            />
-          );
-        }
         if (schema.secret) {
           return (
             <Input
@@ -287,7 +207,6 @@ function AdminSandboxSettings() {
               className="h-10"
               placeholder={schema.placeholder}
               value={value as string}
-              disabled={schema.readonly}
               onChange={(e) =>
                 handleConfigValueChange(fieldName, e.target.value)
               }
@@ -295,13 +214,17 @@ function AdminSandboxSettings() {
           );
         }
         return (
-          <Input
+          <Textarea
             id={fieldName}
-            className="h-10"
             placeholder={schema.placeholder}
             value={value as string}
-            disabled={schema.readonly}
             onChange={(e) => handleConfigValueChange(fieldName, e.target.value)}
+            rows={
+              schema.description?.includes('endpoint') ||
+              schema.description?.includes('URL')
+                ? 1
+                : 3
+            }
           />
         );
 
@@ -314,7 +237,6 @@ function AdminSandboxSettings() {
             max={schema.max}
             value={value as number}
             className="h-10"
-            disabled={schema.readonly}
             onChange={(e) =>
               handleConfigValueChange(fieldName, parseInt(e.target.value) || 0)
             }
@@ -326,7 +248,6 @@ function AdminSandboxSettings() {
           <Switch
             id={fieldName}
             checked={value as boolean}
-            disabled={schema.readonly}
             onCheckedChange={(checked) =>
               handleConfigValueChange(fieldName, checked)
             }
@@ -338,95 +259,10 @@ function AdminSandboxSettings() {
     }
   };
 
-  const isFieldRequired = (
-    fieldName: string,
-    schema: AdminService.SandboxConfigField,
-  ) => {
-    if (selectedProvider === 'ssh' && fieldName === 'port') {
-      return true;
-    }
-    return Boolean(schema.required);
-  };
-
-  const getFieldPriority = (
-    fieldName: string,
-    schema: AdminService.SandboxConfigField,
-  ) => {
-    const preferredOrder = [
-      'host',
-      'username',
-      'port',
-      'password',
-      'private_key',
-      'passphrase',
-      'work_dir',
-      'python_bin',
-      'node_bin',
-    ];
-    const preferredIndex = preferredOrder.indexOf(fieldName);
-    if (preferredIndex !== -1) {
-      return preferredIndex;
-    }
-    if (schema.required) {
-      return 100;
-    }
-    return 200;
-  };
-
-  const sortFields = (entries: [string, AdminService.SandboxConfigField][]) =>
-    [...entries].sort(([fieldNameA, schemaA], [fieldNameB, schemaB]) => {
-      const priorityDiff =
-        getFieldPriority(fieldNameA, schemaA) -
-        getFieldPriority(fieldNameB, schemaB);
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
-      if (schemaA.required !== schemaB.required) {
-        return schemaA.required ? -1 : 1;
-      }
-      return fieldNameA.localeCompare(fieldNameB);
-    });
-
   const selectedProviderData = providers.find((p) => p.id === selectedProvider);
   const ProviderIcon = selectedProvider
     ? PROVIDER_ICONS[selectedProvider] || LucideServer
     : LucideServer;
-  const runtimeFields = sortFields(
-    Object.entries(providerSchema).filter(
-      ([, schema]) => schema.scope !== 'deployment',
-    ),
-  );
-  const deploymentFields = sortFields(
-    Object.entries(providerSchema).filter(
-      ([, schema]) => schema.scope === 'deployment',
-    ),
-  );
-  const isSshProvider = selectedProvider === 'ssh';
-  const sshIdentityFields = new Set(['host', 'username', 'port']);
-  const sshPasswordFields = new Set(['password']);
-  const sshPrivateKeyFields = new Set(['private_key', 'passphrase']);
-  const sshExecutionFields = new Set(['work_dir', 'python_bin', 'node_bin']);
-  const sshSharedFields = new Set([
-    ...sshIdentityFields,
-    ...sshPasswordFields,
-    ...sshPrivateKeyFields,
-    ...sshExecutionFields,
-  ]);
-  const sshIdentityRuntimeFields = runtimeFields.filter(([fieldName]) =>
-    sshIdentityFields.has(fieldName),
-  );
-  const sshPasswordRuntimeFields = runtimeFields.filter(([fieldName]) =>
-    sshPasswordFields.has(fieldName),
-  );
-  const sshPrivateKeyRuntimeFields = runtimeFields.filter(([fieldName]) =>
-    sshPrivateKeyFields.has(fieldName),
-  );
-  const sshExecutionRuntimeFields = runtimeFields.filter(([fieldName]) =>
-    sshExecutionFields.has(fieldName),
-  );
-  const remainingRuntimeFields = runtimeFields.filter(
-    ([fieldName]) => !(isSshProvider && sshSharedFields.has(fieldName)),
-  );
 
   return (
     <>
@@ -542,7 +378,6 @@ function AdminSandboxSettings() {
 
                             <div className="ml-auto flex items-center gap-4">
                               <Button
-                                type="button"
                                 onClick={handleTestConnection}
                                 disabled={testConnectionMutation.isPending}
                                 variant="outline"
@@ -576,350 +411,47 @@ function AdminSandboxSettings() {
                             </div>
                           </header>
 
-                          <div className="space-y-6">
-                            {(isSshProvider
-                              ? sshIdentityRuntimeFields.length > 0 ||
-                                sshPasswordRuntimeFields.length > 0 ||
-                                sshPrivateKeyRuntimeFields.length > 0 ||
-                                sshExecutionRuntimeFields.length > 0 ||
-                                remainingRuntimeFields.length > 0
-                              : runtimeFields.length > 0) && (
-                              <Collapsible defaultOpen>
-                                <CollapsibleTrigger className="group w-full text-left">
-                                  <div className="flex items-center justify-between rounded-md border border-border-button px-4 py-3 transition-colors hover:bg-bg-card">
-                                    <h4 className="text-sm font-medium text-text-primary">
-                                      Runtime Settings
-                                    </h4>
-                                    <LucideChevronDown className="size-4 text-text-secondary transition-transform group-data-[state=open]:rotate-180" />
-                                  </div>
-                                </CollapsibleTrigger>
+                          <div className="space-y-4">
+                            {Object.entries(providerSchema).map(
+                              ([fieldName, schema]) => (
+                                <div key={fieldName}>
+                                  <Label
+                                    htmlFor={fieldName}
+                                    className="text-text-primary"
+                                  >
+                                    {schema.required && (
+                                      <span className="text-state-error">
+                                        *
+                                      </span>
+                                    )}
+                                    {schema.label || fieldName}
 
-                                <CollapsibleContent className="ml-4 mt-4 border-l border-border-button pl-4 space-y-4">
-                                  {isSshProvider && (
-                                    <>
-                                      {sshIdentityRuntimeFields.map(
-                                        ([fieldName, schema]) => (
-                                          <div
-                                            key={fieldName}
-                                            className="space-y-2"
-                                          >
-                                            <Label
-                                              htmlFor={fieldName}
-                                              className="text-text-primary"
-                                            >
-                                              {isFieldRequired(
-                                                fieldName,
-                                                schema,
-                                              ) && (
-                                                <span className="text-state-error">
-                                                  *
-                                                </span>
-                                              )}
-                                              {schema.label ||
-                                                fieldName.replaceAll('_', ' ')}
-                                            </Label>
-
-                                            <div>
-                                              {renderConfigField(
-                                                fieldName,
-                                                schema,
-                                              )}
-                                            </div>
-
-                                            {schema.type === 'integer' &&
-                                              (schema.min !== undefined ||
-                                                schema.max !== undefined) && (
-                                                <p className="text-xs text-text-disabled">
-                                                  {schema.min !== undefined &&
-                                                    `Minimum: ${schema.min}`}
-                                                  {schema.min !== undefined &&
-                                                    schema.max !== undefined &&
-                                                    ' • '}
-                                                  {schema.max !== undefined &&
-                                                    `Maximum: ${schema.max}`}
-                                                </p>
-                                              )}
-                                          </div>
-                                        ),
-                                      )}
-
-                                      {(sshPasswordRuntimeFields.length > 0 ||
-                                        sshPrivateKeyRuntimeFields.length >
-                                          0) && (
-                                        <div className="space-y-3 rounded-md border border-border-button p-4">
-                                          <div>
-                                            <h4 className="text-sm font-medium text-text-primary">
-                                              <span className="text-state-error">
-                                                *
-                                              </span>
-                                              Authentication
-                                            </h4>
-                                            <p className="text-xs text-text-secondary mt-1">
-                                              Choose one authentication method
-                                              for the SSH connection.
-                                            </p>
-                                          </div>
-
-                                          <Tabs
-                                            value={sshAuthMode}
-                                            onValueChange={(value) =>
-                                              handleSshAuthModeChange(
-                                                value as
-                                                  | 'password'
-                                                  | 'private_key',
-                                              )
-                                            }
-                                            className="w-full"
-                                          >
-                                            <TabsList className="grid w-full grid-cols-2">
-                                              <TabsTrigger value="password">
-                                                Password
-                                              </TabsTrigger>
-                                              <TabsTrigger value="private_key">
-                                                Private Key
-                                              </TabsTrigger>
-                                            </TabsList>
-
-                                            <TabsContent
-                                              value="password"
-                                              className="space-y-4"
-                                            >
-                                              {sshPasswordRuntimeFields.map(
-                                                ([fieldName, schema]) => (
-                                                  <div
-                                                    key={fieldName}
-                                                    className="space-y-2"
-                                                  >
-                                                    <Label
-                                                      htmlFor={fieldName}
-                                                      className="text-text-primary"
-                                                    >
-                                                      {isFieldRequired(
-                                                        fieldName,
-                                                        schema,
-                                                      ) && (
-                                                        <span className="text-state-error">
-                                                          *
-                                                        </span>
-                                                      )}
-                                                      {schema.label ||
-                                                        fieldName.replaceAll(
-                                                          '_',
-                                                          ' ',
-                                                        )}
-                                                    </Label>
-
-                                                    <div>
-                                                      {renderConfigField(
-                                                        fieldName,
-                                                        schema,
-                                                      )}
-                                                    </div>
-                                                  </div>
-                                                ),
-                                              )}
-                                            </TabsContent>
-
-                                            <TabsContent
-                                              value="private_key"
-                                              className="space-y-4"
-                                            >
-                                              {sshPrivateKeyRuntimeFields.map(
-                                                ([fieldName, schema]) => (
-                                                  <div
-                                                    key={fieldName}
-                                                    className="space-y-2"
-                                                  >
-                                                    <Label
-                                                      htmlFor={fieldName}
-                                                      className="text-text-primary"
-                                                    >
-                                                      {isFieldRequired(
-                                                        fieldName,
-                                                        schema,
-                                                      ) && (
-                                                        <span className="text-state-error">
-                                                          *
-                                                        </span>
-                                                      )}
-                                                      {schema.label ||
-                                                        fieldName.replaceAll(
-                                                          '_',
-                                                          ' ',
-                                                        )}
-                                                    </Label>
-
-                                                    <div>
-                                                      {renderConfigField(
-                                                        fieldName,
-                                                        schema,
-                                                      )}
-                                                    </div>
-
-                                                    {fieldName ===
-                                                      'passphrase' && (
-                                                      <p className="text-xs text-text-secondary">
-                                                        Only required when the
-                                                        private key itself is
-                                                        encrypted.
-                                                      </p>
-                                                    )}
-                                                  </div>
-                                                ),
-                                              )}
-                                            </TabsContent>
-                                          </Tabs>
-                                        </div>
-                                      )}
-
-                                      {sshExecutionRuntimeFields.length > 0 && (
-                                        <div className="space-y-4 rounded-md border border-border-button p-4">
-                                          <div>
-                                            <h4 className="text-sm font-medium text-text-primary">
-                                              Execution
-                                            </h4>
-                                            <p className="text-xs text-text-secondary mt-1">
-                                              Configure the remote workspace and
-                                              language runtimes used on the SSH
-                                              host.
-                                            </p>
-                                          </div>
-
-                                          {sshExecutionRuntimeFields.map(
-                                            ([fieldName, schema]) => (
-                                              <div
-                                                key={fieldName}
-                                                className="space-y-2"
-                                              >
-                                                <Label
-                                                  htmlFor={fieldName}
-                                                  className="text-text-primary"
-                                                >
-                                                  {isFieldRequired(
-                                                    fieldName,
-                                                    schema,
-                                                  ) && (
-                                                    <span className="text-state-error">
-                                                      *
-                                                    </span>
-                                                  )}
-                                                  {schema.label ||
-                                                    fieldName.replaceAll(
-                                                      '_',
-                                                      ' ',
-                                                    )}
-                                                </Label>
-
-                                                <div>
-                                                  {renderConfigField(
-                                                    fieldName,
-                                                    schema,
-                                                  )}
-                                                </div>
-                                              </div>
-                                            ),
-                                          )}
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-
-                                  {(isSshProvider
-                                    ? remainingRuntimeFields
-                                    : runtimeFields
-                                  ).map(([fieldName, schema]) => (
-                                    <div key={fieldName} className="space-y-2">
-                                      <Label
-                                        htmlFor={fieldName}
-                                        className="text-text-primary"
-                                      >
-                                        {isFieldRequired(fieldName, schema) && (
-                                          <span className="text-state-error">
-                                            *
-                                          </span>
-                                        )}
-                                        {schema.label ||
-                                          fieldName.replaceAll('_', ' ')}
-                                      </Label>
-
-                                      <div>
-                                        {renderConfigField(fieldName, schema)}
-                                      </div>
-
-                                      {schema.type === 'integer' &&
-                                        (schema.min !== undefined ||
-                                          schema.max !== undefined) && (
-                                          <p className="text-xs text-text-disabled">
-                                            {schema.min !== undefined &&
-                                              `Minimum: ${schema.min}`}
-                                            {schema.min !== undefined &&
-                                              schema.max !== undefined &&
-                                              ' • '}
-                                            {schema.max !== undefined &&
-                                              `Maximum: ${schema.max}`}
-                                          </p>
-                                        )}
-                                    </div>
-                                  ))}
-                                </CollapsibleContent>
-                              </Collapsible>
-                            )}
-
-                            {deploymentFields.length > 0 && (
-                              <Collapsible>
-                                <CollapsibleTrigger className="group w-full text-left">
-                                  <div className="flex items-center justify-between rounded-md border border-border-button px-4 py-3 transition-colors hover:bg-bg-card">
-                                    <div>
-                                      <h4 className="text-sm font-medium">
-                                        Deployment Defaults
-                                      </h4>
-                                      <p className="text-xs text-text-secondary mt-1">
-                                        Read-only values loaded from the current
-                                        environment for the default
-                                        executor-manager deployment.
+                                    {schema.description && (
+                                      <p className="text-xs text-text-secondary">
+                                        {schema.description}
                                       </p>
-                                    </div>
-                                    <LucideChevronDown className="size-4 text-text-secondary transition-transform group-data-[state=open]:rotate-180" />
+                                    )}
+                                  </Label>
+
+                                  <div className="mt-2">
+                                    {renderConfigField(fieldName, schema)}
                                   </div>
-                                </CollapsibleTrigger>
 
-                                <CollapsibleContent className="ml-4 mt-4 border-l border-border-button pl-4 space-y-4">
-                                  {deploymentFields.map(
-                                    ([fieldName, schema]) => (
-                                      <div
-                                        key={fieldName}
-                                        className="space-y-2"
-                                      >
-                                        <Label
-                                          htmlFor={fieldName}
-                                          className="text-text-primary"
-                                        >
-                                          {schema.label ||
-                                            fieldName.replaceAll('_', ' ')}
-                                        </Label>
-
-                                        <div>
-                                          {renderConfigField(fieldName, schema)}
-                                        </div>
-
-                                        {schema.type === 'integer' &&
-                                          (schema.min !== undefined ||
-                                            schema.max !== undefined) && (
-                                            <p className="text-xs text-text-disabled">
-                                              {schema.min !== undefined &&
-                                                `Minimum: ${schema.min}`}
-                                              {schema.min !== undefined &&
-                                                schema.max !== undefined &&
-                                                ' • '}
-                                              {schema.max !== undefined &&
-                                                `Maximum: ${schema.max}`}
-                                            </p>
-                                          )}
-                                      </div>
-                                    ),
-                                  )}
-                                </CollapsibleContent>
-                              </Collapsible>
+                                  {schema.type === 'integer' &&
+                                    (schema.min !== undefined ||
+                                      schema.max !== undefined) && (
+                                      <p className="text-xs text-text-disabled mt-2">
+                                        {schema.min !== undefined &&
+                                          `Minimum: ${schema.min}`}
+                                        {schema.min !== undefined &&
+                                          schema.max !== undefined &&
+                                          ' • '}
+                                        {schema.max !== undefined &&
+                                          `Maximum: ${schema.max}`}
+                                      </p>
+                                    )}
+                                </div>
+                              ),
                             )}
                           </div>
                         </article>

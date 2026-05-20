@@ -2263,6 +2263,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "qwen/qwen2.5-coder-32b-instruct",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "rakuten/rakutenai-7b-chat",
                     "tags": "LLM,CHAT,4K",
                     "max_tokens": 4096,
@@ -2837,6 +2844,13 @@
             "url": "https://api.siliconflow.cn/v1",
             "llm": [
                 {
+                    "llm_name": "THUDM/GLM-4.1V-9B-Thinking",
+                    "tags": "LLM,CHAT,IMAGE2TEXT, 64k",
+                    "max_tokens": 64000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
                     "llm_name": "Qwen/Qwen3-Embedding-8B",
                     "tags": "TEXT EMBEDDING,TEXT RE-RANK,32k",
                     "max_tokens": 32000,
@@ -2891,6 +2905,13 @@
                     "max_tokens": 64000,
                     "model_type": "chat",
                     "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/QVQ-72B-Preview",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "image2text",
+                    "is_tools": false
                 },
                 {
                     "llm_name": "Pro/deepseek-ai/DeepSeek-R1",
@@ -2963,6 +2984,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Qwen/Qwen2.5-VL-72B-Instruct",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "image2text",
+                    "is_tools": false
+                },
+                {
                     "llm_name": "THUDM/GLM-Z1-32B-0414",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
@@ -3010,6 +3045,20 @@
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                    "tags": "LLM,CHAT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "Qwen/Qwen2-VL-72B-Instruct",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32000,
+                    "model_type": "image2text",
+                    "is_tools": false
                 },
                 {
                     "llm_name": "Qwen/Qwen2.5-72B-Instruct-128Kt",
@@ -3616,11 +3665,32 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Qwen/Qwen2.5-VL-32B-Instruct",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "Qwen/QwQ-32B",
                     "tags": "LLM,CHAT,131k",
                     "max_tokens": 131000,
                     "model_type": "chat",
                     "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-VL-72B-Instruct",
+                    "tags": "LLM,CHAT,131k",
+                    "max_tokens": 131000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Qwen/Qwen2.5-VL-7B-Instruct",
+                    "tags": "LLM,CHAT,33k",
+                    "max_tokens": 33000,
+                    "model_type": "chat",
+                    "is_tools": false
                 },
                 {
                     "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
