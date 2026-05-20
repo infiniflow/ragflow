@@ -1,4 +1,3 @@
-import BackButton from '@/components/back-button';
 import {
   DynamicForm,
   DynamicFormRef,
@@ -225,7 +224,7 @@ const SourceDetailPage = () => {
 
   return (
     <div className="px-10 py-5">
-      <BackButton />
+      {/* <BackButton /> */}
       <Card className="bg-transparent border border-border-button px-5 pt-[10px] pb-5 rounded-md mt-5">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-3">
           {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
@@ -235,7 +234,7 @@ const SourceDetailPage = () => {
           </CardTitle>
         </CardHeader>
         <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
-        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-auto">
+        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-230px)] overflow-y-auto scrollbar-auto">
           <div className="max-w-[1200px]">
             <DynamicForm.Root
               ref={formRef}
