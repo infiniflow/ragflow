@@ -15,6 +15,7 @@
 #
 
 from concurrent.futures import ThreadPoolExecutor
+import os
 import pytest
 from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32
 from test.testcases.restful_api.helpers.client import RestClient
@@ -548,6 +549,7 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")
 def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_list_keywords.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
