@@ -165,6 +165,11 @@ class Graph:
     def get_tenant_id(self):
         return self._tenant_id
 
+    def get_langfuse_user_id(self):
+        from api.db.services.langfuse_service import resolve_langfuse_user_id
+
+        return resolve_langfuse_user_id(self.globals.get("sys.user_id"), self._tenant_id)
+
     def get_value_with_variable(self,value: str) -> Any:
         pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
         out_parts = []
@@ -402,11 +407,19 @@ class Canvas(Graph):
                 break
 
         for k in kwargs.keys():
-            if k in ["query", "user_id", "files"] and kwargs[k]:
-                if k == "files":
-                    self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
-                else:
-                    self.globals[f"sys.{k}"] = kwargs[k]
+            if k not in ["query", "user_id", "files"]:
+                continue
+            if k == "files":
+                if kwargs[k]:
+                    self.globals["sys.files"] = await self.get_files_async(kwargs[k], layout_recognize)
+                continue
+            if k == "user_id":
+                from api.db.services.langfuse_service import resolve_langfuse_user_id
+
+                self.globals["sys.user_id"] = resolve_langfuse_user_id(kwargs[k], self._tenant_id)
+                continue
+            if kwargs[k]:
+                self.globals[f"sys.{k}"] = kwargs[k]
         if not self.globals["sys.conversation_turns"] :
             self.globals["sys.conversation_turns"] = 0
         self.globals["sys.conversation_turns"] += 1
@@ -518,7 +531,11 @@ class Canvas(Graph):
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
                         tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        tts_mdl = LLMBundle(
+                            self._tenant_id,
+                            tts_model_config,
+                            langfuse_user_id=self.get_langfuse_user_id(),
+                        )
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""

@@ -32,7 +32,12 @@ from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.langfuse_service import TenantLangfuseService
+from api.db.services.langfuse_service import (
+    TenantLangfuseService,
+    end_langfuse_observation,
+    resolve_langfuse_user_id,
+    start_langfuse_observation,
+)
 from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
@@ -573,7 +578,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     langfuse_tracer = None
     langfuse_generation = None
+    langfuse_ctx = None
     trace_context = {}
+    langfuse_user_id = resolve_langfuse_user_id(kwargs.get("user_id"), dialog.tenant_id)
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
         langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
@@ -588,6 +595,9 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     check_langfuse_tracer_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    for mdl in (embd_mdl, rerank_mdl, chat_mdl, tts_mdl):
+        if mdl is not None:
+            mdl.set_langfuse_user_id(langfuse_user_id)
     toolcall_session, tools = kwargs.get("toolcall_session"), kwargs.get("tools")
     if toolcall_session and tools:
         chat_mdl.bind_tools(toolcall_session, tools)
@@ -784,7 +794,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
     async def decorate_answer(answer):
-        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_generation
+        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_generation, langfuse_ctx
 
         refs = []
         ans = answer.split("</think>")
@@ -868,13 +878,16 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     "total": used_token_count + tk_num,
                 },
             )
-            langfuse_generation.end()
+            end_langfuse_observation(langfuse_generation, langfuse_ctx)
 
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
         try:
-            langfuse_generation = langfuse_tracer.start_observation(
+            langfuse_generation, langfuse_ctx = start_langfuse_observation(
+                langfuse_tracer,
+                langfuse_user_id,
+                dialog.tenant_id,
                 as_type="generation",
                 trace_context=trace_context,
                 name="chat",
@@ -885,6 +898,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
             langfuse_tracer = None
             langfuse_generation = None
+            langfuse_ctx = None
 
     if stream:
         if llm_type == "chat":

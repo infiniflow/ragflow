@@ -1355,8 +1355,6 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return get_json_result(data={"message_id": task_id, "session_id": session_id})
 
         try:
-            from agent.canvas import Canvas
-
             canvas = Canvas(dsl_str, str(tenant_id), canvas_id=agent_id, custom_header=custom_header)
         except Exception as exc:
             return server_error_response(exc)

@@ -89,6 +89,7 @@ class Agent(LLM, ToolBase):
             retry_interval=self._param.delay_after_error,
             max_rounds=self._param.max_rounds,
             verbose_tool_use=False,
+            langfuse_user_id=self._canvas.get_langfuse_user_id(),
         )
         self.tool_meta = []
         for indexed_name, tool_obj in self.tools.items():
@@ -192,6 +193,8 @@ class Agent(LLM, ToolBase):
     async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Agent processing"):
             return
+
+        self.chat_mdl.set_langfuse_user_id(self._canvas.get_langfuse_user_id())
 
         if kwargs.get("user_prompt"):
             usr_pmt = ""

@@ -122,12 +122,20 @@ class Retrieval(ToolBase, ABC):
         if embd_nms:
             tenant_id = self._canvas.get_tenant_id()
             embd_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.EMBEDDING, embd_nms[0])
-            embd_mdl = LLMBundle(tenant_id, embd_model_config)
+            embd_mdl = LLMBundle(
+                tenant_id,
+                embd_model_config,
+                langfuse_user_id=self._canvas.get_langfuse_user_id(),
+            )
 
         rerank_mdl = None
         if self._param.rerank_id:
             rerank_model_config = get_model_config_by_type_and_name(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
-            rerank_mdl = LLMBundle(kbs[0].tenant_id, rerank_model_config)
+            rerank_mdl = LLMBundle(
+                kbs[0].tenant_id,
+                rerank_model_config,
+                langfuse_user_id=self._canvas.get_langfuse_user_id(),
+            )
 
         vars = self.get_input_elements_from_text(query_text)
         vars = {k: o["value"] for k, o in vars.items()}
@@ -180,7 +188,11 @@ class Retrieval(ToolBase, ABC):
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 tenant_id = self._canvas.get_tenant_id()
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(
+                    tenant_id,
+                    chat_model_config,
+                    langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                )
 
             doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
@@ -219,7 +231,11 @@ class Retrieval(ToolBase, ABC):
             if self._param.toc_enhance:
                 tenant_id = self._canvas._tenant_id
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
-                chat_mdl = LLMBundle(tenant_id, chat_model_config)
+                chat_mdl = LLMBundle(
+                    tenant_id,
+                    chat_model_config,
+                    langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                )
                 cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
                                                           chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
