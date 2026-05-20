@@ -14,25 +14,39 @@
 #  limitations under the License.
 #
 
-import logging
+import importlib
 import sys
 import types
 
+import pytest
 from pydantic import BaseModel
 
-sys.modules.setdefault("anthropic", types.SimpleNamespace(BaseModel=BaseModel))
-from common.data_source.imap_connector import _parse_singular_addr
+
+@pytest.fixture
+def parse_singular_addr(monkeypatch):
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(BaseModel=BaseModel))
+    module = importlib.import_module("common.data_source.imap_connector")
+    return module._parse_singular_addr
 
 
-def test_parse_singular_addr_returns_unknown_when_no_addresses_parse():
-    assert _parse_singular_addr("") == ("Unknown", "unknown@example.com")
+def test_parse_singular_addr_returns_unknown_when_no_addresses_parse(
+    parse_singular_addr,
+):
+    assert parse_singular_addr("") == ("Unknown", "unknown@example.com")
 
 
-def test_parse_singular_addr_returns_first_address_and_warns_for_multiple(caplog):
+def test_parse_singular_addr_returns_first_address_and_warns_for_multiple(
+    caplog,
+    parse_singular_addr,
+):
     raw_header = "Alice <alice@example.com>, Bob <bob@example.com>"
 
-    with caplog.at_level(logging.WARNING):
-        parsed_addr = _parse_singular_addr(raw_header)
+    with caplog.at_level("WARNING", logger="common.data_source.imap_connector"):
+        parsed_addr = parse_singular_addr(raw_header)
 
     assert parsed_addr == ("Alice", "alice@example.com")
-    assert "Expected a singular address, but instead got multiple" in caplog.text
+    assert "Expected a singular address, but parsed 2 addresses; using first parsed address" in caplog.text
+    assert "Alice" not in caplog.text
+    assert "alice@example.com" not in caplog.text
+    assert "Bob" not in caplog.text
+    assert "bob@example.com" not in caplog.text

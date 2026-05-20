@@ -40,6 +40,8 @@ _PAGE_SIZE = 100
 _USERNAME_KEY = "imap_username"
 _PASSWORD_KEY = "imap_password"
 
+logger = logging.getLogger(__name__)
+
 class Header(str, Enum):
     SUBJECT_HEADER = "subject"
     FROM_HEADER = "from"
@@ -752,10 +754,9 @@ def _parse_singular_addr(raw_header: str) -> tuple[str, str]:
     if not addrs:
         return ("Unknown", "unknown@example.com")
     elif len(addrs) >= 2:
-        logging.warning(
-            "Expected a singular address, but instead got multiple; raw_header=%r addrs=%r",
-            raw_header,
-            addrs,
+        logger.warning(
+            "Expected a singular address, but parsed %d addresses; using first parsed address",
+            len(addrs),
         )
 
     return addrs[0]
