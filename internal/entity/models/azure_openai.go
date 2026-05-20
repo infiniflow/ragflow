@@ -244,6 +244,10 @@ func (z *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 		return fmt.Errorf("deployment name is required")
 	}
 
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
@@ -465,12 +469,19 @@ func (z *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	embeddings := make([]EmbeddingData, 0, len(parsed.Data))
+	// Azure returns one item per input, but does not guarantee response
+	// order. Each item's Index refers to its position in the input list, so
+	// place vectors by Index to honor the documented input-order guarantee.
+	// Reject an out-of-range index instead of panicking.
+	embeddings := make([]EmbeddingData, len(texts))
 	for _, d := range parsed.Data {
-		embeddings = append(embeddings, EmbeddingData{
+		if d.Index < 0 || d.Index >= len(embeddings) {
+			return nil, fmt.Errorf("embedding index %d out of range [0,%d)", d.Index, len(embeddings))
+		}
+		embeddings[d.Index] = EmbeddingData{
 			Embedding: d.Embedding,
 			Index:     d.Index,
-		})
+		}
 	}
 
 	return embeddings, nil
