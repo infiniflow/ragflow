@@ -137,6 +137,10 @@ type n1nAPIMessage struct {
 	Content interface{} `json:"content"`
 }
 
+type n1nThinking struct {
+	Type string `json:"type"`
+}
+
 type n1nChatRequest struct {
 	Model       string          `json:"model"`
 	Messages    []n1nAPIMessage `json:"messages"`
@@ -145,6 +149,7 @@ type n1nChatRequest struct {
 	Temperature *float64        `json:"temperature,omitempty"`
 	TopP        *float64        `json:"top_p,omitempty"`
 	Stop        *[]string       `json:"stop,omitempty"`
+	Thinking    *n1nThinking    `json:"thinking,omitempty"`
 }
 
 func buildN1NChatRequest(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) n1nChatRequest {
@@ -165,6 +170,22 @@ func buildN1NChatRequest(modelName string, messages []Message, stream bool, chat
 		reqBody.Temperature = chatModelConfig.Temperature
 		reqBody.TopP = chatModelConfig.TopP
 		reqBody.Stop = chatModelConfig.Stop
+		// Map ChatConfig.Thinking *bool -> n1n.ai's documented
+		// `thinking: {type: "enabled"|"disabled"}` body field
+		// (per maintainer review on PR #15010, with example curl
+		// against deepseek-v3-1-250821). Models that don't support
+		// the field ignore it silently; the reasoning-capable
+		// variants (e.g. deepseek-v3-1-think-250821) surface the
+		// chain-of-thought via message.reasoning_content on the
+		// non-stream path and delta.reasoning_content on the
+		// streaming path, both of which this driver already reads.
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody.Thinking = &n1nThinking{Type: "enabled"}
+			} else {
+				reqBody.Thinking = &n1nThinking{Type: "disabled"}
+			}
+		}
 	}
 	return reqBody
 }
@@ -248,11 +269,18 @@ func (m *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	}
 
 	content := *parsed.Choices[0].Message.Content
-	reasonContent := parsed.Choices[0].Message.ReasoningContent
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+	chatResp := &ChatResponse{
+		Answer: &content,
+	}
+	// Preserve a nil pointer when the upstream omitted reasoning, so
+	// downstream callers can distinguish "no reasoning emitted" from
+	// "reasoning present but empty". Matches the streaming path,
+	// which already suppresses empty reasoning chunks.
+	if parsed.Choices[0].Message.ReasoningContent != "" {
+		reasonContent := parsed.Choices[0].Message.ReasoningContent
+		chatResp.ReasonContent = &reasonContent
+	}
+	return chatResp, nil
 }
 
 // ChatStreamlyWithSender sends a streaming chat completion. The n1n.ai
