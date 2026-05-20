@@ -752,8 +752,10 @@ def _parse_singular_addr(raw_header: str) -> tuple[str, str]:
     if not addrs:
         return ("Unknown", "unknown@example.com")
     elif len(addrs) >= 2:
-        raise RuntimeError(
-            f"Expected a singular address, but instead got multiple; {raw_header=} {addrs=}"
+        logging.warning(
+            "Expected a singular address, but instead got multiple; raw_header=%r addrs=%r",
+            raw_header,
+            addrs,
         )
 
     return addrs[0]
