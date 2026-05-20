@@ -33,6 +33,7 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
 
@@ -350,7 +351,29 @@ class Base(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
@@ -1565,7 +1588,29 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
