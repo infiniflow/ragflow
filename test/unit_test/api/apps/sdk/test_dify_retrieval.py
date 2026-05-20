@@ -151,8 +151,14 @@ class TestDifyRetrievalTenantCheck:
     """Regression for #15027: cross-tenant KB exposure via /dify/retrieval."""
 
     @pytest.mark.p1
-    def test_cross_tenant_request_is_rejected(self, monkeypatch):
-        """A caller whose tenant does NOT own the requested KB must be denied."""
+    def test_cross_tenant_request_is_rejected(self, monkeypatch, caplog):
+        """A caller whose tenant does NOT own the requested KB must be denied.
+
+        Also verifies that the denial is recorded via the module logger so
+        operators can audit cross-tenant access attempts after the fact.
+        """
+        import logging
+
         owner_kb = SimpleNamespace(id="kb-victim", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
         request_body = {
             "knowledge_id": "kb-victim",
@@ -171,6 +177,7 @@ class TestDifyRetrievalTenantCheck:
             chunks=[{"doc_id": "d1", "content_with_weight": "VICTIM_SECRET ...", "similarity": 0.9, "docnm_kwd": "doc.txt"}],
         )
 
+        caplog.set_level(logging.WARNING, logger=module.__name__)
         result = asyncio.run(module.retrieval(tenant_id="tenant-attacker"))
 
         assert result["code"] == 109, f"expected AUTHENTICATION_ERROR (109), got {result}"
@@ -178,6 +185,13 @@ class TestDifyRetrievalTenantCheck:
         assert "authorization" in msg or "authentication" in msg
         assert "records" not in result, "cross-tenant request leaked records"
         assert module._fake_retriever.retrieval_calls == [], "retriever invoked despite denial"
+
+        denial_logs = [r for r in caplog.records if r.levelno == logging.WARNING and "cross-tenant" in r.getMessage()]
+        assert denial_logs, "denial branch must emit a WARNING audit log"
+        rendered = denial_logs[0].getMessage()
+        assert "tenant-attacker" in rendered, "caller tenant must appear in the audit log"
+        assert "kb-victim" in rendered, "denied knowledge_id must appear in the audit log"
+        assert "VICTIM_SECRET" not in rendered, "audit log must not leak request payload contents"
 
     @pytest.mark.p1
     def test_same_tenant_request_succeeds(self, monkeypatch):
