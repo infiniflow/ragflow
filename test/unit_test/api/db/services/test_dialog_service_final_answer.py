@@ -140,6 +140,38 @@ class _StubRetriever:
         return answer, set()
 
 
+class _FakeLangfuseObservation:
+    def __init__(self):
+        self.updates = []
+        self.ended = False
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
+
+    def end(self):
+        self.ended = True
+
+
+class _FakeLangfuseClient:
+    instances = []
+
+    def __init__(self, **kwargs):
+        self.init_kwargs = kwargs
+        self.observation_kwargs = None
+        self.observation = _FakeLangfuseObservation()
+        self.instances.append(self)
+
+    def auth_check(self):
+        return True
+
+    def create_trace_id(self):
+        return "trace-id"
+
+    def start_observation(self, **kwargs):
+        self.observation_kwargs = kwargs
+        return self.observation
+
+
 def _collect(async_gen):
     async def _run():
         return [ev async for ev in async_gen]
@@ -356,3 +388,63 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
     assert llm_answer in final["answer"], (
         f"LLM answer text expected in final event, got: {final['answer']!r}"
     )
+
+
+@pytest.mark.p2
+def test_async_chat_langfuse_uses_start_observation(monkeypatch):
+    """
+    Langfuse v4 exposes start_observation(as_type="generation"), not
+    start_generation(). Keep async_chat() on the migrated API.
+    """
+    _FakeLangfuseClient.instances = []
+    llm_answer = "RAGFlow traces chat answers through Langfuse."
+    chat_mdl = _StreamingChatModel(llm_answer)
+    retriever = _StubRetriever()
+
+    monkeypatch.setattr(
+        dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat"
+    )
+    monkeypatch.setattr(
+        dialog_service.TenantLLMService, "get_model_config",
+        lambda _tid, _type, _llm_id: _LLM_CONFIG,
+    )
+    monkeypatch.setattr(
+        dialog_service.TenantLangfuseService, "filter_by_tenant",
+        lambda tenant_id: SimpleNamespace(
+            public_key="public",
+            secret_key="secret",
+            host="http://langfuse.local",
+        ),
+    )
+    monkeypatch.setattr(dialog_service, "Langfuse", _FakeLangfuseClient)
+    monkeypatch.setattr(
+        dialog_service,
+        "get_models",
+        lambda _dialog: ([_KB], chat_mdl, None, chat_mdl, None),
+    )
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {}
+    )
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: [_KB]
+    )
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+    monkeypatch.setattr(dialog_service, "label_question", lambda _q, _kbs: "")
+    monkeypatch.setattr(
+        dialog_service,
+        "kb_prompt",
+        lambda _kbinfos, _max_tokens, **_kw: ["RAGFlow is a RAG engine."],
+    )
+
+    dialog = _make_dialog(chat_mdl)
+    messages = [{"role": "user", "content": "What is RAGFlow?"}]
+
+    events = _collect(dialog_service.async_chat(dialog, messages, stream=True, quote=True))
+
+    assert any(e.get("final") is True for e in events)
+    assert len(_FakeLangfuseClient.instances) == 1
+    langfuse = _FakeLangfuseClient.instances[0]
+    assert langfuse.observation_kwargs["as_type"] == "generation"
+    assert langfuse.observation_kwargs["trace_context"] == {"trace_id": "trace-id"}
+    assert langfuse.observation_kwargs["name"] == "chat"
+    assert langfuse.observation.ended is True
