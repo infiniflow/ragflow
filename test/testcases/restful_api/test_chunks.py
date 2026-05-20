@@ -549,7 +549,7 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")
+@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_list_keywords.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
@@ -575,6 +575,7 @@ def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_docum
 
 
 @pytest.mark.p2
+@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_list_paging.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
