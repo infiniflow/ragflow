@@ -441,9 +441,17 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		return
 	}
 
-	datasetIDs := strings.Split(datasetIDsStr, ",")
-	for i, id := range datasetIDs {
-		datasetIDs[i] = strings.TrimSpace(id)
+	rawIDs := strings.Split(datasetIDsStr, ",")
+	datasetIDs := make([]string, 0, len(rawIDs))
+	for _, id := range rawIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			datasetIDs = append(datasetIDs, id)
+		}
+	}
+	if len(datasetIDs) == 0 {
+		jsonError(c, common.CodeDataError, "dataset_ids is required")
+		return
 	}
 
 	// Check access for each dataset
