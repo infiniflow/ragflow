@@ -1405,6 +1405,32 @@ def test_delete_agent_session_error_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize(
+    ("handler_name", "args"),
+    [
+        ("chatbot_completions", ("dialog-1",)),
+        ("chatbots_inputs", ("dialog-1",)),
+        ("agent_bot_completions", ("agent-1",)),
+        ("begin_inputs", ("agent-1",)),
+        ("ask_about_embedded", ()),
+        ("retrieval_test_embedded", ()),
+        ("related_questions_embedded", ()),
+        ("detail_share_embedded", ()),
+        ("mindmap", ()),
+    ],
+)
+def test_sdk_session_routes_missing_authorization_unit(monkeypatch, handler_name, args):
+    module = _load_session_module(monkeypatch)
+    monkeypatch.setattr(module, "request", SimpleNamespace(headers={}, args={"search_id": "search-1"}))
+    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({}))
+
+    handler = inspect.unwrap(getattr(module, handler_name))
+    res = _run(handler(*args))
+
+    assert res["message"] == "Authorization is not valid!"
+
+
+@pytest.mark.p2
 def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     module = _load_session_module(monkeypatch)
     monkeypatch.setattr(module, "Response", _StubResponse)
