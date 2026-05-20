@@ -27,6 +27,8 @@ import (
 	"net"
 	netUrl "net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	ce "ragflow/internal/cli/filesystem"
 	"strings"
 	"time"
@@ -389,7 +391,63 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list datasets failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+// ListDatasetDocumentUserCommand lists dataset documents
+func (c *RAGFlowClient) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	// Check for benchmark iterations
+	iterations := 1
+	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
+		iterations = val
+	}
+
+	// Determine auth kind based on whether API token is being used
+	if c.HTTPClient.LoginToken == "" && !c.HTTPClient.useAPIToken {
+		return nil, fmt.Errorf("no authorization")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("no dataset id")
+	}
+
+	page := 1
+	pageSize := 10
+	keywords := ""
+	returnEmptyMetadata := "true"
+	url := fmt.Sprintf("/datasets/%s/documents?page=%d&page_size=%d&keywords=%s&return_empty_metadata=%s", datasetID, page, pageSize, keywords, returnEmptyMetadata)
+
+	if iterations > 1 {
+		// Benchmark mode - return raw result for benchmark stats
+		return c.HTTPClient.RequestWithIterations("GET", url, "web", nil, nil, iterations)
+	}
+
+	// Normal mode
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list documents: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ListDocumentsResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list documents failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1622,16 +1680,35 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 		}
 	}
 
-	//audios, ok := cmd.Params["audios"].([]string)
-	//if !ok {
-	//	return nil, fmt.Errorf("images not provided")
-	//}
+	audios, ok := cmd.Params["audios"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("images not provided")
+	}
+	if len(audios) > 0 {
+		if len(audios) != 1 {
+			return nil, fmt.Errorf("only one audio file is supported")
+		}
+		audioFile := audios[0]
+		audioContent, err := os.ReadFile(audioFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read audio: %w", err)
+		}
+		// file type: wav or mp3
+		format := filepath.Ext(audioFile) // file type: wav or mp3
+		format = strings.TrimPrefix(format, ".")
+		contents = append(contents, map[string]interface{}{
+			"type": "input_audio",
+			"input_audio": map[string]interface{}{
+				"data":   base64.StdEncoding.EncodeToString(audioContent),
+				"format": format,
+			},
+		})
+	}
 
 	files, ok := cmd.Params["files"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("images not provided")
 	}
-
 	if len(files) > 0 {
 		for _, file := range files {
 			if isValidURL(file) {
@@ -1659,21 +1736,6 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	verbosity := cmd.Params["verbosity"].(string)
 
 	url := "/chat/completions"
-
-	//message = strings.TrimSpace(message)
-	//var content interface{} = message
-	//if strings.HasPrefix(message, "[") && strings.HasSuffix(message, "]") {
-	//	var parts []map[string]interface{}
-	//	if err := json.Unmarshal([]byte(message), &parts); err == nil {
-	//		content = parts
-	//	}
-	//}
-	//formattedMessage := []map[string]interface{}{
-	//	{
-	//		"role":    "user",
-	//		"content": content,
-	//	},
-	//}
 
 	payload := map[string]interface{}{
 		"provider_name": providerName,
@@ -1914,6 +1976,545 @@ func (c *RAGFlowClient) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("rerank document failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	text, ok := cmd.Params["text"].(string)
+	if !ok {
+		return nil, fmt.Errorf("text not provided")
+	}
+
+	//fileToSave, ok := cmd.Params["file"].(string)
+	//if !ok {
+	//	return nil, fmt.Errorf("file not provided")
+	//}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"text":          text,
+	}
+
+	ttsConfigPayload := make(map[string]interface{})
+
+	explicitFormat, hasExplicitFormat := cmd.Params["format"].(string)
+
+	if paramStr, ok := cmd.Params["param_str"].(string); ok && paramStr != "" {
+		var dynamicParams map[string]interface{}
+		if err := json.Unmarshal([]byte(paramStr), &dynamicParams); err != nil {
+			return nil, fmt.Errorf("param string must be valid JSON. Error: %w", err)
+		}
+
+		ttsConfigPayload["params"] = dynamicParams
+
+		if !hasExplicitFormat {
+			var findFormat func(map[string]interface{}) string
+			findFormat = func(m map[string]interface{}) string {
+				if val, ok := m["format"]; ok {
+					return fmt.Sprintf("%v", val)
+				}
+				if val, ok := m["response_format"]; ok {
+					return fmt.Sprintf("%v", val)
+				}
+				for _, v := range m {
+					if subMap, ok := v.(map[string]interface{}); ok {
+						if res := findFormat(subMap); res != "" {
+							return res
+						}
+					}
+				}
+				return ""
+			}
+			if ext := findFormat(dynamicParams); ext != "" {
+				explicitFormat = ext
+			}
+		}
+	}
+
+	if explicitFormat != "" {
+		ttsConfigPayload["format"] = explicitFormat
+	} else {
+		ttsConfigPayload["format"] = "mp3"
+	}
+
+	if len(ttsConfigPayload) > 0 {
+		payload["tts_config"] = ttsConfigPayload
+	}
+
+	url := "/audio/speech"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to TTS document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to TTS document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var ttsResult struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Audio string `json:"audio"`
+		} `json:"data"`
+	}
+
+	if err = json.Unmarshal(resp.Body, &ttsResult); err != nil {
+		return nil, fmt.Errorf("TTS document failed: invalid JSON (%w)", err)
+	}
+
+	if ttsResult.Code != 0 {
+		return nil, fmt.Errorf("%s", ttsResult.Message)
+	}
+
+	// Convert Base64 back to the original audio byte stream
+	audioBytes, err := base64.StdEncoding.DecodeString(ttsResult.Data.Audio)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode audio base64: %w", err)
+	}
+
+	shouldPlay, _ := cmd.Params["play"].(bool)
+	shouldSave, _ := cmd.Params["save"].(bool)
+	saveDir, _ := cmd.Params["save_path"].(string)
+
+	// format file name
+	safeModelName := strings.ReplaceAll(modelName, "/", "_")
+	safeModelName = strings.ReplaceAll(safeModelName, ":", "-")
+	fileName := fmt.Sprintf("%s_output.%s", safeModelName, explicitFormat)
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	localPath := filepath.Join(cwd, fileName)
+
+	if err := os.WriteFile(localPath, audioBytes, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write local audio file: %w", err)
+	}
+
+	if shouldPlay {
+		cmdExec := exec.Command("aplay", localPath)
+		if err := cmdExec.Run(); err != nil {
+			fmt.Printf("Play error: %v (Hint: did you use 'format: wav' in your params?)\n", err)
+		}
+	}
+
+	var finalMessage string
+	if shouldSave {
+		if saveDir == "" {
+			saveDir = cwd
+		} else {
+			absSaveDir, err := filepath.Abs(saveDir)
+			if err == nil {
+				saveDir = absSaveDir
+			}
+
+			if err := os.MkdirAll(saveDir, 0755); err != nil {
+				return nil, fmt.Errorf("failed to create save directory: %w", err)
+			}
+
+			finalPath := filepath.Join(saveDir, fileName)
+			if err := os.WriteFile(finalPath, audioBytes, 0644); err != nil {
+				return nil, fmt.Errorf("failed to save file to target directory: %w", err)
+			}
+
+			if saveDir != cwd {
+				os.Remove(localPath)
+			}
+
+			finalMessage = fmt.Sprintf("Saved to directory: %s", finalPath)
+		}
+	} else {
+		defer os.Remove(localPath)
+		finalMessage = "TTS Task Completed (Audio not saved)"
+	}
+
+	if finalMessage != "" && shouldSave {
+		fmt.Println(finalMessage)
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "SUCCESS"
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	audioFile, ok := cmd.Params["audio_file"].(string)
+	if !ok {
+		return nil, fmt.Errorf("audio file not provided")
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+		"file":          audioFile,
+	}
+
+	asrConfigPayload := make(map[string]interface{})
+	if paramStr, ok := cmd.Params["param_str"].(string); ok && paramStr != "" {
+		var dynamicParams map[string]interface{}
+		if err := json.Unmarshal([]byte(paramStr), &dynamicParams); err != nil {
+			return nil, fmt.Errorf("param string must be valid JSON. Error: %w", err)
+		}
+		asrConfigPayload["params"] = dynamicParams
+	}
+
+	if len(asrConfigPayload) > 0 {
+		payload["asr_config"] = asrConfigPayload
+	}
+
+	url := "/audio/transcriptions"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ASR document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ASR document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var rawResult struct {
+		Code    int                    `json:"code"`
+		Message string                 `json:"message"`
+		Data    map[string]interface{} `json:"data"`
+	}
+
+	if err = json.Unmarshal(resp.Body, &rawResult); err != nil {
+		return nil, fmt.Errorf("ASR document failed: invalid JSON (%w)", err)
+	}
+
+	if rawResult.Code != 0 {
+		return nil, fmt.Errorf("%s", rawResult.Message)
+	}
+
+	var result CommonResponse
+	result.Code = rawResult.Code
+	result.Data = []map[string]interface{}{
+		{"text": rawResult.Data["text"].(string)},
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+func (c *RAGFlowClient) OCRUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	var filename string
+	var fileURL string
+	var ok bool
+	var fileContent []byte
+
+	filename, ok = cmd.Params["file"].(string)
+	if ok {
+		// read file and convert to base64
+		var err error
+		fileContent, err = os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file: %w", err)
+		}
+	} else {
+		fileURL, ok = cmd.Params["url"].(string)
+		if !ok {
+			return nil, fmt.Errorf("file or url not provided")
+		}
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+	}
+
+	if fileContent != nil {
+		payload["content"] = fileContent
+	} else {
+		payload["url"] = fileURL
+	}
+
+	url := "/file/ocr"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to OCR document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to OCR document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("OCR document failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName, modelName string
+
+	// Check if composite_model_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_model_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 3 {
+			return nil, fmt.Errorf("model name must be in format 'model@instance@provider'")
+		}
+		providerName = names[2]
+		instanceName = names[1]
+		modelName = names[0]
+	} else if c.CurrentModel != nil {
+		// Use current model if set
+		providerName = c.CurrentModel.Provider
+		instanceName = c.CurrentModel.Instance
+		modelName = c.CurrentModel.Model
+	} else {
+		return nil, fmt.Errorf("model name not provided and no current model set. Use 'use model' command first")
+	}
+
+	var filename string
+	var fileURL string
+	var ok bool
+	var fileContent []byte
+
+	filename, ok = cmd.Params["file"].(string)
+	if ok {
+		// For online file
+		if strings.HasPrefix(filename, "http://") || strings.HasPrefix(filename, "https://") {
+			fileURL = filename
+		} else {
+			// read file and convert to base64
+			var err error
+			fileContent, err = os.ReadFile(filename)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read file: %w", err)
+			}
+		}
+	} else {
+		fileURL, ok = cmd.Params["url"].(string)
+		if !ok {
+			return nil, fmt.Errorf("file or url not provided")
+		}
+	}
+
+	payload := map[string]interface{}{
+		"provider_name": providerName,
+		"instance_name": instanceName,
+		"model_name":    modelName,
+	}
+
+	if fileContent != nil {
+		payload["content"] = fileContent
+	} else {
+		payload["url"] = fileURL
+	}
+
+	url := "/file/parse"
+
+	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to PARSE document: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to PARSE document: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("PARSE document failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName string
+
+	// Check if composite_instance_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_instance_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 2 {
+			return nil, fmt.Errorf("model name must be in format 'instance@provider'")
+		}
+		providerName = names[1]
+		instanceName = names[0]
+	} else {
+		return nil, fmt.Errorf("no provider name or instance name")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)
+
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list tasks failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	var providerName, instanceName string
+
+	// Check if composite_instance_name is provided in command
+	if compositeModelName, ok := cmd.Params["composite_instance_name"].(string); ok && compositeModelName != "" {
+		names := strings.Split(compositeModelName, "@")
+		if len(names) != 2 {
+			return nil, fmt.Errorf("model name must be in format 'instance@provider'")
+		}
+		providerName = names[1]
+		instanceName = names[0]
+	} else {
+		return nil, fmt.Errorf("no provider name or instance name")
+	}
+
+	taskID, ok := cmd.Params["task_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("task id not provided")
+	}
+
+	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
+
+	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get task: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+	var result TaskResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get task failed: invalid JSON (%w)", err)
 	}
 	if result.Code != 0 {
 		return nil, fmt.Errorf("%s", result.Message)

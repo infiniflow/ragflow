@@ -127,7 +127,10 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
             string,
             any
           >;
-          const { user_id: _userId, code, ...rest } = credentials;
+          const code = credentials.code;
+          const rest = { ...credentials };
+          delete rest.user_id;
+          delete rest.code;
 
           const finalValue: Record<string, any> = {
             ...rest,
@@ -173,7 +176,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
         setWebStatus('error');
         setWebStatusMessage(errorMessage);
         clearWebState();
-      } catch (_error) {
+      } catch {
         message.error('Unable to retrieve authorization result.');
         setWebStatus('error');
         setWebStatusMessage('Unable to retrieve authorization result.');
@@ -304,7 +307,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
       } else {
         message.error(data.message || 'Failed to start Box authorization.');
       }
-    } catch (_error) {
+    } catch {
       message.error('Failed to start Box authorization.');
     } finally {
       setSubmitLoading(false);

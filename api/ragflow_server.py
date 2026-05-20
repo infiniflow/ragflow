@@ -19,8 +19,13 @@ print("Start RAGFlow server...")
 import time
 start_ts = time.time()
 
-import logging
 import os
+
+# LiteLLM fetches a model cost map from GitHub during import unless this is set.
+# The API server should not block startup on external network access.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+import logging
 import signal
 import sys
 import threading

@@ -411,6 +411,34 @@ func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []s
 	return nil, fmt.Errorf("no such method")
 }
 
+// TranscribeAudio transcribe audio
+func (h *HuggingFaceModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+func (z *HuggingFaceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (h *HuggingFaceModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+func (z *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (h *HuggingFaceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+// ParseFile parse file
+func (z *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
 func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -473,4 +501,12 @@ func (h *HuggingFaceModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 func (h *HuggingFaceModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := h.ListModels(apiConfig)
 	return err
+}
+
+func (z *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

@@ -155,6 +155,12 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminVersion(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
+	case "list_variables":
+		return c.ListVariables(cmd)
+	case "show_variable":
+		return c.ShowVariable(cmd)
+	case "set_variable":
+		return c.SetVariable(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "list_agents":
@@ -203,6 +209,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RunBenchmark(cmd)
 	case "list_datasets":
 		return c.ListDatasets(cmd)
+	case "list_dataset_documents":
+		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
 	case "create_token":
@@ -267,6 +275,14 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.EmbedUserText(cmd)
 	case "rarank_user_document":
 		return c.RerankUserDocument(cmd)
+	case "tts_user_command":
+		return c.TTSUserCommand(cmd)
+	case "asr_user_command":
+		return c.ASRUserCommand(cmd)
+	case "ocr_user_command":
+		return c.OCRUserCommand(cmd)
+	case "parse_file_user_command":
+		return c.ParseFileUserCommand(cmd)
 	case "check_provider_connection":
 		return c.CheckProviderConnection(cmd)
 	case "use_model":
@@ -279,6 +295,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ResetDefaultModel(cmd)
 	case "list_user_default_models":
 		return c.ListDefaultModels(cmd)
+	case "list_tasks_user_command":
+		return c.ListTasksUserCommand(cmd)
+	case "show_task_user_command":
+		return c.ShowTaskUserCommand(cmd)
 	// Dataset, metadata commands
 	case "create_dataset_table":
 		return c.CreateDatasetInDocEngine(cmd)

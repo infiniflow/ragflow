@@ -445,6 +445,34 @@ func (o *OllamaModel) Rerank(modelName *string, query string, documents []string
 	return nil, fmt.Errorf("no such method")
 }
 
+// TranscribeAudio transcribe audio
+func (o *OllamaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OllamaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (o *OllamaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OllamaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *OllamaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *OllamaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 
@@ -522,4 +550,12 @@ func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := o.ListModels(apiConfig)
 	return err
+}
+
+func (z *OllamaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OllamaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

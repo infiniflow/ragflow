@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -340,9 +344,6 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 
 	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
 	suffix := strings.TrimPrefix(c.URLSuffix.Embedding, "/")
-	if suffix == "" {
-		suffix = "v2/embed"
-	}
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	reqBody := map[string]interface{}{
@@ -417,9 +418,6 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 
 	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
 	suffix := strings.TrimPrefix(c.URLSuffix.Rerank, "/")
-	if suffix == "" {
-		suffix = "v2/rerank"
-	}
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	var topN = rerankConfig.TopN
@@ -486,24 +484,144 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 	return &rerankResponse, nil
 }
 
+// TranscribeAudio transcribe audio
+func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.ASR)
+
+	// multipart body
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// open audio file
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	// create multipart file field
+
+	if err = writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model name: %w", err)
+	}
+	// extra params
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+
+			var val string
+
+			switch v := value.(type) {
+			case string:
+				val = v
+			case bool:
+				val = strconv.FormatBool(v)
+			case int:
+				val = strconv.Itoa(v)
+			case int64:
+				val = strconv.FormatInt(v, 10)
+			case float32:
+				val = strconv.FormatFloat(float64(v), 'f', -1, 32)
+			case float64:
+				val = strconv.FormatFloat(v, 'f', -1, 64)
+			default:
+				val = fmt.Sprintf("%v", v)
+			}
+
+			if err = writer.WriteField(key, val); err != nil {
+				return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+			}
+		}
+	}
+
+	// all form fields (model, language) must appear before the file part in the multipart body
+	part, err := writer.CreateFormFile("file", filepath.Base(*file))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	if _, err := io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio file: %w", err)
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close writer: %w", err)
+	}
+
+	// build request
+	req, err := http.NewRequest("POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Cohere ASR API error: status %d, body: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Text string `json:"text"`
+	}
+
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &ASRResponse{Text: result.Text}, nil
+}
+
+func (z *CoHereModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (c *CoHereModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+func (z *CoHereModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (c *CoHereModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+// ParseFile parse file
+func (z *CoHereModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
 func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	baseURL := c.BaseURL[region]
-	if baseURL == "" {
-		baseURL = c.BaseURL["default"]
-	}
-	if baseURL == "" {
-		baseURL = "https://api.cohere.com"
-	}
-	suffix := c.URLSuffix.Models
-	if suffix == "" {
-		suffix = "v1/models"
-	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(suffix, "/"))
+	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Models)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -558,4 +676,12 @@ func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 func (c *CoHereModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := c.ListModels(apiConfig)
 	return err
+}
+
+func (z *CoHereModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *CoHereModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

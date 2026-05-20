@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
-import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
+import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
 import React, { forwardRef, useCallback } from 'react';
@@ -64,10 +64,9 @@ const ChatContainer = () => {
     resetSession,
   } = useSendNextSharedMessage(addEventList);
 
-  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
-    canvasId: conversationId as string,
   });
   const sendDisabled = useSendButtonDisabled(value);
 
@@ -191,8 +190,8 @@ const ChatContainer = () => {
                 <NextMessageInput
                   isShared
                   value={value}
-                  disabled={hasError || isWaitting}
-                  sendDisabled={sendDisabled || isWaitting}
+                  disabled={hasError || isWaiting}
+                  sendDisabled={sendDisabled || isWaiting}
                   resize="vertical"
                   conversationId={conversationId}
                   onInputChange={handleInputChange}
@@ -200,7 +199,7 @@ const ChatContainer = () => {
                   sendLoading={sendLoading}
                   stopOutputMessage={stopOutputMessage}
                   onUpload={handleUploadFile}
-                  isUploading={loading || isWaitting}
+                  isUploading={loading || isWaiting}
                 ></NextMessageInput>
               </div>
             </div>
