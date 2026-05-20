@@ -370,18 +370,33 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     dataset_tenant_id = _get_dataset_tenant_id(dataset_id)
     if not dataset_tenant_id:
+        logging.warning(
+            f"split_chunk dataset tenant missing: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+        )
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
+        logging.warning(
+            f"split_chunk document missing: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+        )
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     if doc.parser_id == ParserType.QA:
+        logging.warning(
+            f"split_chunk rejected for QA document: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+        )
         return get_error_data_result(message="Splitting is not supported for Q&A documents.")
     req = await get_request_json()
     if not req or "split_point" not in req:
+        logging.warning(
+            f"split_chunk missing split_point: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+        )
         return get_error_data_result(message="`split_point` is required")
     split_point = req.get("split_point")
     if not isinstance(split_point, int) or isinstance(split_point, bool):
+        logging.warning(
+            f"split_chunk invalid split_point type: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point!r}"
+        )
         return get_error_data_result(message="`split_point` must be an integer character offset")
 
     index = search.index_name(dataset_tenant_id)
@@ -400,6 +415,14 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
             f"split_chunk source missing: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
         )
         return get_error_data_result(message=f"Chunk {chunk_id} not found in document {document_id}.")
+    if source.get("img_id") or source.get("doc_type_kwd") == "image":
+        # Splitting cannot preserve the image stored under img_id, and the
+        # stored object is not copy-on-clone, so we would orphan it and end
+        # up with two plain-text halves. Refuse instead.
+        logging.warning(
+            f"split_chunk rejected for image chunk: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id}"
+        )
+        return get_error_data_result(message="Splitting image chunks is not supported.")
     content = source.get("content_with_weight", "")
     if split_point <= 0 or split_point >= len(content):
         logging.warning(
@@ -460,6 +483,11 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["kb_id"] = dataset_id
         d["docnm_kwd"] = doc.name
         d["doc_id"] = document_id
+        if "available_int" in source:
+            # Carry the source's enabled/disabled state forward so a split
+            # never silently re-enables a chunk that was disabled via
+            # switch_chunks.
+            d["available_int"] = source["available_int"]
         v, c = embd_mdl.encode([doc.name, half_content if not question_kwd else "\n".join(question_kwd)])
         v = 0.1 * v[0] + 0.9 * v[1]
         d[f"q_{len(v)}_vec"] = v.tolist()
@@ -474,12 +502,16 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message="Split produced duplicate ids; choose a different `split_point`.")
 
     # Write sequence: insert the two halves first, then delete the source
-    # and adjust counters. If anything after the insert fails, roll back the
-    # newly-inserted halves on a best-effort basis so we never leave the
-    # store with both the source and the new halves visible, or with drifted
-    # chunk counters.
-    settings.docStoreConn.insert(new_chunks, index, dataset_id)
+    # and adjust counters. If anything after the insert fails, roll back any
+    # state that already changed so we never leave the store with both the
+    # source and the new halves visible, with drifted chunk counters, or --
+    # most importantly -- with the source chunk permanently dropped because
+    # a later step (counter update) failed.
+    inserted_new_chunks = False
+    source_deleted = False
     try:
+        settings.docStoreConn.insert(new_chunks, index, dataset_id)
+        inserted_new_chunks = True
         deleted = settings.docStoreConn.delete(
             {"doc_id": document_id, "id": [chunk_id]},
             index,
@@ -489,6 +521,7 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
             raise RuntimeError(
                 f"split_chunk deleted source chunks {deleted}, expect 1"
             )
+        source_deleted = True
         DocumentService.increment_chunk_num(doc.id, doc.kb_id, total_tokens, 2, 0)
         try:
             DocumentService.decrement_chunk_num(document_id, dataset_id, 1, 1, 0)
@@ -499,18 +532,29 @@ async def split_chunk(tenant_id, dataset_id, document_id, chunk_id):
             raise
     except Exception as exc:
         logging.error(
-            f"split_chunk post-insert failure, rolling back: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point} new_ids={new_ids} error={exc}"
+            f"split_chunk post-insert failure, rolling back: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} split_point={split_point} new_ids={new_ids} inserted_new_chunks={inserted_new_chunks} source_deleted={source_deleted} error={exc}"
         )
-        try:
-            settings.docStoreConn.delete(
-                {"doc_id": document_id, "id": new_ids},
-                index,
-                dataset_id,
-            )
-        except Exception as rb_exc:
-            logging.error(
-                f"split_chunk rollback failed to delete new chunks: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} new_ids={new_ids} error={rb_exc}"
-            )
+        if inserted_new_chunks:
+            try:
+                settings.docStoreConn.delete(
+                    {"doc_id": document_id, "id": new_ids},
+                    index,
+                    dataset_id,
+                )
+            except Exception as rb_exc:
+                logging.error(
+                    f"split_chunk rollback failed to delete new chunks: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} new_ids={new_ids} error={rb_exc}"
+                )
+        if source_deleted:
+            # The original chunk was already removed from the store but a
+            # later step failed. Re-insert the captured source record so a
+            # transient counter failure cannot permanently drop the chunk.
+            try:
+                settings.docStoreConn.insert([source], index, dataset_id)
+            except Exception as restore_exc:
+                logging.error(
+                    f"split_chunk rollback failed to restore source chunk: dataset_id={dataset_id} document_id={document_id} chunk_id={chunk_id} error={restore_exc}"
+                )
         if isinstance(exc, RuntimeError):
             return get_error_data_result(message=str(exc))
         return server_error_response(exc)
