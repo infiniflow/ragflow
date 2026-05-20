@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import asyncio
-import binascii
 import logging
 import re
 import time
@@ -51,6 +50,7 @@ from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
+from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
 
@@ -1427,14 +1427,7 @@ def tts(tts_mdl, text):
     text = clean_tts_text(text)
     if not text:
         return None
-    bin = b""
-    try:
-        for chunk in tts_mdl.tts(text):
-            bin += chunk
-    except Exception as e:
-        logging.error(f"TTS failed: {e}, text={text!r}")
-        return None
-    return binascii.hexlify(bin).decode("utf-8")
+    return synthesize_with_cache(tts_mdl, text)
 
 
 class _ThinkStreamState:
