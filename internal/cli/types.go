@@ -102,6 +102,7 @@ const (
 	TokenASR
 	TokenTTS
 	TokenOCR
+	TokenDocParse
 	TokenEmbed
 	TokenText
 	TokenQuery
