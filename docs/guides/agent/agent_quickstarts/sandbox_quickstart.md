@@ -33,6 +33,14 @@ Configure sandbox providers from the admin page:
 RAGFlow supports multiple sandbox providers. Configure the active provider in
 Admin > Sandbox Settings after the services are up.
 
+<img width="2547" height="1475" alt="admin-sandbox-settings" src="https://github.com/user-attachments/assets/59ab948e-b98a-45a8-9db4-f1afbf6c3685" />
+
+## Provider options
+
+
+RAGFlow supports multiple sandbox providers. Configure the active provider in
+Admin > Sandbox Settings after the services are up.
+
 - `self_managed`: Runs code inside Docker-managed sandbox containers. This is the default provider.
 - `local`: Runs code as local Python or Node.js subprocesses. Use this only in trusted development environments.
 - `ssh`: Runs code on a remote machine over SSH.
