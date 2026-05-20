@@ -111,7 +111,7 @@ function DelimiterChip({ block, onRemove }: ChipProps) {
         type="button"
         aria-label={t('knowledgeDetails.delimiterRemove')}
         onClick={onRemove}
-        className="rounded-sm opacity-60 hover:opacity-100 hover:text-state-error focus:outline-none"
+        className="rounded-sm opacity-60 hover:opacity-100 hover:text-state-error outline-none focus-visible:ring-2 focus-visible:ring-state-error/40 focus-visible:ring-offset-1 focus-visible:opacity-100"
       >
         <X className="size-3" />
       </button>
