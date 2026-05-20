@@ -83,10 +83,11 @@ func (a *AvianModel) baseURLForRegion(region string) (string, error) {
 	if !ok || base == "" {
 		return "", fmt.Errorf("avian: no base URL configured for region %q", region)
 	}
-	// Strip a trailing "/" so callers can safely do
-	// fmt.Sprintf("%s/%s", base, suffix) without producing "//" in
-	// the path. The shipped config has no trailing slash, but a
-	// tenant can override the URL per-instance and may add one.
+	// Tenants may paste in a base URL that already includes the API
+	// version (".../v1" or ".../v1/"); callers append "v1/..." so we
+	// strip those plus any trailing "/" to avoid "/v1/v1/..." paths.
+	base = strings.TrimSuffix(base, "/")
+	base = strings.TrimSuffix(base, "/v1")
 	return strings.TrimSuffix(base, "/"), nil
 }
 
