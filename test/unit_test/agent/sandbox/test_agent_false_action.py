@@ -127,3 +127,23 @@ async def test_invoke_async_baseline_success(agent_setup):
         assert mock_agent.output("content") == "Mocked LLM Response"
         assert mock_agent.error() is None
     logger.info("test_invoke_async_baseline_success passed successfully.")
+
+@pytest.mark.asyncio
+@pytest.mark.p1
+async def test_invoke_async_normal_greeting_bypasses_trapdoor(agent_setup):
+    """CASE 5: Proves normal conversational responses are allowed when tools are not called."""
+    logger.info("Executing test_invoke_async_normal_greeting_bypasses_trapdoor")
+    mock_agent, ToolExecutionState = agent_setup
+    
+    # Override the LLM to output a standard, non-action greeting
+    async def mock_greeting_generate(*args, **kwargs):
+        return "Hello! I am ready to assist you today."
+    mock_agent._generate_async = mock_greeting_generate
+
+    with patch.object(mock_agent, '_get_tool_execution_state', return_value=ToolExecutionState.NOT_CALLED) as mock_get_state:
+        await mock_agent._invoke_async(user_prompt="Hi")
+        
+        logger.debug("Evaluating assertions for normal greeting state.")
+        mock_get_state.assert_called_once()
+        assert mock_agent.output("content") == "Hello! I am ready to assist you today."
+        assert mock_agent.error() is None
