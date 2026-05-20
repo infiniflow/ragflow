@@ -349,6 +349,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenParser, Value: ident}
 	case "PIPELINE":
 		return Token{Type: TokenPipeline, Value: ident}
+	case "GET":
+		return Token{Type: TokenGet, Value: ident}
 	case "SEARCH":
 		return Token{Type: TokenSearch, Value: ident}
 	case "CURRENT":
