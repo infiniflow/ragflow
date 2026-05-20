@@ -396,7 +396,7 @@ class Base(ABC):
                     logging.info(f"{self.tools=}")
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += total_token_count_from_response(response)
-                    if any([not response.choices, not response.choices[0].message]):
+                    if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
@@ -685,6 +685,8 @@ class BaiChuanChat(Base):
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
             **gen_conf,
         )
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             if is_chinese([ans]):
@@ -831,6 +833,8 @@ class MistralChat(Base):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
             if is_chinese(ans):
@@ -1419,7 +1423,7 @@ class LiteLLMBase(ABC):
                     timeout=self.timeout,
                 )
 
-                if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+                if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
                     return "", 0
                 ans = response.choices[0].message.content.strip()
                 if response.choices[0].finish_reason == "length":
