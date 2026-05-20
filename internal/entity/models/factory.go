@@ -109,6 +109,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewDeepInfraModel(baseURL, urlSuffix), nil
 	case "mineru":
 		return NewMinerUModel(baseURL, urlSuffix), nil
+	case "jiekouai":
+		return NewJieKouAIModel(baseURL, urlSuffix), nil
+	case "302.ai":
+		return NewAI302Model(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
