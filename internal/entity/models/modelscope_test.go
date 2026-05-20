@@ -91,10 +91,12 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("read body: %v", err)
+			http.Error(w, "read error", http.StatusBadRequest)
 			return
 		}
 		if err := json.Unmarshal(raw, &seen); err != nil {
 			t.Errorf("unmarshal request: %v", err)
+			http.Error(w, "unmarshal error", http.StatusBadRequest)
 			return
 		}
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"pong"}}]}`)
@@ -174,8 +176,17 @@ func TestModelScopeStreamHappyPath(t *testing.T) {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		var seen map[string]interface{}
-		raw, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(raw, &seen)
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			http.Error(w, "read error", http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(raw, &seen); err != nil {
+			t.Errorf("unmarshal request: %v", err)
+			http.Error(w, "unmarshal error", http.StatusBadRequest)
+			return
+		}
 		if seen["stream"] != true {
 			t.Errorf("stream=%v, want true", seen["stream"])
 		}
