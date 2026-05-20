@@ -415,7 +415,7 @@ async def list_chat_owners():
         else:
             effective_owner_ids = list(authorized_owner_ids)
 
-        owners = DialogService.get_owner_summaries_by_tenant_ids(effective_owner_ids)
+        owners = await thread_pool_exec(DialogService.get_owner_summaries_by_tenant_ids, effective_owner_ids)
         return get_json_result(data={"owners": owners})
     except Exception as ex:
         return server_error_response(ex)
