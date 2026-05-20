@@ -100,6 +100,7 @@ interface ChipProps {
 }
 
 function DelimiterChip({ block, onRemove }: ChipProps) {
+  const { t } = useTranslation();
   return (
     <Badge
       variant="secondary"
@@ -108,7 +109,7 @@ function DelimiterChip({ block, onRemove }: ChipProps) {
       <span>{describeBlock(block)}</span>
       <button
         type="button"
-        aria-label="remove delimiter"
+        aria-label={t('knowledgeDetails.delimiterRemove')}
         onClick={onRemove}
         className="rounded-sm opacity-60 hover:opacity-100 hover:text-state-error focus:outline-none"
       >

@@ -569,6 +569,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
       delimiterAddPlaceholder: 'Type and press Enter',
+      delimiterRemove: 'Remove delimiter',
       delimiterPresetsLabel: 'Presets:',
       delimiterPresetNewline: 'Newline',
       delimiterPresetTab: 'Tab',
