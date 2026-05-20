@@ -23,13 +23,13 @@ import os
 import subprocess
 import sys
 import threading
-import uuid
+import secrets
 
 from concurrent.futures import ThreadPoolExecutor
 
 
 def get_uuid():
-    return uuid.uuid1().hex
+    return secrets.token_hex(16)
 
 
 async def download_img(url):
