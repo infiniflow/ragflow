@@ -39,11 +39,7 @@ export function ApiKeyField({ placeholder }: IApiKeyFieldProps) {
               placeholder={placeholder}
               suffix={
                 field.value ? (
-                  <CopyToClipboard
-                    text={String(field.value)}
-                    type="button"
-                    tabIndex={-1}
-                  />
+                  <CopyToClipboard text={String(field.value)} type="button" />
                 ) : null
               }
             ></Input>
