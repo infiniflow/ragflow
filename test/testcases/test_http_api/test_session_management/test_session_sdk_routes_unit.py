@@ -2054,6 +2054,7 @@ def _load_chat_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
 
     async def _thread_pool_exec(func, *args, **kwargs):
+        """Run func synchronously, standing in for the real async thread-pool executor."""
         return func(*args, **kwargs)
 
     common_misc_mod = ModuleType("common.misc_utils")
@@ -2075,6 +2076,7 @@ def _load_chat_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.chunk_feedback_service", chunk_feedback_mod)
 
     def _make_conv(conv_id):
+        """Return a minimal conversation stub for ConversationService.get_by_id mocks."""
         return SimpleNamespace(
             id=conv_id,
             dialog_id="chat-1",
@@ -2183,6 +2185,7 @@ def test_create_session_user_id_not_spoofable(monkeypatch):
     saved_kwargs = {}
 
     def _capture_save(**kwargs):
+        """Capture ConversationService.save arguments for later assertion."""
         saved_kwargs.update(kwargs)
         return True
 
@@ -2208,6 +2211,7 @@ def test_session_completion_user_id_not_spoofable(monkeypatch):
     captured_user_ids = []
 
     async def _spy_create_session(_chat_id, _dialog, user_id):
+        """Record the user_id passed to _create_session_for_completion, then abort early."""
         captured_user_ids.append(user_id)
         raise RuntimeError("stop-sentinel")
 

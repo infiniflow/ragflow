@@ -662,6 +662,7 @@ async def bulk_delete_chats():
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @login_required
 async def create_session(chat_id):
+    """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -1058,6 +1059,7 @@ async def recommendation():
 @login_required
 @validate_request("messages")
 async def session_completion(chat_id_in_arg=""):
+    """Handle chat completion requests, streaming or non-streaming, scoped to the authenticated user."""
     req = await get_request_json()
     msg = []
     for m in req["messages"]:
@@ -1124,12 +1126,14 @@ async def session_completion(chat_id_in_arg=""):
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
+            """Wrap a raw answer dict with session and chat identifiers."""
             formatted = structure_answer(conv, ans, message_id, session_id)
             if chat_id:
                 formatted["chat_id"] = chat_id
             return formatted
 
         async def stream():
+            """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
                 async for ans in async_chat(dia, msg, True, **req):
