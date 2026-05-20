@@ -95,7 +95,7 @@ export const IconMap = {
   [LLMFactory.StepFun]: 'stepfun',
   [LLMFactory.NVIDIA]: 'nvidia',
   [LLMFactory.LMStudio]: 'lm-studio',
-  [LLMFactory.OMLX]: 'openai-api',
+  [LLMFactory.OMLX]: 'omlx',
   [LLMFactory.OpenAiAPICompatible]: 'openai-api',
   [LLMFactory.Cohere]: 'cohere',
   [LLMFactory.LeptonAI]: 'lepton',

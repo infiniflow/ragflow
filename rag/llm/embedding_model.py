@@ -797,7 +797,7 @@ class LmStudioEmbed(LocalAIEmbed):
         self.model_name = model_name
 
 
-class OMLXEmbed(LocalAIEmbed):
+class OMLXEmbed(OpenAIEmbed):
     _FACTORY_NAME = "oMLX"
 
     def __init__(self, key, model_name, base_url):
@@ -805,8 +805,8 @@ class OMLXEmbed(LocalAIEmbed):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key or "omlx", base_url=base_url)
-        self.model_name = model_name
-        logging.info("[oMLX] Embedding initialized with model %s at %s", model_name, base_url)
+        self.model_name = model_name.split("___")[0]
+        logging.info("[oMLX] Embedding initialized with model %s at %s", self.model_name, base_url)
 
 
 class OpenAI_APIEmbed(OpenAIEmbed):
