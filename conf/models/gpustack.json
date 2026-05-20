@@ -4,5 +4,5 @@
     "chat": "v1/chat/completions",
     "models": "v1/models"
   },
-  "class": "gpustack"
+  "class": "local"
 }
