@@ -7,7 +7,9 @@
     "chat": "v1/chat/completions",
     "models": "api/models",
     "embedding": "v1/embeddings",
-    "balance": "https://query.cometapi.com/user/quota"
+    "balance": "https://query.cometapi.com/user/quota",
+    "tts": "v1/audio/speech",
+    "asr": "v1/audio/transcriptions"
   },
   "class": "cometapi",
   "models": [
@@ -104,6 +106,19 @@
       "max_tokens": 8191,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "whisper-1",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "tts-1",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
       ]
     }
   ]

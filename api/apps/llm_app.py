@@ -181,12 +181,57 @@ async def add_llm():
     from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
     factory = req["llm_factory"]
-    api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
     timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
 
     if factory not in [f.name for f in get_allowed_llm_factories()]:
         return get_data_error_result(message=f"LLM factory {factory} is not allowed")
+
+    # When editing an existing model the frontend leaves the api_key input blank
+    # and strips it from the payload, so req["api_key"] is missing. Without a
+    # fallback the validation below would run with the "x" placeholder and the
+    # upstream provider would return "Your API key is invalid" — recover the
+    # saved key from DB. Use only the *decoded* api_key (never the raw JSON
+    # payload) so factories that pack extra fields into api_key
+    # (OpenRouter, Bedrock, …) can rebuild their JSON correctly with whatever
+    # new fields the user did provide via apikey_json.
+    if req.get("api_key") is None and llm_name:
+        _LLM_NAME_SUFFIX = {
+            "LocalAI": "___LocalAI",
+            "HuggingFace": "___HuggingFace",
+            "OpenAI-API-Compatible": "___OpenAI-API",
+            "VLLM": "___VLLM",
+        }
+        saved_llm_name = llm_name + _LLM_NAME_SUFFIX.get(factory, "")
+        logging.debug(
+            "add_llm: attempting api_key recovery factory=%s llm_name=%s saved_llm_name=%s tenant_id=%s",
+            factory, llm_name, saved_llm_name, current_user.id,
+        )
+        existing_llms = TenantLLMService.query(
+            tenant_id=current_user.id,
+            llm_factory=factory,
+            llm_name=saved_llm_name,
+        )
+        logging.debug(
+            "add_llm: api_key recovery query matched=%d factory=%s saved_llm_name=%s",
+            len(existing_llms) if existing_llms else 0, factory, saved_llm_name,
+        )
+        if existing_llms:
+            existing_api_key, _, _ = TenantLLMService._decode_api_key_config(
+                existing_llms[0].api_key
+            )
+            logging.debug(
+                "add_llm: api_key recovery decoded=%s factory=%s saved_llm_name=%s",
+                "present" if existing_api_key else "absent", factory, saved_llm_name,
+            )
+            if existing_api_key:
+                req["api_key"] = existing_api_key
+                logging.info(
+                    "add_llm: recovered saved api_key from existing record factory=%s saved_llm_name=%s tenant_id=%s",
+                    factory, saved_llm_name, current_user.id,
+                )
+
+    api_key = req.get("api_key", "x")
 
     def apikey_json(keys):
         nonlocal req
