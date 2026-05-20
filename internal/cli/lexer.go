@@ -375,6 +375,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDimension, Value: ident}
 	case "OCR":
 		return Token{Type: TokenOCR, Value: ident}
+	case "DOC_PARSE":
+		return Token{Type: TokenDocParse, Value: ident}
 	case "ASYNC":
 		return Token{Type: TokenAsync, Value: ident}
 	case "SYNC":

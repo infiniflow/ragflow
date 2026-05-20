@@ -862,6 +862,9 @@ func (p *Parser) parseAddModel() (*Command, error) {
 			case TokenOCR:
 				p.nextToken()
 				modelTypes = append(modelTypes, "ocr")
+			case TokenDocParse:
+				p.nextToken()
+				modelTypes = append(modelTypes, "doc_parse")
 			case TokenTTS:
 				p.nextToken()
 				modelTypes = append(modelTypes, "tts")

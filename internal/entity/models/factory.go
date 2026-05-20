@@ -113,6 +113,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewJieKouAIModel(baseURL, urlSuffix), nil
 	case "302.ai":
 		return NewAI302Model(baseURL, urlSuffix), nil
+	case "mineru_local":
+		return NewMinerLocalUModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
