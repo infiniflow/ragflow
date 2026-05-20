@@ -373,10 +373,13 @@ def test_chunk_delete_basic_contract(rest_client, create_document):
     ]
 
     for scenario_name, payload, expected_code, expected_message, remaining in cases:
-        _reset_chunk_batch(rest_client, base_path)
+        baseline_id, _ = _reset_chunk_batch(rest_client, base_path)
         request_body = payload
-        generated_ids = rest_client.get(base_path).json()["data"]["chunks"][1:]
-        generated_ids = [chunk["id"] for chunk in generated_ids]
+        generated_ids = [
+            chunk["id"]
+            for chunk in rest_client.get(base_path).json()["data"]["chunks"]
+            if chunk["id"] != baseline_id
+        ]
         if callable(payload):
             request_body = payload(generated_ids)
         res = rest_client.delete(base_path, json=request_body)
