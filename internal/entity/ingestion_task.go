@@ -21,7 +21,7 @@ type IngestionTask struct {
 	DocumentID string  `gorm:"column:document_id;size:32;not null;index" json:"document_id"`
 	UserID     string  `gorm:"column:user_id;size:32;not null;" json:"user_id"`
 	Config     JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
-	TryCount   int     `gorm:"column:try_count;default:0" json:"try_count"`
+	TryCount   int     `gorm:"column:try_count;type:int;default:0" json:"try_count"`
 	BaseModel
 }
 
@@ -30,14 +30,41 @@ func (IngestionTask) TableName() string {
 	return "ingestion_task"
 }
 
+type IngestionTasklet struct {
+	ID       string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TaskID   string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
+	Config   JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
+	TryCount int     `gorm:"column:try_count;type:int;default:0" json:"try_count"`
+	BaseModel
+}
+
+// TableName specify table name
+func (IngestionTasklet) TableName() string {
+	return "ingestion_tasklet"
+}
+
 type IngestionTaskLog struct {
-	ID     int    `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskID string `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Stage  int    `gorm:"column:top_k;default:0;not null;index" json:"tenant_id"`
+	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TaskID     string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
+	Stage      int     `gorm:"column:stage;type:int;default:0;not null;" json:"stage"`
+	DataSchema JSONMap `gorm:"column:config;type:longtext;not null" json:"data_schema"`
 	BaseModel
 }
 
 // TableName specify table name
 func (IngestionTaskLog) TableName() string {
 	return "ingestion_task_log"
+}
+
+type IngestionTaskletLog struct {
+	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TaskletID  string  `gorm:"column:tasklet_id;size:32;not null;index" json:"task_id"`
+	Stage      int     `gorm:"column:stage;type:int;default:0;not null;" json:"stage"`
+	DataSchema JSONMap `gorm:"column:config;type:longtext;not null" json:"data_schema"`
+	BaseModel
+}
+
+// TableName specify table name
+func (IngestionTaskletLog) TableName() string {
+	return "ingestion_tasklet_log"
 }
