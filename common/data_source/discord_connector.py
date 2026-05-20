@@ -6,7 +6,6 @@ import os
 from contextlib import suppress
 from datetime import datetime, timezone
 from queue import Queue
-from threading import Thread
 from typing import Any, AsyncIterable, Iterable
 
 from discord import Client, MessageType
