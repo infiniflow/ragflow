@@ -334,24 +334,22 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		if !ok {
 			continue
 		}
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
 		// Reasoning first, content second — matches the wire ordering
 		// for reasoning models and lets UIs render the chain-of-thought
-		// before the visible token.
-		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
-			rr := r
-			if err := sender(nil, &rr); err != nil {
-				return err
+		// before the visible token. A terminal frame may carry
+		// finish_reason without a delta, so don't skip when delta is absent.
+		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
+			if r, ok := delta["reasoning_content"].(string); ok && r != "" {
+				rr := r
+				if err := sender(nil, &rr); err != nil {
+					return err
+				}
 			}
-		}
-		if c, ok := delta["content"].(string); ok && c != "" {
-			cc := c
-			if err := sender(&cc, nil); err != nil {
-				return err
+			if c, ok := delta["content"].(string); ok && c != "" {
+				cc := c
+				if err := sender(&cc, nil); err != nil {
+					return err
+				}
 			}
 		}
 		if finish, ok := firstChoice["finish_reason"].(string); ok && finish != "" {
