@@ -678,7 +678,7 @@ async def create_session(chat_id):
             "dialog_id": chat_id,
             "name": name,
             "message": [{"role": "assistant", "content": dia.prompt_config.get("prologue", "")}],
-            "user_id": req.get("user_id", current_user.id),
+            "user_id": current_user.id,
             "reference": [],
         }
         ConversationService.save(**conv)
@@ -1100,7 +1100,7 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, req.get("user_id", current_user.id))
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
             conv.message = deepcopy(req["messages"])
         else:
