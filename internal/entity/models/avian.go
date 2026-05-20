@@ -303,13 +303,12 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 		}
 
 		choice := event.Choices[0]
-		if choice.Delta.ReasoningContent != "" {
-			if err := sender(nil, &choice.Delta.ReasoningContent); err != nil {
+		if reasoning := choice.Delta.ReasoningContent; reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
 				return err
 			}
-		}
-		if choice.Delta.Reasoning != "" {
-			if err := sender(nil, &choice.Delta.Reasoning); err != nil {
+		} else if reasoning := choice.Delta.Reasoning; reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
 				return err
 			}
 		}
