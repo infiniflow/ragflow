@@ -50,7 +50,6 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
-	knowledgebaseHandler *handler.KnowledgebaseHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
@@ -63,23 +62,22 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 ) *Router {
 	return &Router{
-		authHandler:          authHandler,
-		userHandler:          userHandler,
-		tenantHandler:        tenantHandler,
-		documentHandler:      documentHandler,
-		datasetsHandler:      datasetsHandler,
-		systemHandler:        systemHandler,
-		knowledgebaseHandler: knowledgebaseHandler,
-		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
-		chatHandler:          chatHandler,
-		chatSessionHandler:   chatSessionHandler,
-		connectorHandler:     connectorHandler,
-		searchHandler:        searchHandler,
-		fileHandler:          fileHandler,
-		memoryHandler:        memoryHandler,
-		skillSearchHandler:   skillSearchHandler,
-		providerHandler:      providerHandler,
+		authHandler:        authHandler,
+		userHandler:        userHandler,
+		tenantHandler:      tenantHandler,
+		documentHandler:    documentHandler,
+		datasetsHandler:    datasetsHandler,
+		systemHandler:      systemHandler,
+		chunkHandler:       chunkHandler,
+		llmHandler:         llmHandler,
+		chatHandler:        chatHandler,
+		chatSessionHandler: chatSessionHandler,
+		connectorHandler:   connectorHandler,
+		searchHandler:      searchHandler,
+		fileHandler:        fileHandler,
+		memoryHandler:      memoryHandler,
+		skillSearchHandler: skillSearchHandler,
+		providerHandler:    providerHandler,
 	}
 }
 
@@ -144,12 +142,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me", r.userHandler.Info)
 				// User settings endpoint
 				users.PATCH("/me", r.userHandler.Setting)
+				// User tenant info endpoint
+				users.GET("/me/models", r.tenantHandler.TenantInfo)
+				// User set tenant info endpoint
+				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
 			}
 
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
 			}
+
+			v1.GET("/tenant/list", r.tenantHandler.TenantList)
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -159,6 +163,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+				documents.POST("/parse", r.documentHandler.ParseDocuments)
 			}
 
 			// Chat routes
@@ -174,9 +179,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
+				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
+				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
 				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+
+				// Dataset documents
+				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 			}
 
 			// Search routes
@@ -196,6 +206,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
+				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
@@ -263,6 +274,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckProviderConnection)
+				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
+				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
@@ -275,12 +288,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
 				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
 				v1.POST("/file/ocr", r.providerHandler.OCRFile)
+				v1.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")
 			{
 				model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+			}
+
+			connector := v1.Group("/connectors")
+			{
+				connector.GET("/", r.connectorHandler.ListConnectors)
 			}
 
 			system := v1.Group("/system")

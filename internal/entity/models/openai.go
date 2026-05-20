@@ -37,11 +37,6 @@ type OpenAIModel struct {
 	httpClient *http.Client // Reusable HTTP client with connection pool
 }
 
-func (o *OpenAIModel) ParseFile() {
-	//TODO implement me
-	panic("implement me")
-}
-
 // NewOpenAIModel creates a new OpenAI model instance.
 //
 // We clone http.DefaultTransport so we keep Go's defaults for
@@ -608,8 +603,8 @@ func (z *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
@@ -618,6 +613,19 @@ func (z *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 // OCRFile OCR file
-func (m *OpenAIModel) OCRFile(modelName *string, fileContent *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (m *OpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *OpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

@@ -1,0 +1,8 @@
+{
+  "name": "xinference",
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models"
+  },
+  "class": "local"
+}
