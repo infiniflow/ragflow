@@ -49,6 +49,10 @@ func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, regi
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
 	}
 
+	if strings.TrimSpace(baseURL) == "" {
+		return driver, nil
+	}
+
 	regionKey := region
 	if regionKey == "" {
 		regionKey = "default"

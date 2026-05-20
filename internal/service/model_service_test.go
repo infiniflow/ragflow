@@ -71,6 +71,31 @@ func TestNewModelDriverForBaseURLUsesProvidedRegion(t *testing.T) {
 	}
 }
 
+func TestNewModelDriverForBaseURLSkipsEmptyBaseURL(t *testing.T) {
+	for _, baseURL := range []string{"", "   "} {
+		t.Run(baseURL, func(t *testing.T) {
+			called := false
+			driver := &stubModelDriver{
+				newInstance: func(map[string]string) modelModule.ModelDriver {
+					called = true
+					return nil
+				},
+			}
+
+			got, err := newModelDriverForBaseURL(driver, "deepseek", "default", baseURL)
+			if err != nil {
+				t.Fatalf("newModelDriverForBaseURL returned error: %v", err)
+			}
+			if got != driver {
+				t.Fatalf("expected original driver %p, got %p", driver, got)
+			}
+			if called {
+				t.Fatal("expected empty base URL to skip NewInstance")
+			}
+		})
+	}
+}
+
 func TestNewModelDriverForBaseURLRejectsNilInstance(t *testing.T) {
 	driver := &stubModelDriver{
 		newInstance: func(map[string]string) modelModule.ModelDriver {
