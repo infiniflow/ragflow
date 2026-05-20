@@ -1,4 +1,5 @@
 import { FileUploadProps } from '@/components/file-upload';
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
 import {
@@ -30,6 +31,8 @@ import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
 
 export const enum ChatApiAction {
   FetchChatList = 'fetchChatList',
+  FetchAllChatList = 'fetchAllChatList',
+  FetchOwnerList = 'fetchOwnerList',
   DeleteChat = 'deleteChat',
   CreateChat = 'createChat',
   UpdateChat = 'updateChat',
@@ -50,6 +53,12 @@ export const enum ChatApiAction {
   CreateSharedConversation = 'createSharedConversation',
 }
 
+export interface IChatOwnerSummary {
+  tenant_id: string;
+  nickname?: string;
+  tenant_avatar?: string;
+}
+
 export const useGetChatSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
 
@@ -65,6 +74,8 @@ export const useFetchChatList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const ownerIds = (filterValue.owner as string[] | undefined) ?? [];
 
   const {
     data,
@@ -76,6 +87,7 @@ export const useFetchChatList = () => {
       {
         debouncedSearchString,
         ...pagination,
+        ownerIds,
       },
     ],
     initialData: { chats: [], total: 0 },
@@ -88,7 +100,9 @@ export const useFetchChatList = () => {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
+            ...(ownerIds.length ? { owner_ids: ownerIds } : {}),
           },
+          paramsSerializer: { indexes: null },
           data: {},
         },
         true,
@@ -113,7 +127,34 @@ export const useFetchChatList = () => {
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
+    filterValue,
+    handleFilterSubmit,
   };
+};
+
+export const useFetchAllChatList = (): {
+  list: IChatOwnerSummary[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery<IChatOwnerSummary[]>({
+    queryKey: [ChatApiAction.FetchOwnerList],
+    initialData: [],
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data } = await chatService.listChatOwners(
+        {
+          params: {},
+          data: {},
+        },
+        true,
+      );
+
+      return data?.data?.owners ?? [];
+    },
+  });
+
+  return { list: data, loading };
 };
 
 export const useDeleteChat = () => {
@@ -131,6 +172,9 @@ export const useDeleteChat = () => {
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: [ChatApiAction.FetchChatList],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [ChatApiAction.FetchOwnerList],
         });
         message.success(t('message.deleted'));
       }
@@ -157,6 +201,9 @@ export const useCreateChat = () => {
         queryClient.invalidateQueries({
           exact: false,
           queryKey: [ChatApiAction.FetchChatList],
+        });
+        queryClient.invalidateQueries({
+          queryKey: [ChatApiAction.FetchOwnerList],
         });
         message.success(t('message.created'));
       }

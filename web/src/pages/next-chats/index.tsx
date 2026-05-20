@@ -13,10 +13,19 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 import { ChatCard } from './chat-card';
 import { useRenameChat } from './hooks/use-rename-chat';
+import { useSelectOwners } from './use-select-owners';
 
 export default function ChatList() {
-  const { data, setPagination, pagination, handleInputChange, searchString } =
-    useFetchChatList();
+  const {
+    data,
+    setPagination,
+    pagination,
+    handleInputChange,
+    searchString,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchChatList();
+  const owners = useSelectOwners();
   const { t } = useTranslation();
   const {
     initialChatName,
@@ -58,6 +67,9 @@ export default function ChatList() {
               icon="chats"
               onSearchChange={handleInputChange}
               searchString={searchString}
+              value={filterValue}
+              filters={owners}
+              onChange={handleFilterSubmit}
             >
               <Button data-testid="create-chat" onClick={handleShowCreateModal}>
                 <Plus className="size-[1em]" />
