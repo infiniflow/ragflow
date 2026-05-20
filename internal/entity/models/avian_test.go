@@ -32,6 +32,9 @@ func newAvianServer(t *testing.T, handler func(t *testing.T, r *http.Request, bo
 			t.Errorf("expected Authorization=Bearer test-key, got %q", got)
 			return
 		}
+		// The Avian client sets Content-Type: application/json on every
+		// request, including the GET to /v1/models (see avian.go ListModels),
+		// so this assertion intentionally applies even when there's no body.
 		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
 			t.Errorf("expected Content-Type to start with application/json, got %q", got)
 			return
@@ -91,6 +94,12 @@ func TestAvianChatHappyPath(t *testing.T) {
 		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
+		}
+		if body["top_p"] != 0.9 {
+			t.Errorf("top_p=%v, want 0.9", body["top_p"])
+		}
+		if stopSlice, ok := body["stop"].([]interface{}); !ok || len(stopSlice) != 1 || stopSlice[0] != "END" {
+			t.Errorf("stop=%v, want [END]", body["stop"])
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
