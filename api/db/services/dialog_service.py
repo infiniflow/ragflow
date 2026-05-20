@@ -572,6 +572,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     check_llm_ts = timer()
 
     langfuse_tracer = None
+    langfuse_generation = None
     trace_context = {}
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
@@ -783,7 +784,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
     async def decorate_answer(answer):
-        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
+        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_generation
 
         refs = []
         ans = answer.split("</think>")
@@ -855,8 +856,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             f"  - Token speed: {int(tk_num / (generate_result_time_cost / 1000.0))}/s"
         )
 
-        # Add a condition check to call the end method only if langfuse_tracer exists
-        if langfuse_tracer and "langfuse_generation" in locals():
+        # Add a condition check to call the end method only if langfuse_generation exists
+        if langfuse_generation is not None:
             langfuse_output = "\n" + re.sub(r"^.*?(### Query:.*)", r"\1", prompt, flags=re.DOTALL)
             langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
             langfuse_generation.update(
@@ -872,13 +873,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
-        langfuse_generation = langfuse_tracer.start_observation(
-            as_type="generation",
-            trace_context=trace_context,
-            name="chat",
-            model=llm_model_config["llm_name"],
-            input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
-        )
+        try:
+            langfuse_generation = langfuse_tracer.start_observation(
+                as_type="generation",
+                trace_context=trace_context,
+                name="chat",
+                model=llm_model_config["llm_name"],
+                input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
+            )
+        except Exception as e:  # noqa: BLE001 - tracing must not break chat flow
+            logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
+            langfuse_tracer = None
+            langfuse_generation = None
 
     if stream:
         if llm_type == "chat":
