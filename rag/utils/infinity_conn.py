@@ -294,10 +294,7 @@ class InfinityConnection(InfinityConnectionBase):
             df_list = list()
             assert isinstance(knowledgebase_ids, list)
             table_list = list()
-            if index_name.startswith("ragflow_doc_meta_"):
-                table_names_to_search = [index_name]
-            else:
-                table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids]
+            table_names_to_search = [f"{index_name}_{kb_id}" for kb_id in knowledgebase_ids]
             for table_name in table_names_to_search:
                 table_list.append(table_name)
                 try:

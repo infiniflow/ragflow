@@ -138,6 +138,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListDatasets()
 	case TokenDocuments:
 		return p.parseListDatasetDocuments()
+	case TokenMetadata:
+		return p.parseListMetadata()
 	case TokenAgents:
 		return p.parseListAgents()
 	case TokenTokens:
@@ -201,6 +203,50 @@ func (p *Parser) parseListDatasetDocuments() (*Command, error) {
 	cmd.Params["dataset_id"] = datasetID
 
 	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseListMetadata() (*Command, error) {
+	p.nextToken() // consume METADATA
+
+	if p.curToken.Type != TokenOf {
+		return nil, fmt.Errorf("expected OF after METADATA")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected DATASET after OF")
+	}
+	p.nextToken()
+
+	// Parse dataset names (space-separated)
+	var datasetNames []string
+	for {
+		name, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected dataset name: %w", err)
+		}
+		datasetNames = append(datasetNames, name)
+
+		p.nextToken()
+		// Stop at semicolon or non-quoted (dataset name must be quoted)
+		if p.curToken.Type == TokenSemicolon {
+			break
+		}
+		// If next token is not a quoted string, stop parsing dataset names
+		if p.curToken.Type != TokenQuotedString {
+			break
+		}
+	}
+
+	cmd := NewCommand("list_metadata")
+	cmd.Params["dataset_names"] = datasetNames
+
+	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3231,6 +3277,8 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 		return p.parseInsertCommand()
 	case TokenSearch:
 		return p.parseSearchCommand()
+	case TokenGet:
+		return p.parseGetCommand()
 	case TokenUpdate:
 		return p.parseUpdateCommand()
 	case TokenRemove:
@@ -3322,6 +3370,70 @@ func (p *Parser) parseUnsetCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("unset_token"), nil
+}
+
+// parseGetCommand parses: GET CHUNK 'chunk_id'
+func (p *Parser) parseGetCommand() (*Command, error) {
+	p.nextToken() // consume GET
+
+	if p.curToken.Type == TokenChunk {
+		return p.parseGetChunk()
+	}
+
+	return nil, fmt.Errorf("unknown GET target: %s", p.curToken.Value)
+}
+
+// parseGetChunk parses: GET CHUNK 'chunk_id' OF DATASET 'dataset_name' DOCUMENT 'doc_id'
+func (p *Parser) parseGetChunk() (*Command, error) {
+	p.nextToken() // consume CHUNK
+
+	// Parse chunk_id
+	chunkID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected chunk_id: %w", err)
+	}
+
+	cmd := NewCommand("get_chunk")
+	cmd.Params["chunk_id"] = chunkID
+
+	p.nextToken()
+	if p.curToken.Type != TokenOf {
+		return nil, fmt.Errorf("expected OF after chunk_id")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected DATASET after OF")
+	}
+	p.nextToken()
+
+	// Parse dataset_name
+	datasetName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected dataset_name: %w", err)
+	}
+	cmd.Params["dataset_name"] = datasetName
+
+	p.nextToken()
+	if p.curToken.Type != TokenDocument {
+		return nil, fmt.Errorf("expected DOCUMENT after dataset_name")
+	}
+	p.nextToken()
+
+	// Parse doc_id
+	docID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected doc_id: %w", err)
+	}
+	cmd.Params["doc_id"] = docID
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
 }
 
 // Internal
@@ -3509,7 +3621,7 @@ func (p *Parser) parseRemoveChunk() (*Command, error) {
 	} else {
 		// curToken is TokenChunks, consume it first
 		p.nextToken()
-		// Multiple chunks: REMOVE CHUNKS 'id1', 'id2' FROM DOCUMENT 'doc_id'
+		// Multiple chunks: REMOVE CHUNKS 'id1' 'id2' FROM DOCUMENT 'doc_id' (space-separated)
 		// Parse first chunk ID
 		chunkID, err := p.parseQuotedString()
 		if err != nil {
@@ -3517,19 +3629,18 @@ func (p *Parser) parseRemoveChunk() (*Command, error) {
 		}
 		chunkIDs := []string{chunkID}
 
-		// Parse additional chunk IDs separated by commas
+		// Parse additional chunk IDs separated by spaces (each quoted)
 		for {
 			p.nextToken()
-			if p.curToken.Type == TokenComma {
-				p.nextToken()
-				chunkID, err := p.parseQuotedString()
-				if err != nil {
-					return nil, fmt.Errorf("expected chunk_id after comma: %w", err)
-				}
-				chunkIDs = append(chunkIDs, chunkID)
-			} else {
+			// Stop if we hit FROM or non-quoted token
+			if p.curToken.Type == TokenFrom || p.curToken.Type != TokenQuotedString {
 				break
 			}
+			chunkID, err := p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected chunk_id: %w", err)
+			}
+			chunkIDs = append(chunkIDs, chunkID)
 		}
 		cmd.Params["chunk_ids"] = chunkIDs
 	}

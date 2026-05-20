@@ -34,7 +34,8 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService *service.DatasetService
+	datasetsService  *service.DatasetService
+	metadataService  *service.MetadataService
 }
 
 type listDatasetsExt struct {
@@ -44,8 +45,11 @@ type listDatasetsExt struct {
 }
 
 // NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetService) *DatasetsHandler {
-	return &DatasetsHandler{datasetsService: datasetsService}
+func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
+	return &DatasetsHandler{
+		datasetsService:  datasetsService,
+		metadataService:  metadataService,
+	}
 }
 
 // ListDatasets handles GET /api/v1/datasets.
@@ -343,6 +347,120 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, true, "success")
+}
+
+// RemoveTags handles DELETE /api/v1/datasets/:dataset_id/tags.
+// @Summary Remove Tags
+// @Description Remove tags from a dataset
+// @Tags datasets
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_id path string true "Dataset ID"
+// @Param request body object{tags []string} true "tags to remove"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/tags [delete]
+func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := strings.TrimSpace(c.Param("dataset_id"))
+	if datasetID == "" {
+		jsonError(c, common.CodeDataError, "dataset_id is required")
+		return
+	}
+
+	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	tenantID, _ := dataset["tenant_id"].(string)
+	if tenantID == "" {
+		jsonError(c, common.CodeDataError, "tenant_id is required")
+		return
+	}
+
+	var req struct {
+		Tags []string `json:"tags" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	docEngine := engine.Get()
+	if docEngine == nil {
+		jsonError(c, common.CodeServerError, "Document engine is not initialized")
+		return
+	}
+
+	for _, tag := range req.Tags {
+		condition := map[string]interface{}{
+			"tag_kwd": tag,
+			"kb_id":   datasetID,
+		}
+		newValue := map[string]interface{}{
+			"remove": map[string]interface{}{
+				"tag_kwd": tag,
+			},
+		}
+		if err := docEngine.UpdateChunks(c.Request.Context(), condition, newValue, indexName, datasetID); err != nil {
+			jsonError(c, common.CodeServerError, "Failed to remove tag: "+err.Error())
+			return
+		}
+	}
+
+	jsonResponse(c, common.CodeSuccess, true, "success")
+}
+
+// ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
+// @Summary List flattened metadata for datasets
+// @Description Get flattened metadata for multiple datasets
+// @Tags datasets
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_ids query string true "Comma-separated dataset IDs"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/metadata/flattened [get]
+func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetIDsStr := c.Query("dataset_ids")
+	if datasetIDsStr == "" {
+		jsonError(c, common.CodeDataError, "dataset_ids is required")
+		return
+	}
+
+	datasetIDs := strings.Split(datasetIDsStr, ",")
+	for i, id := range datasetIDs {
+		datasetIDs[i] = strings.TrimSpace(id)
+	}
+
+	// Check access for each dataset
+	for _, datasetID := range datasetIDs {
+		if !h.datasetsService.Accessible(datasetID, user.ID) {
+			jsonError(c, common.CodeAuthenticationError, "No authorization for dataset: "+datasetID)
+			return
+		}
+	}
+
+	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(datasetIDs)
+	if err != nil {
+		jsonError(c, common.CodeServerError, "Failed to get metadata: "+err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, flattenedMeta, "success")
 }
 
 func firstStringValue(value interface{}) string {
