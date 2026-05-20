@@ -181,7 +181,7 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     # Try the requested model_type first, then fall back to the compatible type.
     # image2text (multimodal) models are valid as chat models per tenant_model_service.
     for mt in ((model_type, "image2text") if model_type == "chat"
-               else ("image2text", model_type) if model_type == "image2text"
+               else ("image2text", "chat") if model_type == "image2text"
                else (model_type,)):
         if await thread_pool_exec(
             TenantLLMService.query,
