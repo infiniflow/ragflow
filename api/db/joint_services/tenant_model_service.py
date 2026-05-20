@@ -93,7 +93,7 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
             if not model_config:
                 raise LookupError(f"Tenant Model with name {model_name} and type {model_type_val} not found")
             config_dict = model_config.to_dict()
-            config_dict["model_type"] = LLMType.CHAT.value
+            config_dict["model_type"] = LLMType.CHAT.value  # normalize so model_instance creates ChatModel
         elif model_type_val == LLMType.IMAGE2TEXT.value:
             model_config = TenantLLMService.get_api_key(tenant_id, pure_model_name, LLMType.IMAGE2TEXT.value)
             if not model_config:
