@@ -646,6 +646,7 @@ def _load_session_module(monkeypatch):
 
     dialog_service_mod = ModuleType("api.db.services.dialog_service")
     dialog_service_mod.DialogService = SimpleNamespace(
+        model=SimpleNamespace(_meta=SimpleNamespace(fields=[])),
         query=lambda **_kwargs: [],
         get_by_id=lambda *_args, **_kwargs: (False, None),
     )
