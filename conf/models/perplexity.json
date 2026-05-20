@@ -4,7 +4,7 @@
     "default": "https://api.perplexity.ai"
   },
   "url_suffix": {
-    "chat": "chat/completions",
+    "chat": "v1/sonar",
     "embedding": "v1/embeddings",
     "models": "v1/models"
   },

@@ -39,7 +39,7 @@ func newPerplexityServer(t *testing.T, handler func(t *testing.T, r *http.Reques
 func newPerplexityForTest(baseURL string) *PerplexityModel {
 	return NewPerplexityModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "chat/completions", Embedding: "v1/embeddings", Models: "v1/models"},
+		URLSuffix{Chat: "v1/sonar", Embedding: "v1/embeddings", Models: "v1/models"},
 	)
 }
 
@@ -61,7 +61,7 @@ func TestPerplexityFactory(t *testing.T) {
 
 func TestPerplexityChatHappyPath(t *testing.T) {
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
-		if r.URL.Path != "/chat/completions" {
+		if r.URL.Path != "/v1/sonar" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		if body["model"] != "sonar-reasoning-pro" {
@@ -158,7 +158,7 @@ func TestPerplexityChatRequiresApiKey(t *testing.T) {
 
 func TestPerplexityStreamHappyPath(t *testing.T) {
 	srv := newPerplexityServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
-		if r.URL.Path != "/chat/completions" {
+		if r.URL.Path != "/v1/sonar" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		if body["stream"] != true {
