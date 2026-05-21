@@ -540,8 +540,10 @@ type openRouterTranscriptionResponse struct {
 
 func openRouterAudioFormat(file string, asrConfig *ASRConfig) string {
 	if asrConfig != nil && asrConfig.Params != nil {
-		if format, ok := asrConfig.Params["format"].(string); ok && format != "" {
-			return strings.TrimPrefix(format, ".")
+		if format, ok := asrConfig.Params["format"]; ok && format != nil {
+			if value := strings.TrimPrefix(fmt.Sprint(format), "."); value != "" {
+				return value
+			}
 		}
 	}
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(file)), ".")
@@ -586,7 +588,8 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 
 	if asrConfig != nil && asrConfig.Params != nil {
 		for key, value := range asrConfig.Params {
-			if key == "format" {
+			switch key {
+			case "format", "model", "input_audio":
 				continue
 			}
 			reqBody[key] = value

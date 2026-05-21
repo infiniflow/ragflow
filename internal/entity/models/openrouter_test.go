@@ -67,6 +67,15 @@ func writeOpenRouterAudioFile(t *testing.T, name string, content []byte) string 
 	return path
 }
 
+func TestOpenRouterAudioFormatUsesConfiguredValue(t *testing.T) {
+	if got := openRouterAudioFormat("sample.wav", &ASRConfig{Params: map[string]interface{}{"format": ".mp3"}}); got != "mp3" {
+		t.Errorf("format=%q, want mp3", got)
+	}
+	if got := openRouterAudioFormat("sample.wav", &ASRConfig{Params: map[string]interface{}{"format": 123}}); got != "123" {
+		t.Errorf("format=%q, want 123", got)
+	}
+}
+
 func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 	audio := []byte("RIFF test audio")
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
@@ -85,7 +94,8 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 
 		inputAudio, ok := body["input_audio"].(map[string]interface{})
 		if !ok {
-			t.Fatalf("input_audio=%T, want object", body["input_audio"])
+			t.Errorf("input_audio=%T, want object", body["input_audio"])
+			return
 		}
 		if inputAudio["data"] != base64.StdEncoding.EncodeToString(audio) {
 			t.Errorf("input_audio.data=%v", inputAudio["data"])
@@ -95,6 +105,9 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 		}
 		if _, ok := body["format"]; ok {
 			t.Errorf("format should only be sent inside input_audio: %v", body["format"])
+		}
+		if inputAudio["data"] == "bad-data" {
+			t.Errorf("input_audio should not be overwritten by params")
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -114,6 +127,8 @@ func TestOpenRouterTranscribeAudioHappyPath(t *testing.T) {
 			"format":      "wav",
 			"language":    "en",
 			"temperature": 0.2,
+			"model":       "wrong-model",
+			"input_audio": map[string]interface{}{"data": "bad-data", "format": "bad"},
 		}},
 	)
 	if err != nil {
@@ -128,7 +143,8 @@ func TestOpenRouterTranscribeAudioInfersFormat(t *testing.T) {
 	srv := newOpenRouterServer(t, "/audio/transcriptions", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		inputAudio, ok := body["input_audio"].(map[string]interface{})
 		if !ok {
-			t.Fatalf("input_audio=%T, want object", body["input_audio"])
+			t.Errorf("input_audio=%T, want object", body["input_audio"])
+			return
 		}
 		if inputAudio["format"] != "mp3" {
 			t.Errorf("input_audio.format=%v, want mp3", inputAudio["format"])
@@ -170,6 +186,18 @@ func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
 				t.Fatalf("err=%v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestOpenRouterTranscribeAudioValidatesASRSuffix(t *testing.T) {
+	apiKey := "test-key"
+	modelName := "openai/whisper-large-v3"
+	file := "sample.wav"
+	model := NewOpenRouterModel(map[string]string{"default": "http://unused"}, URLSuffix{})
+
+	_, err := model.TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "OpenRouter ASR url suffix is missing") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
