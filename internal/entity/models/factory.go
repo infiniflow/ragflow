@@ -93,6 +93,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewLocalAIModel(baseURL, urlSuffix), nil
 	case "xinference":
 		return NewXinferenceModel(baseURL, urlSuffix), nil
+	case "astraflow":
+		return NewAstraflowModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "novita":
