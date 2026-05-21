@@ -14,11 +14,13 @@
 #  limitations under the License.
 #
 import logging
+import re
 from io import BytesIO
 
 from quart import send_file
 
 from api.apps import login_required
+from api.db import FileType
 from api.db.db_models import Document, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -29,6 +31,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, cancel_all_task_of, queue_tasks
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_request_json, get_result, server_error_response, token_required
+from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
 from common.constants import LLMType, RetCode, TaskStatus
 from common.metadata_utils import convert_conditions, meta_filter
@@ -49,6 +52,15 @@ def _resolve_reference_metadata(req: dict, search_config: dict | None = None):
 
 def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=None) -> None:
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
+
+
+def _mimetype_for_document(doc) -> str:
+    match = re.search(r"\.([^.]+)$", (doc.name or "").lower())
+    if not match:
+        return "application/octet-stream"
+    ext = match.group(1)
+    fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+    return CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
 
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
@@ -105,7 +117,7 @@ async def download(dataset_id, document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )
 
 
@@ -166,7 +178,7 @@ async def download_document(document_id):
         file,
         as_attachment=True,
         attachment_filename=doc[0].name,
-        mimetype="application/octet-stream",  # Set a default MIME type
+        mimetype=_mimetype_for_document(doc[0]),
     )
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821

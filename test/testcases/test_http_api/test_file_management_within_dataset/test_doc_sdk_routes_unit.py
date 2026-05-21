@@ -469,7 +469,11 @@ def _route_core(func):
 
 def _patch_send_file(monkeypatch, module):
     async def _fake_send_file(file_obj, **kwargs):
-        return {"file": file_obj, "filename": kwargs.get("attachment_filename")}
+        return {
+            "file": file_obj,
+            "filename": kwargs.get("attachment_filename"),
+            "mimetype": kwargs.get("mimetype"),
+        }
 
     monkeypatch.setattr(module, "send_file", _fake_send_file)
 
@@ -566,6 +570,21 @@ class TestDocRoutesUnit:
         _patch_storage(monkeypatch, module, file_stream=b"abc")
         res = _run(module.download_doc("doc-1"))
         assert res["filename"] == "doc.txt"
+
+    def test_download_mimetype_from_filename(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
+        _patch_send_file(monkeypatch, module)
+        _patch_storage(monkeypatch, module, file_stream=b"pdf-bytes")
+        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
+        monkeypatch.setattr(
+            module.DocumentService,
+            "query",
+            lambda **_kwargs: [_DummyDoc(name="report.pdf", doc_type=FileType.PDF)],
+        )
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
+        res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1"))
+        assert res["filename"] == "report.pdf"
+        assert res["mimetype"] == "application/pdf"
 
 
     def test_parse_branches(self, monkeypatch):
