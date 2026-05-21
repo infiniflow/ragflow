@@ -345,7 +345,7 @@ class ESConnection(ESConnectionBase):
             operations.append(d_copy)
 
         res = []
-        for _ in range(ATTEMPT_TIME):
+        for i in range(ATTEMPT_TIME):
             try:
                 res = []
                 r = self.es.bulk(index=index_name, operations=operations,
@@ -358,13 +358,16 @@ class ESConnection(ESConnectionBase):
                         if action in item and "error" in item[action]:
                             res.append(str(item[action]["_id"]) + ":" + str(item[action]["error"]))
                 return res
-            except ConnectionTimeout:
+            except ConnectionTimeout as e:
                 self.logger.exception("ES request timeout")
-                time.sleep(3)
-                self._connect()
-                continue
+                if i < ATTEMPT_TIME - 1:
+                    time.sleep(3)
+                    self._connect()
+                    continue
+                # last attempt: surface the failure so callers see a non-empty res
+                res.append(str(e))
             except Exception as e:
-                if _is_transient_es_error(e):
+                if _is_transient_es_error(e) and i < ATTEMPT_TIME - 1:
                     self.logger.warning(
                         "ESConnection.insert transient error, retrying: " + str(e)
                     )
