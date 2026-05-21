@@ -219,6 +219,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseUpdateCommand()
 	case TokenRemove:
 		return p.parseRemoveCommand()
+	case TokenGet:
+		return p.parseGetCommand()
 
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
@@ -283,6 +285,15 @@ func (p *Parser) parseIdentifier() (string, error) {
 		return "", fmt.Errorf("expected identifier, got %s", p.curToken.Value)
 	}
 	return p.curToken.Value, nil
+}
+
+func (p *Parser) parseVariableValue() (string, error) {
+	switch p.curToken.Type {
+	case TokenIdentifier, TokenQuotedString, TokenInteger, TokenFloat:
+		return p.curToken.Value, nil
+	default:
+		return "", fmt.Errorf("expected variable value, got %s", p.curToken.Value)
+	}
 }
 
 func (p *Parser) parseNumber() (int, error) {

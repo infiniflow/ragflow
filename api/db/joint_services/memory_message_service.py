@@ -154,7 +154,11 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     if tenant_llm_id:
-        llm_config = get_model_config_by_id(tenant_llm_id)
+        llm_config = get_model_config_by_id(
+            tenant_llm_id,
+            allowed_tenant_ids=tenant_id,
+            requester_tenant_id=tenant_id,
+        )
     else:
         llm_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
     llm = LLMBundle(tenant_id, llm_config)
@@ -174,7 +178,11 @@ async def extract_by_llm(tenant_id: str, tenant_llm_id: int, extract_conf: dict,
 
 async def embed_and_save(memory, message_list: list[dict], task_id: str=None):
     if memory.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
+        embd_model_config = get_model_config_by_id(
+            memory.tenant_embd_id,
+            allowed_tenant_ids=memory.tenant_id,
+            requester_tenant_id=memory.tenant_id,
+        )
     else:
         embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     embedding_model = LLMBundle(memory.tenant_id, embd_model_config)
@@ -248,7 +256,11 @@ def query_message(filter_dict: dict, params: dict):
     question = question.strip()
     memory = memory_list[0]
     if memory.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(memory.tenant_embd_id)
+        embd_model_config = get_model_config_by_id(
+            memory.tenant_embd_id,
+            allowed_tenant_ids=memory.tenant_id,
+            requester_tenant_id=memory.tenant_id,
+        )
     else:
         embd_model_config = get_model_config_by_type_and_name(memory.tenant_id, LLMType.EMBEDDING, memory.embd_id)
     embd_model = LLMBundle(memory.tenant_id, embd_model_config)

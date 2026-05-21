@@ -84,10 +84,17 @@ build_go() {
         exit 1
     fi
 
-    # Check for pcre2 library
-    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] || [ -f "/usr/local/lib/libpcre2-8.a" ]; then
+    # Check for pcre2 library — known Linux paths + macOS Homebrew (Apple Silicon
+    # at /opt/homebrew, Intel Macs at /usr/local).
+    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
+       || [ -f "/usr/local/lib/libpcre2-8.a" ] \
+       || [ -f "/opt/homebrew/lib/libpcre2-8.a" ]; then
         echo "✓ pcre2 library found"
     else
+        if [ "$(uname)" = "Darwin" ]; then
+            echo -e "${RED}Error: libpcre2-8.a not found. Install with: brew install pcre2${NC}"
+            exit 1
+        fi
         echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
         sudo apt -y install libpcre2-dev
     fi

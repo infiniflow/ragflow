@@ -123,6 +123,7 @@ export function AccordionOperators({
               Operator.WenCai,
               Operator.SearXNG,
               Operator.DocGenerator,
+              Operator.Browser,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}

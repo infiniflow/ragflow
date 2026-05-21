@@ -16,7 +16,10 @@
 
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type ResponseIf interface {
 	Type() string
@@ -121,6 +124,104 @@ func (r *ListDocumentsResponse) PrintOut() {
 	}
 }
 
+type ChunkResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ChunkResponse) Type() string {
+	return "chunk"
+}
+
+func (r *ChunkResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ChunkResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ChunkResponse) PrintOut() {
+	if r.Code == 0 {
+		for k, v := range r.Data {
+			fmt.Printf("%s: %v\n", k, v)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type MetadataResponse struct {
+	Code         int                     `json:"code"`
+	Data         map[string]interface{}  `json:"data"`
+	Message      string                  `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *MetadataResponse) Type() string {
+	return "metadata"
+}
+
+func (r *MetadataResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *MetadataResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *MetadataResponse) PrintOut() {
+	if r.Code == 0 {
+		// Data is map[field]map[value][]doc_id - print flattened metadata
+		if r.Data != nil {
+			printFlattenedMetadata(r.Data, r.OutputFormat)
+		}
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+func printFlattenedMetadata(data map[string]interface{}, format OutputFormat) {
+	// Convert flattened metadata to table format
+	// {field: {value: [doc_ids]}} -> [{field, value, document_ids}, ...]
+	tableData := make([]map[string]interface{}, 0)
+	for field, values := range data {
+		valueMap, ok := values.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for value, docIDs := range valueMap {
+			var docIDStr string
+			switch v := docIDs.(type) {
+			case []string:
+				docIDStr = strings.Join(v, ", ")
+			case []interface{}:
+				docStrs := make([]string, 0, len(v))
+				for _, d := range v {
+					if s, ok := d.(string); ok {
+						docStrs = append(docStrs, s)
+					}
+				}
+				docIDStr = strings.Join(docStrs, ", ")
+			default:
+				docIDStr = fmt.Sprintf("%v", docIDs)
+			}
+			tableData = append(tableData, map[string]interface{}{
+				"field":         field,
+				"value":         value,
+				"document_ids": docIDStr,
+			})
+		}
+	}
+	PrintTableSimpleByFormat(tableData, format)
+}
+
 type SimpleResponse struct {
 	Code         int    `json:"code"`
 	Message      string `json:"message"`
@@ -143,6 +244,34 @@ func (r *SimpleResponse) SetOutputFormat(format OutputFormat) {
 func (r *SimpleResponse) PrintOut() {
 	if r.Code == 0 {
 		fmt.Println("SUCCESS")
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type MessageResponse struct {
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *MessageResponse) Type() string {
+	return "message"
+}
+
+func (r *MessageResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *MessageResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *MessageResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Message)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)

@@ -22,6 +22,7 @@
 #include "re2/re2.h"
 
 #include <cassert>
+#include <sstream>   // std::ostringstream / std::istringstream — explicit for libc++ (macOS)
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -143,7 +144,10 @@ std::string Join(const std::vector<T> &tokens, int start, int end, const std::st
 
 template <typename T>
 std::string Join(const std::vector<T> &tokens, int start, const std::string &delim = " ") {
-    return Join(tokens, start, tokens.size(), delim);
+    // C++23 strict overload resolution refuses the implicit size_t → int
+    // narrowing conversion; the explicit cast makes the 4-arg overload above
+    // unambiguous on libc++ (macOS) without changing behaviour on libstdc++.
+    return Join(tokens, start, static_cast<int>(tokens.size()), delim);
 }
 
 std::string Join(const TermList &tokens, int start, int end, const std::string &delim = " ") {

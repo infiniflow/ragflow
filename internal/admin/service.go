@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1451,9 +1452,59 @@ func NewAdminException(message string) *AdminException {
 	}
 }
 
+func formatSystemSetting(setting entity.SystemSettings) map[string]interface{} {
+	return map[string]interface{}{
+		"data_type":    setting.DataType,
+		"name":         setting.Name,
+		"setting_type": "config",
+		"value":        setting.Value,
+	}
+}
+
+func formatSystemSettings(settings []entity.SystemSettings) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(settings))
+	for _, setting := range settings {
+		result = append(result, formatSystemSetting(setting))
+	}
+	return result
+}
+
+func validateSystemSettingValue(setting entity.SystemSettings, value string) error {
+	dataType := strings.ToLower(setting.DataType)
+	switch dataType {
+	case "string":
+		return nil
+	case "integer", "int":
+		if _, err := strconv.Atoi(value); err != nil {
+			return NewAdminException(fmt.Sprintf("Invalid integer value for %s: %s", setting.Name, value))
+		}
+	case "bool", "boolean":
+		if value != "true" && value != "false" {
+			return NewAdminException(fmt.Sprintf("Invalid bool value for %s: expected true or false", setting.Name))
+		}
+	case "json":
+		if !json.Valid([]byte(value)) {
+			return NewAdminException(fmt.Sprintf("Invalid JSON value for %s", setting.Name))
+		}
+	default:
+		return NewAdminException(fmt.Sprintf("Unsupported data type for %s: %s", setting.Name, setting.DataType))
+	}
+	return nil
+}
+
+func inferSystemSettingDataType(name string) string {
+	if strings.HasPrefix(name, "sandbox.") {
+		return "json"
+	}
+	if strings.HasSuffix(name, ".enabled") {
+		return "bool"
+	}
+	return "string"
+}
+
 // GetVariable get variable by name
-// Returns the system setting with the given name
-// Returns AdminException if the setting is not found
+// Returns the exact system setting with the given name, or settings matching the
+// given name prefix when an exact setting does not exist.
 func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetByName(varName)
 	if err != nil {
@@ -1461,19 +1512,15 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 	}
 
 	if len(settings) == 0 {
-		return nil, NewAdminException("Can't get setting: " + varName)
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(varName)
+		if err != nil {
+			return nil, err
+		}
+		if len(settings) == 0 {
+			return nil, NewAdminException("Can't get setting: " + varName)
+		}
 	}
-
-	result := make([]map[string]interface{}, 0, len(settings))
-	for _, setting := range settings {
-		result = append(result, map[string]interface{}{
-			"name":      setting.Name,
-			"source":    setting.Source,
-			"data_type": setting.DataType,
-			"value":     setting.Value,
-		})
-	}
-	return result, nil
+	return formatSystemSettings(settings), nil
 }
 
 // GetAllVariables get all variables
@@ -1484,16 +1531,7 @@ func (s *Service) GetAllVariables() ([]map[string]interface{}, error) {
 		return nil, err
 	}
 
-	result := make([]map[string]interface{}, 0, len(settings))
-	for _, setting := range settings {
-		result = append(result, map[string]interface{}{
-			"name":      setting.Name,
-			"source":    setting.Source,
-			"data_type": setting.DataType,
-			"value":     setting.Value,
-		})
-	}
-	return result, nil
+	return formatSystemSettings(settings), nil
 }
 
 // SetVariable set variable
@@ -1507,26 +1545,24 @@ func (s *Service) SetVariable(varName, varValue string) error {
 
 	if len(settings) == 1 {
 		setting := &settings[0]
+		if err := validateSystemSettingValue(*setting, varValue); err != nil {
+			return err
+		}
 		setting.Value = varValue
 		return s.systemSettingsDAO.UpdateByName(varName, setting)
 	} else if len(settings) > 1 {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
 
-	// Create new setting if it doesn't exist
-	// Determine data_type based on name and value
-	dataType := "string"
-	if len(varName) >= 7 && varName[:7] == "sandbox" {
-		dataType = "json"
-	} else if len(varName) >= 9 && varName[len(varName)-9:] == ".enabled" {
-		dataType = "boolean"
-	}
-
+	dataType := inferSystemSettingDataType(varName)
 	newSetting := &entity.SystemSettings{
 		Name:     varName,
 		Value:    varValue,
 		Source:   "admin",
 		DataType: dataType,
+	}
+	if err := validateSystemSettingValue(*newSetting, varValue); err != nil {
+		return err
 	}
 	return s.systemSettingsDAO.Create(newSetting)
 }

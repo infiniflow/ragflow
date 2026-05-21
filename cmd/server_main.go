@@ -167,6 +167,8 @@ func startServer(config *server.Config) {
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
 	datasetsService := service.NewDatasetService()
+	knowledgebaseService := service.NewKnowledgebaseService()
+	metadataService := service.NewMetadataService()
 	chunkService := service.NewChunkService()
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
@@ -187,8 +189,9 @@ func startServer(config *server.Config) {
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
-	datasetsHandler := handler.NewDatasetsHandler(datasetsService)
+	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
+	knowledgebaseHandler := handler.NewKnowledgebaseHandler(knowledgebaseService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -201,7 +204,7 @@ func startServer(config *server.Config) {
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

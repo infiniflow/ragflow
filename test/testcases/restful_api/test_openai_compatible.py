@@ -135,6 +135,8 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert "prompt_tokens" in usage, usage
     assert "completion_tokens" in usage, usage
     assert "total_tokens" in usage, usage
+    assert usage["prompt_tokens"] > 0, usage
+    assert usage["completion_tokens"] > 0, usage
     assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"], usage
 
 
