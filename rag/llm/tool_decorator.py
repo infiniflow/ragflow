@@ -210,5 +210,12 @@ class FunctionToolSession:
         fn = self.tools_map[name]
         logging.info(f"[FunctionTool] invoke name={name} args={str(arguments)[:200]}")
         if asyncio.iscoroutinefunction(fn):
-            return await fn(**arguments)
-        return await thread_pool_exec(fn, **arguments)
+            coro = fn(**arguments)
+        else:
+            # Sync callables run in the thread pool. asyncio.wait_for cancels
+            # the awaiting task on timeout, but Python cannot interrupt the
+            # underlying worker thread — the function keeps running in the
+            # background until it returns. Callers should treat sync tools
+            # that block on I/O accordingly.
+            coro = thread_pool_exec(fn, **arguments)
+        return await asyncio.wait_for(coro, timeout=request_timeout)

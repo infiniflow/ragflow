@@ -109,3 +109,15 @@ def test_schemas_passthrough_for_bind_tools():
     session = FunctionToolSession([get_weather, add])
     schemas = session.schemas
     assert [s["function"]["name"] for s in schemas] == ["get_weather", "add"]
+
+
+def test_async_tool_timeout_raises():
+    @tool
+    async def slow() -> str:
+        """Sleep longer than the timeout."""
+        await asyncio.sleep(0.5)
+        return "done"
+
+    session = FunctionToolSession([slow])
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(session.tool_call_async("slow", {}, request_timeout=0.05))
