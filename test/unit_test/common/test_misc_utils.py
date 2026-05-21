@@ -21,8 +21,6 @@ import uuid
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import pytest
-
 from common import ssrf_guard
 from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int
 
