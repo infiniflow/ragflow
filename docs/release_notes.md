@@ -15,32 +15,31 @@ Released on May 20, 2026.
 
 ### New features
 
-- Adds local & SSH providers in admin panel. [#15039](https://github.com/infiniflow/ragflow/pull/15039)
+- Introduces local and SSH provider options for sandbox environment settings within the admin interface, allowing administrators to configure execution environments without editing environment variables. [#15039](https://github.com/infiniflow/ragflow/pull/15039)
 
 ### Improvements
 
-- Accelerated dataset search path, reducing latency by 50–100% by removing expensive vector fetch and rerank similarity computation steps. [#14970](https://github.com/infiniflow/ragflow/pull/14970)
-- Pushes metadata filters down to Infinity, significantly speeding up metadata filtering. [#14974](https://github.com/infiniflow/ragflow/pull/14974)
-- added Redis caching for TTS. [#14851](https://github.com/infiniflow/ragflow/pull/14851)
-- atomic document counter updates [#14867](https://github.com/infiniflow/ragflow/pull/14974)
-- Improved server startup speed and memory usage [#14973](https://github.com/infiniflow/ragflow/pull/14973)
-- Agent: structured output aggregation [#13384](https://github.com/infiniflow/ragflow/issues/13384) [#14848](https://github.com/infiniflow/ragflow/pull/14848)
-- Agent: metadata filter reuse. [#14849](https://github.com/infiniflow/ragflow/pull/14849)
-- Optimizes connector dashboard. [#14979](https://github.com/infiniflow/ragflow/pull/14979)
-- Data source: GitHub connector now syncs PRs/Issues by default.
-- Bump minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
-- Bump nginx to 1.31.0. [#15007](https://github.com/infiniflow/ragflow/pull/15007)
+- Elasticsearch: Accelerates the retrieval process by removing unnecessary vector fetches during the main search phase, reducing latency by 50–100%. [#14970](https://github.com/infiniflow/ragflow/pull/14970)
+- Pushes metadata filters down to the [Infinity](https://github.com/infiniflow/infinity) document engine, significantly improving retrieval performance. [#14974](https://github.com/infiniflow/ragflow/pull/14974)
+- Introduces Redis-based caching for Text-to-Speech model outputs, eliminating redundant API calls for identical text to reduce latency and save provider quota. [#14851](https://github.com/infiniflow/ragflow/pull/14851)
+- Reduces server startup time by 5-9 seconds and saves roughly 200MB of memory by replacing heavy module-level imports with lazy runtime loading. [#14973](https://github.com/infiniflow/ragflow/pull/14973)
+- Optimizes the connector dashboard. [#14979](https://github.com/infiniflow/ragflow/pull/14979)
+- Bumps minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
 
 ### Bug fixes
 
-- Fixed Tongyi-Qianwen embedding API calls [#14784](https://github.com/infiniflow/ragflow/pull/14784)
-- Agent: Fixed MCP tool name duplication.
+- Atomic database updates: Wraps document and dataset chunk counter updates in atomic database transactions to prevent data drift. [#14866](https://github.com/infiniflow/ragflow/issues/14866)[#14867](https://github.com/infiniflow/ragflow/pull/14867)
+- Data source: the GitHub data source connector was failing to sync any content by default. [#13975](https://github.com/infiniflow/ragflow/issues/13975)[#14062](https://github.com/infiniflow/ragflow/pull/14062)
+- The Tongyi-Qianwen text embedding models were hitting the wrong API endpoints when configured with international or Chinese regional URLs. [#14784](https://github.com/infiniflow/ragflow/pull/14784)
+- Agent: Fully aggregates message content, reference data, and structured outputs across all generated events to fix incomplete responses in the non-streaming `/api/v1/agentbots/<agent_id>/completions` endpoint. [#13384](https://github.com/infiniflow/ragflow/issues/13384)[#14848](https://github.com/infiniflow/ragflow/pull/14848)
+- Prevents the **Retrieval** component's manual metadata filters from getting stuck on the first loop's value by making a temporary copy of the filter settings to preserve the original placeholder.[#12582](https://github.com/infiniflow/ragflow/issues/12582)[#14849](https://github.com/infiniflow/ragflow/pull/14849)
+- Agent: Fixed MCP tool name duplication.[#14217](https://github.com/infiniflow/ragflow/pull/14217)
 - Agent: top_k passing issues [#14760](https://github.com/infiniflow/ragflow/pull/14760)
-- Chat file attachment loss.
+- Chat file attachment loss. [#13993](https://github.com/infiniflow/ragflow/pull/13993)
 - IMAP multi-address parsing [#15006](https://github.com/infiniflow/ragflow/pull/15006)
 - Langfuse token usage reporting. [#13294](https://github.com/infiniflow/ragflow/pull/13294)
-- Reranking robustness.
-
+- Reranking robustness. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
+- Bumps nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
 
 ## v0.25.4
 
@@ -108,7 +107,7 @@ Released on May 11, 2026.
 
 - Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
 - Duplicate chat output.
-- Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
+- {#meta-es} Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
 
 ## v0.25.1
 
