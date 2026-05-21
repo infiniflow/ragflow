@@ -144,10 +144,15 @@ export function DelimiterBuilder({ value, onChange, presets }: BuilderProps) {
   const appendRaw = useCallback(
     (raw: string) => {
       if (!raw) return;
+      // Wire format reserves the backtick to wrap multi-char blocks and has
+      // no escape syntax (see rag/nlp/__init__.py::get_delimiters), so a
+      // user-entered ` cannot round-trip — strip it at the input boundary.
       const decoded = raw
         .replaceAll('\\n', '\n')
         .replaceAll('\\t', '\t')
-        .replaceAll('\\r', '\r');
+        .replaceAll('\\r', '\r')
+        .replaceAll('`', '');
+      if (!decoded) return;
       commit([...blocks, decoded]);
     },
     [blocks, commit],
@@ -189,6 +194,7 @@ export function DelimiterBuilder({ value, onChange, presets }: BuilderProps) {
             onBlur={handleSubmit}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 e.preventDefault();
                 handleSubmit();
               } else if (e.key === 'Escape') {
