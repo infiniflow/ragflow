@@ -219,6 +219,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseUpdateCommand()
 	case TokenRemove:
 		return p.parseRemoveCommand()
+	case TokenGet:
+		return p.parseGetCommand()
 
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)

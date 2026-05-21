@@ -89,7 +89,6 @@ type RetrievalTestResponse struct {
 }
 
 // RetrievalTest performs retrieval test for a given question against specified knowledge bases.
-// Corresponds to Python's api/apps/chunk_app.py:retrieval_test()
 //
 // Flow:
 //  1. Validate kbs permissions and embedding model
