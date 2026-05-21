@@ -34,7 +34,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func printHelp() {
+func printIngestionServerHelp() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
@@ -59,7 +59,7 @@ func main() {
 	flag.IntVar(&adminPort, "admin-port", 0, "Admin server port (overrides config file)")
 
 	// Custom help message
-	flag.Usage = printHelp
+	flag.Usage = printIngestionServerHelp
 
 	flag.Parse()
 

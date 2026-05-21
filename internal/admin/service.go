@@ -41,13 +41,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// Service errors
-var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrNotAdmin     = errors.New("user is not admin")
-	ErrUserInactive = errors.New("user is inactive")
-)
-
 // Service admin service layer
 type Service struct {
 	userDAO           *dao.UserDAO
@@ -1055,7 +1048,7 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	}
 
 	id := len(result)
-	serverList := GlobalServerStatusStore.GetAllStatuses()
+	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {
 		serverItem := make(map[string]interface{})
 		serverItem["name"] = serverStatus.ServerName
@@ -1698,7 +1691,7 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
-	GlobalServerStatusStore.UpdateStatus(message.ServerName, status)
+	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
 	return common.CodeLicenseValid, ""
 }
 

@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package common;
+
+option go_package = "./;common";
+
+service IngestionServer {
+  rpc Action(stream IngestionMessage) returns (stream IngestionResponse);
+}
+
+message IngestionMessage {
+  string executor_id = 1;
+  string message_type = 2;  // REGISTER, HEARTBEAT, TASK_RESULT, TASK_PROGRESS, PULL_REQUEST
+
+  RegisterInfo register_info = 3;
+
+  HeartbeatInfo heartbeat_info = 4;
+
+  TaskProgress task_progress = 5;
+}
+
+message IngestionResponse {
+  string message_type = 1;  // TASK_ASSIGNMENT, ACK, PONG, RECONNECT
+  TaskAssignment task_assignment = 2;
+  AckInfo ack_info = 3;
+  string error_message = 4;
+}
+
+message RegisterInfo {
+  int32 max_concurrency = 1;
+  repeated string supported_doc_types = 2;
+  string version = 3;
+}
+
+message HeartbeatInfo {
+  repeated string current_task_ids = 1;
+  int32 current_load = 2;
+  int64 timestamp = 3;
+}
+
+message TaskAssignment {
+  string task_id = 1;
+  string task_type = 2;
+  string config = 3;
+}
+
+message TaskProgress {
+  string task_id = 1;
+  string info = 3;
+}
+
+message AckInfo {
+  string task_id = 1;
+  bool success = 2;
+  string message = 3;
+}

@@ -33,11 +33,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Common errors
-var (
-	ErrUserNotFound = errors.New("user not found")
-)
-
 // Handler admin handler
 type Handler struct {
 	service     *Service
