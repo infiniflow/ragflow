@@ -107,7 +107,7 @@ Released on May 11, 2026.
 
 - Metadata visibility issues during v0.24.0 to v0.25.0 upgrades.
 - Duplicate chat output.
-- {#meta-es} Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
+- Metadata filtering was handled in-memory instead of leveraging Elasticsearch, incurring performance bottlenecks. [#14576](https://github.com/infiniflow/ragflow/pull/14576)
 
 ## v0.25.1
 
