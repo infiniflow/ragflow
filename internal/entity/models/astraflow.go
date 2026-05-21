@@ -447,10 +447,7 @@ func (a *AstraflowModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Embed is reserved for a follow-up issue; the Astraflow factory tag
-// includes "TEXT EMBEDDING" but this initial driver only implements
-// chat, mirroring how Novita / TogetherAI / DeepInfra landed
-// method-by-method.
+// Embed is reserved for a follow-up issue.
 func (a *AstraflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
