@@ -131,7 +131,7 @@ def _patch_common_dependencies(monkeypatch):
     )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_run_task_logic_skips_empty_sync_batches(monkeypatch):
     _patch_common_dependencies(monkeypatch)
@@ -154,7 +154,7 @@ async def test_run_task_logic_skips_empty_sync_batches(monkeypatch):
     await _FakeSync(iter(([],)))._run_task_logic(_make_task())
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
     _patch_common_dependencies(monkeypatch)
@@ -177,7 +177,7 @@ async def test_run_task_logic_skips_multiple_empty_sync_batches(monkeypatch):
     await _FakeSync(iter(([], [],)))._run_task_logic(_make_task())
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     cleanup_calls = []
@@ -217,7 +217,7 @@ async def test_run_prune_task_logic_cleans_up_for_empty_snapshot(monkeypatch):
     ]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_run_prune_task_logic_cleans_up_for_non_empty_snapshot(monkeypatch):
     cleanup_calls = []
@@ -322,7 +322,7 @@ class _FakeRDBMSConnector:
         self.persist_sync_state_called = True
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_rdbms_generate_keeps_deleted_file_snapshot_without_timestamp_column(monkeypatch):
     monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
@@ -358,7 +358,7 @@ async def test_rdbms_generate_keeps_deleted_file_snapshot_without_timestamp_colu
     assert list(document_generator) == [["full-sync"]]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_rdbms_cursor_persists_only_after_success(monkeypatch):
     monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
@@ -405,7 +405,7 @@ async def test_rdbms_cursor_persists_only_after_success(monkeypatch):
     assert connector.persist_sync_state_called is True
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_rdbms_cursor_does_not_persist_when_batch_is_skipped(monkeypatch):
     monkeypatch.setattr(sync_data_source, "RDBMSConnector", _FakeRDBMSConnector)
@@ -489,7 +489,7 @@ class _FakeDropboxConnector:
         return iter((["full-sync"],))
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_dropbox_generate_returns_snapshot_when_sync_deleted_enabled(monkeypatch):
     monkeypatch.setattr(sync_data_source, "DropboxConnector", _FakeDropboxConnector)
@@ -521,7 +521,7 @@ async def test_dropbox_generate_returns_snapshot_when_sync_deleted_enabled(monke
     assert connector.poll_source_call[1] >= poll_start.timestamp()
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 @pytest.mark.p2
 async def test_dropbox_generate_skips_snapshot_for_full_reindex(monkeypatch):
     monkeypatch.setattr(sync_data_source, "DropboxConnector", _FakeDropboxConnector)
