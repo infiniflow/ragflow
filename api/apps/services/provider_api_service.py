@@ -82,7 +82,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
 
 def add_provider(tenant_id: str, provider_name: str):
     """
-    Add a provider (factory) for a tenant by creating TenantLLM entries
+    Add a provider (factory) for a tenant.
 
     :param tenant_id: tenant ID
     :param provider_name: provider/factory name
@@ -108,7 +108,7 @@ def add_provider(tenant_id: str, provider_name: str):
 
 def delete_provider(tenant_id: str, provider_name: str):
     """
-    Delete all TenantLLM entries for a provider.
+    Delete all instances and models for a provider.
 
     :param tenant_id: tenant ID
     :param provider_name: provider/factory name
@@ -195,8 +195,7 @@ def show_provider_model(provider_name: str, model_name: str):
 
 def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
     """
-    Create a provider instance. In the old model, this maps to creating/updating
-    TenantLLM entries for the provider with the given API key.
+    Create a provider instance.
 
     The instance_name parameter is accepted for API compatibility but in the old
     model all records under a factory share the same API key configuration.
@@ -242,8 +241,7 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
 
 def list_provider_instances(tenant_id: str, provider_name: str):
     """
-    List provider instances for a tenant. In the old model, instances map to
-    unique API key configurations under a provider.
+    List provider instances for a tenant.
 
     :param tenant_id: tenant ID
     :param provider_name: provider/factory name
@@ -302,7 +300,7 @@ def show_provider_instance(tenant_id: str, provider_name: str, instance_name: st
 
 def drop_provider_instances(tenant_id: str, provider_name: str, instance_names: list):
     """
-    Drop provider instances. In the old model, this deletes TenantLLM entries
+    Drop provider instances.
     for the specified models/instances.
 
     :param tenant_id: tenant ID

@@ -294,7 +294,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
         else:
             provider_instance_map[provider_name] = [provider_instance_record]
 
-    model_records = TenantModelService.get_models_by_provider_ids(provider_ids)
+    model_records = TenantModelService.get_models_by_provider_ids_and_instance_ids(provider_ids, list({instance.id for instance in instances}))
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
     model_record_map = {}
     for model in target_type_records:
