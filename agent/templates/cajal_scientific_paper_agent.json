@@ -155,17 +155,6 @@
           "targetHandle": "end",
           "type": "buttonEdge",
           "zIndex": 1001
-        },
-        {
-          "data": {
-            "isHovered": false
-          },
-          "id": "xy-edge__Agent:NewPumasLicktool-Tool:AllBirdsNailend",
-          "selected": false,
-          "source": "Agent:NewPumasLick",
-          "sourceHandle": "tool",
-          "target": "Tool:AllBirdsNail",
-          "targetHandle": "end"
         }
       ],
       "nodes": [
@@ -302,30 +291,6 @@
           "sourcePosition": "right",
           "targetPosition": "left",
           "type": "agentNode"
-        },
-        {
-          "data": {
-            "form": {
-              "description": "This is an agent for a specific task.",
-              "user_prompt": "This is the order you need to send to the agent."
-            },
-            "label": "Tool",
-            "name": "flow.tool_10"
-          },
-          "dragging": false,
-          "id": "Tool:AllBirdsNail",
-          "measured": {
-            "height": 48,
-            "width": 200
-          },
-          "position": {
-            "x": 220.24819746977118,
-            "y": 403.31576836482583
-          },
-          "selected": false,
-          "sourcePosition": "right",
-          "targetPosition": "left",
-          "type": "toolNode"
         }
       ]
     },
