@@ -334,43 +334,90 @@ func (m *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
+	// SSE allows a single event to span multiple `data:` lines that
+	// the consumer must join with newlines (separator), then parse
+	// the result as one payload — see the HTML Living Standard
+	// "Server-sent events" section. A blank line terminates the
+	// event. The previous implementation parsed each `data:` line as
+	// a standalone JSON document, which broke streaming whenever the
+	// upstream emitted a wrapped event (multi-line JSON or a deltas
+	// payload too wide for the upstream's single-line buffer).
+	var dataLines []string
+	dispatchEvent := func() (bool, error) {
+		if len(dataLines) == 0 {
+			return false, nil
 		}
-		data := strings.TrimSpace(line[5:])
-		if data == "[DONE]" {
+		payload := strings.Join(dataLines, "\n")
+		dataLines = dataLines[:0]
+		if payload == "[DONE]" {
 			sawTerminal = true
-			break
+			return true, nil
 		}
 
 		var event futurmixChatResponse
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
 			// A malformed frame can mean a truncated SSE event or an
 			// upstream incident; the caller is better served by a
 			// hard failure than by silent partial output.
-			return fmt.Errorf("futurmix: invalid SSE event: %w", err)
+			return false, fmt.Errorf("futurmix: invalid SSE event: %w", err)
 		}
 		if len(event.Choices) == 0 {
-			continue
+			return false, nil
 		}
 		choice := event.Choices[0]
 		if choice.Delta.ReasoningContent != "" {
 			r := choice.Delta.ReasoningContent
 			if err := sender(nil, &r); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if choice.Delta.Content != "" {
 			c := choice.Delta.Content
 			if err := sender(&c, nil); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if choice.FinishReason != "" {
 			sawTerminal = true
-			break
+			return true, nil
+		}
+		return false, nil
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			// Blank line == event terminator. Flush accumulated `data:`
+			// lines as a single JSON payload.
+			stop, err := dispatchEvent()
+			if err != nil {
+				return err
+			}
+			if stop {
+				break
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "data:") {
+			// Trim only the single optional space after the colon — any
+			// further leading whitespace is part of the payload (the SSE
+			// spec strips at most one space after the field name).
+			value := line[5:]
+			if strings.HasPrefix(value, " ") {
+				value = value[1:]
+			}
+			dataLines = append(dataLines, value)
+		}
+		// All other field lines (event:, id:, retry:, comments) are
+		// intentionally ignored — only `data:` carries the payload
+		// the OpenAI-compatible /v1/chat/completions stream uses.
+	}
+	// Streams that end without a trailing blank line still leave a
+	// pending event in the buffer; flush it so we don't drop the
+	// final delta on partially-conforming upstreams.
+	if !sawTerminal {
+		if _, err := dispatchEvent(); err != nil {
+			return err
 		}
 	}
 
