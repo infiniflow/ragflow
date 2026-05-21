@@ -79,6 +79,7 @@ type OCRFileResponse struct {
 }
 
 type ParseFileResponse struct {
+	TaskID string `json:"task_id"`
 }
 
 type ListTaskStatus struct {

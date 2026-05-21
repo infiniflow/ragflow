@@ -102,6 +102,7 @@ const (
 	TokenASR
 	TokenTTS
 	TokenOCR
+	TokenDocParse
 	TokenEmbed
 	TokenText
 	TokenQuery
@@ -144,6 +145,7 @@ const (
 	TokenFile
 	TokenMetadata
 	TokenTable
+	TokenGet
 	TokenUpdate
 	TokenRemove
 	TokenChunk
@@ -171,6 +173,7 @@ const (
 	TokenNumber = TokenInteger // Alias for integer tokens in path parsing (e.g., version numbers like 1.0.0)
 
 	// Special
+	_ = iota
 	TokenSemicolon
 	TokenComma
 	TokenSlash

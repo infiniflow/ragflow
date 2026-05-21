@@ -498,6 +498,52 @@ func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
 	return "", fmt.Errorf("dataset '%s' not found", datasetName)
 }
 
+// ListMetadata lists metadata for datasets
+func (c *RAGFlowClient) ListMetadata(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	datasetNames, ok := cmd.Params["dataset_names"].([]string)
+	if !ok || len(datasetNames) == 0 {
+		return nil, fmt.Errorf("dataset_names not provided")
+	}
+
+	// Convert dataset names to IDs
+	datasetIDs := make([]string, 0, len(datasetNames))
+	for _, name := range datasetNames {
+		id, err := c.getDatasetID(name)
+		if err != nil {
+			return nil, err
+		}
+		datasetIDs = append(datasetIDs, id)
+	}
+
+	// Build comma-separated dataset_ids for query param
+	datasetIDsStr := strings.Join(datasetIDs, ",")
+
+	resp, err := c.HTTPClient.Request("GET", "/datasets/metadata/flattened?dataset_ids="+datasetIDsStr, "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list metadata: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list metadata: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result MetadataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list metadata failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 // formatEmptyArray converts empty arrays to "[]" string
 func formatEmptyArray(v interface{}) string {
 	if v == nil {
@@ -2381,11 +2427,16 @@ func (c *RAGFlowClient) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 
 	filename, ok = cmd.Params["file"].(string)
 	if ok {
-		// read file and convert to base64
-		var err error
-		fileContent, err = os.ReadFile(filename)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file: %w", err)
+		// For online file
+		if strings.HasPrefix(filename, "http://") || strings.HasPrefix(filename, "https://") {
+			fileURL = filename
+		} else {
+			// read file and convert to base64
+			var err error
+			fileContent, err = os.ReadFile(filename)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read file: %w", err)
+			}
 		}
 	} else {
 		fileURL, ok = cmd.Params["url"].(string)
@@ -2966,6 +3017,54 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// GetChunk retrieves a chunk by ID
+func (c *RAGFlowClient) GetChunk(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	chunkID, ok := cmd.Params["chunk_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("chunk_id not provided")
+	}
+
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, err
+	}
+
+	docID, ok := cmd.Params["doc_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("doc_id not provided")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), "web", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chunk: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get chunk: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result ChunkResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("get chunk failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+
+	return &result, nil
+}
+
 // SetMeta sets metadata for a document
 func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
@@ -3042,7 +3141,7 @@ func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
 		"tags": tags,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/"+kbID+"/rm_tags", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", "/datasets/"+kbID+"/tags", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove tags: %w", err)
 	}

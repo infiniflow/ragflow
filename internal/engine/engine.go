@@ -32,26 +32,23 @@ const (
 
 // DocEngine document storage engine interface
 type DocEngine interface {
-	// Search
-	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
-
-	// Dataset operations
-	CreateDataset(ctx context.Context, indexName, datasetID string, vectorSize int, parserID string) error
-	InsertDataset(ctx context.Context, documents []map[string]interface{}, indexName string, knowledgebaseID string) ([]string, error)
-	UpdateDataset(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, tableNamePrefix string, knowledgebaseID string) error
-
 	// Chunk operations
-	GetChunk(ctx context.Context, indexName, chunkID string, kbIDs []string) (interface{}, error)
+	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error
+	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error
+	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
+	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
+	GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error)
+	DropChunkStore(ctx context.Context, baseName, datasetID string) error
+	ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error)
 
 	// Document metadata operations
-	CreateMetadata(ctx context.Context, indexName string) error
-	InsertMetadata(ctx context.Context, documents []map[string]interface{}, tenantID string) ([]string, error)
-	UpdateMetadata(ctx context.Context, docID string, kbID string, metaFields map[string]interface{}, tenantID string) error
-
-	// Operations for both dataset and metadata tables
-	Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error)
-	DropTable(ctx context.Context, indexName string) error
-	TableExists(ctx context.Context, indexName string) (bool, error)
+	CreateMetadataStore(ctx context.Context, tenantID string) error
+	InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error)
+	UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error
+	DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error)
+	DropMetadataStore(ctx context.Context, tenantID string) error
+	MetadataStoreExists(ctx context.Context, tenantID string) (bool, error)
 
 	// Document operations (used by skill indexing)
 	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error

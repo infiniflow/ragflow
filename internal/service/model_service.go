@@ -44,6 +44,25 @@ func parseModelName(compositeName string) (modelName, instanceName, providerName
 	}
 }
 
+func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
+	if driver == nil {
+		return nil, fmt.Errorf("provider %s driver not found", providerName)
+	}
+
+	if strings.TrimSpace(baseURL) == "" {
+		return driver, nil
+	}
+
+	newDriver := driver.NewInstance(map[string]string{
+		region: baseURL,
+	})
+	if newDriver == nil {
+		return nil, fmt.Errorf("provider %s does not support custom base_url", providerName)
+	}
+
+	return newDriver, nil
+}
+
 func NewModelProviderService() *ModelProviderService {
 	return &ModelProviderService{
 		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
@@ -196,11 +215,10 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 
 	// For local deployed models
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
-		newURL := map[string]string{
-			region: baseURL,
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			return nil, err
 		}
-
-		driver = driver.NewInstance(newURL)
 	}
 
 	return driver.ListModels(apiConfig)
@@ -447,10 +465,10 @@ func (m *ModelProviderService) CheckProviderConnection(providerName, instanceNam
 
 	driver := providerInfo.ModelDriver
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
-		newURL := map[string]string{
-			region: baseURL,
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			return common.CodeServerError, err
 		}
-		driver = driver.NewInstance(newURL)
 	}
 
 	err = driver.CheckConnection(apiConfig)
@@ -507,10 +525,10 @@ func (m *ModelProviderService) ListTasks(providerName, instanceName, userID stri
 
 	driver := providerInfo.ModelDriver
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
-		newURL := map[string]string{
-			region: baseURL,
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		driver = driver.NewInstance(newURL)
 	}
 
 	var listTaskResponse []modelModule.ListTaskStatus
@@ -568,10 +586,10 @@ func (m *ModelProviderService) ShowTask(providerName, instanceName, taskID, user
 
 	driver := providerInfo.ModelDriver
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
-		newURL := map[string]string{
-			region: baseURL,
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		driver = driver.NewInstance(newURL)
 	}
 
 	var taskResponse *modelModule.TaskResponse
@@ -897,10 +915,10 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 
 		modelConfig.ModelClass = &providerInfo.Class
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.ChatResponse
 		response, err = newProviderInfo.ChatWithMessages(modelName, messages, apiConfig, modelConfig)
@@ -999,10 +1017,10 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 
 		modelConfig.ModelClass = &providerInfo.Class
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		err = newProviderInfo.ChatStreamlyWithSender(modelName, messages, apiConfig, modelConfig, sender)
 		if err != nil {
@@ -1105,10 +1123,10 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response []modelModule.EmbeddingData
 		response, err = newProviderInfo.Embed(&modelName, texts, apiConfig, modelConfig)
@@ -1213,10 +1231,10 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.RerankResponse
 		response, err = newProviderInfo.Rerank(&modelName, query, documents, apiConfig, modelConfig)
@@ -1321,10 +1339,10 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.ASRResponse
 		response, err = newProviderInfo.TranscribeAudio(&modelName, audioFile, apiConfig, asrConfig)
@@ -1420,10 +1438,10 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		err = newProviderInfo.TranscribeAudioWithSender(&modelName, audioFile, apiConfig, asrConfig, sender)
 		if err != nil {
@@ -1526,10 +1544,10 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.TTSResponse
 		response, err = newProviderInfo.AudioSpeech(&modelName, audioContent, apiConfig, ttsConfig)
@@ -1625,10 +1643,10 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		err = newProviderInfo.AudioSpeechWithSender(&modelName, audioContent, apiConfig, ttsConfig, sender)
 		if err != nil {
@@ -1730,10 +1748,10 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.OCRFileResponse
 		response, err = newProviderInfo.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
@@ -1840,10 +1858,10 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
 
-		newURL := map[string]string{
-			region: extra["base_url"],
+		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
-		newProviderInfo := providerInfo.ModelDriver.NewInstance(newURL)
 
 		var response *modelModule.ParseFileResponse
 		response, err = newProviderInfo.ParseFile(&modelName, content, url, apiConfig, parseFileConfig)
