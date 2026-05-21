@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"ragflow/internal/ingestion"
 
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
@@ -147,6 +148,19 @@ func main() {
 	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
+
+	executor := ingestion.NewExecutor("exec-001", 2, []string{"pdf", "docx", "txt"})
+
+	// Connect to the admin server
+	serverAddress := fmt.Sprintf("%s:%d", config.Admin.Host, config.Admin.IngestionManagerPort)
+	if err := executor.Connect(serverAddress); err != nil {
+		common.Fatal("Failed to connect: %v", zap.Error(err))
+	}
+
+	ch := make(chan struct{})
+	<-ch
+
+	executor.Stop()
 
 	common.Info("Ingestion worker initialization complete")
 }
