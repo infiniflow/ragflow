@@ -736,9 +736,9 @@ func (z *MistralModel) ParseFile(modelName *string, content []byte, url *string,
 }
 
 func (z *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("no such method", z.Name())
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (z *MistralModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("no such method", z.Name())
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
