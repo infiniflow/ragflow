@@ -80,7 +80,7 @@ dependencies = [
     "opencv-python-headless==4.10.0.84",
     "opendal>=0.45.0,<0.46.0",
     "opensearch-py==2.7.1",
-    "ormsgpack>=1.5.0",
+    "ormsgpack>=1.6.0",
     "pdfplumber==0.10.4",
     "pluginlib>=0.10.0",
     "psycopg2-binary>=2.9.11,<3.0.0",
