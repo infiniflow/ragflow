@@ -19,94 +19,94 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	IngestionServer_Action_FullMethodName = "/common.IngestionServer/Action"
+	IngestionManager_Action_FullMethodName = "/common.IngestionManager/Action"
 )
 
-// IngestionServerClient is the client API for IngestionServer service.
+// IngestionManagerClient is the client API for IngestionManager service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type IngestionServerClient interface {
-	Action(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[IngestionMessage, IngestionResponse], error)
+type IngestionManagerClient interface {
+	Action(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[IngestionMessage, AdminMessage], error)
 }
 
-type ingestionServerClient struct {
+type ingestionManagerClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewIngestionServerClient(cc grpc.ClientConnInterface) IngestionServerClient {
-	return &ingestionServerClient{cc}
+func NewIngestionManagerClient(cc grpc.ClientConnInterface) IngestionManagerClient {
+	return &ingestionManagerClient{cc}
 }
 
-func (c *ingestionServerClient) Action(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[IngestionMessage, IngestionResponse], error) {
+func (c *ingestionManagerClient) Action(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[IngestionMessage, AdminMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &IngestionServer_ServiceDesc.Streams[0], IngestionServer_Action_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &IngestionManager_ServiceDesc.Streams[0], IngestionManager_Action_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[IngestionMessage, IngestionResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[IngestionMessage, AdminMessage]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type IngestionServer_ActionClient = grpc.BidiStreamingClient[IngestionMessage, IngestionResponse]
+type IngestionManager_ActionClient = grpc.BidiStreamingClient[IngestionMessage, AdminMessage]
 
-// IngestionServerServer is the server API for IngestionServer service.
-// All implementations must embed UnimplementedIngestionServerServer
+// IngestionManagerServer is the server API for IngestionManager service.
+// All implementations must embed UnimplementedIngestionManagerServer
 // for forward compatibility.
-type IngestionServerServer interface {
-	Action(grpc.BidiStreamingServer[IngestionMessage, IngestionResponse]) error
-	mustEmbedUnimplementedIngestionServerServer()
+type IngestionManagerServer interface {
+	Action(grpc.BidiStreamingServer[IngestionMessage, AdminMessage]) error
+	mustEmbedUnimplementedIngestionManagerServer()
 }
 
-// UnimplementedIngestionServerServer must be embedded to have
+// UnimplementedIngestionManagerServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedIngestionServerServer struct{}
+type UnimplementedIngestionManagerServer struct{}
 
-func (UnimplementedIngestionServerServer) Action(grpc.BidiStreamingServer[IngestionMessage, IngestionResponse]) error {
+func (UnimplementedIngestionManagerServer) Action(grpc.BidiStreamingServer[IngestionMessage, AdminMessage]) error {
 	return status.Error(codes.Unimplemented, "method Action not implemented")
 }
-func (UnimplementedIngestionServerServer) mustEmbedUnimplementedIngestionServerServer() {}
-func (UnimplementedIngestionServerServer) testEmbeddedByValue()                         {}
+func (UnimplementedIngestionManagerServer) mustEmbedUnimplementedIngestionManagerServer() {}
+func (UnimplementedIngestionManagerServer) testEmbeddedByValue()                          {}
 
-// UnsafeIngestionServerServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to IngestionServerServer will
+// UnsafeIngestionManagerServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to IngestionManagerServer will
 // result in compilation errors.
-type UnsafeIngestionServerServer interface {
-	mustEmbedUnimplementedIngestionServerServer()
+type UnsafeIngestionManagerServer interface {
+	mustEmbedUnimplementedIngestionManagerServer()
 }
 
-func RegisterIngestionServerServer(s grpc.ServiceRegistrar, srv IngestionServerServer) {
-	// If the following call panics, it indicates UnimplementedIngestionServerServer was
+func RegisterIngestionManagerServer(s grpc.ServiceRegistrar, srv IngestionManagerServer) {
+	// If the following call panics, it indicates UnimplementedIngestionManagerServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&IngestionServer_ServiceDesc, srv)
+	s.RegisterService(&IngestionManager_ServiceDesc, srv)
 }
 
-func _IngestionServer_Action_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(IngestionServerServer).Action(&grpc.GenericServerStream[IngestionMessage, IngestionResponse]{ServerStream: stream})
+func _IngestionManager_Action_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(IngestionManagerServer).Action(&grpc.GenericServerStream[IngestionMessage, AdminMessage]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type IngestionServer_ActionServer = grpc.BidiStreamingServer[IngestionMessage, IngestionResponse]
+type IngestionManager_ActionServer = grpc.BidiStreamingServer[IngestionMessage, AdminMessage]
 
-// IngestionServer_ServiceDesc is the grpc.ServiceDesc for IngestionServer service.
+// IngestionManager_ServiceDesc is the grpc.ServiceDesc for IngestionManager service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var IngestionServer_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "common.IngestionServer",
-	HandlerType: (*IngestionServerServer)(nil),
+var IngestionManager_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "common.IngestionManager",
+	HandlerType: (*IngestionManagerServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Action",
-			Handler:       _IngestionServer_Action_Handler,
+			Handler:       _IngestionManager_Action_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

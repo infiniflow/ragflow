@@ -4,22 +4,24 @@ package common;
 
 option go_package = "./;common";
 
-service IngestionServer {
-  rpc Action(stream IngestionMessage) returns (stream IngestionResponse);
+service IngestionManager {
+  rpc Action(stream IngestionMessage) returns (stream AdminMessage);
 }
 
 message IngestionMessage {
-  string executor_id = 1;
+  string ingestion_server_id = 1;
   string message_type = 2;  // REGISTER, HEARTBEAT, TASK_RESULT, TASK_PROGRESS, PULL_REQUEST
 
   RegisterInfo register_info = 3;
 
   HeartbeatInfo heartbeat_info = 4;
 
-  TaskProgress task_progress = 5;
+  TaskResult task_result = 5;
+
+  TaskProgress task_progress = 6;
 }
 
-message IngestionResponse {
+message AdminMessage {
   string message_type = 1;  // TASK_ASSIGNMENT, ACK, PONG, RECONNECT
   TaskAssignment task_assignment = 2;
   AckInfo ack_info = 3;
@@ -44,8 +46,16 @@ message TaskAssignment {
   string config = 3;
 }
 
+message TaskResult {
+  string task_id = 1;
+  string status = 2;  // COMPLETED, FAILED, CANCELLED
+  string result_url = 3;
+  string error_message = 4;
+}
+
 message TaskProgress {
   string task_id = 1;
+  int32 progress = 2;
   string info = 3;
 }
 

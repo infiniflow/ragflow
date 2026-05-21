@@ -22,14 +22,15 @@ const (
 )
 
 type IngestionMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ExecutorId    string                 `protobuf:"bytes,1,opt,name=executor_id,json=executorId,proto3" json:"executor_id,omitempty"`
-	MessageType   string                 `protobuf:"bytes,2,opt,name=message_type,json=messageType,proto3" json:"message_type,omitempty"` // REGISTER, HEARTBEAT, TASK_RESULT, TASK_PROGRESS, PULL_REQUEST
-	RegisterInfo  *RegisterInfo          `protobuf:"bytes,3,opt,name=register_info,json=registerInfo,proto3" json:"register_info,omitempty"`
-	HeartbeatInfo *HeartbeatInfo         `protobuf:"bytes,4,opt,name=heartbeat_info,json=heartbeatInfo,proto3" json:"heartbeat_info,omitempty"`
-	TaskProgress  *TaskProgress          `protobuf:"bytes,5,opt,name=task_progress,json=taskProgress,proto3" json:"task_progress,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	IngestionServerId string                 `protobuf:"bytes,1,opt,name=ingestion_server_id,json=ingestionServerId,proto3" json:"ingestion_server_id,omitempty"`
+	MessageType       string                 `protobuf:"bytes,2,opt,name=message_type,json=messageType,proto3" json:"message_type,omitempty"` // REGISTER, HEARTBEAT, TASK_RESULT, TASK_PROGRESS, PULL_REQUEST
+	RegisterInfo      *RegisterInfo          `protobuf:"bytes,3,opt,name=register_info,json=registerInfo,proto3" json:"register_info,omitempty"`
+	HeartbeatInfo     *HeartbeatInfo         `protobuf:"bytes,4,opt,name=heartbeat_info,json=heartbeatInfo,proto3" json:"heartbeat_info,omitempty"`
+	TaskResult        *TaskResult            `protobuf:"bytes,5,opt,name=task_result,json=taskResult,proto3" json:"task_result,omitempty"`
+	TaskProgress      *TaskProgress          `protobuf:"bytes,6,opt,name=task_progress,json=taskProgress,proto3" json:"task_progress,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *IngestionMessage) Reset() {
@@ -62,9 +63,9 @@ func (*IngestionMessage) Descriptor() ([]byte, []int) {
 	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *IngestionMessage) GetExecutorId() string {
+func (x *IngestionMessage) GetIngestionServerId() string {
 	if x != nil {
-		return x.ExecutorId
+		return x.IngestionServerId
 	}
 	return ""
 }
@@ -90,6 +91,13 @@ func (x *IngestionMessage) GetHeartbeatInfo() *HeartbeatInfo {
 	return nil
 }
 
+func (x *IngestionMessage) GetTaskResult() *TaskResult {
+	if x != nil {
+		return x.TaskResult
+	}
+	return nil
+}
+
 func (x *IngestionMessage) GetTaskProgress() *TaskProgress {
 	if x != nil {
 		return x.TaskProgress
@@ -97,7 +105,7 @@ func (x *IngestionMessage) GetTaskProgress() *TaskProgress {
 	return nil
 }
 
-type IngestionResponse struct {
+type AdminMessage struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	MessageType    string                 `protobuf:"bytes,1,opt,name=message_type,json=messageType,proto3" json:"message_type,omitempty"` // TASK_ASSIGNMENT, ACK, PONG, RECONNECT
 	TaskAssignment *TaskAssignment        `protobuf:"bytes,2,opt,name=task_assignment,json=taskAssignment,proto3" json:"task_assignment,omitempty"`
@@ -107,20 +115,20 @@ type IngestionResponse struct {
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *IngestionResponse) Reset() {
-	*x = IngestionResponse{}
+func (x *AdminMessage) Reset() {
+	*x = AdminMessage{}
 	mi := &file_internal_proto_ingestion_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *IngestionResponse) String() string {
+func (x *AdminMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*IngestionResponse) ProtoMessage() {}
+func (*AdminMessage) ProtoMessage() {}
 
-func (x *IngestionResponse) ProtoReflect() protoreflect.Message {
+func (x *AdminMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_internal_proto_ingestion_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -132,33 +140,33 @@ func (x *IngestionResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IngestionResponse.ProtoReflect.Descriptor instead.
-func (*IngestionResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use AdminMessage.ProtoReflect.Descriptor instead.
+func (*AdminMessage) Descriptor() ([]byte, []int) {
 	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *IngestionResponse) GetMessageType() string {
+func (x *AdminMessage) GetMessageType() string {
 	if x != nil {
 		return x.MessageType
 	}
 	return ""
 }
 
-func (x *IngestionResponse) GetTaskAssignment() *TaskAssignment {
+func (x *AdminMessage) GetTaskAssignment() *TaskAssignment {
 	if x != nil {
 		return x.TaskAssignment
 	}
 	return nil
 }
 
-func (x *IngestionResponse) GetAckInfo() *AckInfo {
+func (x *AdminMessage) GetAckInfo() *AckInfo {
 	if x != nil {
 		return x.AckInfo
 	}
 	return nil
 }
 
-func (x *IngestionResponse) GetErrorMessage() string {
+func (x *AdminMessage) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
 	}
@@ -345,9 +353,78 @@ func (x *TaskAssignment) GetConfig() string {
 	return ""
 }
 
+type TaskResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"` // COMPLETED, FAILED, CANCELLED
+	ResultUrl     string                 `protobuf:"bytes,3,opt,name=result_url,json=resultUrl,proto3" json:"result_url,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskResult) Reset() {
+	*x = TaskResult{}
+	mi := &file_internal_proto_ingestion_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskResult) ProtoMessage() {}
+
+func (x *TaskResult) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_proto_ingestion_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskResult.ProtoReflect.Descriptor instead.
+func (*TaskResult) Descriptor() ([]byte, []int) {
+	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *TaskResult) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *TaskResult) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *TaskResult) GetResultUrl() string {
+	if x != nil {
+		return x.ResultUrl
+	}
+	return ""
+}
+
+func (x *TaskResult) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 type TaskProgress struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Progress      int32                  `protobuf:"varint,2,opt,name=progress,proto3" json:"progress,omitempty"`
 	Info          string                 `protobuf:"bytes,3,opt,name=info,proto3" json:"info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -355,7 +432,7 @@ type TaskProgress struct {
 
 func (x *TaskProgress) Reset() {
 	*x = TaskProgress{}
-	mi := &file_internal_proto_ingestion_proto_msgTypes[5]
+	mi := &file_internal_proto_ingestion_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -367,7 +444,7 @@ func (x *TaskProgress) String() string {
 func (*TaskProgress) ProtoMessage() {}
 
 func (x *TaskProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_proto_ingestion_proto_msgTypes[5]
+	mi := &file_internal_proto_ingestion_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +457,7 @@ func (x *TaskProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskProgress.ProtoReflect.Descriptor instead.
 func (*TaskProgress) Descriptor() ([]byte, []int) {
-	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{5}
+	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TaskProgress) GetTaskId() string {
@@ -388,6 +465,13 @@ func (x *TaskProgress) GetTaskId() string {
 		return x.TaskId
 	}
 	return ""
+}
+
+func (x *TaskProgress) GetProgress() int32 {
+	if x != nil {
+		return x.Progress
+	}
+	return 0
 }
 
 func (x *TaskProgress) GetInfo() string {
@@ -408,7 +492,7 @@ type AckInfo struct {
 
 func (x *AckInfo) Reset() {
 	*x = AckInfo{}
-	mi := &file_internal_proto_ingestion_proto_msgTypes[6]
+	mi := &file_internal_proto_ingestion_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -420,7 +504,7 @@ func (x *AckInfo) String() string {
 func (*AckInfo) ProtoMessage() {}
 
 func (x *AckInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_proto_ingestion_proto_msgTypes[6]
+	mi := &file_internal_proto_ingestion_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -433,7 +517,7 @@ func (x *AckInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckInfo.ProtoReflect.Descriptor instead.
 func (*AckInfo) Descriptor() ([]byte, []int) {
-	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{6}
+	return file_internal_proto_ingestion_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AckInfo) GetTaskId() string {
@@ -461,15 +545,16 @@ var File_internal_proto_ingestion_proto protoreflect.FileDescriptor
 
 const file_internal_proto_ingestion_proto_rawDesc = "" +
 	"\n" +
-	"\x1einternal/proto/ingestion.proto\x12\x06common\"\x8a\x02\n" +
-	"\x10IngestionMessage\x12\x1f\n" +
-	"\vexecutor_id\x18\x01 \x01(\tR\n" +
-	"executorId\x12!\n" +
+	"\x1einternal/proto/ingestion.proto\x12\x06common\"\xce\x02\n" +
+	"\x10IngestionMessage\x12.\n" +
+	"\x13ingestion_server_id\x18\x01 \x01(\tR\x11ingestionServerId\x12!\n" +
 	"\fmessage_type\x18\x02 \x01(\tR\vmessageType\x129\n" +
 	"\rregister_info\x18\x03 \x01(\v2\x14.common.RegisterInfoR\fregisterInfo\x12<\n" +
-	"\x0eheartbeat_info\x18\x04 \x01(\v2\x15.common.HeartbeatInfoR\rheartbeatInfo\x129\n" +
-	"\rtask_progress\x18\x05 \x01(\v2\x14.common.TaskProgressR\ftaskProgress\"\xc8\x01\n" +
-	"\x11IngestionResponse\x12!\n" +
+	"\x0eheartbeat_info\x18\x04 \x01(\v2\x15.common.HeartbeatInfoR\rheartbeatInfo\x123\n" +
+	"\vtask_result\x18\x05 \x01(\v2\x12.common.TaskResultR\n" +
+	"taskResult\x129\n" +
+	"\rtask_progress\x18\x06 \x01(\v2\x14.common.TaskProgressR\ftaskProgress\"\xc3\x01\n" +
+	"\fAdminMessage\x12!\n" +
 	"\fmessage_type\x18\x01 \x01(\tR\vmessageType\x12?\n" +
 	"\x0ftask_assignment\x18\x02 \x01(\v2\x16.common.TaskAssignmentR\x0etaskAssignment\x12*\n" +
 	"\back_info\x18\x03 \x01(\v2\x0f.common.AckInfoR\aackInfo\x12#\n" +
@@ -485,16 +570,24 @@ const file_internal_proto_ingestion_proto_rawDesc = "" +
 	"\x0eTaskAssignment\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
 	"\ttask_type\x18\x02 \x01(\tR\btaskType\x12\x16\n" +
-	"\x06config\x18\x03 \x01(\tR\x06config\";\n" +
+	"\x06config\x18\x03 \x01(\tR\x06config\"\x81\x01\n" +
+	"\n" +
+	"TaskResult\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"result_url\x18\x03 \x01(\tR\tresultUrl\x12#\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"W\n" +
 	"\fTaskProgress\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1a\n" +
+	"\bprogress\x18\x02 \x01(\x05R\bprogress\x12\x12\n" +
 	"\x04info\x18\x03 \x01(\tR\x04info\"V\n" +
 	"\aAckInfo\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage2T\n" +
-	"\x0fIngestionServer\x12A\n" +
-	"\x06Action\x12\x18.common.IngestionMessage\x1a\x19.common.IngestionResponse(\x010\x01B\vZ\t./;commonb\x06proto3"
+	"\amessage\x18\x03 \x01(\tR\amessage2P\n" +
+	"\x10IngestionManager\x12<\n" +
+	"\x06Action\x12\x18.common.IngestionMessage\x1a\x14.common.AdminMessage(\x010\x01B\vZ\t./;commonb\x06proto3"
 
 var (
 	file_internal_proto_ingestion_proto_rawDescOnce sync.Once
@@ -508,29 +601,31 @@ func file_internal_proto_ingestion_proto_rawDescGZIP() []byte {
 	return file_internal_proto_ingestion_proto_rawDescData
 }
 
-var file_internal_proto_ingestion_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_internal_proto_ingestion_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_internal_proto_ingestion_proto_goTypes = []any{
-	(*IngestionMessage)(nil),  // 0: common.IngestionMessage
-	(*IngestionResponse)(nil), // 1: common.IngestionResponse
-	(*RegisterInfo)(nil),      // 2: common.RegisterInfo
-	(*HeartbeatInfo)(nil),     // 3: common.HeartbeatInfo
-	(*TaskAssignment)(nil),    // 4: common.TaskAssignment
-	(*TaskProgress)(nil),      // 5: common.TaskProgress
-	(*AckInfo)(nil),           // 6: common.AckInfo
+	(*IngestionMessage)(nil), // 0: common.IngestionMessage
+	(*AdminMessage)(nil),     // 1: common.AdminMessage
+	(*RegisterInfo)(nil),     // 2: common.RegisterInfo
+	(*HeartbeatInfo)(nil),    // 3: common.HeartbeatInfo
+	(*TaskAssignment)(nil),   // 4: common.TaskAssignment
+	(*TaskResult)(nil),       // 5: common.TaskResult
+	(*TaskProgress)(nil),     // 6: common.TaskProgress
+	(*AckInfo)(nil),          // 7: common.AckInfo
 }
 var file_internal_proto_ingestion_proto_depIdxs = []int32{
 	2, // 0: common.IngestionMessage.register_info:type_name -> common.RegisterInfo
 	3, // 1: common.IngestionMessage.heartbeat_info:type_name -> common.HeartbeatInfo
-	5, // 2: common.IngestionMessage.task_progress:type_name -> common.TaskProgress
-	4, // 3: common.IngestionResponse.task_assignment:type_name -> common.TaskAssignment
-	6, // 4: common.IngestionResponse.ack_info:type_name -> common.AckInfo
-	0, // 5: common.IngestionServer.Action:input_type -> common.IngestionMessage
-	1, // 6: common.IngestionServer.Action:output_type -> common.IngestionResponse
-	6, // [6:7] is the sub-list for method output_type
-	5, // [5:6] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	5, // 2: common.IngestionMessage.task_result:type_name -> common.TaskResult
+	6, // 3: common.IngestionMessage.task_progress:type_name -> common.TaskProgress
+	4, // 4: common.AdminMessage.task_assignment:type_name -> common.TaskAssignment
+	7, // 5: common.AdminMessage.ack_info:type_name -> common.AckInfo
+	0, // 6: common.IngestionManager.Action:input_type -> common.IngestionMessage
+	1, // 7: common.IngestionManager.Action:output_type -> common.AdminMessage
+	7, // [7:8] is the sub-list for method output_type
+	6, // [6:7] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_internal_proto_ingestion_proto_init() }
@@ -544,7 +639,7 @@ func file_internal_proto_ingestion_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_proto_ingestion_proto_rawDesc), len(file_internal_proto_ingestion_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
