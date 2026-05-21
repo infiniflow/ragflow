@@ -27,14 +27,20 @@ ADMIN_HOST_ADDRESS = os.getenv("ADMIN_HOST_ADDRESS", "http://127.0.0.1:9381")
 
 UNAUTHORIZED_ERROR_MESSAGE = "<!doctype html>\n<html lang=en>\n<title>401 unauthorized</title>\n<h1>unauthorized</h1>\n<p>the server could not verify that you are authorized to access the url requested. you either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n"
 
-# password is "admin"
-ENCRYPTED_ADMIN_PASSWORD: str = """WBPsJbL/W+1HN+hchm5pgu1YC3yMEb/9MFtsanZrpKEE9kAj4u09EIIVDtIDZhJOdTjz5pp5QW9TwqXBfQ2qzDqVJiwK7HGcNsoPi4wQPCmnLo0fs62QklMlg7l1Q7fjGRgV+KWtvNUce2PFzgrcAGDqRIuA/slSclKUEISEiK4z62rdDgvHT8LyuACuF1lPUY5wV0m/MbmGijRJlgvglAF8BX0BP8rQr8wZeaJdcnAy/keuODCjltMZDL06tYluN7HoiU+qlhBB+ltqG411oO/+vVhBgWsuVVOHd8uMjJEL320GUWUicprDUZvjlLaSSqVyyOiRMHpqAE9eHEecWg=="""
+ADMIN_EMAIL: str = os.getenv("DEFAULT_SUPERUSER_EMAIL", "")
+ADMIN_PASSWORD: str = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "")
 
 
-def admin_login(session: requests.Session, email: str = "admin@ragflow.io", password: str = "admin") -> str:
+def admin_login(session: requests.Session, email: str = ADMIN_EMAIL, password: str = ADMIN_PASSWORD) -> str:
     """Helper function to login as admin and return authorization token"""
+    if not password:
+        raise RuntimeError(
+            "DEFAULT_SUPERUSER_PASSWORD environment variable must be set to run admin API tests"
+        )
+    from api.utils.crypt import crypt
     url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/login"
-    response: requests.Response = session.post(url, json={"email": email, "password": ENCRYPTED_ADMIN_PASSWORD})
+    encrypted_password = crypt(password)
+    response: requests.Response = session.post(url, json={"email": email, "password": encrypted_password})
     res_json: dict[str, Any] = response.json()
     if res_json.get("code") != 0:
         raise Exception(res_json.get("message"))

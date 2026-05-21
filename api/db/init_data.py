@@ -48,6 +48,11 @@ DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io
 DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
+    if email == "admin@ragflow.io" or password == "admin":
+        logging.warning(
+            "RAGFlow is using default admin credentials. "
+            "Change the admin password immediately after first login and place the admin service behind a firewall."
+        )
     if UserService.query(email=email):
         logging.info("User with email %s already exists, skipping initialization.", email)
         return

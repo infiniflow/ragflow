@@ -16,6 +16,7 @@
 
 
 import logging
+import os
 import uuid
 from functools import wraps
 from datetime import datetime
@@ -87,16 +88,31 @@ def setup_auth(login_manager):
             return None
 
 
+_DEFAULT_EMAIL = "admin@ragflow.io"
+_DEFAULT_PASSWORD = "admin"
+_DEFAULT_NICKNAME = "admin"
+
+
 def init_default_admin():
+    admin_email = os.getenv("DEFAULT_SUPERUSER_EMAIL", _DEFAULT_EMAIL)
+    admin_password = os.getenv("DEFAULT_SUPERUSER_PASSWORD", _DEFAULT_PASSWORD)
+    admin_nickname = os.getenv("DEFAULT_SUPERUSER_NICKNAME", _DEFAULT_NICKNAME)
+
+    if admin_email == _DEFAULT_EMAIL or admin_password == _DEFAULT_PASSWORD:
+        logging.warning(
+            "RAGFlow is using default admin credentials. "
+            "Change the admin password immediately after first login and place the admin service behind a firewall."
+        )
+
     # Verify that at least one active admin user exists. If not, create a default one.
     users = UserService.query(is_superuser=True)
     if not users:
         default_admin = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
+            "password": encode_to_base64(admin_password),
+            "nickname": admin_nickname,
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": admin_email,
             "creator": "system",
             "status": "1",
         }
@@ -106,7 +122,7 @@ def init_default_admin():
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
-        default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
+        default_admin_rows = [u for u in users if u.email == admin_email]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
@@ -191,17 +207,7 @@ def check_admin(username: str, password: str):
     users = UserService.query(email=username)
     if not users:
         logging.info(f"Username: {username} is not registered!")
-        user_info = {
-            "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
-            "is_superuser": True,
-            "email": "admin@ragflow.io",
-            "creator": "system",
-            "status": "1",
-        }
-        if not UserService.save(**user_info):
-            raise AdminException("Can't init admin.", 500)
+        return False
 
     user = UserService.query_user(username, password)
     if user:

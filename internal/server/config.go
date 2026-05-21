@@ -423,27 +423,30 @@ func FromEnvironments() error {
 		return fmt.Errorf("invalid doc engine: %s", docEngine)
 	}
 
-	// Default super user email
-	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
-	superUserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
-	if superUserEmail != "" {
-		_, err := mail.ParseAddress(superUserEmail)
-		if err != nil {
-			return fmt.Errorf("invalid super user email: %s", superUserEmail)
-		}
-		globalConfig.DefaultSuperUser.Email = superUserEmail
+	// Default super user email (no hardcoded fallback for security)
+	superUserEmail := strings.TrimSpace(os.Getenv("DEFAULT_SUPERUSER_EMAIL"))
+	if superUserEmail == "" {
+		return fmt.Errorf("DEFAULT_SUPERUSER_EMAIL is required")
 	}
+	if _, err := mail.ParseAddress(superUserEmail); err != nil {
+		return fmt.Errorf("invalid super user email: %s", superUserEmail)
+	}
+	globalConfig.DefaultSuperUser.Email = superUserEmail
 
-	globalConfig.DefaultSuperUser.Password = "admin"
 	superUserPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
-	if superUserPassword != "" {
-		globalConfig.DefaultSuperUser.Password = superUserPassword
+	if strings.TrimSpace(superUserPassword) == "" {
+		return fmt.Errorf("DEFAULT_SUPERUSER_PASSWORD is required")
 	}
+	if len(superUserPassword) < 12 {
+		return fmt.Errorf("DEFAULT_SUPERUSER_PASSWORD must be at least 12 characters long")
+	}
+	globalConfig.DefaultSuperUser.Password = superUserPassword
 
-	globalConfig.DefaultSuperUser.Nickname = "admin"
 	superUserNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
 	if superUserNickname != "" {
 		globalConfig.DefaultSuperUser.Nickname = superUserNickname
+	} else {
+		globalConfig.DefaultSuperUser.Nickname = "admin"
 	}
 
 	// Meta database

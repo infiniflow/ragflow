@@ -937,7 +937,7 @@ def seeded_user_credentials(base_url: str, login_url: str, browser) -> tuple[str
             _ui_register_user(browser, login_url, email, password, nickname)
         except _RegisterDisabled as exc:
             seed_errors.append(f"ui: {exc}")
-            default_email = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+            default_email = os.getenv("DEFAULT_SUPERUSER_EMAIL", "")
             raise RuntimeError(
                 "User registration is disabled and no default account is available. "
                 f"Known superuser defaults ({default_email}) cannot be used with the "
