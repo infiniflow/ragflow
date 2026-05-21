@@ -39,7 +39,7 @@ Released on May 20, 2026.
 - IMAP multi-address parsing [#15006](https://github.com/infiniflow/ragflow/pull/15006)
 - Langfuse token usage reporting. [#13294](https://github.com/infiniflow/ragflow/pull/13294)
 - Reranking robustness. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
-- Bump nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
+- Bumps nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
 
 ## v0.25.4
 
