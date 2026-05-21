@@ -15,14 +15,12 @@
 #
 
 import base64
-import ipaddress
 import json
 import re
-import socket
-from urllib.parse import urlparse
-
-from api.apps import smtp_mail_server
-from flask_mail import Message
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.header import Header
+from common import settings
 from quart import render_template_string
 from api.utils.email_templates import EMAIL_TEMPLATES
 from selenium import webdriver
@@ -35,11 +33,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-OTP_LENGTH = 8
-OTP_TTL_SECONDS = 5 * 60
-ATTEMPT_LIMIT = 5
-ATTEMPT_LOCK_SECONDS = 30 * 60
-RESEND_COOLDOWN_SECONDS = 60
+OTP_LENGTH = 4
+OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
+ATTEMPT_LIMIT = 5  # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
 
 
 CONTENT_TYPE_MAP = {
@@ -68,6 +66,7 @@ CONTENT_TYPE_MAP = {
     # Web
     "md": "text/markdown",
     "markdown": "text/markdown",
+    "mdx": "text/markdown",
     "htm": "text/html",
     "html": "text/html",
     "json": "application/json",
@@ -84,7 +83,50 @@ CONTENT_TYPE_MAP = {
     "ico": "image/x-icon",
     "avif": "image/avif",
     "heic": "image/heic",
+    # PPTX
+    "ppt": "application/vnd.ms-powerpoint",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+
+
+FORCE_ATTACHMENT_EXTENSIONS = {
+    "htm",
+    "html",
+    "shtml",
+    "xht",
+    "xhtml",
+    "xml",
+    "mhtml",
+    "svg",
+}
+
+
+FORCE_ATTACHMENT_CONTENT_TYPES = {
+    "text/html",
+    "image/svg+xml",
+    "application/xhtml+xml",
+    "text/xml",
+    "application/xml",
+    "multipart/related",
+}
+
+
+def should_force_attachment(ext: str | None, content_type: str | None = None) -> bool:
+    normalized_ext = (ext or "").lower().strip(".")
+    if normalized_ext in FORCE_ATTACHMENT_EXTENSIONS:
+        return True
+    normalized_type = (content_type or "").lower()
+    return normalized_type in FORCE_ATTACHMENT_CONTENT_TYPES
+
+
+def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
+    if content_type:
+        response.headers.set("Content-Type", content_type)
+    force_attachment = should_force_attachment(ext, content_type)
+    if force_attachment:
+        response.headers.set("X-Content-Type-Options", "nosniff")
+        response.headers.set("Content-Disposition", "attachment")
+    return response
 
 
 def html2pdf(
@@ -131,6 +173,9 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
     try:
         WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
     except TimeoutException:
+        pass
+
+    try:
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -139,33 +184,21 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         }
         calculated_print_options.update(print_options)
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
-        driver.quit()
         return base64.b64decode(result["data"])
-
-
-def is_private_ip(ip: str) -> bool:
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        return ip_obj.is_private
-    except ValueError:
-        return False
+    finally:
+        driver.quit()
 
 
 def is_valid_url(url: str) -> bool:
     if not re.match(r"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url):
         return False
-    parsed_url = urlparse(url)
-    hostname = parsed_url.hostname
+    from common.ssrf_guard import assert_url_is_safe
 
-    if not hostname:
-        return False
     try:
-        ip = socket.gethostbyname(hostname)
-        if is_private_ip(ip):
-            return False
-    except socket.gaierror:
+        assert_url_is_safe(url)
+        return True
+    except ValueError:
         return False
-    return True
 
 
 def safe_json_parse(data: str | dict) -> dict:
@@ -185,25 +218,31 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return default
 
 
-def send_email_html(subject: str, to_email: str, template_key: str, **context):
-    """Generic HTML email sender using shared templates.
-    template_key must exist in EMAIL_TEMPLATES.
-    """
-    from api.apps import app
-    tmpl = EMAIL_TEMPLATES.get(template_key)
-    if not tmpl:
-        raise ValueError(f"Unknown email template: {template_key}")
-    with app.app_context():
-        msg = Message(subject=subject, recipients=[to_email])
-        msg.html = render_template_string(tmpl, **context)
-        smtp_mail_server.send(msg)
+async def send_email_html(to_email: str, subject: str, template_key: str, **context):
+    body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = f"{settings.MAIL_DEFAULT_SENDER[0]} <{settings.MAIL_DEFAULT_SENDER[1]}>"
+    msg["To"] = to_email
+
+    smtp = aiosmtplib.SMTP(
+        hostname=settings.MAIL_SERVER,
+        port=settings.MAIL_PORT,
+        use_tls=True,
+        timeout=10,
+    )
+
+    await smtp.connect()
+    await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+    await smtp.send_message(msg)
+    await smtp.quit()
 
 
-def send_invite_email(to_email, invite_url, tenant_id, inviter):
+async def send_invite_email(to_email, invite_url, tenant_id, inviter):
     # Reuse the generic HTML sender with 'invite' template
-    send_email_html(
-        subject="RAGFlow Invitation",
+    await send_email_html(
         to_email=to_email,
+        subject="RAGFlow Invitation",
         template_key="invite",
         email=to_email,
         invite_url=invite_url,
@@ -224,10 +263,10 @@ def otp_keys(email: str):
 
 def hash_code(code: str, salt: bytes) -> str:
     import hashlib
-    import hmac 
+    import hmac
+
     return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
-    
+
 
 def captcha_key(email: str) -> str:
     return f"captcha:{email}"
-    

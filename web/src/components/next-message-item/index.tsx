@@ -1,9 +1,9 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import {
   IMessage,
   IReferenceChunk,
   IReferenceObject,
+  UploadResponseDataType,
 } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
@@ -21,21 +21,24 @@ import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
+import { citationMarkerReg } from '@/utils/citation-utils';
+import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
+import { DocumentDownloadButton } from '../document-download-button';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
+import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
-import styles from './index.less';
+import styles from './index.module.less';
 import { ReferenceDocumentList } from './reference-document-list';
+import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
 interface IProps
-  extends Partial<IRemoveMessageById>,
-    IRegenerateMessage,
-    PropsWithChildren {
+  extends Partial<IRemoveMessageById>, IRegenerateMessage, PropsWithChildren {
   item: IMessage;
   conversationId?: string;
   currentEventListWithoutMessageById?: (messageId: string) => INodeEvent[];
@@ -95,6 +98,12 @@ function MessageItem({
     return Object.values(docs);
   }, [reference?.doc_aggs]);
 
+  const documentDownloadInfos = useMemo(
+    () => item.downloads ?? [],
+    [item.downloads],
+  );
+  const messageContent = item.content;
+
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
   }, [regenerateMessage, item]);
@@ -114,6 +123,49 @@ function MessageItem({
     },
     [currentEventListWithoutMessageById, loading],
   );
+
+  const renderContent = useCallback(() => {
+    if (!messageContent && !(item.data || (sendLoading && !isShare))) {
+      return null;
+    }
+
+    return (
+      <div
+        className={cn({
+          [theme === 'dark' ? styles.messageTextDark : styles.messageText]:
+            isAssistant,
+          [styles.messageUserText]: !isAssistant,
+          'bg-bg-card': !isAssistant,
+        })}
+        dir={getDirAttribute(messageContent.replace(citationMarkerReg, ''))}
+      >
+        {item.data ? (
+          children
+        ) : sendLoading && isEmpty(messageContent) ? (
+          <>{!isShare && 'running...'}</>
+        ) : (
+          <MarkdownContent
+            loading={loading}
+            content={messageContent}
+            reference={reference}
+            clickDocumentButton={clickDocumentButton}
+          ></MarkdownContent>
+        )}
+      </div>
+    );
+  }, [
+    children,
+    clickDocumentButton,
+    isAssistant,
+    isShare,
+    item.data,
+    loading,
+    messageContent,
+    reference,
+    sendLoading,
+    theme,
+  ]);
+
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -142,7 +194,11 @@ function MessageItem({
                 isPerson
               />
             ) : (
-              <AssistantIcon />
+              <SvgIcon
+                name={'assistant'}
+                width={'100%'}
+                className={cn('size-10 fill-current')}
+              ></SvgIcon>
             ))}
           <section className="flex-col gap-2 flex-1">
             <div className="flex justify-between items-center">
@@ -168,19 +224,20 @@ function MessageItem({
                     {isShare && !sendLoading && !isEmpty(item.content) && (
                       <AssistantGroupButton
                         messageId={item.id}
-                        content={item.content}
+                        content={messageContent}
                         prompt={item.prompt}
                         showLikeButton={showLikeButton}
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
                         attachment={item.attachment}
+                        isShare={isShare}
                       ></AssistantGroupButton>
                     )}
                     {!isShare && (
                       <AssistantGroupButton
                         messageId={item.id}
-                        content={item.content}
+                        content={messageContent}
                         prompt={item.prompt}
                         showLikeButton={showLikeButton}
                         audioBinary={item.audio_binary}
@@ -192,7 +249,7 @@ function MessageItem({
                   </>
                 ) : (
                   <UserGroupButton
-                    content={item.content}
+                    content={messageContent}
                     messageId={item.id}
                     removeMessageById={removeMessageById}
                     regenerateMessage={
@@ -219,28 +276,16 @@ function MessageItem({
                   />
                 </div>
               )}
-            <div
-              className={cn({
-                [theme === 'dark'
-                  ? styles.messageTextDark
-                  : styles.messageText]: isAssistant,
-                [styles.messageUserText]: !isAssistant,
-                'bg-bg-card': !isAssistant,
-              })}
-            >
-              {item.data ? (
-                children
-              ) : sendLoading && isEmpty(item.content) ? (
-                <>{!isShare && 'running...'}</>
-              ) : (
-                <MarkdownContent
-                  loading={loading}
-                  content={item.content}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
-              )}
-            </div>
+
+            {renderContent()}
+
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference?.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
+            )}
+
             {isAssistant && referenceDocuments.length > 0 && (
               <ReferenceDocumentList
                 list={referenceDocuments}
@@ -248,7 +293,19 @@ function MessageItem({
             )}
 
             {isUser && (
-              <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
+              <UploadedMessageFiles
+                files={item.files as File[] | UploadResponseDataType[]}
+              ></UploadedMessageFiles>
+            )}
+            {documentDownloadInfos.length > 0 && (
+              <div className="mt-3 space-y-3">
+                {documentDownloadInfos.map((downloadInfo, index) => (
+                  <div key={`${downloadInfo.filename}-${index}`}>
+                    {index > 0 && <div className="my-6 h-px bg-border" />}
+                    <DocumentDownloadButton downloadInfo={downloadInfo} />
+                  </div>
+                ))}
+              </div>
             )}
             {/* {isAssistant && item.attachment && item.attachment.doc_id && (
               <div className="w-full flex items-center justify-end">

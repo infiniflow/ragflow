@@ -1,9 +1,9 @@
-import { useClickConversationCard } from '@/hooks/use-chat-request';
 import { useCallback, useState } from 'react';
+import { useChatUrlParams } from './use-chat-url';
 
 export function useHandleClickConversationCard() {
   const [controller, setController] = useState(new AbortController());
-  const { handleClickConversation } = useClickConversationCard();
+  const { setConversationBoth } = useChatUrlParams();
 
   const stopOutputMessage = useCallback(() => {
     setController((pre) => {
@@ -14,10 +14,10 @@ export function useHandleClickConversationCard() {
 
   const handleConversationCardClick = useCallback(
     (conversationId: string, isNew: boolean) => {
-      handleClickConversation(conversationId, isNew ? 'true' : '');
+      setConversationBoth(conversationId, isNew ? 'true' : '');
       stopOutputMessage();
     },
-    [handleClickConversation, stopOutputMessage],
+    [setConversationBoth, stopOutputMessage],
   );
 
   return { controller, handleConversationCardClick, stopOutputMessage };

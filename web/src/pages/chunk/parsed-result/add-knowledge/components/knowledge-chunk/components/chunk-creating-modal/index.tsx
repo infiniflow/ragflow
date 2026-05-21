@@ -1,4 +1,6 @@
 import EditTag from '@/components/edit-tag';
+import { FileUploader } from '@/components/file-uploader';
+import Image from '@/components/image';
 import Divider from '@/components/ui/divider';
 import {
   Form,
@@ -13,16 +15,17 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchChunk } from '@/hooks/use-chunk-request';
 import { IModalProps } from '@/interfaces/common';
+import type { ChunkDocType } from '@/interfaces/database/dataset';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FieldValues, FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useDeleteChunkByIds } from '../../hooks';
 import {
   transformTagFeaturesArrayToObject,
   transformTagFeaturesObjectToArray,
@@ -33,6 +36,21 @@ interface kFProps {
   doc_id: string;
   chunkId: string | undefined;
   parserId: string;
+}
+
+async function fileToBase64(file: File) {
+  if (!file) {
+    return;
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.addEventListener('load', () => {
+      resolve((fr.result?.toString() ?? '').replace(/^.*,/, ''));
+    });
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
 }
 
 const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
@@ -52,32 +70,32 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
       question_kwd: [],
       important_kwd: [],
       tag_feas: [],
+      image: [],
     },
   });
   const [checked, setChecked] = useState(false);
-  const { removeChunk } = useDeleteChunkByIds();
-  const { data } = useFetchChunk(chunkId);
+  const { data } = useFetchChunk(chunkId, doc_id);
   const { t } = useTranslation();
+  const isEditMode = !!chunkId;
 
   const isTagParser = parserId === 'tag';
   const onSubmit = useCallback(
-    (values: FieldValues) => {
-      onOk?.({
+    async (values: FieldValues) => {
+      const prunedValues = {
         ...values,
+        image_base64: await fileToBase64(values.image?.[0] as File),
         tag_feas: transformTagFeaturesArrayToObject(values.tag_feas),
         available_int: checked ? 1 : 0,
-      });
+      } as FieldValues;
+
+      Reflect.deleteProperty(prunedValues, 'image');
+
+      onOk?.(prunedValues);
     },
     [checked, onOk],
   );
 
   const handleOk = form.handleSubmit(onSubmit);
-
-  const handleRemove = useCallback(() => {
-    if (chunkId) {
-      return removeChunk([chunkId], doc_id);
-    }
-  }, [chunkId, doc_id, removeChunk]);
 
   const handleCheck = useCallback(() => {
     setChecked(!checked);
@@ -86,6 +104,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   useEffect(() => {
     if (data?.code === 0) {
       const { available_int, tag_feas } = data.data;
+
       form.reset({
         ...data.data,
         tag_feas: transformTagFeaturesObjectToArray(tag_feas),
@@ -113,12 +132,82 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               <FormItem>
                 <FormLabel>{t('chunk.chunk')}</FormLabel>
                 <FormControl>
-                  <Textarea {...field} autoSize={{ minRows: 4, maxRows: 10 }} />
+                  <Textarea
+                    {...field}
+                    autoSize={{ minRows: 4, maxRows: 10 }}
+                    resize="vertical"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+          {/* Do not display the type field in create mode */}
+          {isEditMode && (
+            <FormField
+              control={form.control}
+              name="doc_type_kwd"
+              render={({ field }) => {
+                const chunkType =
+                  ((field.value &&
+                    String(field.value)?.toLowerCase()) as ChunkDocType) ||
+                  'text';
+
+                return (
+                  <FormItem>
+                    <FormLabel>{t(`chunk.type`)}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        value={t(`chunk.docType.${chunkType}`)}
+                        readOnly
+                      />
+                    </FormControl>
+                  </FormItem>
+                );
+              }}
+            />
+          )}
+
+          {(!isEditMode || form.getValues('doc_type_kwd') + '' === 'image') && (
+            <FormField
+              control={form.control}
+              name="image"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
+
+                  <div className="space-y-4">
+                    {data?.data?.img_id && (
+                      <Image
+                        id={data?.data?.img_id}
+                        className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
+                      />
+                    )}
+
+                    <div className="col-start-2 col-end-3 only:col-span-2">
+                      <FormControl>
+                        <FileUploader
+                          className="h-auto p-6"
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          accept={{
+                            'image/png': [],
+                            'image/jpeg': [],
+                            'image/webp': [],
+                          }}
+                          maxFileCount={1}
+                          hideDropzoneOnMaxFileCount
+                          title={t('chunk.imageUploaderTitle')}
+                          description={<></>}
+                        />
+                      </FormControl>
+                    </div>
+                  </div>
+                </FormItem>
+              )}
+            />
+          )}
           <FormField
             control={form.control}
             name="important_kwd"
@@ -132,7 +221,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           <FormField
             control={form.control}
             name="question_kwd"
@@ -160,7 +248,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
-
           {isTagParser && (
             <FormField
               control={form.control}
@@ -176,7 +263,6 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               )}
             />
           )}
-
           {!isTagParser && (
             <FormProvider {...form}>
               <TagFeatureItem />

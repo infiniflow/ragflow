@@ -19,7 +19,7 @@ function NameWidget({ name, size }: NameWidgetType) {
   return (
     <div className="text-xs max-w-20">
       {/* {id ? (
-        <NewDocumentLink documentId={id} documentName={name} prefix="document">
+        <NewDocumentLink documentId={id} documentName={name} resource="document">
           {name}
         </NewDocumentLink>
       ) : (

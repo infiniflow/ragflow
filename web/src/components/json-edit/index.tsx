@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import './css/cloud9_night.less';
 import './css/index.less';
 import { JsonEditorOptions, JsonEditorProps } from './interface';
+
 const defaultConfig: JsonEditorOptions = {
   mode: 'code',
   modes: ['tree', 'code'],
@@ -14,6 +15,7 @@ const defaultConfig: JsonEditorOptions = {
   enableTransform: false,
   indentation: 2,
 };
+
 const JsonEditor: React.FC<JsonEditorProps> = ({
   value,
   onChange,
@@ -25,43 +27,62 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
   const editorRef = useRef<any>(null);
   const { i18n } = useTranslation();
   const currentLanguageRef = useRef<string>(i18n.language);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const JSONEditor = require('jsoneditor');
-      import('jsoneditor/dist/jsoneditor.min.css');
+    let isMounted = true;
 
-      if (containerRef.current) {
-        // Default configuration options
-        const defaultOptions: JsonEditorOptions = {
-          ...defaultConfig,
-          language: i18n.language === 'zh' ? 'zh-CN' : 'en',
-          onChange: () => {
-            if (editorRef.current && onChange) {
-              try {
-                const updatedJson = editorRef.current.get();
-                onChange(updatedJson);
-              } catch (err) {
-                // Do not trigger onChange when parsing error occurs
-                console.error(err);
-              }
+    const initEditor = async () => {
+      if (typeof window !== 'undefined') {
+        try {
+          const JSONEditorModule = await import('jsoneditor');
+          const JSONEditor = JSONEditorModule.default || JSONEditorModule;
+
+          await import('jsoneditor/dist/jsoneditor.min.css');
+
+          if (isMounted && containerRef.current) {
+            // Default configuration options
+            const defaultOptions: JsonEditorOptions = {
+              ...defaultConfig,
+              language: i18n.language === 'zh' ? 'zh-CN' : 'en',
+              onChange: () => {
+                if (editorRef.current && onChange) {
+                  try {
+                    const updatedJson = editorRef.current.get();
+                    onChange(updatedJson);
+                  } catch (err) {
+                    // Do not trigger onChange when parsing error occurs
+                    console.error(err);
+                  }
+                }
+              },
+              ...options, // Merge user provided options with defaults
+            };
+
+            editorRef.current = new JSONEditor(
+              containerRef.current,
+              defaultOptions,
+            );
+
+            if (value) {
+              editorRef.current.set(value);
             }
-          },
-          ...options, // Merge user provided options with defaults
-        };
 
-        editorRef.current = new JSONEditor(
-          containerRef.current,
-          defaultOptions,
-        );
-
-        if (value) {
-          editorRef.current.set(value);
+            setIsLoading(false);
+          }
+        } catch (error) {
+          console.error('Failed to load jsoneditor:', error);
+          if (isMounted) {
+            setIsLoading(false);
+          }
         }
       }
-    }
+    };
+
+    initEditor();
 
     return () => {
+      isMounted = false;
       if (editorRef.current) {
         if (typeof editorRef.current.destroy === 'function') {
           editorRef.current.destroy();
@@ -92,26 +113,38 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
       }
 
       // Recreate the editor with new language
-      const JSONEditor = require('jsoneditor');
+      const initEditorWithNewLanguage = async () => {
+        try {
+          const JSONEditorModule = await import('jsoneditor');
+          const JSONEditor = JSONEditorModule.default || JSONEditorModule;
 
-      const newOptions: JsonEditorOptions = {
-        ...defaultConfig,
-        language: i18n.language === 'zh' ? 'zh-CN' : 'en',
-        onChange: () => {
-          if (editorRef.current && onChange) {
-            try {
-              const updatedJson = editorRef.current.get();
-              onChange(updatedJson);
-            } catch (err) {
-              // Do not trigger onChange when parsing error occurs
-            }
-          }
-        },
-        ...options, // Merge user provided options with defaults
+          const newOptions: JsonEditorOptions = {
+            ...defaultConfig,
+            language: i18n.language === 'zh' ? 'zh-CN' : 'en',
+            onChange: () => {
+              if (editorRef.current && onChange) {
+                try {
+                  const updatedJson = editorRef.current.get();
+                  onChange(updatedJson);
+                } catch (err) {
+                  // Do not trigger onChange when parsing error occurs
+                }
+              }
+            },
+            ...options, // Merge user provided options with defaults
+          };
+
+          editorRef.current = new JSONEditor(containerRef.current, newOptions);
+          editorRef.current.set(currentData);
+        } catch (error) {
+          console.error(
+            'Failed to reload jsoneditor with new language:',
+            error,
+          );
+        }
       };
 
-      editorRef.current = new JSONEditor(containerRef.current, newOptions);
-      editorRef.current.set(currentData);
+      initEditorWithNewLanguage();
     }
   }, [i18n.language, value, onChange, options]);
 
@@ -135,7 +168,13 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
       ref={containerRef}
       style={{ height }}
       className={`ace-tomorrow-night w-full border border-border-button rounded-lg overflow-hidden bg-bg-input ${className} `}
-    />
+    >
+      {isLoading && (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-text-secondary">Loading editor...</div>
+        </div>
+      )}
+    </div>
   );
 };
 

@@ -20,6 +20,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 
 from rag.nlp import find_codec
+from rag.utils.lazy_image import LazyImage
 
 # copied from `/openpyxl/cell/cell.py`
 ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
@@ -41,7 +42,7 @@ class RAGFlowExcelParser:
 
             try:
                 file_like_object.seek(0)
-                df = pd.read_csv(file_like_object)
+                df = pd.read_csv(file_like_object, on_bad_lines='skip')
                 return RAGFlowExcelParser._dataframe_to_workbook(df)
 
             except Exception as e_csv:
@@ -74,8 +75,15 @@ class RAGFlowExcelParser:
         return df.apply(lambda col: col.map(clean_string))
 
     @staticmethod
+    def _fill_worksheet_from_dataframe(ws, df: pd.DataFrame):
+        for col_num, column_name in enumerate(df.columns, 1):
+            ws.cell(row=1, column=col_num, value=column_name)
+        for row_num, row in enumerate(df.values, 2):
+            for col_num, value in enumerate(row, 1):
+                ws.cell(row=row_num, column=col_num, value=value)
+
+    @staticmethod
     def _dataframe_to_workbook(df):
-        # if contains multiple sheets use _dataframes_to_workbook
         if isinstance(df, dict) and len(df) > 1:
             return RAGFlowExcelParser._dataframes_to_workbook(df)
 
@@ -83,31 +91,115 @@ class RAGFlowExcelParser:
         wb = Workbook()
         ws = wb.active
         ws.title = "Data"
-
-        for col_num, column_name in enumerate(df.columns, 1):
-            ws.cell(row=1, column=col_num, value=column_name)
-
-        for row_num, row in enumerate(df.values, 2):
-            for col_num, value in enumerate(row, 1):
-                ws.cell(row=row_num, column=col_num, value=value)
-
+        RAGFlowExcelParser._fill_worksheet_from_dataframe(ws, df)
         return wb
-    
+
     @staticmethod
     def _dataframes_to_workbook(dfs: dict):
         wb = Workbook()
         default_sheet = wb.active
         wb.remove(default_sheet)
-        
+
         for sheet_name, df in dfs.items():
             df = RAGFlowExcelParser._clean_dataframe(df)
             ws = wb.create_sheet(title=sheet_name)
-            for col_num, column_name in enumerate(df.columns, 1):
-                ws.cell(row=1, column=col_num, value=column_name)
-            for row_num, row in enumerate(df.values, 2):
-                for col_num, value in enumerate(row, 1):
-                    ws.cell(row=row_num, column=col_num, value=value)
+            RAGFlowExcelParser._fill_worksheet_from_dataframe(ws, df)
         return wb
+
+    @staticmethod
+    def _extract_images_from_worksheet(ws, sheetname=None):
+        """
+        Extract images from a worksheet and enrich them with vision-based descriptions.
+
+        Returns: List[dict]
+        """
+        images = getattr(ws, "_images", [])
+        if not images:
+            return []
+
+        raw_items = []
+
+        for img in images:
+            try:
+                img_bytes = img._data()
+                lazy_img = LazyImage([img_bytes])
+
+                anchor = img.anchor
+                if hasattr(anchor, "_from") and hasattr(anchor, "_to"):
+                    r1, c1 = anchor._from.row + 1, anchor._from.col + 1
+                    r2, c2 = anchor._to.row + 1, anchor._to.col + 1
+                    if r1 == r2 and c1 == c2:
+                        span = "single_cell"
+                    else:
+                        span = "multi_cell"
+                else:
+                    r1, c1 = anchor._from.row + 1, anchor._from.col + 1
+                    r2, c2 = r1, c1
+                    span = "single_cell"
+
+                item = {
+                    "sheet": sheetname or ws.title,
+                    "image": lazy_img,
+                    "image_description": "",
+                    "row_from": r1,
+                    "col_from": c1,
+                    "row_to": r2,
+                    "col_to": c2,
+                    "span_type": span,
+                }
+                raw_items.append(item)
+            except Exception:
+                continue
+        return raw_items
+
+    @staticmethod
+    def _get_actual_row_count(ws):
+        max_row = ws.max_row
+        if not max_row:
+            return 0
+        if max_row <= 10000:
+            return max_row
+
+        max_col = min(ws.max_column or 1, 50)
+
+        def row_has_data(row_idx):
+            for col_idx in range(1, max_col + 1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                if cell.value is not None and str(cell.value).strip():
+                    return True
+            return False
+
+        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
+            return 0
+
+        left, right = 1, max_row
+        last_data_row = 1
+
+        while left <= right:
+            mid = (left + right) // 2
+            found = False
+            for r in range(mid, min(mid + 10, max_row + 1)):
+                if row_has_data(r):
+                    found = True
+                    last_data_row = max(last_data_row, r)
+                    break
+            if found:
+                left = mid + 1
+            else:
+                right = mid - 1
+
+        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
+            if row_has_data(r):
+                last_data_row = r
+
+        return last_data_row
+
+    @staticmethod
+    def _get_rows_limited(ws):
+        actual_rows = RAGFlowExcelParser._get_actual_row_count(ws)
+        if actual_rows == 0:
+            return []
+        return list(ws.iter_rows(min_row=1, max_row=actual_rows))
 
     def html(self, fnm, chunk_rows=256):
         from html import escape
@@ -124,7 +216,7 @@ class RAGFlowExcelParser:
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             try:
-                rows = list(ws.rows)
+                rows = RAGFlowExcelParser._get_rows_limited(ws)
             except Exception as e:
                 logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
                 continue
@@ -164,7 +256,7 @@ class RAGFlowExcelParser:
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
             file_like_object.seek(0)
-            df = pd.read_csv(file_like_object)
+            df = pd.read_csv(file_like_object, on_bad_lines='skip')
         df = df.replace(r"^\s*$", "", regex=True)
         return df.to_markdown(index=False)
 
@@ -176,7 +268,7 @@ class RAGFlowExcelParser:
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
             try:
-                rows = list(ws.rows)
+                rows = RAGFlowExcelParser._get_rows_limited(ws)
             except Exception as e:
                 logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
                 continue
@@ -191,6 +283,8 @@ class RAGFlowExcelParser:
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)
                     fields.append(t)
+                if not fields:
+                    continue
                 line = "; ".join(fields)
                 if sheetname.lower().find("sheet") < 0:
                     line += " ——" + sheetname
@@ -202,14 +296,14 @@ class RAGFlowExcelParser:
         if fnm.split(".")[-1].lower().find("xls") >= 0:
             wb = RAGFlowExcelParser._load_excel_to_workbook(BytesIO(binary))
             total = 0
-            
+
             for sheetname in wb.sheetnames:
-               try:
-                   ws = wb[sheetname]
-                   total += len(list(ws.rows))
-               except Exception as e:
-                   logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
-                   continue
+                try:
+                    ws = wb[sheetname]
+                    total += RAGFlowExcelParser._get_actual_row_count(ws)
+                except Exception as e:
+                    logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                    continue
             return total
 
         if fnm.split(".")[-1].lower() in ["csv", "txt"]:

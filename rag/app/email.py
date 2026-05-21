@@ -18,6 +18,7 @@ import logging
 from email import policy
 from email.parser import BytesParser
 from rag.app.naive import chunk as naive_chunk
+from common.constants import MAXIMUM_PAGE_NUMBER
 import re
 from rag.nlp import rag_tokenizer, naive_merge, tokenize_chunks
 from deepdoc.parser import HtmlParser, TxtParser
@@ -26,13 +27,13 @@ import io
 
 
 def chunk(
-    filename,
-    binary=None,
-    from_page=0,
-    to_page=100000,
-    lang="Chinese",
-    callback=None,
-    **kwargs,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=MAXIMUM_PAGE_NUMBER,
+        lang="Chinese",
+        callback=None,
+        **kwargs,
 ):
     """
     Only eml is supported
@@ -93,7 +94,8 @@ def chunk(
     _add_content(msg, msg.get_content_type())
 
     sections = TxtParser.parser_txt("\n".join(text_txt)) + [
-        (line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line
+        (line, "") for line in
+        HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line
     ]
 
     st = timer()
@@ -126,7 +128,9 @@ def chunk(
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], callback=dummy)

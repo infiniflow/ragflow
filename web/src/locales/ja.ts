@@ -19,6 +19,8 @@ export default {
       portugueseBr: 'ポルトガル語 (ブラジル)',
       chinese: '中国語（簡体字）',
       traditionalChinese: '中国語（繁体字）',
+      bulgarian: 'ブルガリア語',
+      arabic: 'アラビア語',
       language: '言語',
       languageMessage: 'あなたの言語を入力してください！',
       languagePlaceholder: 'あなたの言語を選択してください',
@@ -171,11 +173,14 @@ export default {
       autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: '画像・表コンテキストウィンドウ',
+      imageTableContextWindowTip:
+        '画像と表の上下のテキストをNトークン取得し、より豊かな背景コンテキストを提供します。',
       titleDescription:
         'ナレッジベースの設定、特にチャンク方法をここで更新してください。',
       name: 'ナレッジベース名',
       photo: 'ナレッジベース写真',
-      photoTip: '4MBのファイルをアップロードできます',
+      photoTip: '4 MB までの画像をアップロードできます。す',
       description: '説明',
       language: '言語',
       languageMessage: '言語を入力してください',
@@ -185,7 +190,7 @@ export default {
       chunkTokenNumber: '推奨チャンクサイズ',
       chunkTokenNumberMessage: 'チャンクトークン数は必須です',
       embeddingModelTip:
-        'ナレッジベースのデフォルトの埋め込みモデルです。ナレッジベースにチャンクが存在する場合、変更することはできません。別のデフォルト埋め込みモデルに切り替えるには、ナレッジベース内のすべての既存チャンクを削除する必要があります。',
+        'ナレッジベースで使用されるデフォルトの埋め込みモデルです。ナレッジベースにチャンクが作成された後に埋め込みモデルを変更する場合、システムは互換性チェックのためにいくつかのチャンクをランダムに抽出し、新しい埋め込みモデルで再エンコードして新旧ベクトルのコサイン類似度を計算します。サンプルの平均類似度が ≥ 0.9 の場合のみ切り替えできます。平均類似度が 0.9 未満の場合は、変更する前にナレッジベース内のすべてのチャンクを削除する必要があります。',
       permissionsTip:
         '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
@@ -237,7 +242,7 @@ export default {
       <b>XLSX</b>形式のファイルには、ヘッダーのない2つの
       列が必要です： 1つは質問の列でもう1つは回答の列です
       （質問列が先行）。複数のシートも可能です。
-      
+
     </li>
     <li>
      <b>CSV/TXT</b>形式のファイルは、TABで区切られたUTF-8エンコードである必要があります。
@@ -282,7 +287,7 @@ export default {
     LLMがその量のコンテキスト長を処理できる場合に、ドキュメント全体を要約する必要があるときに適用されます。
     </p>`,
       knowledgeGraph: `<p>対応ファイル形式は<b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>です。
-          
+
 <p>このアプローチでは、ファイルを'ナイーブ'/'一般'メソッドを使用してチャンクに分割します。ドキュメントをセグメントに分割し、隣接するセグメントを結合してトークン数が'チャンクトークン数'で指定されたしきい値を超えるまで続け、その時点でチャンクが作成されます。</p>
 <p>その後、チャンクはLLMに入力され、ナレッジグラフとマインドマップのエンティティと関係を抽出します。</p>
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
@@ -311,6 +316,17 @@ export default {
       entityTypes: 'エンティティタイプ',
       pageRank: 'ページランク',
       pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dev/set_page_rank を参照してください。`,
+      paddleocrOptions: 'PaddleOCRオプション',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
+      paddleocrApiUrlPlaceholder: '例: https://paddleocr-server.com/api',
+      paddleocrAccessToken: 'AI Studioアクセストークン',
+      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン（オプション）',
+      paddleocrAccessTokenPlaceholder: 'AI Studioトークン（オプション）',
+      paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
+      paddleocrAlgorithmTip: 'PaddleOCR解析に使用するアルゴリズム',
+      paddleocrSelectAlgorithm: 'アルゴリズムを選択',
+      paddleocrModelNamePlaceholder: '例: paddleocr-from-env-1',
     },
     chunk: {
       chunk: 'チャンク',
@@ -334,6 +350,9 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      chatSupport: 'チャットサポート',
+      replyInstantly: '通常、即座に返信します',
+      typeYourMessage: 'メッセージを入力...',
       messagePlaceholder: 'メッセージを入力してください...',
       exit: '終了',
       multipleModels: '複数モデル',
@@ -413,8 +432,7 @@ export default {
         '存在ペナルティと同様に、モデルが同じ単語を頻繁に繰り返す傾向を減少させます。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
-      maxTokensTip:
-        'これは、モデルの出力の最大長を設定します。トークン（単語または単語の一部）の数で測定されます。',
+      maxTokensTip: `モデルの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '最大トークン数に有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
       quote: '引用を表示',
@@ -503,8 +521,7 @@ export default {
       profileDescription: 'ここで写真と個人情報を更新してください。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
-      maxTokensTip:
-        'これは、モデルの出力の最大長を設定します。トークン（単語または単語の一部）の数で測定されます。',
+      maxTokensTip: `モデルの最大コンテキストサイズ。無効または不正な値はエラーになります。デフォルトは512。`,
       maxTokensInvalidMessage: '有効な数値を入力してください。',
       maxTokensMinMessage: '最大トークン数は0以上でなければなりません。',
       password: 'パスワード',
@@ -556,6 +573,8 @@ export default {
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
       tongyiBaseUrlTip:
         '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
+      siliconBaseUrlTip:
+        '中国ユーザーの場合、入力不要または https://api.siliconflow.cn/v1 を使用してください。国際ユーザーは https://api.siliconflow.com/v1 を使用してください',
       tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
       minimaxBaseUrlTip:
         '国際ユーザーのみ：https://api.minimax.io/v1 を使用してください。',
@@ -593,13 +612,24 @@ export default {
       modelTypeMessage: 'モデルタイプを入力してください！',
       addLlmBaseUrl: 'ベースURL',
       baseUrlNameMessage: 'ベースURLを入力してください！',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio アクセストークン',
+        accessTokenPlaceholder: 'AI Studio のトークン（任意）',
+        algorithm: 'PaddleOCR アルゴリズム',
+        selectAlgorithm: 'アルゴリズムを選択',
+        modelNamePlaceholder: '例：paddleocr-from-env-1',
+        modelNameRequired: 'モデル名は必須です',
+        apiUrlRequired: 'PaddleOCR API URL は必須です',
+      },
       vision: 'ビジョンをサポートしていますか？',
       ollamaLink: '{{name}}を統合する方法',
       FishAudioLink: 'FishAudioの使用方法',
       TencentCloudLink: 'TencentCloud ASRの使用方法',
       volcModelNameMessage: 'モデル名を入力してください！',
-      addEndpointID: 'モデルのエンドポイントID',
-      endpointIDMessage: 'モデルのエンドポイントIDを入力してください',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'モデルのModel IDを入力してください',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'ARK_API_KEYを入力してください',
       bedrockModelNameMessage: 'モデル名を入力してください！',
@@ -616,10 +646,6 @@ export default {
       'eu-central-1': 'ヨーロッパ（フランクフルト）',
       'us-gov-west-1': 'AWS GovCloud（米国西部）',
       'ap-southeast-2': 'アジア太平洋（シドニー）',
-      addHunyuanSID: 'HunyuanシークレットID',
-      HunyuanSIDMessage: 'シークレットIDを入力してください',
-      addHunyuanSK: 'Hunyuanシークレットキー',
-      HunyuanSKMessage: 'シークレットキーを入力してください',
       addTencentCloudSID: 'TencentCloudシークレットID',
       TencentCloudSIDMessage: 'シークレットIDを入力してください',
       addTencentCloudSK: 'TencentCloudシークレットキー',
@@ -669,6 +695,8 @@ export default {
       sureQuit: '参加したチームから退出してもよろしいですか？',
       modelsToBeAddedTooltip:
         'モデルプロバイダーがリストにないが「OpenAI互換」を謳っている場合は、OpenAI-API-compatible カードを選択して関連モデルを追加してください。',
+      dingtalkAITableDescription:
+        'Dingtalk AI Table に接続し、指定されたテーブルからレコードを同期します。',
     },
     message: {
       registered: '登録完了！',
@@ -719,13 +747,13 @@ export default {
       directory: 'ディレクトリ',
       uploadTitle: 'クリックまたはドラッグしてファイルをアップロード',
       uploadDescription:
-        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
+        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。cloud.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       local: 'ローカルアップロード',
       s3: 'S3アップロード',
       preview: 'プレビュー',
       fileError: 'ファイルエラー',
       uploadLimit:
-        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。demo.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
+        'RAGFlowは、単一またはバッチでのファイルアップロードをサポートします。ローカルにデプロイされた RAGFlow の場合: アップロードごとの合計ファイルサイズ制限は 1GB、バッチアップロードの制限は 32 ファイルです。アカウントごとのファイル総数には制限がありません。cloud.ragflow.io の場合: アップロードごとの合計ファイルサイズ制限は 10MB、各ファイルは 10MB を超えず、アカウントごとに最大 128 ファイルまでです。',
       destinationFolder: '保存先フォルダ',
     },
     flow: {
@@ -795,11 +823,25 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'SearXNGのインスタンスURLを提供して検索を行うコンポーネント。TopNとインスタンスURLを指定してください。',
-      channel: 'チャンネル',
-      channelTip: `コンポーネントの入力に対してテキスト検索またはニュース検索を実行します`,
-      text: 'テキスト',
-      news: 'ニュース',
-      messageHistoryWindowSize: 'メッセージウィンドウサイズ',
+      docGenerator: 'ドキュメント生成',
+      docGeneratorDescription: `Markdown コンテンツからファイルを生成します。`,
+      subtitle: 'サブタイトル',
+      logoImage: 'ロゴ画像',
+      logoPosition: 'ロゴ位置',
+      logoWidth: 'ロゴ幅',
+      logoHeight: 'ロゴ高さ',
+      fontFamily: 'フォントファミリー',
+      fontSize: 'フォントサイズ',
+      titleFontSize: 'タイトルフォントサイズ',
+      pageSize: 'ページサイズ',
+      orientation: '向き',
+      marginTop: '上余白',
+      marginBottom: '下余白',
+      filename: 'ファイル名',
+      outputDirectory: '出力ディレクトリ',
+      addPageNumbers: 'ページ番号を追加',
+      addTimestamp: 'タイムスタンプを追加',
+      watermarkText: '透かしテキスト',
       messageHistoryWindowSizeTip:
         'LLMに表示される会話履歴のウィンドウサイズ。大きいほど良いですが、LLMの最大トークン制限に注意してください。',
       wikipedia: 'Wikipedia',
@@ -1120,11 +1162,12 @@ export default {
         'このコンポーネントは、さまざまなコンポーネントの出力を組版するために使用されます。1. Jinja2テンプレートをサポートし、最初に入力をオブジェクトに変換してからテンプレートをレンダリングします。2. {parameter}文字列置換を使用する元の方法も同時に保持します',
       emailComponent: 'メール',
       emailDescription: '指定されたアドレスにメールを送信',
-      smtpServer: 'SMTPサーバー',
+      smtpServer: 'SMTPホスト',
       smtpPort: 'SMTPポート',
-      senderEmail: '送信者のメール',
-      authCode: '認証コード',
-      senderName: '送信者の名前',
+      senderEmail: '差出人メールアドレス（From）',
+      smtpUsername: 'SMTPログインユーザー名',
+      authCode: 'SMTPパスワード/アプリパスワード',
+      senderName: '差出人表示名',
       toEmail: '受信者のメール',
       ccEmail: 'CCメール',
       emailSubject: '件名',
@@ -1158,6 +1201,14 @@ export default {
       file: 'ファイル',
       knowledge: 'ナレッジ',
       chat: 'チャット',
+    },
+    language: {
+      english: '英語',
+      chinese: '中国語',
+      russian: 'ロシア語',
+      bulgarian: 'ブルガリア語',
+      arabic: 'アラビア語',
+      turkish: 'トルコ語',
     },
   },
 };

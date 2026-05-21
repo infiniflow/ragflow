@@ -2,7 +2,7 @@
 
 'use client';
 
-import { FileText, Upload, X } from 'lucide-react';
+import { FileText, FolderUp, LucideTrash2, Upload } from 'lucide-react';
 import * as React from 'react';
 import Dropzone, {
   type DropzoneProps,
@@ -12,9 +12,11 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useControllableState } from '@/hooks/use-controllable-state';
 import { cn, formatBytes } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 function isFileWithPreview(file: File): file is File & { preview: string } {
   return 'preview' in file && typeof file.preview === 'string';
@@ -39,7 +41,7 @@ function FilePreview({ file }: FilePreviewProps) {
         width={48}
         height={48}
         loading="lazy"
-        className="aspect-square shrink-0 rounded-md object-cover"
+        className="size-full aspect-square shrink-0 rounded-md object-cover"
       />
     );
   }
@@ -58,10 +60,17 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
         </div>
         <div className="flex flex-col flex-1 gap-2 overflow-hidden">
           <div className="flex flex-col gap-px">
-            <p className="line-clamp-1 text-sm font-medium text-foreground/80 text-ellipsis">
-              {file.name}
-            </p>
-            <p className="text-xs text-muted-foreground">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className=" w-fit line-clamp-1 text-sm font-medium text-foreground/80 text-ellipsis truncate max-w-[370px]">
+                  {file.name}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="border border-border-button">
+                {file.name}
+              </TooltipContent>
+            </Tooltip>
+            <p className="text-xs text-text-secondary">
               {formatBytes(file.size)}
             </p>
           </div>
@@ -71,12 +80,12 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
       <div className="flex items-center gap-2">
         <Button
           type="button"
-          variant="outline"
+          variant="delete"
           size="icon"
           className="size-7"
           onClick={onRemove}
         >
-          <X className="size-4" aria-hidden="true" />
+          <LucideTrash2 className="size-4" aria-hidden="true" />
           <span className="sr-only">Remove file</span>
         </Button>
       </div>
@@ -84,7 +93,10 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
   );
 }
 
-interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
+interface FileUploaderProps extends Omit<
+  React.HTMLAttributes<HTMLDivElement>,
+  'title'
+> {
   /**
    * Value of the uploader.
    * @type File[]
@@ -144,6 +156,8 @@ interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
    */
   maxFileCount?: DropzoneProps['maxFiles'];
 
+  hideDropzoneOnMaxFileCount?: boolean;
+
   /**
    * Whether the uploader should accept multiple files.
    * @type boolean
@@ -160,7 +174,8 @@ interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
    */
   disabled?: boolean;
 
-  description?: string;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
 }
 
 export function FileUploader(props: FileUploaderProps) {
@@ -176,7 +191,9 @@ export function FileUploader(props: FileUploaderProps) {
     maxFileCount = 100000000000,
     multiple = false,
     disabled = false,
+    hideDropzoneOnMaxFileCount = false,
     className,
+    title,
     description,
     ...dropzoneProps
   } = props;
@@ -186,7 +203,11 @@ export function FileUploader(props: FileUploaderProps) {
     onChange: onValueChange,
   });
 
-  const onDrop = React.useCallback(
+  const folderInputRef = React.useRef<HTMLInputElement>(null);
+
+  const reachesMaxFileCount = (files?.length ?? 0) >= maxFileCount;
+
+  const processFiles = React.useCallback(
     (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
       if (!multiple && maxFileCount === 1 && acceptedFiles.length > 1) {
         toast.error('Cannot upload more than 1 file at a time');
@@ -198,11 +219,16 @@ export function FileUploader(props: FileUploaderProps) {
         return;
       }
 
-      const newFiles = acceptedFiles.map((file) =>
-        Object.assign(file, {
-          preview: URL.createObjectURL(file),
-        }),
-      );
+      const newFiles = acceptedFiles.map((file) => {
+        const enhancedFile = file as File & { preview?: string };
+        Object.defineProperty(enhancedFile, 'preview', {
+          value: URL.createObjectURL(file),
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        return enhancedFile;
+      });
 
       const updatedFiles = files ? [...files, ...newFiles] : newFiles;
 
@@ -232,8 +258,24 @@ export function FileUploader(props: FileUploaderProps) {
         });
       }
     },
-
     [files, maxFileCount, multiple, onUpload, setFiles],
+  );
+
+  const onDrop = React.useCallback(
+    (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
+      processFiles(acceptedFiles, rejectedFiles);
+    },
+    [processFiles],
+  );
+
+  const handleFolderSelect = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files) return;
+      const fileList = Array.from(e.target.files);
+      processFiles(fileList, []);
+      e.target.value = '';
+    },
+    [processFiles],
   );
 
   function onRemove(index: number) {
@@ -258,69 +300,120 @@ export function FileUploader(props: FileUploaderProps) {
 
   const isDisabled = disabled || (files?.length ?? 0) >= maxFileCount;
 
-  return (
-    <div className="relative flex flex-col gap-6 overflow-hidden">
+  const renderDropzone = (isFolderMode: boolean = false) => {
+    const IconComponent = isFolderMode ? FolderUp : Upload;
+
+    return (
       <Dropzone
         onDrop={onDrop}
-        accept={accept}
+        accept={isFolderMode ? undefined : accept}
         maxSize={maxSize}
         maxFiles={maxFileCount}
         multiple={maxFileCount > 1 || multiple}
         disabled={isDisabled}
+        noClick={isFolderMode}
+        noDrag={isFolderMode}
       >
         {({ getRootProps, getInputProps, isDragActive }) => (
           <div
             {...getRootProps()}
             className={cn(
-              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
-              'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default',
+              'px-5 py-2.5 text-center transition hover:bg-bg-card outline-none',
+              'focus-visible:border-accent-primary focus-visible:bg-bg-card',
               isDragActive && 'border-border-button',
               isDisabled && 'pointer-events-none opacity-60',
               className,
             )}
             {...dropzoneProps}
           >
-            <input {...getInputProps()} />
-            {isDragActive ? (
+            {!isFolderMode && <input {...getInputProps()} />}
+            {isDragActive && !isFolderMode ? (
               <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-                <div className="rounded-full border border-dashed p-3">
+                <div>
                   <Upload
-                    className="size-7 text-text-secondary hover:text-text-primary"
+                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
                     aria-hidden="true"
                   />
                 </div>
                 <p className="font-medium text-text-secondary">
-                  Drop the files here
+                  {t('fileManager.dropFilesHere', 'Drop the files here')}
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-                <div className="rounded-full border border-dashed p-3">
-                  <Upload
-                    className="size-7 text-text-secondary hover:text-text-primary"
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="flex flex-col gap-px">
-                  <p className="font-medium text-text-secondary">
-                    {t('knowledgeDetails.uploadTitle')}
-                  </p>
-                  <p className="text-sm text-text-disabled">
-                    {description || t('knowledgeDetails.uploadDescription')}
-                    {/* You can upload
-                    {maxFileCount > 1
-                      ? ` ${maxFileCount === Infinity ? 'multiple' : maxFileCount}
-                      files (up to ${formatBytes(maxSize)} each)`
-                      : ` a file with ${formatBytes(maxSize)}`} */}
-                  </p>
-                </div>
+              <div
+                className="flex flex-col items-center justify-center gap-4 sm:px-5"
+                onClick={() => {
+                  if (isFolderMode && !isDisabled) {
+                    folderInputRef.current?.click();
+                  }
+                }}
+              >
+                <IconComponent
+                  className="size-12 stroke-1 text-text-secondary transition-colors group-hover:text-text-primary"
+                  aria-hidden="true"
+                />
+
+                <p className="font-medium text-text-secondary">
+                  {title ||
+                    (isFolderMode
+                      ? t('fileManager.uploadFolderTitle', 'Upload Folder')
+                      : t('knowledgeDetails.uploadTitle'))}
+                </p>
+
+                <p className="text-sm text-text-disabled">
+                  {description ||
+                    (isFolderMode
+                      ? t(
+                          'knowledgeDetails.uploadDescription',
+                          'Select a folder to upload all files inside',
+                        )
+                      : t('knowledgeDetails.uploadDescription'))}
+                </p>
               </div>
             )}
           </div>
         )}
       </Dropzone>
+    );
+  };
+
+  return (
+    <div className="relative flex flex-col gap-4 overflow-hidden">
+      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
+        <Tabs defaultValue="file" className="w-full">
+          <TabsList className="w-fit justify-start">
+            <TabsTrigger value="file" className="gap-2">
+              <FileText className="size-4" />
+              {t('fileManager.files', 'Files')}
+            </TabsTrigger>
+            <TabsTrigger value="folder" className="gap-2">
+              <FolderUp className="size-4" />
+              {t('fileManager.folder', 'Folder')}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="file" className="mt-1">
+            {renderDropzone(false)}
+          </TabsContent>
+          <TabsContent value="folder" className="mt-1">
+            {renderDropzone(true)}
+            <input
+              ref={folderInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={handleFolderSelect}
+              {...{
+                webkitdirectory: '',
+                directory: '',
+              }}
+            />
+          </TabsContent>
+        </Tabs>
+      )}
+
       {files?.length ? (
-        <div className="h-fit w-full px-3">
+        <div className="h-fit w-full">
           <div className="flex max-h-48 flex-col gap-4 overflow-auto scrollbar-auto">
             {files?.map((file, index) => (
               <FileCard

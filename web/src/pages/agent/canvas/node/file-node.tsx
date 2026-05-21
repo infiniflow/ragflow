@@ -1,4 +1,4 @@
-import { IBeginNode } from '@/interfaces/database/flow';
+import { IBeginNode } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { NodeProps, Position } from '@xyflow/react';
 import get from 'lodash/get';
@@ -14,7 +14,7 @@ import { BeginQuery } from '../../interface';
 import OperatorIcon from '../../operator-icon';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
-import styles from './index.less';
+import styles from './index.module.less';
 import { NodeWrapper } from './node-wrapper';
 
 // TODO: do not allow other nodes to connect to this node
@@ -23,7 +23,7 @@ function InnerFileNode({ data, id, selected }: NodeProps<IBeginNode>) {
   const inputs: Record<string, BeginQuery> = get(data, 'form.inputs', {});
 
   return (
-    <NodeWrapper selected={selected}>
+    <NodeWrapper selected={selected} id={id}>
       <CommonHandle
         type="source"
         position={Position.Right}

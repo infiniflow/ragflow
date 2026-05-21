@@ -20,7 +20,7 @@ export function QueryVariableList({
   const form = useFormContext();
   const name = 'query';
 
-  let options = useFilterQueryVariableOptionsByTypes({ types });
+  const options = useFilterQueryVariableOptionsByTypes({ types });
 
   const secondOptions = flatOptions(options);
 

@@ -22,7 +22,7 @@ class GDriveMimeType(str, Enum):
     MARKDOWN = "text/markdown"
 
 
-# These correspond to The major stages of retrieval for google drive.
+# These correspond to The major stages of retrieval for Google Drive.
 # The stages for the oauth flow are:
 # get_all_files_for_oauth(),
 # get_all_drive_ids(),
@@ -117,7 +117,7 @@ class GoogleDriveCheckpoint(ConnectorCheckpoint):
 
 class RetrievedDriveFile(BaseModel):
     """
-    Describes a file that has been retrieved from google drive.
+    Describes a file that has been retrieved from Google Drive.
     user_email is the email of the user that the file was retrieved
     by impersonating. If an error worthy of being reported is encountered,
     error should be set and later propagated as a ConnectorFailure.

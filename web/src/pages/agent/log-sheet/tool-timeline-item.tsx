@@ -14,12 +14,9 @@ import {
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { Operator } from '../constant';
+import { JsonViewer } from '../form/components/json-viewer';
 import OperatorIcon, { SVGIconMap } from '../operator-icon';
-import {
-  JsonViewer,
-  toLowerCaseStringAndDeleteChar,
-  typeMap,
-} from './workflow-timeline';
+import { toLowerCaseStringAndDeleteChar, typeMap } from './workflow-timeline';
 type IToolIcon =
   | Operator.ArXiv
   | Operator.GitHub

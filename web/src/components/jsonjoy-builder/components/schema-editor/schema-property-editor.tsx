@@ -16,6 +16,7 @@ import {
   withObjectSchema,
 } from '../../types/json-schema';
 import type { ValidationTreeNode } from '../../types/validation';
+import { useInputPattern } from './context';
 import TypeDropdown from './type-dropdown';
 import TypeEditor from './type-editor';
 
@@ -53,6 +54,8 @@ export const SchemaPropertyEditor: React.FC<SchemaPropertyEditorProps> = ({
     (s) => (s.type || 'object') as SchemaType,
     'object' as SchemaType,
   );
+
+  const pattern = useInputPattern();
 
   // Update temp values when props change
   useEffect(() => {
@@ -123,6 +126,7 @@ export const SchemaPropertyEditor: React.FC<SchemaPropertyEditorProps> = ({
                   className="h-8 text-sm font-medium min-w-[120px] max-w-full z-10"
                   autoFocus
                   onFocus={(e) => e.target.select()}
+                  searchValue={pattern}
                 />
               ) : (
                 <button

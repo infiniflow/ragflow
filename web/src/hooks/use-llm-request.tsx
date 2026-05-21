@@ -1,6 +1,7 @@
 import { LlmIcon } from '@/components/svg-icon';
 import message from '@/components/ui/message';
 import { LlmModelType } from '@/constants/knowledge';
+import { DefaultOptionType } from '@/interfaces/antd-compat';
 import { ResponseGetType } from '@/interfaces/database/base';
 import {
   IFactory,
@@ -16,7 +17,6 @@ import {
 import userService from '@/services/user-service';
 import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DefaultOptionType } from 'antd/es/select';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -24,6 +24,15 @@ import { buildLlmUuid } from '@/utils/llm-util';
 
 export const enum LLMApiAction {
   LlmList = 'llmList',
+  MyLlmList = 'myLlmList',
+  MyLlmListDetailed = 'myLlmListDetailed',
+  FactoryList = 'factoryList',
+  SaveApiKey = 'saveApiKey',
+  SaveTenantInfo = 'saveTenantInfo',
+  AddLlm = 'addLlm',
+  DeleteLlm = 'deleteLlm',
+  EnableLlm = 'enableLlm',
+  DeleteFactory = 'deleteFactory',
 }
 
 export const useFetchLlmList = (modelType?: LlmModelType) => {
@@ -31,7 +40,7 @@ export const useFetchLlmList = (modelType?: LlmModelType) => {
     queryKey: [LLMApiAction.LlmList],
     initialData: {},
     queryFn: async () => {
-      const { data } = await userService.llm_list({ model_type: modelType });
+      const { data } = await userService.llmList({ model_type: modelType });
 
       return data?.data ?? {};
     },
@@ -138,6 +147,7 @@ export const useSelectLlmOptionsByModelType = () => {
     ),
     [LlmModelType.Rerank]: groupOptionsByModelType(LlmModelType.Rerank),
     [LlmModelType.TTS]: groupOptionsByModelType(LlmModelType.TTS),
+    [LlmModelType.Ocr]: groupOptionsByModelType(LlmModelType.Ocr),
   };
 };
 
@@ -177,11 +187,11 @@ export const useComposeLlmOptionsByModelTypes = (
 
 export const useFetchLlmFactoryList = (): ResponseGetType<IFactory[]> => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: ['factoryList'],
+    queryKey: [LLMApiAction.FactoryList],
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.factories_list();
+      const { data } = await userService.factoriesList();
 
       return data?.data ?? [];
     },
@@ -196,11 +206,11 @@ export const useFetchMyLlmList = (): ResponseGetType<
   Record<string, IMyLlmValue>
 > => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: ['myLlmList'],
+    queryKey: [LLMApiAction.MyLlmList],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.my_llm();
+      const { data } = await userService.myLlm();
 
       return data?.data ?? {};
     },
@@ -213,11 +223,11 @@ export const useFetchMyLlmListDetailed = (): ResponseGetType<
   Record<string, any>
 > => {
   const { data, isFetching: loading } = useQuery({
-    queryKey: ['myLlmListDetailed'],
+    queryKey: [LLMApiAction.MyLlmListDetailed],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await userService.my_llm({ include_details: true });
+      const { data } = await userService.myLlm({ include_details: true });
 
       return data?.data ?? {};
     },
@@ -236,7 +246,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
-      llm: value.llm.map((x) => ({ ...x, name: x.name })),
+      llm: value.llm?.map((x) => ({ ...x, name: x.name })),
     }));
   }, [myLlmList, factoryList]);
 
@@ -261,26 +271,30 @@ export interface IApiKeySavingParams {
   llm_name?: string;
   model_type?: string;
   base_url?: string;
+  source_fid?: string;
+  verify?: boolean;
 }
 
 export const useSaveApiKey = () => {
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  // const { t } = useTranslation();
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['saveApiKey'],
+    mutationKey: [LLMApiAction.SaveApiKey],
     mutationFn: async (params: IApiKeySavingParams) => {
-      const { data } = await userService.set_api_key(params);
+      const { data } = await userService.setApiKey(params);
       if (data.code === 0) {
-        message.success(t('message.modified'));
-        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
-        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        // message.success(t('message.modified'));
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.MyLlmListDetailed],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
       }
-      return data.code;
+      return data;
     },
   });
 
@@ -303,9 +317,9 @@ export const useSaveTenantInfo = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['saveTenantInfo'],
+    mutationKey: [LLMApiAction.SaveTenantInfo],
     mutationFn: async (params: ISystemModelSettingSavingParams) => {
-      const { data } = await userService.set_tenant_info(params);
+      const { data } = await userService.setTenantInfo(params);
       if (data.code === 0) {
         message.success(t('message.modified'));
       }
@@ -318,22 +332,25 @@ export const useSaveTenantInfo = () => {
 
 export const useAddLlm = () => {
   const queryClient = useQueryClient();
-  const { t } = useTranslation();
+  // const { t } = useTranslation();
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['addLlm'],
-    mutationFn: async (params: IAddLlmRequestBody) => {
-      const { data } = await userService.add_llm(params);
-      if (data.code === 0) {
-        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
-        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
-        message.success(t('message.modified'));
+    mutationKey: [LLMApiAction.AddLlm],
+    mutationFn: async (params: IAddLlmRequestBody & { verify?: boolean }) => {
+      const { data } = await userService.addLlm(params);
+      if (data.code === 0 && !params.verify) {
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.MyLlmListDetailed],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.LlmList] });
+        // message.success(t('message.modified'));
       }
-      return data.code;
+      return data;
     },
   });
 
@@ -348,13 +365,15 @@ export const useDeleteLlm = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['deleteLlm'],
+    mutationKey: [LLMApiAction.DeleteLlm],
     mutationFn: async (params: IDeleteLlmRequestBody) => {
-      const { data } = await userService.delete_llm(params);
+      const { data } = await userService.deleteLlm(params);
       if (data.code === 0) {
-        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
-        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.MyLlmListDetailed],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
         message.success(t('message.deleted'));
       }
       return data.code;
@@ -372,18 +391,20 @@ export const useEnableLlm = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['enableLlm'],
+    mutationKey: [LLMApiAction.EnableLlm],
     mutationFn: async (params: IDeleteLlmRequestBody & { enable: boolean }) => {
       const reqParam: IDeleteLlmRequestBody & {
         enable?: boolean;
         status?: 1 | 0;
       } = { ...params, status: params.enable ? 1 : 0 };
       delete reqParam.enable;
-      const { data } = await userService.enable_llm(reqParam);
+      const { data } = await userService.enableLlm(reqParam);
       if (data.code === 0) {
-        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
-        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.MyLlmListDetailed],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
         message.success(t('message.modified'));
       }
       return data.code;
@@ -401,14 +422,16 @@ export const useDeleteFactory = () => {
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: ['deleteFactory'],
+    mutationKey: [LLMApiAction.DeleteFactory],
     mutationFn: async (params: IDeleteLlmRequestBody) => {
       const { data } = await userService.deleteFactory(params);
       if (data.code === 0) {
-        queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
-        queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
-        queryClient.invalidateQueries({ queryKey: ['factoryList'] });
-        queryClient.invalidateQueries({ queryKey: ['llmList'] });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.MyLlmList] });
+        queryClient.invalidateQueries({
+          queryKey: [LLMApiAction.MyLlmListDetailed],
+        });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.FactoryList] });
+        queryClient.invalidateQueries({ queryKey: [LLMApiAction.LlmList] });
         message.success(t('message.deleted'));
       }
       return data.code;

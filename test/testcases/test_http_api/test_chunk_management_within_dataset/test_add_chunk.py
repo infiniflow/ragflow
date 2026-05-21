@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import add_chunk, delete_documents, list_chunks
-from configs import INVALID_API_TOKEN
+from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -30,6 +30,8 @@ def validate_chunk_details(dataset_id, document_id, payload, res):
         assert chunk["important_keywords"] == payload["important_keywords"]
     if "questions" in payload:
         assert chunk["questions"] == [str(q).strip() for q in payload.get("questions", []) if str(q).strip()]
+    if "tag_kwd" in payload:
+        assert chunk["tag_kwd"] == payload["tag_kwd"]
 
 
 @pytest.mark.p1
@@ -37,12 +39,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -56,7 +54,7 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": None}, 100, """TypeError("unsupported operand type(s) for +: \'NoneType\' and \'str\'")"""),
+            ({"content": None}, 102, "`content` is required"),
             ({"content": ""}, 102, "`content` is required"),
             pytest.param(
                 {"content": 1},
@@ -76,7 +74,7 @@ class TestAddChunk:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
         res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
-        assert res["code"] == expected_code
+        assert res["code"] == expected_code, res
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
             res = list_chunks(HttpApiAuth, dataset_id, document_id)
@@ -109,7 +107,9 @@ class TestAddChunk:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
         res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
-        assert res["code"] == expected_code
+        assert res["code"] == expected_code, (
+            f"Expected code: {expected_code}, got: {res['code']}, message: {res.get('message')}"
+        )
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
             res = list_chunks(HttpApiAuth, dataset_id, document_id)
@@ -138,6 +138,35 @@ class TestAddChunk:
             assert False, res
         chunks_count = res["data"]["doc"]["chunk_count"]
         res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
+        assert res["code"] == expected_code, res
+        if expected_code == 0:
+            validate_chunk_details(dataset_id, document_id, payload, res)
+            res = list_chunks(HttpApiAuth, dataset_id, document_id)
+            assert res["data"]["doc"]["chunk_count"] == chunks_count + 1
+        else:
+            assert res["message"] == expected_message
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "payload, expected_code, expected_message",
+        [
+            ({"content": "chunk test", "tag_kwd": ["tag1", "tag2"]}, 0, ""),
+            ({"content": "chunk test", "tag_kwd": [""]}, 0, ""),
+            ({"content": "chunk test", "tag_kwd": [1]}, 102, "`tag_kwd` must be a list of strings"),
+            ({"content": "chunk test", "tag_kwd": ["tag", "tag"]}, 0, ""),
+            ({"content": "chunk test", "tag_kwd": "abc"}, 102, "`tag_kwd` is required to be a list"),
+            ({"content": "chunk test", "tag_kwd": 123}, 102, "`tag_kwd` is required to be a list"),
+        ],
+    )
+    def test_tag_kwd(self, HttpApiAuth, add_document, payload, expected_code, expected_message):
+        dataset_id, document_id = add_document
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
+        if res["code"] != 0:
+            assert False, res
+        chunks_count = res["data"]["doc"]["chunk_count"]
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, payload)
+        if res["code"] != expected_code:
+            print(f"\nFAILED! Expected code: {expected_code}, got: {res['code']}, message: {res.get('message')}")
         assert res["code"] == expected_code
         if expected_code == 0:
             validate_chunk_details(dataset_id, document_id, payload, res)
@@ -152,12 +181,7 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            (
-                "invalid_dataset_id",
-                102,
-                "You don't own the dataset invalid_dataset_id.",
-            ),
+            (INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}."),
         ],
     )
     def test_invalid_dataset_id(
@@ -177,11 +201,10 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "You don't own the document invalid_document_id.",
+                f"You don't own the document {INVALID_ID_32}.",
             ),
         ],
     )
@@ -215,7 +238,7 @@ class TestAddChunk:
             assert False, res
         assert res["data"]["doc"]["chunk_count"] == chunks_count + 2
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_add_chunk_to_deleted_document(self, HttpApiAuth, add_document):
         dataset_id, document_id = add_document
         delete_documents(HttpApiAuth, dataset_id, {"ids": [document_id]})

@@ -1,4 +1,4 @@
-import { IAgentNode } from '@/interfaces/database/flow';
+import { BaseNode } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
@@ -20,7 +20,7 @@ function InnerAgentNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IAgentNode<AgentFormSchemaType>>) {
+}: NodeProps<BaseNode<AgentFormSchemaType>>) {
   const edges = useGraphStore((state) => state.edges);
   const { t } = useTranslation();
 
@@ -44,7 +44,7 @@ function InnerAgentNode({
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         {isHeadAgent && (
           <>
             <LeftEndHandle></LeftEndHandle>

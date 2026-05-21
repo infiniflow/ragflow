@@ -22,17 +22,17 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from functools import wraps
+from typing import Any
 
 import click
-import requests
+import httpx
+import mcp.types as types
+from mcp.server.lowlevel import Server
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
-from strenum import StrEnum
-
-import mcp.types as types
-from mcp.server.lowlevel import Server
+from enum import StrEnum
 
 
 class LaunchMode(StrEnum):
@@ -57,8 +57,8 @@ JSON_RESPONSE = True
 
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
-    _MAX_DOCUMENT_CACHE = 128
     _CACHE_TTL = 300
+    _DATASET_PAGE_SIZE = 1000
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
     _document_metadata_cache: OrderedDict[str, tuple[list[tuple[str, dict]], float | int]] = OrderedDict()  # "dataset_id" -> ([(document_id, doc_metadata)], expiry_ts)
@@ -67,19 +67,30 @@ class RAGFlowConnector:
         self.base_url = base_url
         self.version = version
         self.api_url = f"{self.base_url}/api/{self.version}"
+        self._async_client = None
 
-    def bind_api_key(self, api_key: str):
-        self.api_key = api_key
-        self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.api_key)}
+    async def _get_client(self):
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+        return self._async_client
 
-    def _post(self, path, json=None, stream=False, files=None):
-        if not self.api_key:
+    async def close(self):
+        if self._async_client is not None:
+            await self._async_client.aclose()
+            self._async_client = None
+
+    async def _post(self, path, json=None, stream=False, files=None, api_key: str = ""):
+        if not api_key:
             return None
-        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream, files=files)
+        client = await self._get_client()
+        res = await client.post(url=self.api_url + path, json=json, headers={"Authorization": f"Bearer {api_key}"})
         return res
 
-    def _get(self, path, params=None, json=None):
-        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header, json=json)
+    async def _get(self, path, params=None, api_key: str = ""):
+        if not api_key:
+            return None
+        client = await self._get_client()
+        res = await client.get(url=self.api_url + path, params=params, headers={"Authorization": f"Bearer {api_key}"})
         return res
 
     def _is_cache_valid(self, ts):
@@ -116,25 +127,80 @@ class RAGFlowConnector:
     def _set_cached_document_metadata_by_dataset(self, dataset_id, doc_id_meta_list):
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
-        if len(self._document_metadata_cache) > self._MAX_DOCUMENT_CACHE:
-            self._document_metadata_cache.popitem(last=False)
 
-    def list_datasets(self, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
-        res = self._get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
-        if not res:
-            raise Exception([types.TextContent(type="text", text=res.get("Cannot process this operation."))])
-
-        res = res.json()
-        if res.get("code") == 0:
-            result_list = []
-            for data in res["data"]:
-                d = {"description": data["description"], "id": data["id"]}
-                result_list.append(json.dumps(d, ensure_ascii=False))
-            return "\n".join(result_list)
-        return ""
-
-    def retrieval(
+    async def _fetch_datasets_page(
         self,
+        *,
+        api_key: str,
+        page: int,
+        page_size: int,
+        orderby: str = "create_time",
+        desc: bool = True,
+        id: str | None = None,
+        name: str | None = None,
+    ):
+        """Fetch one structured page of accessible datasets from the backend API."""
+        params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc}
+        if id:
+            params["id"] = id
+        if name:
+            params["name"] = name
+
+        res = await self._get("/datasets", params, api_key=api_key)
+        if not res or res.status_code != 200:
+            error_message = None
+            if res is not None:
+                try:
+                    error_message = res.json().get("message")
+                except Exception:
+                    error_message = None
+            raise Exception([types.TextContent(type="text", text=error_message or "Cannot process this operation.")])
+
+        res_json = res.json()
+        if res_json.get("code") != 0:
+            raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot process this operation."))])
+
+        return res_json
+
+    async def list_datasets(self, *, api_key: str, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
+        """Return accessible datasets as newline-delimited JSON for MCP tool descriptions."""
+        res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=page_size, orderby=orderby, desc=desc, id=id, name=name)
+        result_list = []
+        for data in res_json["data"]:
+            d = {"description": data["description"], "id": data["id"]}
+            result_list.append(json.dumps(d, ensure_ascii=False))
+        return "\n".join(result_list)
+
+    async def resolve_dataset_ids(self, *, api_key: str):
+        """Resolve all accessible dataset IDs for MCP retrieval fallback."""
+        logging.info("Resolving accessible dataset IDs for MCP retrieval")
+        dataset_ids = []
+        page = 1
+
+        while True:
+            logging.debug("resolve_dataset_ids fetching /datasets page=%s page_size=%s", page, self._DATASET_PAGE_SIZE)
+            try:
+                res_json = await self._fetch_datasets_page(api_key=api_key, page=page, page_size=self._DATASET_PAGE_SIZE)
+            except Exception as exc:
+                logging.warning("resolve_dataset_ids failed to fetch /datasets page=%s error=%s", page, exc)
+                raise
+
+            datasets = res_json.get("data", [])
+            logging.debug("resolve_dataset_ids received %s datasets from page=%s", len(datasets), page)
+            dataset_ids.extend(data["id"] for data in datasets if data.get("id"))
+            total = res_json.get("total", len(dataset_ids))
+            if not datasets or len(dataset_ids) >= total:
+                break
+            page += 1
+
+        resolved = list(dict.fromkeys(dataset_ids))
+        logging.info("resolve_dataset_ids resolved %s accessible dataset IDs", len(resolved))
+        return resolved
+
+    async def retrieval(
+        self,
+        *,
+        api_key: str,
         dataset_ids,
         document_ids=None,
         question="",
@@ -149,23 +215,14 @@ class RAGFlowConnector:
     ):
         if document_ids is None:
             document_ids = []
-        
-        # If no dataset_ids provided or empty list, get all available dataset IDs
+
         if not dataset_ids:
-            dataset_list_str = self.list_datasets()
-            dataset_ids = []
-            
-            # Parse the dataset list to extract IDs
-            if dataset_list_str:
-                for line in dataset_list_str.strip().split('\n'):
-                    if line.strip():
-                        try:
-                            dataset_info = json.loads(line.strip())
-                            dataset_ids.append(dataset_info["id"])
-                        except (json.JSONDecodeError, KeyError):
-                            # Skip malformed lines
-                            continue
-        
+            logging.info("MCP retrieval omitted dataset_ids; resolving accessible datasets")
+            dataset_ids = await self.resolve_dataset_ids(api_key=api_key)
+            if not dataset_ids:
+                logging.info("MCP retrieval found no accessible datasets for current user")
+                raise Exception([types.TextContent(type="text", text="No accessible datasets found.")])
+
         data_json = {
             "page": page,
             "page_size": page_size,
@@ -179,9 +236,9 @@ class RAGFlowConnector:
             "document_ids": document_ids,
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
-        res = self._post("/retrieval", json=data_json)
-        if not res:
-            raise Exception([types.TextContent(type="text", text=res.get("Cannot process this operation."))])
+        res = await self._post("/retrieval", json=data_json, api_key=api_key)
+        if not res or res.status_code != 200:
+            raise Exception([types.TextContent(type="text", text="Cannot process this operation.")])
 
         res = res.json()
         if res.get("code") == 0:
@@ -189,7 +246,7 @@ class RAGFlowConnector:
             chunks = []
 
             # Cache document metadata and dataset information
-            document_cache, dataset_cache = self._get_document_metadata_cache(dataset_ids, force_refresh=force_refresh)
+            document_cache, dataset_cache = await self._get_document_metadata_cache(dataset_ids, api_key=api_key, force_refresh=force_refresh)
 
             # Process chunks with enhanced field mapping including per-chunk metadata
             for chunk_data in data.get("chunks", []):
@@ -218,7 +275,7 @@ class RAGFlowConnector:
 
         raise Exception([types.TextContent(type="text", text=res.get("message"))])
 
-    def _get_document_metadata_cache(self, dataset_ids, force_refresh=False):
+    async def _get_document_metadata_cache(self, dataset_ids, *, api_key: str, force_refresh=False):
         """Cache document metadata for all documents in the specified datasets"""
         document_cache = {}
         dataset_cache = {}
@@ -228,7 +285,7 @@ class RAGFlowConnector:
                 dataset_meta = None if force_refresh else self._get_cached_dataset_metadata(dataset_id)
                 if not dataset_meta:
                     # First get dataset info for name
-                    dataset_res = self._get("/datasets", {"id": dataset_id, "page_size": 1})
+                    dataset_res = await self._get("/datasets", {"id": dataset_id, "page_size": 1}, api_key=api_key)
                     if dataset_res and dataset_res.status_code == 200:
                         dataset_data = dataset_res.json()
                         if dataset_data.get("code") == 0 and dataset_data.get("data"):
@@ -240,46 +297,48 @@ class RAGFlowConnector:
 
                 docs = None if force_refresh else self._get_cached_document_metadata_by_dataset(dataset_id)
                 if docs is None:
-                    docs_res = self._get(f"/datasets/{dataset_id}/documents")
-                    docs_data = docs_res.json()
-                    if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
-                        doc_id_meta_list = []
-                        docs = {}
-                        for doc in docs_data["data"]["docs"]:
-                            doc_id = doc.get("id")
-                            if not doc_id:
-                                continue
-                            doc_meta = {
-                                "document_id": doc_id,
-                                "name": doc.get("name", ""),
-                                "location": doc.get("location", ""),
-                                "type": doc.get("type", ""),
-                                "size": doc.get("size"),
-                                "chunk_count": doc.get("chunk_count"),
-                                # "chunk_method": doc.get("chunk_method", ""),
-                                "create_date": doc.get("create_date", ""),
-                                "update_date": doc.get("update_date", ""),
-                                # "process_begin_at": doc.get("process_begin_at", ""),
-                                # "process_duration": doc.get("process_duration"),
-                                # "progress": doc.get("progress"),
-                                # "progress_msg": doc.get("progress_msg", ""),
-                                # "status": doc.get("status", ""),
-                                # "run": doc.get("run", ""),
-                                "token_count": doc.get("token_count"),
-                                # "source_type": doc.get("source_type", ""),
-                                "thumbnail": doc.get("thumbnail", ""),
-                                "dataset_id": doc.get("dataset_id", dataset_id),
-                                "meta_fields": doc.get("meta_fields", {}),
-                                # "parser_config": doc.get("parser_config", {})
-                            }
-                            doc_id_meta_list.append((doc_id, doc_meta))
-                            docs[doc_id] = doc_meta
+                    page = 1
+                    page_size = 30
+                    doc_id_meta_list = []
+                    docs = {}
+                    while page:
+                        docs_res = await self._get(f"/datasets/{dataset_id}/documents?page={page}", api_key=api_key)
+                        if not docs_res:
+                            break
+                        docs_data = docs_res.json()
+                        if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
+                            for doc in docs_data["data"]["docs"]:
+                                doc_id = doc.get("id")
+                                if not doc_id:
+                                    continue
+                                doc_meta = {
+                                    "document_id": doc_id,
+                                    "name": doc.get("name", ""),
+                                    "location": doc.get("location", ""),
+                                    "type": doc.get("type", ""),
+                                    "size": doc.get("size"),
+                                    "chunk_count": doc.get("chunk_count"),
+                                    "create_date": doc.get("create_date", ""),
+                                    "update_date": doc.get("update_date", ""),
+                                    "token_count": doc.get("token_count"),
+                                    "thumbnail": doc.get("thumbnail", ""),
+                                    "dataset_id": doc.get("dataset_id", dataset_id),
+                                    "meta_fields": doc.get("meta_fields", {}),
+                                }
+                                doc_id_meta_list.append((doc_id, doc_meta))
+                                docs[doc_id] = doc_meta
+
+                            page += 1
+                            if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
+                                page = None
+
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
                 if docs:
                     document_cache.update(docs)
 
-        except Exception:
+        except Exception as e:
             # Gracefully handle metadata cache failures
+            logging.error(f"Problem building the document metadata cache: {str(e)}")
             pass
 
         return document_cache, dataset_cache
@@ -320,13 +379,64 @@ async def sse_lifespan(server: Server) -> AsyncIterator[dict]:
     try:
         yield {"ragflow_ctx": ctx}
     finally:
+        await ctx.conn.close()
         logging.info("Legacy SSE application shutting down...")
 
 
 app = Server("ragflow-mcp-server", lifespan=sse_lifespan)
+AUTH_TOKEN_STATE_KEY = "ragflow_auth_token"
 
 
-def with_api_key(required=True):
+def _to_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        return value.decode(errors="ignore")
+    return str(value)
+
+
+def _extract_token_from_headers(headers: Any) -> str | None:
+    if not headers or not hasattr(headers, "get"):
+        return None
+
+    auth_keys = ("authorization", "Authorization", b"authorization", b"Authorization")
+    for key in auth_keys:
+        auth = headers.get(key)
+        if not auth:
+            continue
+        auth_text = _to_text(auth).strip()
+        if auth_text.lower().startswith("bearer "):
+            token = auth_text[7:].strip()
+            if token:
+                return token
+
+    api_key_keys = ("api_key", "x-api-key", "Api-Key", "X-API-Key", b"api_key", b"x-api-key", b"Api-Key", b"X-API-Key")
+    for key in api_key_keys:
+        token = headers.get(key)
+        if token:
+            token_text = _to_text(token).strip()
+            if token_text:
+                return token_text
+
+    return None
+
+
+def _extract_token_from_request(request: Any) -> str | None:
+    if request is None:
+        return None
+
+    state = getattr(request, "state", None)
+    if state is not None:
+        token = getattr(state, AUTH_TOKEN_STATE_KEY, None)
+        if token:
+            return token
+
+    token = _extract_token_from_headers(getattr(request, "headers", None))
+    if token and state is not None:
+        setattr(state, AUTH_TOKEN_STATE_KEY, token)
+
+    return token
+
+
+def with_api_key(required: bool = True):
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -336,26 +446,14 @@ def with_api_key(required=True):
                 raise ValueError("Get RAGFlow Context failed")
 
             connector = ragflow_ctx.conn
+            api_key = HOST_API_KEY
 
             if MODE == LaunchMode.HOST:
-                headers = ctx.session._init_options.capabilities.experimental.get("headers", {})
-                token = None
-
-                # lower case here, because of Starlette conversion
-                auth = headers.get("authorization", "")
-                if auth.startswith("Bearer "):
-                    token = auth.removeprefix("Bearer ").strip()
-                elif "api_key" in headers:
-                    token = headers["api_key"]
-
-                if required and not token:
+                api_key = _extract_token_from_request(getattr(ctx, "request", None)) or ""
+                if required and not api_key:
                     raise ValueError("RAGFlow API key or Bearer token is required.")
 
-                connector.bind_api_key(token)
-            else:
-                connector.bind_api_key(HOST_API_KEY)
-
-            return await func(*args, connector=connector, **kwargs)
+            return await func(*args, connector=connector, api_key=api_key, **kwargs)
 
         return wrapper
 
@@ -364,8 +462,8 @@ def with_api_key(required=True):
 
 @app.list_tools()
 @with_api_key(required=True)
-async def list_tools(*, connector) -> list[types.Tool]:
-    dataset_description = connector.list_datasets()
+async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types.Tool]:
+    dataset_description = await connector.list_datasets(api_key=api_key)
 
     return [
         types.Tool(
@@ -375,20 +473,9 @@ async def list_tools(*, connector) -> list[types.Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "dataset_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional array of dataset IDs to search. If not provided or empty, all datasets will be searched."
-                    },
-                    "document_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional array of document IDs to search within."
-                    },
-                    "question": {
-                        "type": "string",
-                        "description": "The question or query to search for."
-                    },
+                    "dataset_ids": {"type": "array", "items": {"type": "string"}, "description": "Optional array of dataset IDs to search. If not provided or empty, all datasets will be searched."},
+                    "document_ids": {"type": "array", "items": {"type": "string"}, "description": "Optional array of document IDs to search within."},
+                    "question": {"type": "string", "description": "The question or query to search for."},
                     "page": {
                         "type": "integer",
                         "description": "Page number for pagination",
@@ -446,7 +533,13 @@ async def list_tools(*, connector) -> list[types.Tool]:
 
 @app.call_tool()
 @with_api_key(required=True)
-async def call_tool(name: str, arguments: dict, *, connector) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+async def call_tool(
+    name: str,
+    arguments: dict,
+    *,
+    connector: RAGFlowConnector,
+    api_key: str,
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     if name == "ragflow_retrieval":
         document_ids = arguments.get("document_ids", [])
         dataset_ids = arguments.get("dataset_ids", [])
@@ -460,24 +553,8 @@ async def call_tool(name: str, arguments: dict, *, connector) -> list[types.Text
         rerank_id = arguments.get("rerank_id")
         force_refresh = arguments.get("force_refresh", False)
 
-        
-        # If no dataset_ids provided or empty list, get all available dataset IDs
-        if not dataset_ids:
-            dataset_list_str = connector.list_datasets()
-            dataset_ids = []
-            
-            # Parse the dataset list to extract IDs
-            if dataset_list_str:
-                for line in dataset_list_str.strip().split('\n'):
-                    if line.strip():
-                        try:
-                            dataset_info = json.loads(line.strip())
-                            dataset_ids.append(dataset_info["id"])
-                        except (json.JSONDecodeError, KeyError):
-                            # Skip malformed lines
-                            continue
-        
-        return connector.retrieval(
+        return await connector.retrieval(
+            api_key=api_key,
             dataset_ids=dataset_ids,
             document_ids=document_ids,
             question=question,
@@ -511,17 +588,13 @@ def create_starlette_app():
                 path = scope["path"]
                 if path.startswith("/messages/") or path.startswith("/sse") or path.startswith("/mcp"):
                     headers = dict(scope["headers"])
-                    token = None
-                    auth_header = headers.get(b"authorization")
-                    if auth_header and auth_header.startswith(b"Bearer "):
-                        token = auth_header.removeprefix(b"Bearer ").strip()
-                    elif b"api_key" in headers:
-                        token = headers[b"api_key"]
+                    token = _extract_token_from_headers(headers)
 
                     if not token:
                         response = JSONResponse({"error": "Missing or invalid authorization header"}, status_code=401)
                         await response(scope, receive, send)
                         return
+                    scope.setdefault("state", {})[AUTH_TOKEN_STATE_KEY] = token
 
                 await self.app(scope, receive, send)
 
@@ -548,9 +621,8 @@ def create_starlette_app():
     # Add streamable HTTP route if enabled
     streamablehttp_lifespan = None
     if TRANSPORT_STREAMABLE_HTTP_ENABLED:
-        from starlette.types import Receive, Scope, Send
-
         from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+        from starlette.types import Receive, Scope, Send
 
         session_manager = StreamableHTTPSessionManager(
             app=app,
@@ -559,8 +631,11 @@ def create_starlette_app():
             stateless=True,
         )
 
-        async def handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
-            await session_manager.handle_request(scope, receive, send)
+        class StreamableHTTPEntry:
+            async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+                await session_manager.handle_request(scope, receive, send)
+
+        streamable_http_entry = StreamableHTTPEntry()
 
         @asynccontextmanager
         async def streamablehttp_lifespan(app: Starlette) -> AsyncIterator[None]:
@@ -571,10 +646,15 @@ def create_starlette_app():
                 finally:
                     logging.info("StreamableHTTP application shutting down...")
 
-        routes.append(Mount("/mcp", app=handle_streamable_http))
+        routes.extend(
+            [
+                Route("/mcp", endpoint=streamable_http_entry, methods=["GET", "POST", "DELETE"]),
+                Mount("/mcp", app=streamable_http_entry),
+            ]
+        )
 
     return Starlette(
-        debug=True,
+        debug=False,
         routes=routes,
         middleware=middleware,
         lifespan=streamablehttp_lifespan,
@@ -632,9 +712,6 @@ def main(base_url, host, port, mode, api_key, transport_sse_enabled, transport_s
     if MODE == LaunchMode.SELF_HOST and not HOST_API_KEY:
         raise click.UsageError("--api-key is required when --mode is 'self-host'")
 
-    if TRANSPORT_STREAMABLE_HTTP_ENABLED and MODE == LaunchMode.HOST:
-        raise click.UsageError("The --host mode is not supported with streamable-http transport yet.")
-
     if not TRANSPORT_STREAMABLE_HTTP_ENABLED and JSON_RESPONSE:
         JSON_RESPONSE = False
 
@@ -691,7 +768,7 @@ if __name__ == "__main__":
             --base-url=http://127.0.0.1:9380 \
             --mode=self-host --api-key=ragflow-xxxxx
 
-    2. Host mode (multi-tenant, self-host only, clients must provide Authorization headers):
+    2. Host mode (multi-tenant, clients must provide Authorization headers):
         uv run mcp/server/server.py --host=127.0.0.1 --port=9382 \
             --base-url=http://127.0.0.1:9380 \
             --mode=host

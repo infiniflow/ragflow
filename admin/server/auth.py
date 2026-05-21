@@ -22,11 +22,12 @@ from datetime import datetime
 
 from flask import jsonify, request
 from flask_login import current_user, login_user
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.common.exceptions import AdminException, UserNotFoundError
 from api.common.base64 import encode_to_base64
 from api.db.services import UserService
+from api.db import UserTenantRole
+from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
@@ -38,18 +39,34 @@ from common import settings
 def setup_auth(login_manager):
     @login_manager.request_loader
     def load_user(web_request):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        # Authorization header contains JWT-encoded access token
+        # First decode JWT to get the UUID, then query database
+        from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
+        from common import settings
+
         authorization = web_request.headers.get("Authorization")
         if authorization:
             try:
-                access_token = str(jwt.loads(authorization))
+                # Strip "Bearer " prefix if present
+                jwt_token = authorization
+                if jwt_token.startswith("Bearer "):
+                    jwt_token = jwt_token[7:]
 
-                if not access_token or not access_token.strip():
-                    logging.warning("Authentication attempt with empty access token")
+                jwt_token = jwt_token.strip()
+                if not jwt_token:
+                    logging.warning("Authentication attempt with empty JWT token")
                     return None
 
-                # Access tokens should be UUIDs (32 hex characters)
-                if len(access_token.strip()) < 32:
+                # Decode JWT to get the UUID access_token
+                jwt = Serializer(secret_key=settings.get_secret_key())
+                access_token = str(jwt.loads(jwt_token))
+
+                if not access_token or not access_token.strip():
+                    logging.warning("Authentication attempt with empty access token after JWT decode")
+                    return None
+
+                # Access tokens stored in database are UUIDs (32 hex characters)
+                if len(access_token) < 32:
                     logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
                     return None
 
@@ -85,8 +102,45 @@ def init_default_admin():
         }
         if not UserService.save(**default_admin):
             raise AdminException("Can't init admin.", 500)
+        add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
+    else:
+        default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
+        if default_admin_rows:
+            default_admin = default_admin_rows[0].to_dict()
+            exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
+            if not exist:
+                add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
+
+
+def add_tenant_for_admin(user_info: dict, role: str):
+    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.services.llm_service import get_init_tenant_llm
+
+    tenant = {
+        "id": user_info["id"],
+        "name": user_info["nickname"] + "‘s Kingdom",
+        "llm_id": settings.CHAT_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
+        "asr_id": settings.ASR_MDL,
+        "parser_ids": settings.PARSERS,
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
+        "rerank_id": settings.RERANK_MDL,
+    }
+    usr_tenant = {
+        "tenant_id": user_info["id"],
+        "user_id": user_info["id"],
+        "invited_by": user_info["id"],
+        "role": role
+    }
+
+    tenant_llm = get_init_tenant_llm(user_info["id"])
+    TenantService.insert(**tenant)
+    UserTenantService.insert(**usr_tenant)
+    TenantLLMService.insert_many(tenant_llm)
+    logging.info(
+        f"Added tenant for email: {user_info['email']}, A default tenant has been set; changing the default models after login is strongly recommended.")
 
 
 def check_admin_auth(func):
@@ -176,11 +230,11 @@ def login_verify(f):
                     "message": "Access denied",
                     "data": None
                 }), 200
-        except Exception as e:
-            error_msg = str(e)
+        except Exception:
+            logging.exception("An error occurred during admin login verification.")
             return jsonify({
                 "code": 500,
-                "message": error_msg
+                "message": "An internal server error occurred."
             }), 200
 
         return f(*args, **kwargs)

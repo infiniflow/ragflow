@@ -22,12 +22,13 @@ spec:
         {{- include "ragflow.labels" . | nindent 8 }}
         app.kubernetes.io/component: ragflow
       annotations:
+        checksum/values: {{ .Values | toYaml | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
         checksum/config-ragflow: {{ include (print $.Template.BasePath "/ragflow_config.yaml") . | sha256sum }}
     spec:
-      {{- if or .Values.imagePullSecrets .Values.ragflow.image.pullSecrets }}
+      {{- if or .Values.global.imagePullSecrets .Values.ragflow.image.pullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
+        {{- with .Values.global.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- with .Values.ragflow.image.pullSecrets }}
@@ -36,18 +37,26 @@ spec:
       {{- end }}
       containers:
       - name: ragflow
-        image: {{ .Values.ragflow.image.repository }}:{{ .Values.ragflow.image.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.ragflow.image.repository) }}:{{ .Values.ragflow.image.tag }}
         {{- with .Values.ragflow.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- if .Values.ragflow.admin.enabled }}
+        args:
+          - "--enable-adminserver"
         {{- end }}
         ports:
           - containerPort: 80
             name: http
           - containerPort: 9380
             name: http-api
+          {{- if .Values.ragflow.admin.enabled }}
+          - containerPort: 9381
+            name: admin
+          {{- end }}
         volumeMounts:
-          - mountPath: /etc/nginx/conf.d/ragflow.conf
-            subPath: ragflow.conf
+          - mountPath: /etc/nginx/conf.d/ragflow.conf.python
+            subPath: ragflow.conf.python
             name: nginx-config-volume
           - mountPath: /etc/nginx/proxy.conf
             subPath: proxy.conf
@@ -116,4 +125,25 @@ spec:
       targetPort: http-api
       name: http-api
   type: {{ .Values.ragflow.api.service.type }}
+{{- end }}
+
+{{- if .Values.ragflow.admin.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-admin
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow
+spec:
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ragflow
+  ports:
+    - protocol: TCP
+      port: {{ .Values.ragflow.admin.port }}
+      targetPort: admin
+      name: admin
+  type: {{ .Values.ragflow.admin.serviceType }}
 {{- end }}

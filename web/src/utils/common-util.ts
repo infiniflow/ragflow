@@ -7,10 +7,16 @@ export const isFormData = (data: unknown): data is FormData => {
   return data instanceof FormData;
 };
 
-const excludedFields = ['img2txt_id', 'mcpServers'];
+const excludedFields: Array<string | RegExp> = [
+  'img2txt_id',
+  'mcpServers',
+  'image_base64',
+];
 
 const isExcludedField = (key: string) => {
-  return excludedFields.includes(key);
+  return excludedFields.some((excl) =>
+    excl instanceof RegExp ? excl.test(key) : excl === key,
+  );
 };
 
 export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {
@@ -245,4 +251,9 @@ export function parseColorToRGB(color: string): [number, number, number] {
 export function parseColorToRGBA(color: string, opcity = 1): string {
   const [r, g, b] = parseColorToRGB(color);
   return `rgba(${r},${g},${b},${opcity})`;
+}
+
+export function middleEllipsis(str: string, front = 12, back = 8) {
+  if (str.length <= front + back) return str;
+  return `${str.slice(0, front)}…${str.slice(-back)}`;
 }

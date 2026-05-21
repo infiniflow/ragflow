@@ -13,7 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import time
 from datetime import datetime
+from functools import wraps
+
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import peewee
 from peewee import InterfaceError, OperationalError
@@ -21,6 +25,38 @@ from peewee import InterfaceError, OperationalError
 from api.db.db_models import DB
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
+
+
+def _is_deadlock_error(exc: OperationalError) -> bool:
+    return isinstance(exc, OperationalError) and bool(getattr(exc, "args", ())) and exc.args[0] == 1213
+
+
+def retry_deadlock_operation(max_retries=3, retry_delay=0.1):
+    """Retry a full DB operation when MySQL/OceanBase aborts it due to deadlock."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except OperationalError as e:
+                    if not _is_deadlock_error(e) or attempt >= max_retries - 1:
+                        raise
+                    current_delay = retry_delay * (2**attempt)
+                    logging.warning(
+                        "%s failed due to DB deadlock, retrying (%s/%s): %s",
+                        func.__qualname__,
+                        attempt + 1,
+                        max_retries,
+                        e,
+                    )
+                    time.sleep(current_delay)
+
+        return wrapper
+
+    return decorator
+
 
 def retry_db_operation(func):
     @retry(
@@ -33,6 +69,7 @@ def retry_db_operation(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
     return wrapper
+
 
 class CommonService:
     """Base service class that provides common database operations.
@@ -169,10 +206,12 @@ class CommonService:
         """
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
-        kwargs["create_time"] = current_timestamp()
-        kwargs["create_date"] = datetime_format(datetime.now())
-        kwargs["update_time"] = current_timestamp()
-        kwargs["update_date"] = datetime_format(datetime.now())
+        timestamp = current_timestamp()
+        cur_datetime = datetime_format(datetime.now())
+        kwargs["create_time"] = timestamp
+        kwargs["create_date"] = cur_datetime
+        kwargs["update_time"] = timestamp
+        kwargs["update_date"] = cur_datetime
         sample_obj = cls.model(**kwargs).save(force_insert=True)
         return sample_obj
 
@@ -188,10 +227,15 @@ class CommonService:
             data_list (list): List of dictionaries containing record data to insert.
             batch_size (int, optional): Number of records to insert in each batch. Defaults to 100.
         """
+        current_ts = current_timestamp()
+        current_datetime = datetime_format(datetime.now())
         with DB.atomic():
             for d in data_list:
-                d["create_time"] = current_timestamp()
-                d["create_date"] = datetime_format(datetime.now())
+                d["create_time"] = current_ts
+                d["create_date"] = current_datetime
+                d["update_time"] = current_ts
+                d["update_date"] = current_datetime
+
             for i in range(0, len(data_list), batch_size):
                 cls.model.insert_many(data_list[i : i + batch_size]).execute()
 
@@ -207,10 +251,14 @@ class CommonService:
             data_list (list): List of dictionaries containing record data to update.
                              Each dictionary must include an 'id' field.
         """
+
+        timestamp = current_timestamp()
+        cur_datetime = datetime_format(datetime.now())
+        for data in data_list:
+            data["update_time"] = timestamp
+            data["update_date"] = cur_datetime
         with DB.atomic():
             for data in data_list:
-                data["update_time"] = current_timestamp()
-                data["update_date"] = datetime_format(datetime.now())
                 cls.model.update(data).where(cls.model.id == data["id"]).execute()
 
     @classmethod
@@ -268,7 +316,7 @@ class CommonService:
         # Returns:
         #     Number of records deleted
         return cls.model.delete().where(cls.model.id == pid).execute()
-    
+
     @classmethod
     @DB.connection_context()
     def delete_by_ids(cls, pids):

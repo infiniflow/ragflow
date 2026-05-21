@@ -33,7 +33,7 @@ BLOCK_TAGS = [
     "table", "pre", "code", "blockquote",
     "figure", "figcaption"
 ]
-TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "#####", "h5": "#####", "h6": "######"}
+TITLE_TAGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
 
 
 class RAGFlowHtmlParser:
@@ -52,7 +52,7 @@ class RAGFlowHtmlParser:
             raise TypeError("txt type should be string!")
 
         temp_sections = []
-        soup = BeautifulSoup(txt, "html5lib")
+        soup = BeautifulSoup(txt, "html.parser")
         # delete <style> tag
         for style_tag in soup.find_all(["style", "script"]):
             style_tag.decompose()
@@ -151,7 +151,7 @@ class RAGFlowHtmlParser:
         block_content = []
         current_content = ""
         table_info_list = []
-        lask_block_id = None
+        last_block_id = None
         for item in parser_result:
             content = item.get("content")
             tag_name = item.get("tag_name")
@@ -160,11 +160,11 @@ class RAGFlowHtmlParser:
             if block_id:
                 if title_flag:
                     content = f"{TITLE_TAGS[tag_name]} {content}"
-                if lask_block_id != block_id:
-                    if lask_block_id is not None:
+                if last_block_id != block_id:
+                    if last_block_id is not None:
                         block_content.append(current_content)
                     current_content = content
-                    lask_block_id = block_id
+                    last_block_id = block_id
                 else:
                     current_content += (" " if current_content else "") + content
             else:
@@ -210,4 +210,3 @@ class RAGFlowHtmlParser:
             chunks.append(current_block)
 
         return chunks
-

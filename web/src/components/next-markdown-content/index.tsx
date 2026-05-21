@@ -2,15 +2,15 @@ import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
+import { downloadFileFromBlob } from '@/utils/file-util';
+import request from '@/utils/request';
 import DOMPurify from 'dompurify';
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
-import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -19,27 +19,141 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
-  showImage,
 } from '@/utils/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
+import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
-import { CircleAlert } from 'lucide-react';
+import reactStringReplace from 'react-string-replace';
 import { Button } from '../ui/button';
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
-import styles from './index.less';
+import message from '../ui/message';
+import styles from './index.module.less';
 
-const getChunkIndex = (match: string) => Number(match);
+const getChunkIndex = (match: string) => parseCitationIndex(match);
+
+const isArtifactUrl = (url?: string) =>
+  Boolean(url && url.includes('/api/v1/documents/artifact/'));
+
+const fetchArtifactBlob = async (url: string): Promise<Blob> => {
+  const response = await request(url, {
+    method: 'GET',
+    responseType: 'blob',
+  });
+
+  return response.data as Blob;
+};
+
+const getArtifactName = (url?: string, fallback?: string) =>
+  fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
+
+function ArtifactLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const handleClick = useCallback(
+    async (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      try {
+        const blob = await fetchArtifactBlob(href);
+        const objectUrl = URL.createObjectURL(blob);
+        window.open(objectUrl, '_blank', 'noopener,noreferrer');
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
+      } catch {
+        message.error('Failed to open artifact');
+      }
+    },
+    [href],
+  );
+
+  return (
+    <a href={href} className={className} onClick={handleClick}>
+      {children}
+    </a>
+  );
+}
+
+function ArtifactImage({
+  src,
+  alt,
+  downloadLabel,
+}: {
+  src: string;
+  alt?: string;
+  downloadLabel: string;
+}) {
+  const [imageSrc, setImageSrc] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+    let active = true;
+
+    const load = async () => {
+      try {
+        const blob = await fetchArtifactBlob(src);
+        objectUrl = URL.createObjectURL(blob);
+        if (active) {
+          setImageSrc(objectUrl);
+        }
+      } catch {
+        message.error('Failed to load artifact image');
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [alt, src]);
+
+  const handleDownload = useCallback(async () => {
+    try {
+      const blob = await fetchArtifactBlob(src);
+      downloadFileFromBlob(blob, getArtifactName(src, alt));
+    } catch {
+      message.error('Failed to download artifact');
+    }
+  }, [alt, src]);
+
+  return (
+    <span className={styles.artifactImageWrapper}>
+      {imageSrc ? (
+        <img src={imageSrc} alt={alt || ''} className={styles.artifactImage} />
+      ) : (
+        <span className={styles.artifactImage} />
+      )}
+      <button
+        type="button"
+        className={styles.artifactDownload}
+        onClick={handleDownload}
+      >
+        {downloadLabel}
+      </button>
+    </span>
+  );
+}
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 function MarkdownContent({
   reference,
@@ -56,7 +170,7 @@ function MarkdownContent({
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
     let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section'],
+      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
       ADD_ATTR: ['class'],
     });
     // let text = content;
@@ -64,7 +178,7 @@ function MarkdownContent({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -173,6 +287,7 @@ function MarkdownContent({
                 __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText, 'w-full')}
+              dir="auto"
             ></div>
             {documentId && (
               <div className="flex gap-1">
@@ -211,33 +326,15 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
+      const replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
 
-        const { documentUrl, fileExtension, imageId, chunkItem, documentId } =
-          getReferenceInfo(chunkIndex);
-
-        const docType = chunkItem?.doc_type;
-
-        return showImage(docType) ? (
-          <Image
-            id={imageId}
-            className={styles.referenceInnerChunkImage}
-            onClick={
-              documentId
-                ? handleDocumentButtonClick(
-                    documentId,
-                    chunkItem,
-                    fileExtension === 'pdf',
-                    documentUrl,
-                  )
-                : () => {}
-            }
-          ></Image>
-        ) : (
+        return (
           <HoverCard key={i}>
             <HoverCardTrigger>
-              <CircleAlert className="size-4 inline-block" />
+              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                Fig. {chunkIndex + 1}
+              </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
               {renderPopoverContent(chunkIndex)}
@@ -248,45 +345,84 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [renderPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [renderPopoverContent],
   );
 
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
   return (
-    <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-      remarkPlugins={[remarkGfm, remarkMath]}
-      className={styles.markdownContentWrapper}
-      components={
-        {
-          'custom-typography': ({ children }: { children: string }) =>
-            renderReference(children),
-          code(props: any) {
-            const { children, className, ...rest } = props;
-            const restProps = omit(rest, 'node');
-            const match = /language-(\w+)/.exec(className || '');
-            return match ? (
-              <SyntaxHighlighter
-                {...restProps}
-                PreTag="div"
-                language={match[1]}
-                wrapLongLines
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code
-                {...restProps}
-                className={classNames(className, 'text-wrap')}
-              >
-                {children}
-              </code>
-            );
-          },
-        } as any
-      }
-    >
-      {contentWithCursor}
-    </Markdown>
+    <div dir={dir} className={styles.markdownContentWrapper}>
+      <Markdown
+        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        remarkPlugins={MarkdownRemarkPlugins}
+        components={
+          {
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+            'custom-typography': ({ children }: { children: string }) =>
+              renderReference(children),
+            a({ href, children, ...props }: any) {
+              if (isArtifactUrl(href)) {
+                return (
+                  <ArtifactLink href={href} className={styles.artifactDownload}>
+                    {children}
+                  </ArtifactLink>
+                );
+              }
+              return (
+                <a href={href} {...omit(props, 'node')}>
+                  {children}
+                </a>
+              );
+            },
+            img({ src, alt, ...props }: any) {
+              if (isArtifactUrl(src)) {
+                return (
+                  <ArtifactImage
+                    src={src}
+                    alt={alt || ''}
+                    downloadLabel={t('common.download')}
+                  />
+                );
+              }
+              return (
+                <span className={styles.artifactImageWrapper}>
+                  <img
+                    src={src}
+                    alt={alt || ''}
+                    className={styles.artifactImage}
+                    {...omit(props, 'node')}
+                  />
+                </span>
+              );
+            },
+            code(props: any) {
+              const { children, className, ...rest } = props;
+              const restProps = omit(rest, 'node');
+              const match = /language-(\w+)/.exec(className || '');
+              return match ? (
+                <SyntaxHighlighter
+                  {...restProps}
+                  PreTag="div"
+                  language={match[1]}
+                  wrapLongLines
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code
+                  {...restProps}
+                  className={classNames(className, 'text-wrap')}
+                >
+                  {children}
+                </code>
+              );
+            },
+          } as any
+        }
+      >
+        {contentWithCursor}
+      </Markdown>
+    </div>
   );
 }
 

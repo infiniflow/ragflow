@@ -1,8 +1,10 @@
 ---
-sidebar_position: 10
+sidebar_position: 20
 slug: /faq
+sidebar_custom_props: {
+  sidebarIcon: LucideCircleQuestionMark
+}
 ---
-
 # FAQs
 
 Answers to questions about general features, troubleshooting, usage, and more.
@@ -41,11 +43,11 @@ You can find the RAGFlow version number on the **System** page of the UI:
 If you build RAGFlow from source, the version number is also in the system log:
 
 ```
-        ____   ___    ______ ______ __               
+        ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
+     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
 2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2
 ```
@@ -66,11 +68,11 @@ These limitations led us to develop [Infinity](https://github.com/infiniflow/inf
 
 ---
 
-### Differences between demo.ragflow.io and a locally deployed open-source RAGFlow service?
+### Differences between cloud.ragflow.io and a locally deployed open-source RAGFlow service?
 
-demo.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, demo.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
+cloud.ragflow.io demonstrates the capabilities of RAGFlow Enterprise. Its DeepDoc models are pre-trained using proprietary data and it offers much more sophisticated team permission controls. Essentially, cloud.ragflow.io serves as a preview of RAGFlow's forthcoming SaaS (Software as a Service) offering.
 
-You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on demo.ragflow.io.
+You can deploy an open-source RAGFlow service and call it from a Python client or through RESTful APIs. However, this is not supported on cloud.ragflow.io.
 
 ---
 
@@ -145,13 +147,22 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 ---
 
+### Get a `Request error 404: undefined` when upgrading to v0.25.5
+
+To resolve this issue, do either of the following:
+
+- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.25.5 image.
+- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.25.5` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
+
 ### How to build the RAGFlow image from scratch?
 
 See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
+---
+
 ### Cannot access https://huggingface.co
 
-A locally deployed RAGflow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
+A locally deployed RAGFlow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
@@ -175,8 +186,14 @@ To fix this issue, use https://hf-mirror.com instead:
 3. Start up the server:
 
    ```bash
-   docker compose up -d 
+   docker compose up -d
    ```
+
+---
+
+### `Fail to access model(Ollama/xxxxx)`
+
+Ollama may time out or fail during its first model load due to memory constraints or out-of-memory (OOM). It is best to test your local model in isolation first. If sharing hardware with other services, memory exhaustion is likely. To resolve this, switch to a smaller model or increase RAM.
 
 ---
 
@@ -190,6 +207,20 @@ This error suggests that you do not have Internet access or are unable to connec
    ```
    - ~/deepdoc:/ragflow/rag/res/deepdoc
    ```
+
+---
+
+### `RuntimeError: Unable to start Tika server.`
+
+This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/infiniflow/ragflow/issues/13194) for detailed instructions.
+
+---
+
+### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
+
+To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows: 
+
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
 
 ---
 
@@ -208,11 +239,11 @@ You will not log in to RAGFlow unless the server is fully initialized. Run `dock
 *The server is successfully initialized, if your system displays the following:*
 
 ```
-     ____   ___    ______ ______ __               
+     ____   ___    ______ ______ __
     / __ \ /   |  / ____// ____// /____  _      __
    / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
- /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/  
+  / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
+ /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:9380
@@ -315,7 +346,7 @@ The status of a Docker container status does not necessarily reflect the status 
    $ docker ps
    ```
 
-   *The status of a healthy Elasticsearch component should look as follows:*  
+   *The status of a healthy Elasticsearch component should look as follows:*
 
    ```
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
@@ -347,7 +378,7 @@ Your IP address or port number may be incorrect. If you are using the default co
 
 A correct Ollama IP address and port is crucial to adding models to Ollama:
 
-- If you are on demo.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
+- If you are on cloud.ragflow.io, ensure that the server hosting Ollama has a publicly accessible IP address. Note that 127.0.0.1 is not a publicly accessible IP address.
 - If you deploy RAGFlow locally, ensure that Ollama and RAGFlow are in the same LAN and can communicate with each other.
 
 See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for more information.
@@ -368,7 +399,7 @@ Yes, we do. See the Python files under the **rag/app** folder.
    $ docker ps
    ```
 
-   *The status of a healthy Elasticsearch component should look as follows:*  
+   *The status of a healthy Elasticsearch component should look as follows:*
 
    ```bash
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
@@ -443,7 +474,7 @@ See [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md).
 
 ### How to upgrade RAGFlow?
 
-See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
+See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for more information.
 
 ---
 
@@ -451,7 +482,7 @@ See [Upgrade RAGFlow](./guides/upgrade_ragflow.mdx) for more information.
 
 To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
 
-1. Stop all running containers:  
+1. Stop all running containers:
 
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
@@ -461,7 +492,7 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
    :::
 
 2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-3. Restart your Docker image: 
+3. Restart your Docker image:
 
    ```bash
    $ docker compose -f docker-compose.yml up -d
@@ -493,66 +524,54 @@ See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md)
 
 ### How to use MinerU to parse PDF documents?
 
-MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports MinerU (>= 2.6.3) as an optional PDF parser with multiple backends. RAGFlow acts only as a client for MinerU, calling it to parse documents, reading the output files, and ingesting the parsed content. To use this feature, follow these steps:
+From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
 
-1. Prepare MinerU
+1. Prepare a reachable MinerU API service (FastAPI server).
+2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
+   - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
+   - `MINERU_BACKEND`: The MinerU backend:
+      - `"pipeline"` (default)
+      - `"vlm-http-client"`
+      - `"vlm-transformers"`
+      - `"vlm-vllm-engine"`
+      - `"vlm-mlx-engine"`
+      - `"vlm-vllm-async-engine"`
+      - `"vlm-lmdeploy-engine"`.
+   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`.
+   - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
+   - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
+     - `1`: Delete.
+     - `0`: Retain.
+3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:
+   - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
+   - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
 
-   ```bash
-   # docker/.env
-   ...
-   USE_MINERU=true
-   ...
-   ```
+:::note
+All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
+:::
 
-   Enabling `USE_MINERU=true` will internally perform the same setup as the manual configuration (including setting the MinerU executable path and related environment variables). 
-
-
-2. Start RAGFlow with MinerU enabled:
-
-   - **Source deployment** – in the RAGFlow repo, continue to start the backend service:
-
-   ```bash
-   ...
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
-   ```
-
-   - **Docker deployment** – after setting `USE_MINERU=true`, restart the containers so that the new settings take effect:
-
-   ```bash
-   # in RAGFlow repo
-   docker compose -f docker/docker-compose.yml restart
-   ```
-
-3. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown (which supports PDF parsing), and select **MinerU** in **PDF parser**.
-4. If you use a custom ingestion pipeline instead, you must also complete the first two steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
-
+:::caution WARNING
+Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
+:::
 ---
 
 ### How to configure MinerU-specific settings?
 
-The table below summarizes the most frequently used MinerU environment variables:
+The table below summarizes the most frequently used MinerU environment variables for remote MinerU:
 
 | Environment variable   | Description                        | Default                             | Example                                                                                         |
 | ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `MINERU_EXECUTABLE`    | Path to the local MinerU executable | `mineru`                            | `MINERU_EXECUTABLE=/home/ragflow/uv_tools/.venv/bin/mineru`                                    |
-| `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory | `1` (do **not** keep the output directory) | `MINERU_DELETE_OUTPUT=0`                                                                       |
+| `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
+| `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-mlx-engine\|vlm-vllm-async-engine\|vlm-http-client` |
+| `MINERU_SERVER_URL`    | URL of remote vLLM server (for `vlm-http-client`) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
 | `MINERU_OUTPUT_DIR`    | Directory for MinerU output files  | System-defined temporary directory  | `MINERU_OUTPUT_DIR=/home/ragflow/mineru/output`                                                |
-| `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-http-client`               |
-| `MINERU_SERVER_URL`    | URL of remote vLLM server (only for `vlm-http-client` backend) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
-| `MINERU_APISERVER`     | URL of remote MinerU service used as the parser (instead of local MinerU) | _unset_ | `MINERU_APISERVER=http://your-mineru-server:port`                                              |
+| `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory when a temp dir is used | `1` (delete temp output) | `MINERU_DELETE_OUTPUT=0`                                                                       |
 
-1. Set `MINERU_EXECUTABLE` to the path to the MinerU executable if the default `mineru` is not on `PATH`.
-2. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's output. (Default: `1`, which deletes temporary output.)
-3. Set `MINERU_OUTPUT_DIR` to specify the output directory for MinerU; otherwise, a system temp directory is used.
-4. Set `MINERU_BACKEND` to specify a parsing backend:
-   - `"pipeline"` (default): The traditional multimodel pipeline.
-   - `"vlm-transformers"`: A vision-language model using HuggingFace Transformers.
-   - `"vlm-vllm-engine"`: A vision-language model using a local vLLM engine (requires a local GPU).
-   - `"vlm-http-client"`: A vision-language model via HTTP client to a remote vLLM server (RAGFlow only requires CPU).
-5. If using the `"vlm-http-client"` backend, you must also set `MINERU_SERVER_URL` to your vLLM server's URL.
-6. If configuring RAGFlow to call a *remote* MinerU service, set `MINERU_APISERVER` to the MinerU server's URL.
+1. Set `MINERU_APISERVER` to point RAGFlow to your MinerU API server.
+2. Set `MINERU_BACKEND` to specify a parsing backend.
+3. If using the `"vlm-http-client"` backend, set `MINERU_SERVER_URL` to your vLLM server's URL. MinerU API expects `backend=vlm-http-client` and `server_url=http://<server>:30000` in the request body.
+4. Set `MINERU_OUTPUT_DIR` to specify where RAGFlow stores MinerU API output; otherwise, a system temp directory is used.
+5. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's temp output (useful for debugging).
 
 :::tip NOTE
 For information about other environment variables natively supported by MinerU, see [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
@@ -562,22 +581,137 @@ For information about other environment variables natively supported by MinerU, 
 
 ### How to use MinerU with a vLLM server for document parsing?
 
-RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate document parsing tasks to a remote vLLM server. With this configuration, RAGFlow will connect to your remote vLLM server as a client and use its powerful GPU resources for document parsing. This significantly improves performance for parsing complex documents while reducing the resources required on your RAGFlow server. To configure MinerU with a vLLM server:
+RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate document parsing tasks to a remote vLLM server while calling MinerU via HTTP. To configure:
 
-1. Set up a vLLM server running MinerU:
-
-   ```bash
-   mineru-vllm-server --port 30000
-   ```
-
-2. Configure the following environment variables in your **docker/.env** file (or your shell if running from source):
-
-   - `MINERU_EXECUTABLE=/home/ragflow/uv_tools/.venv/bin/mineru` (or the path to your MinerU executable)
+1. Ensure a MinerU API service is reachable (for example `http://mineru-host:8886`).
+2. Set up or point to a vLLM HTTP server (for example `http://vllm-host:30000`).
+3. Configure the following in your **docker/.env** file (or your shell if running from source):
+   - `MINERU_APISERVER=http://mineru-host:8886`
    - `MINERU_BACKEND="vlm-http-client"`
-   - `MINERU_SERVER_URL="http://your-vllm-server-ip:30000"`
-
-3. Complete the rest of the standard MinerU setup steps as described [here](#how-to-configure-mineru-specific-settings).
+   - `MINERU_SERVER_URL="http://vllm-host:30000"`
+   MinerU API calls expect `backend=vlm-http-client` and `server_url=http://<server>:30000` in the request body.
+4. Configure `MINERU_OUTPUT_DIR` / `MINERU_DELETE_OUTPUT` as desired to manage the returned zip/JSON before ingestion.
 
 :::tip NOTE
 When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
 :::
+
+### How to use an external Docling Serve server for document parsing?
+
+RAGFlow supports Docling in two modes:
+
+1. **Local Docling** (existing mode): install Docling in the RAGFlow runtime (`USE_DOCLING=true`) and parse in-process.
+2. **External Docling Serve** (remote mode): point RAGFlow to a Docling Serve endpoint.
+
+To enable remote mode, set:
+
+```bash
+DOCLING_SERVER_URL=http://your-docling-serve-host:5001
+```
+
+Behavior:
+
+- When `DOCLING_SERVER_URL` is set, RAGFlow sends PDFs to Docling Serve using `/v1/convert/source` (and falls back to `/v1alpha/convert/source` for older servers).
+- When `DOCLING_SERVER_URL` is not set, RAGFlow uses local in-process Docling.
+
+### How to use PaddleOCR for document parsing?
+
+From v0.24.0 onwards, RAGFlow includes PaddleOCR as an optional PDF parser. Please note that RAGFlow acts only as a *remote client* for PaddleOCR, calling the PaddleOCR API to parse PDFs and reading the returned files.
+
+There are two main ways to configure and use PaddleOCR in RAGFlow:
+
+#### 1. Using PaddleOCR Official API
+
+This method uses PaddleOCR's official API service with an access token.
+
+**Step 1: Configure RAGFlow**
+- **Via Environment Variables:**
+   ```bash
+   # In your docker/.env file:
+   PADDLEOCR_API_URL=https://your-paddleocr-api-endpoint
+   PADDLEOCR_ALGORITHM=PaddleOCR-VL
+   PADDLEOCR_ACCESS_TOKEN=your-access-token-here
+   ```
+
+- **Via UI:**
+   - Navigate to **Model providers** page
+   - Add a new OCR model with factory type "PaddleOCR"
+   - Configure the following fields:
+      - **PaddleOCR API URL**: Your PaddleOCR API endpoint
+      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the API endpoint
+      - **AI Studio Access Token**: Your access token for the PaddleOCR API
+
+**Step 2: Usage in Dataset Configuration**
+- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
+- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
+- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
+
+**Notes:**
+- To obtain the API URL, visit the [PaddleOCR official website](https://aistudio.baidu.com/paddleocr), click the **API** button, choose the example code for the specific algorithm you want to use (e.g., PaddleOCR-VL), and copy the `API_URL`.
+- Access tokens can be obtained from the [AI Studio platform](https://aistudio.baidu.com/account/accessToken).
+- This method requires internet connectivity to reach the official PaddleOCR API.
+
+#### 2. Using Self-Hosted PaddleOCR Service
+
+This method allows you to deploy your own PaddleOCR service and use it without an access token.
+
+**Step 1: Deploy PaddleOCR Service**
+Follow the [PaddleOCR serving documentation](https://www.paddleocr.ai/latest/en/version3.x/deployment/serving.html) to deploy your own service. For layout parsing, you can use an endpoint like:
+
+```bash
+http://localhost:8080/layout-parsing
+```
+
+**Step 2: Configure RAGFlow**
+- **Via Environment Variables:**
+  ```bash
+  PADDLEOCR_API_URL=http://localhost:8080/layout-parsing
+  PADDLEOCR_ALGORITHM=PaddleOCR-VL
+  # No access token required for self-hosted service
+  ```
+
+- **Via UI:**
+   - Navigate to **Model providers** page
+   - Add a new OCR model with factory type "PaddleOCR"
+   - Configure the following fields:
+      - **PaddleOCR API URL**: The endpoint of your deployed service
+      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the deployed service
+      - **AI Studio Access Token**: Leave empty
+
+**Step 3: Usage in Dataset Configuration**
+- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
+- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
+- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
+
+#### Environment Variables Summary
+
+| Environment Variable | Description | Default | Required |
+|---------------------|-------------|---------|----------|
+| `PADDLEOCR_API_URL` | PaddleOCR API endpoint URL | `""` | Yes, when using environment variables |
+| `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
+| `PADDLEOCR_ACCESS_TOKEN` | Access token for official API | `None` | Only when using official API |
+
+Environment variables can be used for auto-provisioning, but are not required if configuring via UI. When environment variables are set, these values are used to auto-provision a PaddleOCR model for the tenant on first use.
+
+
+### How do I use Ollama with RAGFlow for local LLM inference?
+
+RAGFlow supports Ollama as a local model provider for private, offline inference.
+
+**Step 1: Start Ollama and pull a model**
+
+```bash
+export OLLAMA_HOST=0.0.0.0
+ollama serve
+ollama pull llama3
+```
+
+**Step 2: Add Ollama in RAGFlow**
+
+1. Go to **Settings** > **Model providers** > **Ollama**.
+2. Set the Base URL to `http://host.docker.internal:11434` (Docker) or `http://localhost:11434` (bare-metal).
+3. Enter the model name (e.g., `llama3`) and click **Save**.
+
+**Step 3: Use Ollama in your assistant**
+
+- Open an assistant's **Configuration** page and select the Ollama model under **Chat model**.

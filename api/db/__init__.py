@@ -15,7 +15,7 @@
 #
 
 from enum import IntEnum
-from strenum import StrEnum
+from enum import StrEnum
 
 
 class UserTenantRole(StrEnum):
@@ -74,3 +74,4 @@ PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {PipelineTaskType.RAPTOR.lower(), 
 
 
 KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
+SKILLS_FOLDER_NAME="skills"

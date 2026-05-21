@@ -1,15 +1,15 @@
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import { IconFont } from '@/components/icon-font';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { useFetchSearchList, useRenameSearch } from './hooks';
 import { SearchCard } from './search-card';
 
@@ -19,10 +19,13 @@ export default function SearchList() {
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
-    searchParams,
-    setSearchListParams,
+    pagination,
+    searchString,
+    handleInputChange,
+    setPagination,
     refetch: refetchList,
   } = useFetchSearchList();
+
   const {
     openCreateModal,
     showSearchRenameModal,
@@ -32,9 +35,9 @@ export default function SearchList() {
     initialSearchName,
   } = useRenameSearch();
 
-  const handleSearchChange = (value: string) => {
-    console.log(value);
-  };
+  // const handleSearchChange = (value: string) => {
+  //   console.log(value);
+  // };
   const onSearchRenameConfirm = (name: string) => {
     onSearchRenameOk(name, () => {
       refetchList();
@@ -44,10 +47,12 @@ export default function SearchList() {
     // setIsEdit(false);
     showSearchRenameModal();
   }, [showSearchRenameModal]);
-  const handlePageChange = (page: number, pageSize: number) => {
-    // setIsEdit(false);
-    setSearchListParams({ ...searchParams, page, page_size: pageSize });
-  };
+  const handlePageChange = useCallback(
+    (page: number, pageSize?: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
 
   const [searchUrl, setSearchUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';
@@ -60,65 +65,78 @@ export default function SearchList() {
   }, [isCreate, openCreateModalFun, searchUrl, setSearchUrl]);
 
   return (
-    <section className="w-full h-full flex flex-col">
-      {(!list?.data?.search_apps?.length ||
-        list?.data?.search_apps?.length <= 0) && (
-        <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+    <>
+      {list?.data?.search_apps?.length || searchString ? (
+        <article className="size-full flex flex-col" data-testid="search-list">
+          <header className="px-5 pt-8 mb-4">
+            <ListFilterBar
+              icon="searches"
+              title={t('searchApps')}
+              showFilter={false}
+              searchString={searchString}
+              onSearchChange={handleInputChange}
+            >
+              <Button
+                data-testid="create-search"
+                onClick={() => openCreateModalFun()}
+              >
+                <Plus className="size-[1em]" />
+                {t('createSearch')}
+              </Button>
+            </ListFilterBar>
+          </header>
+
+          {list?.data?.search_apps?.length ? (
+            <>
+              <CardContainer className="flex-1 overflow-auto px-5">
+                {list?.data.search_apps.map((x) => {
+                  return (
+                    <SearchCard
+                      key={x.id}
+                      data={x}
+                      showSearchRenameModal={() => {
+                        showSearchRenameModal(x);
+                      }}
+                    />
+                  );
+                })}
+              </CardContainer>
+
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={list?.data.total}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <EmptyAppCard
+                showIcon
+                size="large"
+                className="w-[480px] p-14"
+                isSearch
+                type={EmptyCardType.Search}
+                testId="search-empty-create"
+              />
+            </div>
+          )}
+        </article>
+      ) : (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="search-list"
+        >
           <EmptyAppCard
             showIcon
             size="large"
             className="w-[480px] p-14"
             type={EmptyCardType.Search}
             onClick={() => openCreateModalFun()}
+            testId="search-empty-create"
           />
-        </div>
-      )}
-      {!!list?.data?.search_apps?.length && (
-        <>
-          <div className="px-8 pt-8">
-            <ListFilterBar
-              icon="searches"
-              title={t('searchApps')}
-              showFilter={false}
-              onSearchChange={(e) => handleSearchChange(e.target.value)}
-            >
-              <Button
-                variant={'default'}
-                onClick={() => {
-                  openCreateModalFun();
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                {t('createSearch')}
-              </Button>
-            </ListFilterBar>
-          </div>
-          <div className="flex-1">
-            <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
-              {list?.data.search_apps.map((x) => {
-                return (
-                  <SearchCard
-                    key={x.id}
-                    data={x}
-                    showSearchRenameModal={() => {
-                      showSearchRenameModal(x);
-                    }}
-                  ></SearchCard>
-                );
-              })}
-            </CardContainer>
-          </div>
-          {list?.data.total && list?.data.total > 0 && (
-            <div className="px-8 mb-4">
-              <RAGFlowPagination
-                current={searchParams.page}
-                pageSize={searchParams.page_size}
-                total={list?.data.total}
-                onChange={handlePageChange}
-              />
-            </div>
-          )}
-        </>
+        </article>
       )}
       {openCreateModal && (
         <RenameDialog
@@ -126,9 +144,9 @@ export default function SearchList() {
           onOk={onSearchRenameConfirm}
           initialName={initialSearchName}
           loading={searchRenameLoading}
-          title={<IconFont name="search" className="size-6"></IconFont>}
+          title={initialSearchName || t('createSearch')}
         ></RenameDialog>
       )}
-    </section>
+    </>
   );
 }

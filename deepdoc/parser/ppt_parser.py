@@ -22,6 +22,16 @@ from pptx import Presentation
 class RAGFlowPptParser:
     def __init__(self):
         super().__init__()
+        self._shape_cache = {}
+
+    def __sort_shapes(self, shapes):
+        cache_key = id(shapes)
+        if cache_key not in self._shape_cache:
+            self._shape_cache[cache_key] = sorted(
+                shapes, 
+                key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)
+            )
+        return self._shape_cache[cache_key]
 
     def __get_bulleted_text(self, paragraph):
         is_bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar")) or bool(paragraph._p.xpath("./a:pPr/a:buAutoNum")) or bool(paragraph._p.xpath("./a:pPr/a:buBlip"))
@@ -62,7 +72,7 @@ class RAGFlowPptParser:
             # Handle group shape
             if shape_type == 6:
                 texts = []
-                for p in sorted(shape.shapes, key=lambda x: (x.top // 10, x.left)):
+                for p in self.__sort_shapes(shape.shapes):
                     t = self.__extract(p)
                     if t:
                         texts.append(t)
@@ -86,14 +96,10 @@ class RAGFlowPptParser:
             if i >= to_page:
                 break
             texts = []
-            for shape in sorted(
-                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)):
-                try:
-                    txt = self.__extract(shape)
-                    if txt:
-                        texts.append(txt)
-                except Exception as e:
-                    logging.exception(e)
+            for shape in self.__sort_shapes(slide.shapes):
+                txt = self.__extract(shape)
+                if txt:
+                    texts.append(txt)
             txts.append("\n".join(texts))
 
         return txts

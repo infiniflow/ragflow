@@ -18,7 +18,7 @@ import os
 import time
 from abc import ABC
 import pandas as pd
-import pywencai
+# import pywencai
 
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
 from common.connection_utils import timeout
@@ -84,7 +84,8 @@ class WenCai(ToolBase, ABC):
 
             try:
                 wencai_res = []
-                res = pywencai.get(query=kwargs["query"], query_type=self._param.query_type, perpage=self._param.top_n)
+                # res = pywencai.get(query=kwargs["query"], query_type=self._param.query_type, perpage=self._param.top_n)
+                res = []
                 if self.check_if_canceled("WenCai processing"):
                     return
 

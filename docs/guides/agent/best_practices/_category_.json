@@ -1,8 +1,11 @@
 {
   "label": "Best practices",
-  "position": 30,
+  "position": 40,
   "link": {
     "type": "generated-index",
     "description": "Best practices on Agent configuration."
+  },
+  "customProps": {
+    "categoryIcon": "LucideStar"
   }
 }

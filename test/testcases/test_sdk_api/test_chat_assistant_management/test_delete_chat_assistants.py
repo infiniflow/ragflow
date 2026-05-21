@@ -23,10 +23,10 @@ class TestChatAssistantsDelete:
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            pytest.param(None, "", 0, marks=pytest.mark.p3),
-            pytest.param({"ids": []}, "", 0, marks=pytest.mark.p3),
-            pytest.param({"ids": ["invalid_id"]}, "Assistant(invalid_id) not found.", 5, marks=pytest.mark.p3),
-            pytest.param({"ids": ["\n!?。；！？\"'"]}, """Assistant(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
+            pytest.param(None, "", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": ["invalid_id"]}, "Chat(invalid_id) not found.", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": ["\n!?。；！？\"'"]}, """Chat(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, "", 0, marks=pytest.mark.p1),
         ],
@@ -37,9 +37,9 @@ class TestChatAssistantsDelete:
             payload = payload([chat_assistant.id for chat_assistant in chat_assistants])
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.delete_chats(**payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             if payload is None:
                 client.delete_chats(payload)
@@ -49,11 +49,22 @@ class TestChatAssistantsDelete:
         assistants = client.list_chats()
         assert len(assistants) == remaining
 
+    @pytest.mark.p2
+    def test_delete_chats_nonzero_response_raises(self, client, monkeypatch):
+        class _DummyResponse:
+            def json(self):
+                return {"code": 1, "message": "boom"}
+
+        monkeypatch.setattr(client, "delete", lambda *_args, **_kwargs: _DummyResponse())
+        with pytest.raises(Exception) as exception_info:
+            client.delete_chats(ids=["chat-1"])
+        assert "boom" in str(exception_info.value), str(exception_info.value)
+
     @pytest.mark.parametrize(
         "payload",
         [
             pytest.param(lambda r: {"ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]}, marks=pytest.mark.p1),
+            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:5]}, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
         ],
     )
@@ -71,9 +82,9 @@ class TestChatAssistantsDelete:
         chat_ids = [chat.id for chat in chat_assistants]
         client.delete_chats(ids=chat_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.delete_chats(ids=chat_ids)
-        assert "not found" in str(excinfo.value)
+        assert "not found" in str(exception_info.value)
 
     @pytest.mark.p3
     def test_duplicate_deletion(self, client, add_chat_assistants_func):

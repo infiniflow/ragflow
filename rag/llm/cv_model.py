@@ -27,14 +27,17 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
-from openai import OpenAI
-from openai.lib.azure import AzureOpenAI
-from zhipuai import ZhipuAI
+from openai import OpenAI, AsyncOpenAI
+from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
+
+
+
+from common.misc_utils import thread_pool_exec
 
 class Base(ABC):
     def __init__(self, **kwargs):
@@ -64,6 +67,61 @@ class Base(ABC):
             hist.append(h)
         return hist
 
+    @staticmethod
+    def _blob_to_data_url(blob, mime_type="image/png"):
+        if isinstance(blob, str):
+            blob = blob.strip()
+            if blob.startswith("data:") or blob.startswith("http://") or blob.startswith("https://") or blob.startswith("file://"):
+                return blob
+            return f"data:{mime_type};base64,{blob}"
+        if isinstance(blob, BytesIO):
+            blob = blob.getvalue()
+        if isinstance(blob, memoryview):
+            blob = blob.tobytes()
+        if isinstance(blob, bytearray):
+            blob = bytes(blob)
+        if isinstance(blob, bytes):
+            b64 = base64.b64encode(blob).decode("utf-8")
+            return f"data:{mime_type};base64,{b64}"
+        return None
+
+    def _normalize_image(self, image):
+        if isinstance(image, dict):
+            inline_data = image.get("inline_data")
+            if isinstance(inline_data, dict):
+                mime = inline_data.get("mime_type") or "image/png"
+                data_url = self._blob_to_data_url(inline_data.get("data"), mime)
+                if data_url:
+                    return data_url
+
+            image_url = image.get("image_url")
+            if isinstance(image_url, dict):
+                data_url = self._blob_to_data_url(image_url.get("url"), image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+            if isinstance(image_url, str):
+                data_url = self._blob_to_data_url(image_url, image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+
+            if "url" in image:
+                data_url = self._blob_to_data_url(image.get("url"), image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+
+            mime = image.get("mime_type") or image.get("media_type") or "image/png"
+            for key in ("blob", "data"):
+                if key in image:
+                    data_url = self._blob_to_data_url(image.get(key), mime)
+                    if data_url:
+                        return data_url
+
+        if isinstance(image, (bytes, bytearray, memoryview, BytesIO)):
+            return self.image2base64(image)
+        if isinstance(image, str):
+            return self._blob_to_data_url(image, "image/png")
+        return self.image2base64(image)
+
     def _image_prompt(self, text, images):
         if not images:
             return text
@@ -73,12 +131,16 @@ class Base(ABC):
 
         pmpt = [{"type": "text", "text": text}]
         for img in images:
-            pmpt.append({"type": "image_url", "image_url": {"url": img if isinstance(img, str) and img.startswith("data:") else f"data:image/png;base64,{img}"}})
+            try:
+                pmpt.append({"type": "image_url", "image_url": {"url": self._normalize_image(img)}})
+            except Exception:
+                logging.warning("[%s] Skip invalid image input in request payload.", self.__class__.__name__)
+                continue
         return pmpt
 
-    def chat(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = self.client.chat.completions.create(
+            response = await self.async_client.chat.completions.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 extra_body=self.extra_body,
@@ -87,17 +149,17 @@ class Base(ABC):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         tk_count = 0
         try:
-            response = self.client.chat.completions.create(
+            response = await self.async_client.chat.completions.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 stream=True,
                 extra_body=self.extra_body,
             )
-            for resp in response:
+            async for resp in response:
                 if not resp.choices[0].delta.content:
                     continue
                 delta = resp.choices[0].delta.content
@@ -191,6 +253,7 @@ class GptV4(Base):
             base_url = "https://api.openai.com/v1"
         self.api_key = key
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         super().__init__(**kwargs)
@@ -202,6 +265,8 @@ class GptV4(Base):
             messages=self.prompt(b64),
             extra_body=self.extra_body
         )
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
@@ -211,6 +276,8 @@ class GptV4(Base):
             messages=self.vision_llm_prompt(b64, prompt),
             extra_body=self.extra_body,
         )
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
 
@@ -221,6 +288,7 @@ class AzureGptV4(GptV4):
         api_key = json.loads(key).get("api_key", "")
         api_version = json.loads(key).get("api_version", "2024-02-01")
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -243,51 +311,86 @@ class QWenCV(GptV4):
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
-    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+    @staticmethod
+    def _extract_text_from_content(content):
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            texts = []
+            for blk in content:
+                if not isinstance(blk, dict):
+                    continue
+                if blk.get("type") in {"text", "input_text"} and blk.get("text"):
+                    texts.append(str(blk["text"]))
+                elif "text" in blk and isinstance(blk.get("text"), (str, int, float)):
+                    texts.append(str(blk["text"]))
+            return "\n".join(texts).strip()
+        return ""
+
+    def _resolve_video_prompt(self, system, history, **kwargs):
+        prompt = kwargs.get("video_prompt") or kwargs.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+
+        for h in reversed(history or []):
+            if h.get("role") != "user":
+                continue
+            txt = self._extract_text_from_content(h.get("content"))
+            if txt:
+                return txt
+
+        if isinstance(system, str) and system.strip():
+            return system.strip()
+
+        return "Please summarize this video in proper sentences."
+
+    async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
-                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
                 return summary, summary_num_tokens
             except Exception as e:
                 return "**ERROR**: " + str(e), 0
 
-        return "**ERROR**: Method chat not supported yet.", 0
+        return await super().async_chat(system, history, gen_conf, images=images, **kwargs)
 
-    def _process_video(self, video_bytes, filename):
+    def _process_video(self, video_bytes, filename, prompt):
         from dashscope import MultiModalConversation
 
         video_suffix = Path(filename).suffix or ".mp4"
+        tmp_path = None
         with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-            video_path = f"file://{tmp_path}"
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "video": video_path,
-                            "fps": 2,
-                        },
-                        {
-                            "text": "Please summarize this video in proper sentences.",
-                        },
-                    ],
-                }
-            ]
+        video_path = f"file://{tmp_path}"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "video": video_path,
+                        "fps": 2,
+                    },
+                    {
+                        "text": prompt,
+                    },
+                ],
+            }
+        ]
 
-            def call_api():
-                response = MultiModalConversation.call(
-                    api_key=self.api_key,
-                    model=self.model_name,
-                    messages=messages,
-                )
-                if response.get("message"):
-                    raise Exception(response["message"])
-                summary = response["output"]["choices"][0]["message"].content[0]["text"]
-                return summary, num_tokens_from_string(summary)
+        def call_api():
+            response = MultiModalConversation.call(
+                api_key=self.api_key,
+                model=self.model_name,
+                messages=messages,
+            )
+            if response.get("message"):
+                raise Exception(response["message"])
+            summary = response["output"]["choices"][0]["message"].content[0]["text"]
+            return summary, num_tokens_from_string(summary)
 
+        try:
             try:
                 return call_api()
             except Exception as e1:
@@ -298,6 +401,12 @@ class QWenCV(GptV4):
                     return call_api()
                 except Exception as e2:
                     raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    logging.warning("[QWenCV] Failed to cleanup temp video file: %s", tmp_path)
 
 
 class HunyuanCV(GptV4):
@@ -313,7 +422,8 @@ class Zhipu4V(GptV4):
     _FACTORY_NAME = "ZHIPU-AI"
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
-        self.client = ZhipuAI(api_key=key)
+        self.client = OpenAI(api_key=key, base_url="https://open.bigmodel.cn/api/paas/v4/")
+        self.async_client = AsyncOpenAI(api_key=key, base_url="https://open.bigmodel.cn/api/paas/v4/")
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -331,7 +441,8 @@ class Zhipu4V(GptV4):
             del gen_conf["frequency_penalty"]
         return gen_conf
 
-    def _request(self, msg, stream, gen_conf={}):
+    def _request(self, msg, stream, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             self.base_url,
             json={"model": self.model_name, "messages": msg, "stream": stream, **gen_conf},
@@ -339,23 +450,24 @@ class Zhipu4V(GptV4):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
+            timeout=60,
         )
         return response.json()
 
-    def chat(self, system, history, gen_conf, images=None, stream=False, **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
         gen_conf = self._clean_conf(gen_conf)
 
         logging.info(json.dumps(history, ensure_ascii=False, indent=2))
-        response = self.client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=False, **gen_conf)
+        response = await self.async_client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=False, **gen_conf)
         content = response.choices[0].message.content.strip()
 
         cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
         return cleaned, total_token_count_from_response(response)
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
         from rag.nlp import is_chinese
 
@@ -366,8 +478,8 @@ class Zhipu4V(GptV4):
         tk_count = 0
         try:
             logging.info(json.dumps(history, ensure_ascii=False, indent=2))
-            response = self.client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=True, **gen_conf)
-            for resp in response:
+            response = await self.async_client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=True, **gen_conf)
+            async for resp in response:
                 if not resp.choices[0].delta.content:
                     continue
                 delta = resp.choices[0].delta.content
@@ -399,6 +511,8 @@ class Zhipu4V(GptV4):
 
         resp = self.client.chat.completions.create(model=self.model_name, messages=messages, stream=False)
 
+        if not resp.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         content = resp.choices[0].message.content.strip()
         cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
 
@@ -412,6 +526,7 @@ class StepFunCV(GptV4):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -425,6 +540,7 @@ class VolcEngineCV(GptV4):
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
         ark_api_key = json.loads(key).get("ark_api_key", "")
         self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=ark_api_key, base_url=base_url)
         self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -438,6 +554,7 @@ class LmStudioCV(GptV4):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="lm-studio", base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key="lm-studio", base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -451,6 +568,7 @@ class OpenAI_APICV(GptV4):
             raise ValueError("url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -491,6 +609,7 @@ class OpenRouterCV(GptV4):
             base_url = "https://openrouter.ai/api/v1"
         api_key = json.loads(key).get("api_key", "")
         self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -522,6 +641,7 @@ class LocalAICV(GptV4):
             raise ValueError("Local cv model url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key="empty", base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -533,6 +653,7 @@ class XinferenceCV(GptV4):
     def __init__(self, key, model_name="", lang="Chinese", base_url="", **kwargs):
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -546,6 +667,7 @@ class GPUStackCV(GptV4):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -635,19 +757,19 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = self.client.chat(model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
+            response = await thread_pool_exec(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
 
             ans = response["message"]["content"].strip()
             return ans, response["eval_count"] + response.get("prompt_eval_count", 0)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
-            response = self.client.chat(model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
+            response = await thread_pool_exec(self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive)
             for resp in response:
                 if resp["done"]:
                     yield resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
@@ -780,41 +902,41 @@ class GeminiCV(Base):
         )
         return res.text, total_token_count_from_response(res)
 
-    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
                 size = len(video_bytes) if video_bytes else 0
-                logging.info(f"[GeminiCV] chat called with video: filename={filename} size={size}")
-                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                logging.info(f"[GeminiCV] async_chat called with video: filename={filename} size={size}")
+                summary, summary_num_tokens = await thread_pool_exec(self._process_video, video_bytes, filename)
                 return summary, summary_num_tokens
             except Exception as e:
-                logging.info(f"[GeminiCV] chat video error: {e}")
+                logging.info(f"[GeminiCV] async_chat video error: {e}")
                 return "**ERROR**: " + str(e), 0
 
         from google.genai import types
 
         history_len = len(history) if history else 0
         images_len = len(images) if images else 0
-        logging.info(f"[GeminiCV] chat called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
+        logging.info(f"[GeminiCV] async_chat called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
 
         generation_config = types.GenerateContentConfig(
             temperature=gen_conf.get("temperature", 0.3),
             top_p=gen_conf.get("top_p", 0.7),
         )
         try:
-            response = self.client.models.generate_content(
+            response = await self.client.aio.models.generate_content(
                 model=self.model_name,
                 contents=self._form_history(system, history, images),
                 config=generation_config,
             )
             ans = response.text
-            logging.info("[GeminiCV] chat completed")
+            logging.info("[GeminiCV] async_chat completed")
             return ans, total_token_count_from_response(response)
         except Exception as e:
-            logging.warning(f"[GeminiCV] chat error: {e}")
+            logging.warning(f"[GeminiCV] async_chat error: {e}")
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         response = None
         try:
@@ -826,15 +948,15 @@ class GeminiCV(Base):
             )
             history_len = len(history) if history else 0
             images_len = len(images) if images else 0
-            logging.info(f"[GeminiCV] chat_streamly called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
+            logging.info(f"[GeminiCV] async_chat_streamly called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
 
-            response_stream = self.client.models.generate_content_stream(
+            response_stream = await self.client.aio.models.generate_content_stream(
                 model=self.model_name,
                 contents=self._form_history(system, history, images),
                 config=generation_config,
             )
 
-            for chunk in response_stream:
+            async for chunk in response_stream:
                 if chunk.text:
                     ans += chunk.text
                     yield chunk.text
@@ -914,6 +1036,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": self.prompt(b64)},
+            timeout=60,
         )
         response = response.json()
         return (
@@ -921,7 +1044,8 @@ class NvidiaCV(Base):
             total_token_count_from_response(response),
         )
 
-    def _request(self, msg, gen_conf={}):
+    def _request(self, msg, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
         response = requests.post(
             url=self.base_url,
             headers={
@@ -930,6 +1054,7 @@ class NvidiaCV(Base):
                 "Authorization": f"Bearer {self.key}",
             },
             json={"messages": msg, **gen_conf},
+            timeout=60,
         )
         return response.json()
 
@@ -939,17 +1064,17 @@ class NvidiaCV(Base):
         response = self._request(vision_prompt)
         return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
 
-    def chat(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = self._request(self._form_history(system, history, images), gen_conf)
+            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         total_tokens = 0
         try:
-            response = self._request(self._form_history(system, history, images), gen_conf)
+            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
             total_tokens += total_token_count_from_response(response)
             for resp in cnt:
@@ -967,6 +1092,7 @@ class AnthropicCV(Base):
         import anthropic
 
         self.client = anthropic.Anthropic(api_key=key)
+        self.async_client = anthropic.AsyncAnthropic(api_key=key)
         self.model_name = model_name
         self.system = ""
         self.max_tokens = 8192
@@ -1012,17 +1138,18 @@ class AnthropicCV(Base):
             gen_conf["max_tokens"] = self.max_tokens
         return gen_conf
 
-    def chat(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         try:
-            response = self.client.messages.create(
+            response = await self.async_client.messages.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 system=system,
                 stream=False,
                 **gen_conf,
-            ).to_dict()
+            )
+            response = response.to_dict()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
@@ -1033,11 +1160,11 @@ class AnthropicCV(Base):
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         total_tokens = 0
         try:
-            response = self.client.messages.create(
+            response = self.async_client.messages.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 system=system,
@@ -1045,7 +1172,7 @@ class AnthropicCV(Base):
                 **gen_conf,
             )
             think = False
-            for res in response:
+            async for res in response:
                 if res.type == "content_block_delta":
                     if res.delta.type == "thinking_delta" and res.delta.thinking:
                         if not think:
@@ -1094,15 +1221,12 @@ class GoogleCV(AnthropicCV, GeminiCV):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
-            import vertexai.generative_models as glm
-            from google.cloud import aiplatform
-
+            from google import genai
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region, credentials=credits)
             else:
-                aiplatform.init(project=project_id, location=region)
-            self.client = glm.GenerativeModel(model_name=self.model_name)
+                self.client = genai.Client(vertexai=True, project=project_id, location=region)
         Base.__init__(self, **kwargs)
 
     def describe(self, image):
@@ -1117,18 +1241,18 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             return GeminiCV.describe_with_prompt(self, image, prompt)
 
-    def chat(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
-            return AnthropicCV.chat(self, system, history, gen_conf, images)
+            return await AnthropicCV.async_chat(self, system, history, gen_conf, images)
         else:
-            return GeminiCV.chat(self, system, history, gen_conf, images)
+            return await GeminiCV.async_chat(self, system, history, gen_conf, images)
 
-    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
-            for ans in AnthropicCV.chat_streamly(self, system, history, gen_conf, images):
+            async for ans in AnthropicCV.async_chat_streamly(self, system, history, gen_conf, images):
                 yield ans
         else:
-            for ans in GeminiCV.chat_streamly(self, system, history, gen_conf, images):
+            async for ans in GeminiCV.async_chat_streamly(self, system, history, gen_conf, images):
                 yield ans
 
 
@@ -1139,3 +1263,89 @@ class MoonshotCV(GptV4):
         if not base_url:
             base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
+class FuturMixCV(GptV4):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] CV initialized with model %s", model_name)
+
+
+class RAGconCV(GptV4):
+    """
+    RAGcon CV Provider - routes through LiteLLM proxy
+    
+    Supports vision models through LiteLLM.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+    _FACTORY_NAME = "RAGcon"
+    
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+
+        # Initialize client
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name
+        self.lang = lang
+
+        Base.__init__(self, **kwargs)
+
+
+class BedrockCV(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        self.model_name = f"bedrock/{model_name}"
+        self.lang = lang
+        self._parse_credentials(key)
+        Base.__init__(self, **kwargs)
+
+    def _parse_credentials(self, key):
+        bedrock_key = json.loads(key)
+        self.auth_mode = bedrock_key.get("auth_mode", "")
+        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_ak = bedrock_key.get("bedrock_ak", "")
+        self.aws_sk = bedrock_key.get("bedrock_sk", "")
+        self.aws_role_arn = bedrock_key.get("aws_role_arn", "")
+
+    def _get_aws_creds(self):
+        if self.auth_mode == "access_key_secret":
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": self.aws_ak,
+                "aws_secret_access_key": self.aws_sk,
+            }
+        elif self.auth_mode == "iam_role":
+            import boto3
+            sts_client = boto3.client("sts", region_name=self.aws_region)
+            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockCVSession")
+            creds = resp["Credentials"]
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": creds["AccessKeyId"],
+                "aws_secret_access_key": creds["SecretAccessKey"],
+                "aws_session_token": creds["SessionToken"],
+            }
+        else:
+            return {"aws_region_name": self.aws_region}
+
+    def describe_with_prompt(self, image, prompt=None):
+        import litellm
+        b64 = self.image2base64(image)
+        messages = self.vision_llm_prompt(b64, prompt)
+        res = litellm.completion(
+            model=self.model_name,
+            messages=messages,
+            **self._get_aws_creds(),
+        )
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+    def describe(self, image):
+        return self.describe_with_prompt(image)

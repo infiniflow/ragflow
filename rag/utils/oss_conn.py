@@ -34,6 +34,8 @@ class RAGFlowOSS:
         self.region = self.oss_config.get('region', None)
         self.bucket = self.oss_config.get('bucket', None)
         self.prefix_path = self.oss_config.get('prefix_path', None)
+        self.signature_version = self.oss_config.get('signature_version', None)
+        self.addressing_style = self.oss_config.get('addressing_style', None)
         self.__open__()
 
     @staticmethod
@@ -42,14 +44,16 @@ class RAGFlowOSS:
             # If there is a default bucket, use the default bucket
             actual_bucket = self.bucket if self.bucket else bucket
             return method(self, actual_bucket, *args, **kwargs)
+
         return wrapper
-    
+
     @staticmethod
     def use_prefix_path(method):
         def wrapper(self, bucket, fnm, *args, **kwargs):
             # If the prefix path is set, use the prefix path
             fnm = f"{self.prefix_path}/{fnm}" if self.prefix_path else fnm
             return method(self, bucket, fnm, *args, **kwargs)
+
         return wrapper
 
     def __open__(self):
@@ -60,6 +64,17 @@ class RAGFlowOSS:
             pass
 
         try:
+            config_kwargs = {}
+
+            if self.signature_version:
+                config_kwargs['signature_version'] = self.signature_version
+            if self.addressing_style:
+                config_kwargs['s3'] = {
+                    'addressing_style': self.addressing_style
+                }
+
+            config = Config(**config_kwargs) if config_kwargs else None
+
             # Reference：https://help.aliyun.com/zh/oss/developer-reference/use-amazon-s3-sdks-to-access-oss
             self.conn = boto3.client(
                 's3',
@@ -67,7 +82,7 @@ class RAGFlowOSS:
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
                 endpoint_url=self.endpoint_url,
-                config=Config(s3={"addressing_style": "virtual"}, signature_version='v4')
+                config=config
             )
         except Exception:
             logging.exception(f"Fail to connect at region {self.region}")
@@ -171,4 +186,3 @@ class RAGFlowOSS:
                 self.__open__()
                 time.sleep(1)
         return None
-

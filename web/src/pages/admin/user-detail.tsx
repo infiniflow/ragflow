@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams } from 'umi';
+import { useNavigate, useParams } from 'react-router';
 
 import { LucideArrowLeft, LucideDot } from 'lucide-react';
 

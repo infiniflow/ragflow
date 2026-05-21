@@ -14,6 +14,11 @@
 #  limitations under the License.
 #
 import asyncio
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+except Exception:
+    pass
 import inspect
 import json
 import os
@@ -25,11 +30,15 @@ from functools import partial
 from typing import Any
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from jinja2 import Template as Jinja2Template
+from jinja2.sandbox import SandboxedEnvironment
+
+_jinja2_sandbox = SandboxedEnvironment()
 
 from common.connection_utils import timeout
 from common.misc_utils import get_uuid
 from common import settings
+
+from api.db.joint_services.memory_message_service import queue_save_to_memory_task
 
 
 class MessageParam(ComponentParamBase):
@@ -45,6 +54,9 @@ class MessageParam(ComponentParamBase):
         self.outputs = {
             "content": {
                 "type": "str"
+            },
+            "downloads": {
+                "type": "list"
             }
         }
 
@@ -57,15 +69,99 @@ class MessageParam(ComponentParamBase):
 class Message(ComponentBase):
     component_name = "Message"
 
+    @staticmethod
+    def _is_download_info(value: Any) -> bool:
+        return isinstance(value, dict) and all(
+            key in value for key in ("doc_id", "filename", "mime_type")
+        )
+
+    @staticmethod
+    def _download_info_includes_content(value: Any) -> bool:
+        return isinstance(value, dict) and bool(value.get("include_download_info_in_content"))
+
+    @staticmethod
+    def _normalize_download_info(value: Any) -> Any:
+        if isinstance(value, list):
+            return [Message._normalize_download_info(item) for item in value]
+
+        if not isinstance(value, dict):
+            return value
+
+        normalized = value.copy()
+        normalized.pop("include_download_info_in_content", None)
+        return normalized
+
+    def _extract_downloads(self, value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                return []
+
+        if self._is_download_info(value):
+            return [value]
+
+        if isinstance(value, list) and all(self._is_download_info(item) for item in value):
+            return value
+
+        return []
+
+    def _stringify_message_value(
+        self,
+        value: Any,
+        delimiter: str = None,
+        downloads: list[dict[str, Any]] | None = None,
+        fallback_to_str: bool = False,
+    ) -> str:
+        extracted_downloads = self._extract_downloads(value)
+        if extracted_downloads:
+            if downloads is not None:
+                downloads.extend(self._normalize_download_info(item) for item in extracted_downloads)
+            if any(self._download_info_includes_content(item) for item in extracted_downloads):
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except Exception:
+                        return value
+                try:
+                    return json.dumps(self._normalize_download_info(value), ensure_ascii=False)
+                except Exception:
+                    if fallback_to_str:
+                        return str(value)
+                    return ""
+            return ""
+
+        if value is None:
+            return ""
+
+        if isinstance(value, list) and delimiter:
+            return delimiter.join([str(vv) for vv in value])
+
+        if isinstance(value, str):
+            return value
+
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            if fallback_to_str:
+                return str(value)
+            return ""
+
     def get_input_elements(self) -> dict[str, Any]:
         return self.get_input_elements_from_text("".join(self._param.content))
 
-    def get_kwargs(self, script:str, kwargs:dict = {}, delimiter:str=None) -> tuple[str, dict[str, str | list | Any]]:
+    def get_kwargs(
+        self,
+        script: str,
+        kwargs: dict = {},
+        delimiter: str = None,
+        downloads: list[dict[str, Any]] | None = None,
+    ) -> tuple[str, dict[str, str | list | Any]]:
         for k,v in self.get_input_elements_from_text(script).items():
             if k in kwargs:
                 continue
             v = v["value"]
-            if not v:
+            if v is None:
                 v = ""
             ans = ""
             if isinstance(v, partial):
@@ -75,15 +171,8 @@ class Message(ComponentBase):
                 else:
                     for t in iter_obj:
                         ans += t
-            elif isinstance(v, list) and delimiter:
-                ans = delimiter.join([str(vv) for vv in v])
-            elif not isinstance(v, str):
-                try:
-                    ans = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    pass
             else:
-                ans = v
+                ans = self._stringify_message_value(v, delimiter, downloads)
             if not ans:
                 ans = ""
             kwargs[k] = ans
@@ -106,6 +195,7 @@ class Message(ComponentBase):
         s = 0
         all_content = ""
         cache = {}
+        downloads = []
         for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
             if self.check_if_canceled("Message streaming"):
                 return
@@ -145,11 +235,9 @@ class Message(ComponentBase):
                 continue
             elif inspect.isawaitable(v):
                 v = await v
-            elif not isinstance(v, str):
-                try:
-                    v = json.dumps(v, ensure_ascii=False)
-                except Exception:
-                    v = str(v)
+            v = self._stringify_message_value(
+                v, downloads=downloads, fallback_to_str=True
+            )
             yield v
             self.set_input_value(exp, v)
             all_content += v
@@ -162,8 +250,10 @@ class Message(ComponentBase):
             all_content += rand_cnt[s: ]
             yield rand_cnt[s: ]
 
+        self.set_output("downloads", downloads)
         self.set_output("content", all_content)
         self._convert_content(all_content)
+        await self._save_to_memory(all_content)
 
     def _is_jinjia2(self, content:str) -> bool:
         patt = [
@@ -181,12 +271,14 @@ class Message(ComponentBase):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
 
-        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs)
-        template = Jinja2Template(rand_cnt)
+        downloads = []
+        rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs, downloads=downloads)
+        template = _jinja2_sandbox.from_string(rand_cnt)
         try:
             content = template.render(kwargs)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(f"Jinja2 template rendering failed: {e}")
+            content = rand_cnt  # fallback to unrendered content
 
         if self.check_if_canceled("Message processing"):
             return
@@ -194,11 +286,88 @@ class Message(ComponentBase):
         for n, v in kwargs.items():
             content = re.sub(n, v, content)
 
+        self.set_output("downloads", downloads)
         self.set_output("content", content)
         self._convert_content(content)
+        self._save_to_memory(content)
 
     def thoughts(self) -> str:
         return ""
+
+    def _parse_markdown_table_lines(self, table_lines: list):
+        """
+        Parse a list of Markdown table lines into a pandas DataFrame.
+        
+        Args:
+            table_lines: List of strings, each representing a row in the Markdown table
+                        (excluding separator lines like |---|---|)
+        
+        Returns:
+            pandas DataFrame with the table data, or None if parsing fails
+        """
+        import pandas as pd
+        
+        if not table_lines:
+            return None
+        
+        rows = []
+        headers = None
+
+        def _coerce_excel_cell_type(cell: str):
+            # Convert markdown cell text to native numeric types when safe,so Excel writes numeric cells instead of text.
+            if not isinstance(cell, str):
+                return cell
+
+            value = cell.strip()
+            if value == "":
+                return ""
+
+            # Keep values like "00123" as text to avoid losing leading zeros.
+            if re.match(r"^[+-]?0\d+$", value):
+                return cell
+
+            # Support thousand separators like 1,234 or 1,234.56
+            numeric_candidate = value
+            if re.match(r"^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$", value):
+                numeric_candidate = value.replace(",", "")
+
+            if re.match(r"^[+-]?\d+$", numeric_candidate):
+                try:
+                    return int(numeric_candidate)
+                except ValueError:
+                    return cell
+
+            if re.match(r"^[+-]?(\d+\.\d+|\d+\.|\.\d+)([eE][+-]?\d+)?$", numeric_candidate) or re.match(r"^[+-]?\d+[eE][+-]?\d+$", numeric_candidate):
+                try:
+                    return float(numeric_candidate)
+                except ValueError:
+                    return cell
+
+            return cell
+        
+        for line in table_lines:
+            # Split by | and clean up
+            cells = [cell.strip() for cell in line.split('|')]
+            # Remove empty first and last elements from split (caused by leading/trailing |)
+            cells = [c for c in cells if c]
+            
+            if headers is None:
+                headers = cells
+            else:
+                cells = [_coerce_excel_cell_type(c) for c in cells]
+                rows.append(cells)
+        
+        if headers and rows:
+            # Ensure all rows have same number of columns as headers
+            normalized_rows = []
+            for row in rows:
+                while len(row) < len(headers):
+                    row.append('')
+                normalized_rows.append(row[:len(headers)])
+            
+            return pd.DataFrame(normalized_rows, columns=headers)
+        
+        return None
 
     def _convert_content(self, content):
         if not self._param.output_format:
@@ -207,7 +376,7 @@ class Message(ComponentBase):
         import pypandoc
         doc_id = get_uuid()
 
-        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx"}:
+        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx", "xlsx"}:
             self._param.output_format = "markdown"
 
         try:
@@ -226,6 +395,119 @@ class Message(ComponentBase):
                     )
 
                 binary_content = converted.encode("utf-8")
+
+            elif self._param.output_format == "xlsx":
+                import pandas as pd
+                from io import BytesIO
+
+                # Debug: log the content being parsed
+                logging.info(f"XLSX Parser: Content length={len(content) if content else 0}, first 500 chars: {content[:500] if content else 'None'}")
+                
+                # Try to parse ALL Markdown tables from the content
+                # Each table will be written to a separate sheet
+                tables = []  # List of (sheet_name, dataframe)
+                
+                if isinstance(content, str):
+                    lines = content.strip().split('\n')
+                    logging.info(f"XLSX Parser: Total lines={len(lines)}, lines starting with '|': {sum(1 for line in lines if line.strip().startswith('|'))}")
+                    current_table_lines = []
+                    current_table_title = None
+                    pending_title = None
+                    in_table = False
+                    table_count = 0
+                    
+                    for i, line in enumerate(lines):
+                        stripped = line.strip()
+                        
+                        # Check for potential table title (lines before a table)
+                        # Look for patterns like "Table 1:", "## Table", or markdown headers
+                        if not in_table and stripped and not stripped.startswith('|'):
+                            # Check if this could be a table title
+                            lower_stripped = stripped.lower()
+                            if (lower_stripped.startswith('table') or 
+                                stripped.startswith('#') or
+                                ':' in stripped):
+                                pending_title = stripped.lstrip('#').strip()
+                        
+                        if stripped.startswith('|') and '|' in stripped[1:]:
+                            # Check if this is a separator line (|---|---|)
+                            cleaned = stripped.replace(' ', '').replace('|', '').replace('-', '').replace(':', '')
+                            if cleaned == '':
+                                continue  # Skip separator line
+                            
+                            if not in_table:
+                                # Starting a new table
+                                in_table = True
+                                current_table_lines = []
+                                current_table_title = pending_title
+                                pending_title = None
+                            
+                            current_table_lines.append(stripped)
+                        
+                        elif in_table and not stripped.startswith('|'):
+                            # End of current table - save it
+                            if current_table_lines:
+                                df = self._parse_markdown_table_lines(current_table_lines)
+                                if df is not None and not df.empty:
+                                    table_count += 1
+                                    # Generate sheet name
+                                    if current_table_title:
+                                        # Clean and truncate title for sheet name
+                                        sheet_name = current_table_title[:31]
+                                        sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '').replace(':', '')
+                                    else:
+                                        sheet_name = f"Table_{table_count}"
+                                    tables.append((sheet_name, df))
+                            
+                            # Reset for next table
+                            in_table = False
+                            current_table_lines = []
+                            current_table_title = None
+                            
+                            # Check if this line could be a title for the next table
+                            if stripped:
+                                lower_stripped = stripped.lower()
+                                if (lower_stripped.startswith('table') or 
+                                    stripped.startswith('#') or
+                                    ':' in stripped):
+                                    pending_title = stripped.lstrip('#').strip()
+                    
+                    # Don't forget the last table if content ends with a table
+                    if in_table and current_table_lines:
+                        df = self._parse_markdown_table_lines(current_table_lines)
+                        if df is not None and not df.empty:
+                            table_count += 1
+                            if current_table_title:
+                                sheet_name = current_table_title[:31]
+                                sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '').replace(':', '')
+                            else:
+                                sheet_name = f"Table_{table_count}"
+                            tables.append((sheet_name, df))
+                
+                # Fallback: if no tables found, create single sheet with content
+                if not tables:
+                    df = pd.DataFrame({"Content": [content if content else ""]})
+                    tables = [("Data", df)]
+
+                # Write all tables to Excel, each in a separate sheet
+                excel_io = BytesIO()
+                with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
+                    used_names = set()
+                    for sheet_name, df in tables:
+                        # Ensure unique sheet names
+                        original_name = sheet_name
+                        counter = 1
+                        while sheet_name in used_names:
+                            suffix = f"_{counter}"
+                            sheet_name = original_name[:31-len(suffix)] + suffix
+                            counter += 1
+                        used_names.add(sheet_name)
+                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                excel_io.seek(0)
+                binary_content = excel_io.read()
+                
+                logging.info(f"Generated Excel with {len(tables)} sheet(s): {[t[0] for t in tables]}")
 
             else:  # pdf, docx
                 with tempfile.NamedTemporaryFile(suffix=f".{self._param.output_format}", delete=False) as tmp:
@@ -264,3 +546,23 @@ class Message(ComponentBase):
 
         except Exception as e:
             logging.error(f"Error converting content to {self._param.output_format}: {e}")
+
+    async def _save_to_memory(self, content):
+        if not hasattr(self._param, "memory_ids") or not self._param.memory_ids:
+            return True, "No memory selected."
+
+        user_id = self._param.user_id if hasattr(self._param, "user_id") else ""
+        if user_id:
+            import re
+            # is variable
+            if re.match(r"^{.*}$", user_id):
+                user_id = self._canvas.get_variable_value(user_id)
+
+        message_dict = {
+            "user_id": user_id,
+            "agent_id": self._canvas._id,
+            "session_id": self._canvas.task_id,
+            "user_input": self._canvas.get_sys_query(),
+            "agent_response": content
+        }
+        return await queue_save_to_memory_task(self._param.memory_ids, message_dict)

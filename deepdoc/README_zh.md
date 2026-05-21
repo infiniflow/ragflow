@@ -102,6 +102,30 @@ export HF_ENDPOINT=https://hf-mirror.com
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
     <img src="https://github.com/infiniflow/ragflow/assets/12318111/cb24e81b-f2ba-49f3-ac09-883d75606f4c" width="1000"/>
     </div>
+
+  - **表格自动旋转（Table Auto-Rotation）**。对于扫描的 PDF 文档，表格可能存在方向错误（旋转了 90°、180° 或 270°），
+    PDF 解析器会在进行表格结构识别之前，自动使用 OCR 置信度来检测最佳旋转角度。这大大提高了旋转表格的 OCR 准确性和表格结构检测效果。
+    
+    该功能会评估 4 个旋转角度（0°、90°、180°、270°），并选择 OCR 置信度最高的角度。
+    确定最佳方向后，会对旋转后的表格图像重新进行 OCR 识别。
+    
+    此功能**默认启用**。您可以通过环境变量控制：
+    ```bash
+    # 禁用表格自动旋转
+    export TABLE_AUTO_ROTATE=false
+    
+    # 启用表格自动旋转（默认）
+    export TABLE_AUTO_ROTATE=true
+    ```
+    
+    或通过 API 参数控制：
+    ```python
+    from deepdoc.parser import PdfParser
+    
+    parser = PdfParser()
+    # 禁用此次调用的自动旋转
+    boxes, tables = parser(pdf_path, auto_rotate_tables=False)
+    ```
         
 <a name="3"></a>
 ## 3. 解析器

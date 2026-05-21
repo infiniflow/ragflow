@@ -1,21 +1,24 @@
 import { PlusOutlined } from '@ant-design/icons';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from '../ui/hover-card';
 import { Input } from '../ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 interface EditTagsProps {
   value?: string[];
   onChange?: (tags: string[]) => void;
+  disabled?: boolean;
+  addButtonTestId?: string;
+  inputTestId?: string;
 }
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
-  ({ value = [], onChange }: EditTagsProps) => {
+  function EditTag(
+    { value = [], onChange, disabled, addButtonTestId, inputTestId },
+    ref,
+  ) {
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -53,36 +56,42 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
 
     const forMap = (tag: string) => {
       return (
-        <HoverCard key={tag}>
-          <HoverCardContent side="top">{tag}</HoverCardContent>
-          <HoverCardTrigger asChild>
-            <div className="w-fit flex items-center justify-center gap-2 border-dashed border px-2 py-1 rounded-sm bg-bg-card">
+        <Tooltip key={tag}>
+          <TooltipContent side="top">{tag}</TooltipContent>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                'w-fit h-8 flex items-center justify-center gap-2 border border-border-button rounded-sm bg-bg-card',
+                disabled ? 'px-2' : 'ps-2 pe-1',
+              )}
+            >
               <div className="flex gap-2 items-center">
-                <div className="max-w-80 overflow-hidden text-ellipsis">
+                <div className="max-w-80 whitespace-nowrap overflow-hidden text-ellipsis">
                   {tag}
                 </div>
-                <X
-                  className="w-4 h-4 text-muted-foreground hover:text-primary"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleClose(tag);
-                  }}
-                />
+                {!disabled && (
+                  <Button
+                    variant="delete"
+                    size="icon-xs"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleClose(tag);
+                    }}
+                  >
+                    <Trash2 className="size-[1em]" />
+                  </Button>
+                )}
               </div>
             </div>
-          </HoverCardTrigger>
-        </HoverCard>
+          </TooltipTrigger>
+        </Tooltip>
       );
     };
 
     const tagChild = value?.map(forMap);
 
-    const tagPlusStyle: React.CSSProperties = {
-      borderStyle: 'dashed',
-    };
-
     return (
-      <div>
+      <div ref={ref}>
         {inputVisible && (
           <Input
             ref={inputRef}
@@ -91,6 +100,8 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             value={inputValue}
             onChange={handleInputChange}
             onBlur={handleInputConfirm}
+            disabled={disabled}
+            data-testid={inputTestId}
             onKeyDown={(e) => {
               if (e?.key === 'Enter') {
                 handleInputConfirm();
@@ -98,14 +109,16 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             }}
           />
         )}
-        <div className="flex gap-2 py-1">
+        <div className="flex gap-2 py-1 flex-wrap">
           {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
-          {!inputVisible && (
+
+          {!inputVisible && !disabled && (
             <Button
-              variant="ghost"
-              className="w-fit flex items-center justify-center gap-2 bg-bg-card border-dashed border"
+              variant="outline"
+              size="icon"
               onClick={showInput}
-              style={tagPlusStyle}
+              disabled={disabled}
+              data-testid={addButtonTestId}
             >
               <PlusOutlined />
             </Button>

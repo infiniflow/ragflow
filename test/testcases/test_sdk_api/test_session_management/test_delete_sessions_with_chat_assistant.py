@@ -46,9 +46,9 @@ class TestSessionWithChatAssistantDelete:
 
         chat_assistant.delete_sessions(**session_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             chat_assistant.delete_sessions(**session_ids)
-        assert "The chat doesn't own the session" in str(excinfo.value)
+        assert "The chat doesn't own the session" in str(exception_info.value)
 
     @pytest.mark.p3
     def test_duplicate_deletion(self, add_sessions_with_chat_assistant_func):
@@ -84,12 +84,12 @@ class TestSessionWithChatAssistantDelete:
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            pytest.param(None, """TypeError("argument of type \'NoneType\' is not iterable")""", 0, marks=pytest.mark.skip),
+            pytest.param(None, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["invalid_id"]}, "The chat doesn't own the session invalid_id", 5, marks=pytest.mark.p3),
             pytest.param("not json", """AttributeError("\'str\' object has no attribute \'get\'")""", 5, marks=pytest.mark.skip),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, "", 0, marks=pytest.mark.p1),
-            pytest.param({"ids": []}, "", 0, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, add_sessions_with_chat_assistant_func, payload, expected_message, remaining):
@@ -98,11 +98,14 @@ class TestSessionWithChatAssistantDelete:
             payload = payload([session.id for session in sessions])
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.delete_sessions(**payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
-            chat_assistant.delete_sessions(**payload)
+            if payload is None:
+                chat_assistant.delete_sessions()
+            else:
+                chat_assistant.delete_sessions(**payload)
 
         sessions = chat_assistant.list_sessions()
         assert len(sessions) == remaining

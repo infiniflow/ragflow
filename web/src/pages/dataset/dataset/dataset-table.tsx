@@ -28,23 +28,25 @@ import {
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
 import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { useMemo } from 'react';
+import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import ProcessLogModal from '../process-log-modal';
 import { useShowLog } from './hooks';
-import { SetMetaDialog } from './set-meta-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 import { useDatasetTableColumns } from './use-dataset-table-columns';
 import { useRenameDocument } from './use-rename-document';
-import { useSaveMeta } from './use-save-meta';
 
 export type DatasetTableProps = Pick<
   ReturnType<typeof useFetchDocumentList>,
   'documents' | 'setPagination' | 'pagination' | 'loading'
 > &
-  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'>;
+  Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
+    showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+  };
 
 export function DatasetTable({
   documents,
@@ -52,6 +54,7 @@ export function DatasetTable({
   setPagination,
   rowSelection,
   setRowSelection,
+  showManageMetadataModal,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -78,21 +81,22 @@ export function DatasetTable({
     initialName,
   } = useRenameDocument();
 
-  const {
-    showSetMetaModal,
-    hideSetMetaModal,
-    setMetaVisible,
-    setMetaLoading,
-    onSetMetaModalOk,
-    metaRecord,
-  } = useSaveMeta();
+  // const {
+  //   hideSetMetaModal,
+  //   setMetaVisible,
+  //   setMetaLoading,
+  //   onSetMetaModalOk,
+  //   metaRecord,
+  // } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { knowledgeBase } = useKnowledgeBaseContext();
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     showRenameModal,
-    showSetMetaModal,
+    showManageMetadataModal,
     showLog,
+    datasetId: knowledgeBase?.id,
   });
 
   const currentPagination = useMemo(() => {
@@ -113,6 +117,7 @@ export function DatasetTable({
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id, // Use document ID instead of row index
     manualPagination: true, //we're doing manual "server-side" pagination
     state: {
       sorting,
@@ -150,6 +155,8 @@ export function DatasetTable({
             table.getRowModel().rows.map((row) => (
               <TableRow
                 key={row.id}
+                data-testid="document-row"
+                data-doc-name={row.original.name}
                 data-state={row.getIsSelected() && 'selected'}
                 className="group"
               >
@@ -186,7 +193,7 @@ export function DatasetTable({
       {changeParserVisible && (
         <ChunkMethodDialog
           documentId={changeParserRecord.id}
-          parserId={changeParserRecord.parser_id}
+          parserId={changeParserRecord.chunk_method}
           pipelineId={changeParserRecord.pipeline_id}
           parserConfig={changeParserRecord.parser_config}
           documentExtension={getExtension(changeParserRecord.name)}
@@ -207,14 +214,14 @@ export function DatasetTable({
         ></RenameDialog>
       )}
 
-      {setMetaVisible && (
+      {/* {setMetaVisible && (
         <SetMetaDialog
           hideModal={hideSetMetaModal}
           loading={setMetaLoading}
           onOk={onSetMetaModalOk}
           initialMetaData={metaRecord.meta_fields}
         ></SetMetaDialog>
-      )}
+      )} */}
       {logVisible && (
         <ProcessLogModal
           title={t('knowledgeDetails.fileLogs')}

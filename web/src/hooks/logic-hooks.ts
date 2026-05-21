@@ -1,6 +1,8 @@
+import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
-import { LanguageTranslationMap } from '@/constants/common';
+import { FormInstance } from '@/interfaces/antd-compat';
+import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
 import {
   IAnswer,
@@ -8,12 +10,11 @@ import {
   IMessage,
   Message,
 } from '@/interfaces/database/chat';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
+import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
-import { PaginationProps, message } from 'antd';
-import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { has, isEmpty, omit } from 'lodash';
@@ -25,7 +26,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
@@ -50,15 +50,15 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
 };
 
 export const useChangeLanguage = () => {
-  const { i18n } = useTranslation();
   const { saveSetting } = useSaveSetting();
 
-  const changeLanguage = (lng: string) => {
-    i18n.changeLanguage(
-      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap],
-    );
-    saveSetting({ language: lng });
-  };
+  const changeLanguage = useCallback(
+    (lng: string) => {
+      changeLanguageAsync(lng);
+      saveSetting({ language: lng });
+    },
+    [saveSetting],
+  );
 
   return changeLanguage;
 };
@@ -71,8 +71,8 @@ export const useGetPaginationWithRouter = () => {
     size: pageSize,
   } = useSetPaginationParams();
 
-  const onPageChange: PaginationProps['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
+  const onPageChange: Pagination['onChange'] = useCallback(
+    (pageNumber: number, pageSize?: number) => {
       setPaginationParams(pageNumber, pageSize);
     },
     [setPaginationParams],
@@ -88,7 +88,7 @@ export const useGetPaginationWithRouter = () => {
     [setPaginationParams, pageSize],
   );
 
-  const pagination: PaginationProps = useMemo(() => {
+  const pagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
       total: 0,
@@ -97,7 +97,7 @@ export const useGetPaginationWithRouter = () => {
       pageSize: pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
+      showTotal: (total: number) => `${t('total')} ${total}`,
     };
   }, [t, onPageChange, page, pageSize]);
 
@@ -109,7 +109,7 @@ export const useGetPaginationWithRouter = () => {
 
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
-  const { setPagination } = useGetPaginationWithRouter();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const value = e.target.value;
@@ -119,21 +119,21 @@ export const useHandleSearchChange = () => {
     [setPagination],
   );
 
-  return { handleInputChange, searchString };
+  return { handleInputChange, searchString, pagination, setPagination };
 };
 
 export const useGetPagination = () => {
   const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
   const { t } = useTranslate('common');
 
-  const onPageChange: PaginationProps['onChange'] = useCallback(
+  const onPageChange: Pagination['onChange'] = useCallback(
     (pageNumber: number, pageSize: number) => {
       setPagination({ page: pageNumber, pageSize });
     },
     [],
   );
 
-  const currentPagination: PaginationProps = useMemo(() => {
+  const currentPagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
       total: 0,
@@ -142,7 +142,7 @@ export const useGetPagination = () => {
       pageSize: pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
+      showTotal: (total: number) => `${t('total')} ${total}`,
     };
   }, [t, onPageChange, pagination]);
 
@@ -200,9 +200,7 @@ function useSetDoneRecord() {
   };
 }
 
-export const useSendMessageWithSse = (
-  url: string = api.completeConversation,
-) => {
+export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
   const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
@@ -237,6 +235,7 @@ export const useSendMessageWithSse = (
 
   const send = useCallback(
     async (
+      url: string,
       body: any,
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
@@ -260,6 +259,7 @@ export const useSendMessageWithSse = (
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
+        // eslint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();
@@ -273,19 +273,39 @@ export const useSendMessageWithSse = (
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
-                  setAnswer({
-                    ...d,
-                    conversationId: body?.conversation_id,
-                    chatBoxId: body.chatBoxId,
+                  setAnswer((prev) => {
+                    const prevAnswer = prev.answer || '';
+                    const currentAnswer = d.final ? '' : d.answer || '';
+
+                    let newAnswer: string;
+                    if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
+                      newAnswer = currentAnswer;
+                    } else {
+                      newAnswer = prevAnswer + currentAnswer;
+                    }
+
+                    if (d.start_to_think === true) {
+                      newAnswer = newAnswer + '<think>';
+                    }
+
+                    if (d.end_to_think === true) {
+                      newAnswer = newAnswer + '</think>';
+                    }
+
+                    return {
+                      ...d,
+                      answer: newAnswer,
+                      conversationId: body?.session_id ?? body?.conversation_id,
+                      chatBoxId: body.chatBoxId,
+                    };
                   });
                 }
-              } catch (e) {
+              } catch {
                 // Swallow parse errors silently
               }
             }
-          } catch (e) {
-            if (e instanceof DOMException && e.name === 'AbortError') {
-              console.log('Request was aborted by user or logic.');
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
               break;
             }
           }
@@ -293,14 +313,14 @@ export const useSendMessageWithSse = (
         setDoneValue(body, true);
         resetAnswer();
         return { data: await res, response };
-      } catch (e) {
+      } catch {
         setDoneValue(body, true);
 
         resetAnswer();
         // Swallow fetch errors silently
       }
     },
-    [initializeSseRef, setDoneValue, url, resetAnswer],
+    [initializeSseRef, setDoneValue, resetAnswer],
   );
 
   const stopOutputMessage = useCallback(() => {
@@ -320,7 +340,7 @@ export const useSendMessageWithSse = (
   };
 };
 
-export const useSpeechWithSse = (url: string = api.tts) => {
+export const useSpeechWithSse = (url: string = api.chatsTts) => {
   const read = useCallback(
     async (body: any) => {
       const response = await fetch(url, {
@@ -336,7 +356,7 @@ export const useSpeechWithSse = (url: string = api.tts) => {
         if (res?.code !== 0) {
           message.error(res?.message);
         }
-      } catch (error) {
+      } catch {
         // Swallow errors silently
       }
       return response;
@@ -386,7 +406,7 @@ export const useScrollToBottom = (
       const container = containerRef.current;
       container.scrollTo({
         top: container.scrollHeight - container.clientHeight,
-        behavior: 'smooth',
+        behavior: 'auto',
       });
     }
   }, [containerRef]);
@@ -433,7 +453,7 @@ export const useSelectDerivedMessages = () => {
   );
 
   const addNewestQuestion = useCallback(
-    (message: Message, answer: string = '') => {
+    (message: IMessage, answer: string = '') => {
       setDerivedMessages((pre) => {
         return [
           ...pre,
@@ -446,6 +466,7 @@ export const useSelectDerivedMessages = () => {
           {
             role: MessageType.Assistant,
             content: answer,
+            conversationId: message.conversationId,
             id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
           },
         ];
@@ -516,6 +537,30 @@ export const useSelectDerivedMessages = () => {
           prompt: answer.prompt,
           audio_binary: answer.audio_binary,
           ...omit(answer, 'reference'),
+        },
+      ];
+    });
+  }, []);
+
+  const addPrologue = useCallback((prologue: string) => {
+    setDerivedMessages((pre) => {
+      if (pre.length > 0) {
+        return [
+          {
+            ...pre[0],
+            content: prologue,
+          },
+          ...pre.slice(1),
+        ];
+      }
+
+      return [
+        {
+          role: MessageType.Assistant,
+          content: prologue,
+          id: buildMessageUuid({
+            role: MessageType.Assistant,
+          }),
         },
       ];
     });
@@ -592,6 +637,7 @@ export const useSelectDerivedMessages = () => {
     removeAllMessages,
     scrollToBottom,
     removeAllMessagesExceptFirst,
+    addPrologue,
   };
 };
 

@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect } from 'react';
 import { ChunkTextMode } from '../../constant';
-import styles from '../../index.less';
+import styles from '../../index.module.less';
 import { IChunk } from '../../interface';
 import { useParserInit } from './hook';
 import { IObjContainerProps } from './interface';

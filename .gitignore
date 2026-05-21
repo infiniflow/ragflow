@@ -7,7 +7,7 @@ hudet/
 cv/
 layout_app.py
 api/flask_session
-
+venv/
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
 # More information here https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
 Cargo.lock
@@ -21,6 +21,7 @@ Cargo.lock
 
 .idea/
 .vscode/
+.cursor/settings.json
 
 # Exclude Mac generated files
 .DS_Store
@@ -44,12 +45,20 @@ cl100k_base.tiktoken
 chrome*
 huggingface.co/
 nltk_data/
+uv-x86_64*.tar.gz
 
 # Exclude hash-like temporary files like 9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 *[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*
 .lh/
 .venv
 docker/data
+
+# OceanBase data and conf
+docker/oceanbase/conf
+docker/oceanbase/data
+
+# SeekDB data and conf
+docker/seekdb
 
 
 #--------------------------------------------------#
@@ -195,3 +204,32 @@ ragflow_cli.egg-info
 
 # Default backup dir
 backup
+
+
+*huqie.txt
+
+.hypothesis
+
+
+# Added by cargo
+
+/target
+
+# Do not include in PR (local dev / build artifacts)
+ragflow.egg-info/
+uv-aarch64*.tar.gz
+uv-aarch64-unknown-linux-gnu.tar.gz
+docker/launch_backend_service_windows.sh
+
+# C++ build directories
+internal/cpp/build/
+internal/cpp/cmake-build-release/
+internal/cpp/cmake-build-debug/
+
+# Trae IDE config
+.trae/
+
+# Go server build output
+bin/*
+!bin/.gitkeep
+.claude/settings.local.json

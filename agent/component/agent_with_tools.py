@@ -18,22 +18,22 @@ import json
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import partial
+from timeit import default_timer as timer
 from typing import Any
 
 import json_repair
-from timeit import default_timer as timer
-from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, ToolMeta
+
+from agent.component.llm import LLM, LLMParam
+from agent.tools.base import LLMToolPluginCallSession, ToolBase, ToolMeta, ToolParamBase
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 from api.db.services.llm_service import LLMBundle
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
+from api.db.services.tenant_llm_service import TenantLLMService
 from common.connection_utils import timeout
-from rag.prompts.generator import next_step, COMPLETE_TASK, analyze_task, \
-    citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question, message_fit_in, structured_output_prompt
-from common.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
-from agent.component.llm import LLMParam, LLM
+from common.mcp_tool_call_conn import MCPToolBinding, MCPToolCallSession, mcp_tool_metadata_to_openai_tool
+from rag.prompts.generator import citation_plus, citation_prompt, full_question, kb_prompt, message_fit_in, structured_output_prompt
 
 
 class AgentParam(LLMParam, ToolParamBase):
@@ -42,41 +42,32 @@ class AgentParam(LLMParam, ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
-                "name": "agent",
-                "description": "This is an agent for a specific task.",
-                "parameters": {
-                    "user_prompt": {
-                        "type": "string",
-                        "description": "This is the order you need to send to the agent.",
-                        "default": "",
-                        "required": True
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": (
-                            "Supervisor's reasoning for choosing the this agent. "
-                            "Explain why this agent is being invoked and what is expected of it."
-                        ),
-                        "required": True
-                    },
-                    "context": {
-                        "type": "string",
-                        "description": (
-                                "All relevant background information, prior facts, decisions, "
-                                "and state needed by the agent to solve the current query. "
-                                "Should be as detailed and self-contained as possible."
-                            ),
-                        "required": True
-                    },
-                }
-            }
+        self.meta: ToolMeta = {
+            "name": "agent",
+            "description": "This is an agent for a specific task.",
+            "parameters": {
+                "user_prompt": {"type": "string", "description": "This is the order you need to send to the agent.", "default": "", "required": True},
+                "reasoning": {
+                    "type": "string",
+                    "description": ("Supervisor's reasoning for choosing the this agent. Explain why this agent is being invoked and what is expected of it."),
+                    "required": True,
+                },
+                "context": {
+                    "type": "string",
+                    "description": (
+                        "All relevant background information, prior facts, decisions, and state needed by the agent to solve the current query. Should be as detailed and self-contained as possible."
+                    ),
+                    "required": True,
+                },
+            },
+        }
         super().__init__()
         self.function_name = "agent"
         self.tools = []
         self.mcp = []
         self.max_rounds = 5
         self.description = ""
+        self.custom_header = {}
 
 
 class Agent(LLM, ToolBase):
@@ -85,31 +76,65 @@ class Agent(LLM, ToolBase):
     def __init__(self, canvas, id, param: LLMParam):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
-        for cpn in self._param.tools:
+        for idx, cpn in enumerate(self._param.tools):
             cpn = self._load_tool_obj(cpn)
-            self.tools[cpn.get_meta()["function"]["name"]] = cpn
+            original_name = cpn.get_meta()["function"]["name"]
+            indexed_name = f"{original_name}_{idx}"
+            self.tools[indexed_name] = cpn
+        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id)
+        self.chat_mdl = LLMBundle(
+            self._canvas.get_tenant_id(),
+            chat_model_config,
+            max_retries=self._param.max_retries,
+            retry_interval=self._param.delay_after_error,
+            max_rounds=self._param.max_rounds,
+            verbose_tool_use=False,
+        )
+        self.tool_meta = []
+        for indexed_name, tool_obj in self.tools.items():
+            original_meta = tool_obj.get_meta()
+            indexed_meta = deepcopy(original_meta)
+            indexed_meta["function"]["name"] = indexed_name
+            self.tool_meta.append(indexed_meta)
 
-        self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id,
-                                  max_retries=self._param.max_retries,
-                                  retry_interval=self._param.delay_after_error,
-                                  max_rounds=self._param.max_rounds,
-                                  verbose_tool_use=True
-                                  )
-        self.tool_meta = [v.get_meta() for _,v in self.tools.items()]
-
+        tool_idx = len(self.tools)
         for mcp in self._param.mcp:
             _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
-            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
+            custom_header = self._param.custom_header
+            tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables, custom_header)
             for tnm, meta in mcp["tools"].items():
-                self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta))
-                self.tools[tnm] = tool_call_session
+                indexed_name = f"{tnm}_{tool_idx}"
+                tool_idx += 1
+                self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
+                self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
         self.callback = partial(self._canvas.tool_use_callback, id)
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
-        #self.chat_mdl.bind_tools(self.toolcall_session, self.tool_metas)
+        if self.tool_meta:
+            self.chat_mdl.bind_tools(self.toolcall_session, self.tool_meta)
+
+    def _fit_messages(self, prompt: str, msg: list[dict]) -> list[dict]:
+        _, fitted_messages = message_fit_in(
+            [{"role": "system", "content": prompt}, *msg],
+            int(self.chat_mdl.max_length * 0.97),
+        )
+        return fitted_messages
+
+    @staticmethod
+    def _append_system_prompt(msg: list[dict], extra_prompt: str) -> None:
+        if extra_prompt and msg and msg[0]["role"] == "system":
+            msg[0]["content"] += "\n" + extra_prompt
+
+    @staticmethod
+    def _clean_formatted_answer(ans: str) -> str:
+        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+        ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
+        return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
     def _load_tool_obj(self, cpn: dict) -> object:
         from agent.component import component_class
-        param = component_class(cpn["component_name"] + "Param")()
+
+        tool_name = cpn["component_name"]
+        param = component_class(tool_name + "Param")()
         param.update(cpn["params"])
         try:
             param.check()
@@ -120,19 +145,17 @@ class Agent(LLM, ToolBase):
         return component_class(cpn["component_name"])(self._canvas, cpn_id, param)
 
     def get_meta(self) -> dict[str, Any]:
-        self._param.function_name= self._id.split("-->")[-1]
+        self._param.function_name = self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
-            m["function"]["parameters"]["properties"]["user_prompt"] = self._param.user_prompt
+            # Keep the JSON schema valid; user_prompt is a string field, not a schema node.
+            m["function"]["parameters"]["properties"]["user_prompt"]["default"] = self._param.user_prompt
         return m
 
     def get_input_form(self) -> dict[str, dict]:
         res = {}
         for k, v in self.get_input_elements().items():
-            res[k] = {
-                "type": "line",
-                "name": v["name"]
-            }
+            res[k] = {"type": "line", "name": v["name"]}
         for cpn in self._param.tools:
             if not isinstance(cpn, LLM):
                 continue
@@ -154,96 +177,19 @@ class Agent(LLM, ToolBase):
 
         return None
 
-    def _force_format_to_schema(self, text: str, schema_prompt: str) -> str:
+    async def _force_format_to_schema_async(self, text: str, schema_prompt: str) -> str:
         fmt_msgs = [
             {"role": "system", "content": schema_prompt + "\nIMPORTANT: Output ONLY valid JSON. No markdown, no extra text."},
             {"role": "user", "content": text},
         ]
         _, fmt_msgs = message_fit_in(fmt_msgs, int(self.chat_mdl.max_length * 0.97))
-        return self._generate(fmt_msgs)
+        return await self._generate_async(fmt_msgs)
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60)))
     def _invoke(self, **kwargs):
-        if self.check_if_canceled("Agent processing"):
-            return
+        return asyncio.run(self._invoke_async(**kwargs))
 
-        if kwargs.get("user_prompt"):
-            usr_pmt = ""
-            if kwargs.get("reasoning"):
-                usr_pmt += "\nREASONING:\n{}\n".format(kwargs["reasoning"])
-            if kwargs.get("context"):
-                usr_pmt += "\nCONTEXT:\n{}\n".format(kwargs["context"])
-            if usr_pmt:
-                usr_pmt += "\nQUERY:\n{}\n".format(str(kwargs["user_prompt"]))
-            else:
-                usr_pmt = str(kwargs["user_prompt"])
-            self._param.prompts = [{"role": "user", "content": usr_pmt}]
-
-        if not self.tools:
-            if self.check_if_canceled("Agent processing"):
-                return
-            return LLM._invoke(self, **kwargs)
-
-        prompt, msg, user_defined_prompt = self._prepare_prompt_variables()
-        output_schema = self._get_output_schema()
-        schema_prompt = ""
-        if output_schema:
-            schema = json.dumps(output_schema, ensure_ascii=False, indent=2)
-            schema_prompt = structured_output_prompt(schema)
-
-        downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
-        ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not (ex and ex["goto"]) and not output_schema:
-            self.set_output("content", partial(self.stream_output_with_tools, prompt, msg, user_defined_prompt))
-            return
-
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        use_tools = []
-        ans = ""
-        for delta_ans, tk in self._react_with_tools_streamly(prompt, msg, use_tools, user_defined_prompt,schema_prompt=schema_prompt):
-            if self.check_if_canceled("Agent processing"):
-                return
-            ans += delta_ans
-
-        if ans.find("**ERROR**") >= 0:
-            logging.error(f"Agent._chat got error. response: {ans}")
-            if self.get_exception_default_value():
-                self.set_output("content", self.get_exception_default_value())
-            else:
-                self.set_output("_ERROR", ans)
-            return
-
-        if output_schema:
-            error = ""
-            for _ in range(self._param.max_retries + 1):
-                try:
-                    def clean_formated_answer(ans: str) -> str:
-                        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-                        ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-                        return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-                    obj = json_repair.loads(clean_formated_answer(ans))
-                    self.set_output("structured", obj)
-                    if use_tools:
-                        self.set_output("use_tools", use_tools)
-                    return obj
-                except Exception:
-                    error = "The answer cannot be parsed as JSON"
-                    ans = self._force_format_to_schema(ans, schema_prompt)
-                    if ans.find("**ERROR**") >= 0:
-                        continue
-
-            self.set_output("_ERROR", error)
-            return
-
-        self.set_output("content", ans)
-        if use_tools:
-            self.set_output("use_tools", use_tools)
-        return ans
-
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     async def _invoke_async(self, **kwargs):
-        """
-        Async entry: reuse existing logic but offload heavy sync parts via async wrappers to reduce blocking.
-        """
         if self.check_if_canceled("Agent processing"):
             return
 
@@ -262,7 +208,7 @@ class Agent(LLM, ToolBase):
         if not self.tools:
             if self.check_if_canceled("Agent processing"):
                 return
-            return await asyncio.to_thread(LLM._invoke, self, **kwargs)
+            return await LLM._invoke_async(self, **kwargs)
 
         prompt, msg, user_defined_prompt = self._prepare_prompt_variables()
         output_schema = self._get_output_schema()
@@ -271,19 +217,17 @@ class Agent(LLM, ToolBase):
             schema = json.dumps(output_schema, ensure_ascii=False, indent=2)
             schema_prompt = structured_output_prompt(schema)
 
-        downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
+        component = self._canvas.get_component(self._id)
+        downstreams = component["downstream"] if component else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not (ex and ex["goto"]) and not output_schema:
-            self.set_output("content", partial(self.stream_output_with_tools_async, prompt, msg, user_defined_prompt))
+        has_message_downstream = any(self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams)
+        if has_message_downstream and not (ex and ex["goto"]) and not output_schema:
+            self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
             return
 
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        use_tools = []
-        ans = ""
-        async for delta_ans, tk in self._react_with_tools_streamly_async(prompt, msg, use_tools, user_defined_prompt, schema_prompt=schema_prompt):
-            if self.check_if_canceled("Agent processing"):
-                return
-            ans += delta_ans
+        msg = self._fit_messages(prompt, msg)
+        self._append_system_prompt(msg, schema_prompt)
+        ans = await self._generate_async(msg)
 
         if ans.find("**ERROR**") >= 0:
             logging.error(f"Agent._chat got error. response: {ans}")
@@ -297,255 +241,106 @@ class Agent(LLM, ToolBase):
             error = ""
             for _ in range(self._param.max_retries + 1):
                 try:
-                    def clean_formated_answer(ans: str) -> str:
-                        ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-                        ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
-                        return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
-                    obj = json_repair.loads(clean_formated_answer(ans))
+                    obj = json_repair.loads(self._clean_formatted_answer(ans))
                     self.set_output("structured", obj)
-                    if use_tools:
-                        self.set_output("use_tools", use_tools)
                     return obj
                 except Exception:
                     error = "The answer cannot be parsed as JSON"
-                    ans = self._force_format_to_schema(ans, schema_prompt)
+                    ans = await self._force_format_to_schema_async(ans, schema_prompt)
                     if ans.find("**ERROR**") >= 0:
                         continue
 
             self.set_output("_ERROR", error)
             return
 
+        artifact_md = self._collect_tool_artifact_markdown(existing_text=ans)
+        if artifact_md:
+            ans += "\n\n" + artifact_md
         self.set_output("content", ans)
-        if use_tools:
-            self.set_output("use_tools", use_tools)
         return ans
-
-    def stream_output_with_tools(self, prompt, msg, user_defined_prompt={}):
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        answer_without_toolcall = ""
-        use_tools = []
-        for delta_ans,_ in self._react_with_tools_streamly(prompt, msg, use_tools, user_defined_prompt):
-            if self.check_if_canceled("Agent streaming"):
-                return
-
-            if delta_ans.find("**ERROR**") >= 0:
-                if self.get_exception_default_value():
-                    self.set_output("content", self.get_exception_default_value())
-                    yield self.get_exception_default_value()
-                else:
-                    self.set_output("_ERROR", delta_ans)
-                    return
-            answer_without_toolcall += delta_ans
-            yield delta_ans
-
-        self.set_output("content", answer_without_toolcall)
-        if use_tools:
-            self.set_output("use_tools", use_tools)
 
     async def stream_output_with_tools_async(self, prompt, msg, user_defined_prompt={}):
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        answer_without_toolcall = ""
-        use_tools = []
-        async for delta_ans, _ in self._react_with_tools_streamly_async(prompt, msg, use_tools, user_defined_prompt):
+        if len(msg) > 3:
+            st = timer()
+            user_request = await full_question(messages=msg, chat_mdl=self.chat_mdl)
+            self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer() - st)
+            msg = [*msg[:-1], {"role": "user", "content": user_request}]
+
+        msg = self._fit_messages(prompt, msg)
+
+        need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
+        cited = False
+        if need2cite and len(msg) < 7:
+            self._append_system_prompt(msg, citation_prompt())
+            cited = True
+
+        answer = ""
+        async for delta in self._generate_streamly(msg):
             if self.check_if_canceled("Agent streaming"):
                 return
-
-            if delta_ans.find("**ERROR**") >= 0:
+            if delta.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
-                    self.set_output("content", self.get_exception_default_value())
-                    yield self.get_exception_default_value()
+                    fallback = self.get_exception_default_value()
+                    self.set_output("content", fallback)
+                    yield fallback
                 else:
-                    self.set_output("_ERROR", delta_ans)
-                    return
-            answer_without_toolcall += delta_ans
-            yield delta_ans
+                    self.set_output("_ERROR", delta)
+                    self.set_output("content", delta)
+                    yield delta
+                return
+            if not need2cite or cited:
+                yield delta
+            answer += delta
 
-        self.set_output("content", answer_without_toolcall)
-        if use_tools:
-            self.set_output("use_tools", use_tools)
+        if not need2cite or cited:
+            artifact_md = self._collect_tool_artifact_markdown(existing_text=answer)
+            if artifact_md:
+                yield "\n\n" + artifact_md
+                answer += "\n\n" + artifact_md
+            self.set_output("content", answer)
+            return
 
-    async def _react_with_tools_streamly_async(self, prompt, history: list[dict], use_tools, user_defined_prompt={}, schema_prompt: str = ""):
-        """
-        Async wrapper that offloads synchronous flow to a thread, yielding results without blocking the event loop.
-        """
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
+        st = timer()
+        cited_answer = ""
+        async for delta in self._gen_citations_async(answer):
+            if self.check_if_canceled("Agent streaming"):
+                return
+            yield delta
+            cited_answer += delta
+        artifact_md = self._collect_tool_artifact_markdown(existing_text=cited_answer)
+        if artifact_md:
+            yield "\n\n" + artifact_md
+            cited_answer += "\n\n" + artifact_md
+        self.callback("gen_citations", {}, cited_answer, elapsed_time=timer() - st)
+        self.set_output("content", cited_answer)
 
-        def worker():
-            try:
-                for delta_ans, tk in self._react_with_tools_streamly(prompt, history, use_tools, user_defined_prompt, schema_prompt=schema_prompt):
-                    asyncio.run_coroutine_threadsafe(queue.put((delta_ans, tk)), loop)
-            except Exception as e:
-                asyncio.run_coroutine_threadsafe(queue.put(e), loop)
-            finally:
-                asyncio.run_coroutine_threadsafe(queue.put(StopAsyncIteration), loop)
-
-        await asyncio.to_thread(worker)
-
-        while True:
-            item = await queue.get()
-            if item is StopAsyncIteration:
-                break
-            if isinstance(item, Exception):
-                raise item
-            yield item
-
-    def _gen_citations(self, text):
+    async def _gen_citations_async(self, text):
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
         formated_refer = kb_prompt(retrievals, self.chat_mdl.max_length, True)
-        for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus("\n\n".join(formated_refer))},
-                                                  {"role": "user", "content": text}
-                                                  ]):
+        async for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus("\n\n".join(formated_refer))}, {"role": "user", "content": text}]):
             yield delta_ans
 
-    def _react_with_tools_streamly(self, prompt, history: list[dict], use_tools, user_defined_prompt={}, schema_prompt: str = ""):
-        token_count = 0
-        tool_metas = self.tool_meta
-        hist = deepcopy(history)
-        last_calling = ""
-        if len(hist) > 3:
-            st = timer()
-            user_request = full_question(messages=history, chat_mdl=self.chat_mdl)
-            self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer()-st)
-        else:
-            user_request = history[-1]["content"]
-
-        def use_tool(name, args):
-            nonlocal hist, use_tools, token_count,last_calling,user_request
-            logging.info(f"{last_calling=} == {name=}")
-            # Summarize of function calling
-            #if all([
-            #    isinstance(self.toolcall_session.get_tool_obj(name), Agent),
-            #    last_calling,
-            #    last_calling != name
-            #]):
-            #    self.toolcall_session.get_tool_obj(name).add2system_prompt(f"The chat history with other agents are as following: \n" + self.get_useful_memory(user_request, str(args["user_prompt"]),user_defined_prompt))
-            last_calling = name
-            tool_response = self.toolcall_session.tool_call(name, args)
-            use_tools.append({
-                "name": name,
-                "arguments": args,
-                "results": tool_response
-            })
-            # self.callback("add_memory", {}, "...")
-            #self.add_memory(hist[-2]["content"], hist[-1]["content"], name, args, str(tool_response), user_defined_prompt)
-
-            return name, tool_response
-
-        def complete():
-            nonlocal hist
-            need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
-            if schema_prompt:
-                need2cite = False
-            cited = False
-            if hist and hist[0]["role"] == "system":
-                if schema_prompt:
-                    hist[0]["content"] += "\n" + schema_prompt
-                if need2cite and len(hist) < 7:
-                    hist[0]["content"] += citation_prompt()
-                    cited = True
-            yield "", token_count
-
-            _hist = hist
-            if len(hist) > 12:
-                _hist = [hist[0], hist[1], *hist[-10:]]
-            entire_txt = ""
-            for delta_ans in self._generate_streamly(_hist):
-                if not need2cite or cited:
-                    yield delta_ans, 0
-                entire_txt += delta_ans
-            if not need2cite or cited:
-                return
-
-            st = timer()
-            txt = ""
-            for delta_ans in self._gen_citations(entire_txt):
-                if self.check_if_canceled("Agent streaming"):
-                    return
-                yield delta_ans, 0
-                txt += delta_ans
-
-            self.callback("gen_citations", {}, txt, elapsed_time=timer()-st)
-
-        def append_user_content(hist, content):
-            if hist[-1]["role"] == "user":
-                hist[-1]["content"] += content
-            else:
-                hist.append({"role": "user", "content": content})
-
-        st = timer()
-        task_desc = analyze_task(self.chat_mdl, prompt, user_request, tool_metas, user_defined_prompt)
-        self.callback("analyze_task", {}, task_desc, elapsed_time=timer()-st)
-        for _ in range(self._param.max_rounds + 1):
-            if self.check_if_canceled("Agent streaming"):
-                return
-            response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc, user_defined_prompt)
-            # self.callback("next_step", {}, str(response)[:256]+"...")
-            token_count += tk
-            hist.append({"role": "assistant", "content": response})
-            try:
-                functions = json_repair.loads(re.sub(r"```.*", "", response))
-                if not isinstance(functions, list):
-                    raise TypeError(f"List should be returned, but `{functions}`")
-                for f in functions:
-                    if not isinstance(f, dict):
-                        raise TypeError(f"An object type should be returned, but `{f}`")
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    thr = []
-                    for func in functions:
-                        name = func["name"]
-                        args = func["arguments"]
-                        if name == COMPLETE_TASK:
-                            append_user_content(hist, f"Respond with a formal answer. FORGET(DO NOT mention) about `{COMPLETE_TASK}`. The language for the response MUST be as the same as the first user request.\n")
-                            for txt, tkcnt in complete():
-                                yield txt, tkcnt
-                            return
-
-                        thr.append(executor.submit(use_tool, name, args))
-
-                    st = timer()
-                    reflection = reflect(self.chat_mdl, hist, [th.result() for th in thr], user_defined_prompt)
-                    append_user_content(hist, reflection)
-                    self.callback("reflection", {}, str(reflection), elapsed_time=timer()-st)
-
-            except Exception as e:
-                logging.exception(msg=f"Wrong JSON argument format in LLM ReAct response: {e}")
-                e = f"\nTool call error, please correct the input parameter of response format and call it again.\n *** Exception ***\n{e}"
-                append_user_content(hist, str(e))
-
-        logging.warning( f"Exceed max rounds: {self._param.max_rounds}")
-        final_instruction = f"""
-{user_request}
-IMPORTANT: You have reached the conversation limit. Based on ALL the information and research you have gathered so far, please provide a DIRECT and COMPREHENSIVE final answer to the original request.
-Instructions:
-1. SYNTHESIZE all information collected during this conversation
-2. Provide a COMPLETE response using existing data - do not suggest additional research
-3. Structure your response as a FINAL DELIVERABLE, not a plan
-4. If information is incomplete, state what you found and provide the best analysis possible with available data
-5. DO NOT mention conversation limits or suggest further steps
-6. Focus on delivering VALUE with the information already gathered
-Respond immediately with your final comprehensive answer.
-        """
-        if self.check_if_canceled("Agent final instruction"):
-            return
-        append_user_content(hist, final_instruction)
-
-        for txt, tkcnt in complete():
-            yield txt, tkcnt
-
-    def get_useful_memory(self, goal: str, sub_goal:str, topn=3, user_defined_prompt:dict={}) -> str:
-        # self.callback("get_useful_memory", {"topn": 3}, "...")
-        mems = self._canvas.get_memory()
-        rank = rank_memories(self.chat_mdl, goal, sub_goal, [summ for (user, assist, summ) in mems], user_defined_prompt)
-        try:
-            rank = json_repair.loads(re.sub(r"```.*", "", rank))[:topn]
-            mems = [mems[r] for r in rank]
-            return "\n\n".join([f"User: {u}\nAgent: {a}" for u, a,_ in mems])
-        except Exception as e:
-            logging.exception(e)
-
-        return "Error occurred."
+    def _collect_tool_artifact_markdown(self, existing_text: str = "") -> str:
+        md_parts = []
+        for tool_obj in self.tools.values():
+            if not hasattr(tool_obj, "_param") or not hasattr(tool_obj._param, "outputs"):
+                continue
+            artifacts_meta = tool_obj._param.outputs.get("_ARTIFACTS", {})
+            artifacts = artifacts_meta.get("value") if isinstance(artifacts_meta, dict) else None
+            if not artifacts:
+                continue
+            for art in artifacts:
+                if not isinstance(art, dict):
+                    continue
+                url = art.get("url", "")
+                if url and (f"![]({url})" in existing_text or f"![{art.get('name', '')}]({url})" in existing_text):
+                    continue
+                if art.get("mime_type", "").startswith("image/"):
+                    md_parts.append(f"![{art['name']}]({url})")
+                else:
+                    md_parts.append(f"[Download {art['name']}]({url})")
+        return "\n\n".join(md_parts)
 
     def reset(self, only_output=False):
         """

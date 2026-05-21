@@ -31,11 +31,11 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (
                 RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
+                401,
+                "<Unauthorized '401: Unauthorized'>",
             ),
         ],
     )
@@ -80,7 +80,7 @@ class TestDocumentsUpload:
         assert res["data"][0]["dataset_id"] == dataset_id
         assert res["data"][0]["name"] == fp.name
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "file_type",
         ["exe", "unknown"],
@@ -115,14 +115,15 @@ class TestDocumentsUpload:
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
-        fields = (("file", ("", fp.open("rb"))),)
-        m = MultipartEncoder(fields=fields)
-        res = requests.post(
-            url=url,
-            headers={"Content-Type": m.content_type},
-            auth=HttpApiAuth,
-            data=m,
-        )
+        with fp.open("rb") as file_obj:
+            fields = (("file", ("", file_obj)),)
+            m = MultipartEncoder(fields=fields)
+            res = requests.post(
+                url=url,
+                headers={"Content-Type": m.content_type},
+                auth=HttpApiAuth,
+                data=m,
+            )
         assert res.json()["code"] == 101
         assert res.json()["message"] == "No file selected!"
 
@@ -138,8 +139,8 @@ class TestDocumentsUpload:
     def test_invalid_dataset_id(self, HttpApiAuth, tmp_path):
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documents(HttpApiAuth, "invalid_dataset_id", [fp])
-        assert res["code"] == 100
-        assert res["message"] == """LookupError("Can\'t find the dataset with ID invalid_dataset_id!")"""
+        assert res["code"] == 102
+        assert res["message"] == "Can\'t find the dataset with ID invalid_dataset_id!"
 
     @pytest.mark.p2
     def test_duplicate_files(self, HttpApiAuth, add_dataset_func, tmp_path):

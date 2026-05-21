@@ -1,8 +1,10 @@
 ---
 sidebar_position: 10
 slug: /run_retrieval_test
+sidebar_custom_props: {
+  categoryIcon: LucideTextSearch
+}
 ---
-
 # Run retrieval test
 
 Conduct a retrieval test on your dataset to check whether the intended chunks can be retrieved.
@@ -16,7 +18,7 @@ During a retrieval test, chunks created from your specified chunking method are 
 - If no rerank model is selected, weighted keyword similarity will be combined with weighted vector cosine similarity.
 - If a rerank model is selected, weighted keyword similarity will be combined with weighted vector reranking score.
 
-In contrast, chunks created from [knowledge graph construction](./construct_knowledge_graph.md) are retrieved solely using vector cosine similarity.
+In contrast, chunks created from [knowledge graph construction](./advanced/construct_knowledge_graph.md) are retrieved solely using vector cosine similarity.
 
 ## Prerequisites
 

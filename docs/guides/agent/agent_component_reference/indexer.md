@@ -1,8 +1,10 @@
 ---
 sidebar_position: 40
 slug: /indexer_component
+sidebar_custom_props: {
+  categoryIcon: LucideListPlus
+}
 ---
-
 # Indexer component
 
 A component that defines how chunks are indexed.

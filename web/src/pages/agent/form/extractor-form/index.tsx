@@ -59,6 +59,8 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
 
   useWatchFormChange(node?.id, form);
 
+  const isToc = form.getValues('field_name') === 'toc';
+
   return (
     <Form {...form}>
       <FormWrapper>
@@ -76,19 +78,27 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
             ></SelectWithSearch>
           )}
         </RAGFlowFormItem>
-        <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+
+        {!isToc && (
+          <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+            <PromptEditor
+              placeholder={t('flow.messagePlaceholder')}
+              showToolbar={true}
+              baseOptions={promptOptions}
+            ></PromptEditor>
+          </RAGFlowFormItem>
+        )}
+
+        <RAGFlowFormItem
+          label={isToc ? t('flow.tocDataSource') : t('flow.userPrompt')}
+          name="prompts"
+        >
           <PromptEditor
-            placeholder={t('flow.messagePlaceholder')}
             showToolbar={true}
             baseOptions={promptOptions}
           ></PromptEditor>
         </RAGFlowFormItem>
-        <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
-          <PromptEditor
-            showToolbar={true}
-            baseOptions={promptOptions}
-          ></PromptEditor>
-        </RAGFlowFormItem>
+
         <Output list={outputList}></Output>
       </FormWrapper>
       {visible && (

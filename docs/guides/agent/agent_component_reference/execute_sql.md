@@ -1,8 +1,10 @@
 ---
 sidebar_position: 25
 slug: /execute_sql
+sidebar_custom_props: {
+  categoryIcon: RagSql
+}
 ---
-
 # Execute SQL tool
 
 A tool that execute SQL queries on a specified relational database.
@@ -22,7 +24,7 @@ The **Execute SQL** tool enables you to connect to a relational database and run
 
 ## Examples
 
-You can pair an **Agent** component with the **Execute SQL** tool, with the **Agent** generating SQL statements and the **Execute SQL** tool handling database connection and query execution. An example of this setup can be found in the **SQL Assistant** Agent template shown below:
+You can pair an **Agent** component with the **Execute SQL** tool, with the **Agent** generating SQL statements and the **Execute SQL** tool handling database connection and query execution. An example of this setup can be found in the **Text-to-SQL data expert** Agent template shown below:
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/exeSQL.jpg)
 

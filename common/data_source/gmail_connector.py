@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Any
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -9,10 +8,10 @@ from common.data_source.config import INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, Documen
 from common.data_source.google_util.auth import get_google_creds
 from common.data_source.google_util.constant import DB_CREDENTIALS_PRIMARY_ADMIN_KEY, MISSING_SCOPES_ERROR_STR, SCOPE_INSTRUCTIONS, USER_FIELDS
 from common.data_source.google_util.resource import get_admin_service, get_gmail_service
-from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval, sanitize_filename, clean_string
+from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval, clean_string
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
 from common.data_source.models import BasicExpertInfo, Document, ExternalAccess, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument, TextSection
-from common.data_source.utils import build_time_range_query, clean_email_and_extract_name, get_message_body, is_mail_service_disabled_error, gmail_time_str_to_utc
+from common.data_source.utils import build_time_range_query, clean_email_and_extract_name, get_message_body, is_mail_service_disabled_error, gmail_time_str_to_utc, sanitize_filename
 
 # Constants for Gmail API fields
 THREAD_LIST_FIELDS = "nextPageToken, threads(id)"
@@ -271,12 +270,10 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback=None,
     ) -> GenerateSlimDocumentOutput:
         """Retrieve slim documents for permission synchronization."""
-        query = build_time_range_query(start, end)
+        query = build_time_range_query()
         doc_batch = []
 
         for user_email in self._get_all_user_emails():

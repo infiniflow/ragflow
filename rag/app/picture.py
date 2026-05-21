@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import asyncio
 import io
 import re
 
@@ -21,6 +22,7 @@ import numpy as np
 from PIL import Image
 
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
 from common.constants import LLMType
 from common.string_utils import clean_markdown_block
 from deepdoc.vision import OCR
@@ -49,8 +51,11 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                     "doc_type_kwd": "video",
                 }
             )
-            cv_mdl = LLMBundle(tenant_id, llm_type=LLMType.IMAGE2TEXT, lang=lang)
-            ans = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename)
+            cv_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
+            cv_mdl = LLMBundle(tenant_id, model_config=cv_model_config, lang=lang)
+            video_prompt = str(parser_config.get("video_prompt", "") or "")
+            ans = asyncio.run(
+                cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             ans += "\n" + ans
             tokenize(doc, ans, eng)
@@ -75,11 +80,12 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         try:
             callback(0.4, "Use CV LLM to describe the picture.")
-            cv_mdl = LLMBundle(tenant_id, LLMType.IMAGE2TEXT, lang=lang)
-            img_binary = io.BytesIO()
-            img.save(img_binary, format="JPEG")
-            img_binary.seek(0)
-            ans = cv_mdl.describe(img_binary.read())
+            cv_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
+            cv_mdl = LLMBundle(tenant_id, model_config=cv_model_config, lang=lang)
+            with io.BytesIO() as img_binary:
+                img.save(img_binary, format="JPEG")
+                img_binary.seek(0)
+                ans = cv_mdl.describe(img_binary.read())
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             txt += "\n" + ans
             tokenize(doc, txt, eng)
@@ -103,6 +109,12 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
     txt = ""
 
     try:
+        # Skip tiny crops that fail provider image-size limits.
+        if hasattr(img, "size"):
+            min_side = 11
+            if img.size[0] < min_side or img.size[1] < min_side:
+                callback(0.0, f"Skip tiny image for VLM: {img.size[0]}x{img.size[1]}")
+                return ""
         with io.BytesIO() as img_binary:
             try:
                 img.save(img_binary, format="JPEG")

@@ -26,13 +26,37 @@ from opensearchpy import UpdateByQuery, Q, Search, Index
 from opensearchpy import ConnectionTimeout
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
-from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
+from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
 
 ATTEMPT_TIME = 2
+
+_PAGERANK_FEA_ADJUST_SCRIPT = """
+double cur = 0.0;
+if (ctx._source.containsKey(params.pf)) {
+  Object v = ctx._source[params.pf];
+  if (v != null) {
+    if (v instanceof Number) {
+      cur = ((Number)v).doubleValue();
+    } else {
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
+    }
+  }
+}
+double nw = cur + params.delta;
+if (nw < params.min_w) { nw = params.min_w; }
+if (nw > params.max_w) { nw = params.max_w; }
+if (nw <= 0.0) {
+  if (ctx._source.containsKey(params.pf)) {
+    ctx._source.remove(params.pf);
+  }
+} else {
+  ctx._source[params.pf] = nw;
+}
+"""
 
 logger = logging.getLogger('ragflow.opensearch_conn')
 
@@ -72,14 +96,15 @@ class OSConnection(DocStoreConnection):
             msg = f"OpenSearch mapping file not found at {fp_mapping}"
             logger.error(msg)
             raise Exception(msg)
-        self.mapping = json.load(open(fp_mapping, "r"))
+        with open(fp_mapping, "r") as f:
+            self.mapping = json.load(f)
         logger.info(f"OpenSearch {settings.OS['hosts']} is healthy.")
 
     """
     Database operations
     """
 
-    def dbType(self) -> str:
+    def db_type(self) -> str:
         return "opensearch"
 
     def health(self) -> dict:
@@ -91,8 +116,8 @@ class OSConnection(DocStoreConnection):
     Table operations
     """
 
-    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
-        if self.indexExist(indexName, knowledgebaseId):
+    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int, parser_id: str = None):
+        if self.index_exist(indexName, knowledgebaseId):
             return True
         try:
             from opensearchpy.client import IndicesClient
@@ -101,7 +126,100 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.createIndex error %s" % (indexName))
 
-    def deleteIdx(self, indexName: str, knowledgebaseId: str):
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create a per-tenant document metadata index on OpenSearch.
+
+        Mirrors ESConnectionBase.create_doc_meta_idx so that the
+        DocMetadataService dispatches uniformly across ES and OS backends.
+        Index name pattern: ragflow_doc_meta_{tenant_id}
+        """
+        if self.index_exist(index_name, ""):
+            return True
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_es_mapping.json")
+            if not os.path.exists(fp_mapping):
+                logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+
+            with open(fp_mapping, "r") as f:
+                doc_meta_mapping = json.load(f)
+
+            from opensearchpy.client import IndicesClient
+            body = {
+                "settings": doc_meta_mapping["settings"],
+                "mappings": doc_meta_mapping["mappings"],
+            }
+            return IndicesClient(self.os).create(index=index_name, body=body)
+        except Exception as e:
+            logger.exception(f"OSConnection.create_doc_meta_idx error creating {index_name}: {e}")
+            return False
+
+    def refresh_idx(self, index_name: str) -> bool:
+        """
+        Refresh an index so that recently inserted documents become searchable.
+
+        DocMetadataService used to call ``settings.docStoreConn.es.indices.refresh``
+        directly, which raised AttributeError on the OpenSearch backend because
+        OSConnection exposes ``self.os`` rather than ``self.es``. This wrapper
+        gives both backends a uniform abstract entry point.
+        """
+        try:
+            self.os.indices.refresh(index=index_name)
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.warning(f"OSConnection.refresh_idx({index_name}) failed: {e}")
+            return False
+
+    def count_idx(self, index_name: str) -> int:
+        """
+        Return the document count for an index, or -1 if the call fails.
+
+        Used by DocMetadataService._drop_empty_metadata_table to decide whether
+        a per-tenant metadata index is empty without paying a full search.
+        """
+        try:
+            response = self.os.count(index=index_name)
+            return int(response.get("count", 0))
+        except NotFoundError:
+            return 0
+        except Exception as e:
+            logger.warning(f"OSConnection.count_idx({index_name}) failed: {e}")
+            return -1
+
+    def replace_meta_fields(self, index_name: str, doc_id: str, meta_fields: dict) -> bool:
+        """
+        Replace the ``meta_fields`` object on a single document.
+
+        ES.update with a ``doc`` body deep-merges object fields, which retains
+        old keys that should be removed. The fix in ESConnection is a script
+        that fully assigns the new meta_fields. We provide the same primitive
+        on OpenSearch so the service layer never reaches into ``self.es`` or
+        ``self.os`` directly.
+        """
+        body = {
+            "script": {
+                "source": "ctx._source.meta_fields = params.meta_fields",
+                "params": {"meta_fields": meta_fields},
+            }
+        }
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.os.update(index=index_name, id=doc_id, body=body, refresh=True)
+                return True
+            except NotFoundError:
+                return False
+            except Exception as e:
+                logger.warning(f"OSConnection.replace_meta_fields({index_name}, {doc_id}) failed: {e}")
+                if re.search(r"(timeout|connection)", str(e).lower()):
+                    time.sleep(1)
+                    continue
+                return False
+        return False
+
+    def delete_idx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
             return
@@ -112,7 +230,7 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.deleteIdx error %s" % (indexName))
 
-    def indexExist(self, indexName: str, knowledgebaseId: str = None) -> bool:
+    def index_exist(self, indexName: str, knowledgebaseId: str = None) -> bool:
         s = Index(indexName, self.os)
         for i in range(ATTEMPT_TIME):
             try:
@@ -190,7 +308,7 @@ class OSConnection(DocStoreConnection):
                                    minimum_should_match=minimum_should_match,
                                    boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
-                
+
             # Elasticsearch has the encapsulation of KNN_search in python sdk
             # while the Python SDK for OpenSearch does not provide encapsulation for KNN_search,
             # the following codes implement KNN_search in OpenSearch using DSL
@@ -217,7 +335,7 @@ class OSConnection(DocStoreConnection):
         if bqry:
             s = s.query(bqry)
         for field in highlightFields:
-            s = s.highlight(field,force_source=True,no_match_size=30,require_field_match=False)
+            s = s.highlight(field, force_source=True, no_match_size=30, require_field_match=False)
 
         if orderBy:
             orders = list()
@@ -240,10 +358,10 @@ class OSConnection(DocStoreConnection):
             s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"OSConnection.search {str(indexNames)} query: " + json.dumps(q))
-        
+
         if use_knn:
             del q["query"]
-            q["query"] = {"knn" : knn_query}
+            q["query"] = {"knn": knn_query}
 
         for i in range(ATTEMPT_TIME):
             try:
@@ -302,7 +420,7 @@ class OSConnection(DocStoreConnection):
             try:
                 res = []
                 r = self.os.bulk(index=(indexName), body=operations,
-                                 refresh=False, timeout=60)
+                                 refresh="wait_for", timeout=60)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -328,9 +446,37 @@ class OSConnection(DocStoreConnection):
             # update specific single document
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
+                doc_part = copy.deepcopy(doc)
+                remove_value = doc_part.pop("remove", None)
+                remove_field = remove_value if isinstance(remove_value, str) else None
+                remove_dict = remove_value if isinstance(remove_value, dict) else None
                 try:
-                    self.os.update(index=indexName, id=chunkId, body={"doc":doc})
-                    return True
+                    if remove_field is not None:
+                        self.os.update(
+                            index=indexName,
+                            id=chunkId,
+                            body={"script": {"source": f"ctx._source.remove('{remove_field}');"}},
+                        )
+                    if remove_dict is not None:
+                        scripts = []
+                        params = {}
+                        for kk, vv in remove_dict.items():
+                            scripts.append(
+                                f"if (ctx._source.containsKey('{kk}') && ctx._source.{kk} != null) "
+                                f"{{ int i = ctx._source.{kk}.indexOf(params.p_{kk}); "
+                                f"if (i >= 0) {{ ctx._source.{kk}.remove(i); }} }}"
+                            )
+                            params[f"p_{kk}"] = vv
+                        if scripts:
+                            self.os.update(
+                                index=indexName,
+                                id=chunkId,
+                                body={"script": {"source": "".join(scripts), "params": params}},
+                            )
+                    if doc_part:
+                        self.os.update(index=indexName, id=chunkId, body={"doc": doc_part})
+                    if remove_field is not None or remove_dict is not None or doc_part:
+                        return True
                 except Exception as e:
                     logger.exception(
                         f"OSConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
@@ -404,39 +550,96 @@ class OSConnection(DocStoreConnection):
                 break
         return False
 
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        indexName: str,
+        knowledgebaseId: str,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
+        row_id: int | None = None,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        _ = row_id
+        try:
+            self.os.update(
+                index=indexName,
+                id=chunk_id,
+                retry_on_conflict=3,
+                body={
+                    "script": {
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
+                        },
+                    }
+                },
+            )
+            logger.debug(
+                "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                indexName,
+                chunk_id,
+                delta,
+            )
+            return True
+        except Exception as e:
+            logger.exception(
+                "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                indexName,
+                chunk_id,
+                e,
+            )
+        return False
+
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
-        qry = None
         assert "_id" not in condition
+        condition["kb_id"] = knowledgebaseId
+
+        # Build a bool query that combines id filter with other conditions
+        bool_query = Q("bool")
+
+        # Handle chunk IDs if present
         if "id" in condition:
             chunk_ids = condition["id"]
             if not isinstance(chunk_ids, list):
                 chunk_ids = [chunk_ids]
-            if not chunk_ids:  # when chunk_ids is empty, delete all
-                qry = Q("match_all")
-            else:
-                qry = Q("ids", values=chunk_ids)
+            if chunk_ids:
+                # Filter by specific chunk IDs
+                bool_query.filter.append(Q("ids", values=chunk_ids))
+            # If chunk_ids is empty, we don't add an ids filter - rely on other conditions
+
+        # Add all other conditions as filters
+        for k, v in condition.items():
+            if k == "id":
+                continue  # Already handled above
+            if k == "exists":
+                bool_query.filter.append(Q("exists", field=v))
+            elif k == "must_not":
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        if kk == "exists":
+                            bool_query.must_not.append(Q("exists", field=vv))
+            elif isinstance(v, list):
+                bool_query.must.append(Q("terms", **{k: v}))
+            elif isinstance(v, str) or isinstance(v, int):
+                bool_query.must.append(Q("term", **{k: v}))
+            elif v is not None:
+                raise Exception("Condition value must be int, str or list.")
+
+        # If no filters were added, use match_all (for tenant-wide operations)
+        if not bool_query.filter and not bool_query.must and not bool_query.must_not:
+            qry = Q("match_all")
         else:
-            qry = Q("bool")
-            for k, v in condition.items():
-                if k == "exists":
-                    qry.filter.append(Q("exists", field=v))
-
-                elif k == "must_not":
-                    if isinstance(v, dict):
-                        for kk, vv in v.items():
-                            if kk == "exists":
-                                qry.must_not.append(Q("exists", field=vv))
-
-                elif isinstance(v, list):
-                    qry.must.append(Q("terms", **{k: v}))
-                elif isinstance(v, str) or isinstance(v, int):
-                    qry.must.append(Q("term", **{k: v}))
-                else:
-                    raise Exception("Condition value must be int, str or list.")
+            qry = bool_query
         logger.debug("OSConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
-                #print(Search().query(qry).to_dict(), flush=True)
+                # print(Search().query(qry).to_dict(), flush=True)
                 res = self.os.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),
@@ -460,7 +663,7 @@ class OSConnection(DocStoreConnection):
             return res["hits"]["total"]["value"]
         return res["hits"]["total"]
 
-    def get_chunk_ids(self, res):
+    def get_doc_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
 
     def __getSource(self, res):

@@ -16,7 +16,7 @@ import {
 import { Routes } from '@/routes';
 import { EllipsisVertical, Save } from 'lucide-react';
 import { useMemo } from 'react';
-import { Outlet, useLocation } from 'umi';
+import { Outlet, useLocation } from 'react-router';
 
 export default function ChunkPage() {
   const { navigateToDataset, getQueryString, navigateToChunk } =
@@ -72,7 +72,7 @@ export default function ChunkPage() {
           ></Segmented>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant={'icon'} size={'icon'}>
+          <Button variant={'ghost'} size={'icon'}>
             <EllipsisVertical />
           </Button>
           <Button size={'sm'}>

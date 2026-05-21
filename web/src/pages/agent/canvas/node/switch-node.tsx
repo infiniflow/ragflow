@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { SwitchOperatorOptions } from '@/constants/agent';
 import { LogicalOperatorIcon } from '@/hooks/logic-hooks/use-build-operator-options';
-import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
+import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/agent';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo, useCallback } from 'react';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
@@ -65,7 +65,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
   return (
     <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="gap-2.5 flex flex-col">

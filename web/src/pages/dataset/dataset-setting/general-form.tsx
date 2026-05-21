@@ -1,5 +1,7 @@
 import { AvatarUpload } from '@/components/avatar-upload';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import PageRankFormField from '@/components/page-rank-form-field';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import {
   FormControl,
   FormField,
@@ -8,6 +10,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { LanguageTranslationMap } from '@/constants/common';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { TagItems } from './components/tag-item';
@@ -17,6 +21,13 @@ import { PermissionFormField } from './permission-form-field';
 export function GeneralForm() {
   const form = useFormContext();
   const { t } = useTranslation();
+
+  const languageOptions = useMemo(() => {
+    return Object.keys(LanguageTranslationMap).map((x) => ({
+      label: x,
+      value: x,
+    }));
+  }, []);
 
   return (
     <>
@@ -31,7 +42,10 @@ export function GeneralForm() {
                 {t('common.name')}
               </FormLabel>
               <FormControl className="w-3/4">
-                <Input {...field}></Input>
+                <Input
+                  {...field}
+                  data-testid="ds-settings-basic-name-input"
+                ></Input>
               </FormControl>
             </div>
             <div className="flex pt-1">
@@ -41,6 +55,19 @@ export function GeneralForm() {
           </FormItem>
         )}
       />
+      <div className="items-center">
+        <RAGFlowFormItem
+          name="language"
+          label={t('common.language')}
+          horizontal={true}
+        >
+          <SelectWithSearch
+            options={languageOptions}
+            triggerClassName="w-full"
+            testId="ds-settings-basic-language-select"
+          ></SelectWithSearch>
+        </RAGFlowFormItem>
+      </div>
       <FormField
         control={form.control}
         name="avatar"
@@ -51,7 +78,12 @@ export function GeneralForm() {
                 {t('setting.avatar')}
               </FormLabel>
               <FormControl className="w-3/4">
-                <AvatarUpload {...field}></AvatarUpload>
+                <AvatarUpload
+                  {...field}
+                  uploadInputTestId="ds-settings-basic-avatar-upload"
+                  cropModalTestId="ds-settings-basic-avatar-crop-modal"
+                  cropModalOkButtonTestId="ds-settings-basic-avatar-crop-confirm-btn"
+                ></AvatarUpload>
               </FormControl>
             </div>
             <div className="flex pt-1">
@@ -67,7 +99,7 @@ export function GeneralForm() {
         render={({ field }) => {
           // null initialize empty string
           if (typeof field.value === 'object' && !field.value) {
-            form.setValue('description', '  ');
+            form.setValue('description', '');
           }
           return (
             <FormItem className="items-center space-y-0">
@@ -76,7 +108,11 @@ export function GeneralForm() {
                   {t('flow.description')}
                 </FormLabel>
                 <FormControl className="w-3/4">
-                  <Input {...field}></Input>
+                  <Input
+                    {...field}
+                    placeholder={t('knowledgeConfiguration.datasetDescription')}
+                    data-testid="ds-settings-basic-description-input"
+                  ></Input>
                 </FormControl>
               </div>
               <div className="flex pt-1">

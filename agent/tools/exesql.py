@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import contextlib
 import json
 import os
 import re
@@ -53,7 +54,7 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino'])
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino', 'oceanbase'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
@@ -63,9 +64,9 @@ class ExeSQLParam(ToolParamBase):
         self.check_positive_integer(self.max_records, "Maximum number of records")
         if self.database == "rag_flow":
             if self.host == "ragflow-mysql":
-                raise ValueError("For the security reason, it dose not support database named rag_flow.")
+                raise ValueError("For the security reason, it does not support database named rag_flow.")
             if self.password == "infini_rag_flow":
-                raise ValueError("For the security reason, it dose not support database named rag_flow.")
+                raise ValueError("For the security reason, it does not support database named rag_flow.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {
@@ -86,6 +87,12 @@ class ExeSQL(ToolBase, ABC):
 
         def convert_decimals(obj):
             from decimal import Decimal
+            import math
+            if isinstance(obj, float):
+                # Handle NaN and Infinity which are not valid JSON values
+                if math.isnan(obj) or math.isinf(obj):
+                    return None
+                return obj
             if isinstance(obj, Decimal):
                 return float(obj)  # 或 str(obj)
             elif isinstance(obj, dict):
@@ -120,6 +127,9 @@ class ExeSQL(ToolBase, ABC):
         if self._param.db_type in ["mysql", "mariadb"]:
             db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
                                  port=self._param.port, password=self._param.password)
+        elif self._param.db_type == 'oceanbase':
+            db = pymysql.connect(db=self._param.database, user=self._param.username, host=self._param.host,
+                                 port=self._param.port, password=self._param.password, charset='utf8mb4')
         elif self._param.db_type == 'postgres':
             db = psycopg2.connect(dbname=self._param.database, user=self._param.username, host=self._param.host,
                                   port=self._param.port, password=self._param.password)
@@ -186,43 +196,43 @@ class ExeSQL(ToolBase, ABC):
             except Exception as e:
                 raise Exception("Database Connection Failed! \n" + str(e))
 
-            sql_res = []
-            formalized_content = []
-            for single_sql in sqls:
-                if self.check_if_canceled("ExeSQL processing"):
-                    ibm_db.close(conn)
-                    return
-
-                single_sql = single_sql.replace("```", "").strip()
-                if not single_sql:
-                    continue
-                single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
-
-                stmt = ibm_db.exec_immediate(conn, single_sql)
-                rows = []
-                row = ibm_db.fetch_assoc(stmt)
-                while row and len(rows) < self._param.max_records:
+            try:
+                sql_res = []
+                formalized_content = []
+                for single_sql in sqls:
                     if self.check_if_canceled("ExeSQL processing"):
-                        ibm_db.close(conn)
                         return
-                    rows.append(row)
+
+                    single_sql = single_sql.replace("```", "").strip()
+                    if not single_sql:
+                        continue
+                    single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+
+                    stmt = ibm_db.exec_immediate(conn, single_sql)
+                    rows = []
                     row = ibm_db.fetch_assoc(stmt)
+                    while row and len(rows) < self._param.max_records:
+                        if self.check_if_canceled("ExeSQL processing"):
+                            return
+                        rows.append(row)
+                        row = ibm_db.fetch_assoc(stmt)
 
-                if not rows:
-                    sql_res.append({"content": "No record in the database!"})
-                    continue
+                    if not rows:
+                        sql_res.append({"content": "No record in the database!"})
+                        continue
 
-                df = pd.DataFrame(rows)
-                for col in df.columns:
-                    if pd.api.types.is_datetime64_any_dtype(df[col]):
-                        df[col] = df[col].dt.strftime("%Y-%m-%d")
+                    df = pd.DataFrame(rows)
+                    for col in df.columns:
+                        if pd.api.types.is_datetime64_any_dtype(df[col]):
+                            df[col] = df[col].dt.strftime("%Y-%m-%d")
 
-                df = df.where(pd.notnull(df), None)
+                    df = df.where(pd.notnull(df), None)
 
-                sql_res.append(convert_decimals(df.to_dict(orient="records")))
-                formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
-
-            ibm_db.close(conn)
+                    sql_res.append(convert_decimals(df.to_dict(orient="records")))
+                    formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
+            finally:
+                with contextlib.suppress(Exception):
+                    ibm_db.close(conn)
 
             self.set_output("json", sql_res)
             self.set_output("formalized_content", "\n\n".join(formalized_content))
@@ -230,42 +240,49 @@ class ExeSQL(ToolBase, ABC):
         try:
             cursor = db.cursor()
         except Exception as e:
+            with contextlib.suppress(Exception):
+                db.close()
             raise Exception("Database Connection Failed! \n" + str(e))
 
-        sql_res = []
-        formalized_content = []
-        for single_sql in sqls:
-            if self.check_if_canceled("ExeSQL processing"):
+        try:
+            sql_res = []
+            formalized_content = []
+            for single_sql in sqls:
+                if self.check_if_canceled("ExeSQL processing"):
+                    return
+
+                single_sql = single_sql.replace('```', '').strip()
+                if not single_sql:
+                    continue
+                single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+                if re.match(r"^(insert|update|delete)\b", single_sql, flags=re.IGNORECASE):
+                    sql_res.append({"content": "For security reasons, INSERT, UPDATE, and DELETE statements are not supported."})
+                    formalized_content.append("For security reasons, INSERT, UPDATE, and DELETE statements are not supported.")
+                    continue
+                cursor.execute(single_sql)
+                if cursor.rowcount == 0:
+                    sql_res.append({"content": "No record in the database!"})
+                    break
+                if self._param.db_type == 'mssql':
+                    single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records),
+                                                           columns=[desc[0] for desc in cursor.description])
+                else:
+                    single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
+                    single_res.columns = [i[0] for i in cursor.description]
+
+                for col in single_res.columns:
+                    if pd.api.types.is_datetime64_any_dtype(single_res[col]):
+                        single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
+
+                single_res = single_res.where(pd.notnull(single_res), None)
+
+                sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
+                formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
+        finally:
+            with contextlib.suppress(Exception):
                 cursor.close()
+            with contextlib.suppress(Exception):
                 db.close()
-                return
-
-            single_sql = single_sql.replace('```','')
-            if not single_sql:
-                continue
-            single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
-            cursor.execute(single_sql)
-            if cursor.rowcount == 0:
-                sql_res.append({"content": "No record in the database!"})
-                break
-            if self._param.db_type == 'mssql':
-                single_res = pd.DataFrame.from_records(cursor.fetchmany(self._param.max_records),
-                                                       columns=[desc[0] for desc in cursor.description])
-            else:
-                single_res = pd.DataFrame([i for i in cursor.fetchmany(self._param.max_records)])
-                single_res.columns = [i[0] for i in cursor.description]
-
-            for col in single_res.columns:
-                if pd.api.types.is_datetime64_any_dtype(single_res[col]):
-                    single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
-
-            single_res = single_res.where(pd.notnull(single_res), None)
-
-            sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
-            formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))
-
-        cursor.close()
-        db.close()
 
         self.set_output("json", sql_res)
         self.set_output("formalized_content", "\n\n".join(formalized_content))

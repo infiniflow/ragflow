@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { isArray } from 'lodash';
 import { useCallback, useEffect, useMemo } from 'react';
 import { ChunkTextMode } from '../../constant';
-import styles from '../../index.less';
+import styles from '../../index.module.less';
 import { IChunk } from '../../interface';
 import { useParserInit } from './hook';
 import { IJsonContainerProps } from './interface';

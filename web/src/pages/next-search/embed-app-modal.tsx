@@ -1,4 +1,4 @@
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowSelect } from '@/components/ui/select';
@@ -8,6 +8,7 @@ import {
   LanguageAbbreviationMap,
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { useCallback, useMemo, useState } from 'react';
 
 type IEmbedAppModalProps = {
@@ -16,13 +17,14 @@ type IEmbedAppModalProps = {
   token: string;
   from: string;
   setOpen: (e: any) => void;
-  tenantId: string;
   beta?: string;
 };
 
 const EmbedAppModal = (props: IEmbedAppModalProps) => {
   const { t } = useTranslate('search');
-  const { open, setOpen, token = '', from, url, tenantId, beta = '' } = props;
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  const { open, setOpen, token = '', from, url, beta = '' } = props;
 
   const [hideAvatar, setHideAvatar] = useState(false);
   const [locale, setLocale] = useState('');
@@ -102,7 +104,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
           </label>
           {/* <div className=" border rounded-lg"> */}
           {/* <pre className="text-sm whitespace-pre-wrap">{text}</pre> */}
-          <HightLightMarkdown>{text}</HightLightMarkdown>
+          <HighLightMarkdown>{text}</HighLightMarkdown>
           {/* </div> */}
         </div>
 

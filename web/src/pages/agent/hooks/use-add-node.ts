@@ -13,10 +13,12 @@ import {
   initialArXivValues,
   initialBeginValues,
   initialBingValues,
+  initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
   initialCrawlerValues,
   initialDataOperationsValues,
+  initialDocGeneratorValues,
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
@@ -24,7 +26,6 @@ import {
   initialGithubValues,
   initialGoogleScholarValues,
   initialGoogleValues,
-  initialHierarchicalMergerValues,
   initialInvokeValues,
   initialIterationStartValues,
   initialIterationValues,
@@ -37,11 +38,12 @@ import {
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSearXNGValues,
-  initialSplitterValues,
   initialStringTransformValues,
   initialSwitchValues,
   initialTavilyExtractValues,
   initialTavilyValues,
+  initialTitleChunkerValues,
+  initialTokenChunkerValues,
   initialTokenizerValues,
   initialUserFillUpValues,
   initialVariableAggregatorValues,
@@ -74,7 +76,7 @@ const GroupStartNodeMap = {
       name: Operator.IterationStart,
       form: initialIterationStartValues,
     },
-    extent: 'parent' as 'parent',
+    extent: 'parent' as const,
   },
   [Operator.Loop]: {
     id: `${Operator.LoopStart}:${humanId()}`,
@@ -85,7 +87,7 @@ const GroupStartNodeMap = {
       name: Operator.LoopStart,
       form: {},
     },
-    extent: 'parent' as 'parent',
+    extent: 'parent' as const,
   },
 };
 
@@ -164,8 +166,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.File]: {},
       [Operator.Parser]: initialParserValues,
       [Operator.Tokenizer]: initialTokenizerValues,
-      [Operator.Splitter]: initialSplitterValues,
-      [Operator.HierarchicalMerger]: initialHierarchicalMergerValues,
+      [Operator.TokenChunker]: initialTokenChunkerValues,
+      [Operator.TitleChunker]: initialTitleChunkerValues,
       [Operator.Extractor]: {
         ...initialExtractorValues,
         llm_id: llmId,
@@ -179,6 +181,9 @@ export const useInitializeOperatorParams = () => {
       [Operator.Loop]: initialLoopValues,
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
+      [Operator.DocGenerator]: initialDocGeneratorValues,
+      [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
+      [Operator.ExcelProcessor]: {},
     };
   }, [llmId]);
 

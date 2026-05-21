@@ -5,11 +5,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useRemoveConversation } from '@/hooks/use-chat-request';
+import {
+  useGetChatSearchParams,
+  useRemoveSessions,
+} from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
 import { Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useChatUrlParams } from '../hooks/use-chat-url';
 
 export function ConversationDropdown({
   children,
@@ -20,22 +24,31 @@ export function ConversationDropdown({
   removeTemporaryConversation?: (conversationId: string) => void;
 }) {
   const { t } = useTranslation();
+  const { setConversationBoth } = useChatUrlParams();
+  const { removeSessions } = useRemoveSessions();
+  const { conversationId, isNew } = useGetChatSearchParams();
 
-  const { removeConversation } = useRemoveConversation();
-
-  const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    if (conversation.is_new && removeTemporaryConversation) {
-      removeTemporaryConversation(conversation.id);
-      removeConversation([]);
-    } else {
-      removeConversation([conversation.id]);
-    }
-  }, [
-    conversation.id,
-    conversation.is_new,
-    removeConversation,
-    removeTemporaryConversation,
-  ]);
+  const handleDelete: MouseEventHandler<HTMLDivElement> =
+    useCallback(async () => {
+      if (isNew === 'true' && removeTemporaryConversation) {
+        removeTemporaryConversation(conversation.id);
+        if (conversationId === conversation.id) {
+          setConversationBoth('', '');
+        }
+      } else {
+        const code = await removeSessions([conversation.id]);
+        if (code === 0) {
+          setConversationBoth('', '');
+        }
+      }
+    }, [
+      conversation.id,
+      conversationId,
+      isNew,
+      removeSessions,
+      removeTemporaryConversation,
+      setConversationBoth,
+    ]);
 
   return (
     <DropdownMenu>
@@ -50,6 +63,8 @@ export function ConversationDropdown({
             onClick={(e) => {
               e.stopPropagation();
             }}
+            data-testid="chat-detail-session-delete"
+            data-session-id={conversation.id}
           >
             {t('common.delete')} <Trash2 />
           </DropdownMenuItem>

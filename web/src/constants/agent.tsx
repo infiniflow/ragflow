@@ -1,5 +1,10 @@
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
-import { Circle, CircleSlash2 } from 'lucide-react';
+import {
+  Circle,
+  CircleDashed,
+  CircleDotDashed,
+  CircleSlash2,
+} from 'lucide-react';
 import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
 
 export enum ProgrammingLanguage {
@@ -27,6 +32,8 @@ export enum AgentGlobals {
   SysUserId = 'sys.user_id',
   SysConversationTurns = 'sys.conversation_turns',
   SysFiles = 'sys.files',
+  SysHistory = 'sys.history',
+  SysDate = 'sys.date',
 }
 
 export const AgentGlobalsSysQueryWithBrace = `{${AgentGlobals.SysQuery}}`;
@@ -63,8 +70,8 @@ export enum DataflowOperator {
   Note = 'Note',
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
+  TokenChunker = 'TokenChunker',
+  TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
 }
 
@@ -101,6 +108,8 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  DocGenerator = 'DocGenerator',
+  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -109,12 +118,13 @@ export enum Operator {
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
-  Splitter = 'Splitter',
-  HierarchicalMerger = 'HierarchicalMerger',
+  TokenChunker = 'TokenChunker',
+  TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',
+  ExcelProcessor = 'ExcelProcessor',
 }
 
 export enum ComparisonOperator {
@@ -170,12 +180,12 @@ export const SwitchOperatorOptions = [
   {
     value: ComparisonOperator.In,
     label: 'in',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDotDashed className="size-4" />,
   },
   {
     value: ComparisonOperator.NotIn,
     label: 'notIn',
-    icon: <CircleSlash2 className="size-4" />,
+    icon: <CircleDashed className="size-4" />,
   },
 ];
 
@@ -193,3 +203,77 @@ export enum SwitchLogicOperator {
   And = 'and',
   Or = 'or',
 }
+
+export const WebhookJWTAlgorithmList = [
+  'hs256',
+  'hs384',
+  'hs512',
+  'rs256',
+  'rs384',
+  'rs512',
+  'es256',
+  'es384',
+  'es512',
+  'ps256',
+  'ps384',
+  'ps512',
+  'none',
+] as const;
+
+export enum AgentDialogueMode {
+  Conversational = 'conversational',
+  Task = 'task',
+  Webhook = 'Webhook',
+}
+
+export const initialBeginValues = {
+  mode: AgentDialogueMode.Conversational,
+  prologue: `Hi! I'm your assistant. What can I do for you?`,
+};
+
+export const BeginId = 'begin';
+
+export const EmptyDsl = {
+  graph: {
+    nodes: [
+      {
+        id: BeginId,
+        type: 'beginNode',
+        position: {
+          x: 50,
+          y: 200,
+        },
+        data: {
+          label: 'Begin',
+          name: 'begin',
+          form: initialBeginValues,
+        },
+        sourcePosition: 'left',
+        targetPosition: 'right',
+      },
+    ],
+    edges: [],
+  },
+  components: {
+    begin: {
+      obj: {
+        component_name: 'Begin',
+        params: {},
+      },
+      downstream: [], // other edge target is downstream, edge source is current node id
+      upstream: [], // edge source is upstream, edge target is current node id
+    },
+  },
+  retrieval: [], // reference
+  history: [],
+  path: [],
+  variables: [],
+  globals: {
+    [AgentGlobals.SysQuery]: '',
+    [AgentGlobals.SysUserId]: '',
+    [AgentGlobals.SysConversationTurns]: 0,
+    [AgentGlobals.SysFiles]: [],
+    [AgentGlobals.SysHistory]: [],
+    [AgentGlobals.SysDate]: '',
+  },
+};

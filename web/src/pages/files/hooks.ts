@@ -1,9 +1,9 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
+import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
-import { TableRowSelection } from 'antd/es/table/interface';
 import { useCallback, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'umi';
+import { useNavigate, useSearchParams } from 'react-router';
 
 export const useGetFolderId = () => {
   const [searchParams] = useSearchParams();

@@ -8,13 +8,13 @@ import {
   Popup,
 } from 'react-pdf-highlighter';
 
-import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
 import { Spin } from '@/components/ui/spin';
 // import FileError from '@/pages/document-viewer/file-error';
 import { Authorization } from '@/constants/authorization';
+import { cn } from '@/lib/utils';
 import FileError from '@/pages/document-viewer/file-error';
 import { getAuthorization } from '@/utils/authorization-util';
-import styles from './index.less';
+import { useCatchDocumentError } from './hooks';
 type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
   httpHeaders?: Record<string, string>;
 };
@@ -52,9 +52,15 @@ const PdfPreview = ({
   const resetHash = () => {};
 
   useEffect(() => {
+    let timer = null;
     if (state?.length && state?.length > 0) {
-      ref?.current(state[0]);
+      timer = setTimeout(() => {
+        ref?.current(state[0]);
+      }, 100);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [state]);
 
   const httpHeaders = {
@@ -63,7 +69,11 @@ const PdfPreview = ({
 
   return (
     <div
-      className={`${styles.documentContainer} rounded-[10px] overflow-hidden	${className}`}
+      className={cn(
+        'relative size-full rounded overflow-hidden',
+        '[&_.pdfViewer.removePageBorders_.page]:last-of-type:mb-0',
+        className,
+      )}
     >
       <Loader
         url={url}
@@ -143,3 +153,4 @@ const PdfPreview = ({
 };
 
 export default memo(PdfPreview);
+export { PdfPreview };

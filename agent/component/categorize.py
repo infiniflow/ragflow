@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import os
 import re
@@ -20,6 +21,7 @@ from abc import ABC
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
+from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
 from agent.component.llm import LLMParam, LLM
 from common.connection_utils import timeout
 from rag.llm.chat_model import ERROR_PREFIX
@@ -96,22 +98,33 @@ Here's description of each category:
 class Categorize(LLM, ABC):
     component_name = "Categorize"
 
+    def get_input_elements(self) -> dict[str, dict]:
+        query_key = self._param.query or "sys.query"
+        elements = self.get_input_elements_from_text(f"{{{query_key}}}")
+        if not elements:
+            logging.warning(f"[Categorize] input element not detected for query key: {query_key}")
+        return elements
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
-    def _invoke(self, **kwargs):
+    async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Categorize processing"):
             return
 
         msg = self._canvas.get_history(self._param.message_history_window_size)
         if not msg:
             msg = [{"role": "user", "content": ""}]
-        if kwargs.get("sys.query"):
-            msg[-1]["content"] = kwargs["sys.query"]
-            self.set_input_value("sys.query", kwargs["sys.query"])
+        query_key = self._param.query or "sys.query"
+        if query_key in kwargs:
+            query_value = kwargs[query_key]
         else:
-            msg[-1]["content"] = self._canvas.get_variable_value(self._param.query)
-            self.set_input_value(self._param.query, msg[-1]["content"])
+            query_value = self._canvas.get_variable_value(query_key)
+        if query_value is None:
+            query_value = ""
+        msg[-1]["content"] = query_value
+        self.set_input_value(query_key, msg[-1]["content"])
         self._param.update_prompt()
-        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        chat_model_config = get_model_config_by_type_and_name(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
+        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), chat_model_config)
 
         user_prompt = """
 ---- Real Data ----
@@ -121,7 +134,7 @@ class Categorize(LLM, ABC):
         if self.check_if_canceled("Categorize processing"):
             return
 
-        ans = chat_mdl.chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
+        ans = await chat_mdl.async_chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
         logging.info(f"input: {user_prompt}, answer: {str(ans)}")
         if ERROR_PREFIX in ans:
             raise Exception(ans)
@@ -136,13 +149,17 @@ class Categorize(LLM, ABC):
             category_counts[c] = count
 
         cpn_ids = list(self._param.category_description.items())[-1][1]["to"]
-        max_category = list(self._param.category_description.keys())[0]
+        max_category = list(self._param.category_description.keys())[-1]
         if any(category_counts.values()):
             max_category = max(category_counts.items(), key=lambda x: x[1])[0]
             cpn_ids = self._param.category_description[max_category]["to"]
 
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    def _invoke(self, **kwargs):
+        return asyncio.run(self._invoke_async(**kwargs))
 
     def thoughts(self) -> str:
         return "Which should it falls into {}? ...".format(",".join([f"`{c}`" for c, _ in self._param.category_description.items()]))

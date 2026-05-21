@@ -6,14 +6,13 @@ import {
   SetStateAction,
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
 import { getAgentNodeTools } from '../utils';
 
-export function useHandleTooNodeNameChange({
+export function useHandleToolNodeNameChange({
   id,
   name,
   setName,
@@ -22,48 +21,44 @@ export function useHandleTooNodeNameChange({
   name?: string;
   setName: Dispatch<SetStateAction<string>>;
 }) {
-  const { clickedToolId, findUpstreamNodeById, updateNodeForm } = useGraphStore(
-    (state) => state,
-  );
-  const agentNode = findUpstreamNodeById(id);
+  const {
+    clickedToolId,
+    findUpstreamNodeById,
+    getAgentToolById,
+    updateAgentToolById,
+  } = useGraphStore((state) => state);
+  const agentNode = findUpstreamNodeById(id)!;
   const tools = getAgentNodeTools(agentNode);
-
-  const previousName = useMemo(() => {
-    const tool = tools.find((x) => x.component_name === clickedToolId);
-    return tool?.name || tool?.component_name;
-  }, [clickedToolId, tools]);
+  const previousName = getAgentToolById(clickedToolId, agentNode)?.name;
 
   const handleToolNameBlur = useCallback(() => {
     const trimmedName = trim(name);
     const existsSameName = tools.some((x) => x.name === trimmedName);
-    if (trimmedName === '' || existsSameName) {
-      if (existsSameName && previousName !== name) {
-        message.error('The name cannot be repeated');
-      }
+
+    // Not changed
+    if (trimmedName === '') {
       setName(previousName || '');
-      return;
+      return true;
+    }
+
+    if (existsSameName && previousName !== name) {
+      message.error('The name cannot be repeated');
+      return false;
     }
 
     if (agentNode?.id) {
-      const nextTools = tools.map((x) => {
-        if (x.component_name === clickedToolId) {
-          return {
-            ...x,
-            name,
-          };
-        }
-        return x;
-      });
-      updateNodeForm(agentNode?.id, nextTools, ['tools']);
+      updateAgentToolById(agentNode, clickedToolId, { name });
     }
+
+    return true;
   }, [
-    agentNode?.id,
+    agentNode,
     clickedToolId,
     name,
     previousName,
     setName,
     tools,
-    updateNodeForm,
+    updateAgentToolById,
   ]);
 
   return { handleToolNameBlur, previousToolName: previousName };
@@ -83,28 +78,35 @@ export const useHandleNodeNameChange = ({
   const previousName = data?.name;
   const isToolNode = getOperatorTypeFromId(id) === Operator.Tool;
 
-  const { handleToolNameBlur, previousToolName } = useHandleTooNodeNameChange({
+  const { handleToolNameBlur, previousToolName } = useHandleToolNodeNameChange({
     id,
     name,
     setName,
   });
 
   const handleNameBlur = useCallback(() => {
+    const trimmedName = trim(name);
     const existsSameName = nodes.some((x) => x.data.name === name);
-    if (trim(name) === '' || existsSameName) {
-      if (existsSameName && previousName !== name) {
-        message.error('The name cannot be repeated');
-      }
-      setName(previousName);
-      return;
+
+    // Not changed
+    if (!trimmedName) {
+      setName(previousName || '');
+      return true;
+    }
+
+    if (existsSameName && previousName !== name) {
+      message.error('The name cannot be repeated');
+      return false;
     }
 
     if (id) {
       updateNodeName(id, name);
     }
+
+    return true;
   }, [name, id, updateNodeName, previousName, nodes]);
 
-  const handleNameChange = useCallback((e: ChangeEvent<any>) => {
+  const handleNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setName(e.target.value);
   }, []);
 

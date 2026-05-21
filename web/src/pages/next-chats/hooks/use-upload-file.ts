@@ -1,6 +1,11 @@
 import { FileUploadProps } from '@/components/file-upload';
-import { useUploadAndParseFile } from '@/hooks/use-chat-request';
+import {
+  useGetChatSearchParams,
+  useUploadAndParseFile,
+} from '@/hooks/use-chat-request';
 import { useCallback, useState } from 'react';
+import { useChatUrlParams } from './use-chat-url';
+import { useSetConversation } from './use-set-conversation';
 
 export function useUploadFile() {
   const { uploadAndParseFile, loading, cancel } = useUploadAndParseFile();
@@ -8,6 +13,9 @@ export function useUploadFile() {
   const [fileMap, setFileMap] = useState<Map<File, Record<string, any>>>(
     new Map(),
   );
+  const { setConversation } = useSetConversation();
+  const { conversationId, isNew } = useGetChatSearchParams();
+  const { setConversationBoth } = useChatUrlParams();
 
   type FileUploadParameters = Parameters<
     NonNullable<FileUploadProps['onUpload']>
@@ -20,19 +28,52 @@ export function useUploadFile() {
       conversationId?: string,
     ) => {
       if (Array.isArray(files) && files.length) {
-        const file = files[0];
-        const ret = await uploadAndParseFile({ file, options, conversationId });
-        if (ret?.code === 0) {
-          const data = ret.data;
-          setCurrentFiles((list) => [...list, data]);
-          setFileMap((map) => {
-            map.set(files[0], data);
-            return map;
+        for (const file of files) {
+          const ret = await uploadAndParseFile({
+            file,
+            options,
+            conversationId,
           });
+          if (ret?.code === 0) {
+            const data = ret.data;
+            setCurrentFiles((list) => [...list, data]);
+            setFileMap((map) => {
+              map.set(file, data);
+              return map;
+            });
+          }
         }
       }
     },
     [uploadAndParseFile],
+  );
+
+  const createConversationBeforeUploadFile: NonNullable<
+    FileUploadProps['onUpload']
+  > = useCallback(
+    async (files, options) => {
+      if (
+        (conversationId === '' || isNew === 'true') &&
+        Array.isArray(files) &&
+        files.length
+      ) {
+        const data = await setConversation(files[0].name);
+        if (data?.code === 0) {
+          const backendConvId = data.data.id;
+          setConversationBoth(backendConvId, '');
+          handleUploadFile(files, options, backendConvId);
+        }
+      } else {
+        handleUploadFile(files, options);
+      }
+    },
+    [
+      conversationId,
+      handleUploadFile,
+      isNew,
+      setConversation,
+      setConversationBoth,
+    ],
   );
 
   const clearFiles = useCallback(() => {
@@ -55,7 +96,7 @@ export function useUploadFile() {
   );
 
   return {
-    handleUploadFile,
+    handleUploadFile: createConversationBeforeUploadFile,
     files: currentFiles,
     isUploading: loading,
     removeFile,

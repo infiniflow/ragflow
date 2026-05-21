@@ -19,6 +19,8 @@ export default {
       portugueseBr: 'Portugais (Brésil)',
       chinese: 'Chinois simplifié',
       traditionalChinese: 'Chinois traditionnel',
+      bulgarian: 'Bulgare',
+      arabic: 'Arabe',
       language: 'Langue',
       languageMessage: 'Veuillez saisir votre langue !',
       languagePlaceholder: 'Sélectionnez votre langue',
@@ -36,6 +38,7 @@ export default {
       pleaseInput: 'Veuillez saisir',
       submit: 'Soumettre',
       embedIntoSite: 'Intégrer dans la page web',
+      openInNewTab: 'Chat dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       add: 'Ajouter',
@@ -161,7 +164,7 @@ export default {
       changeSpecificCategory: 'Changer de catégorie spécifique',
       uploadTitle: 'Glissez-déposez votre fichier ici pour le téléverser',
       uploadDescription:
-        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour demo.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
+        'Prise en charge du téléversement unique ou en lot. Pour RAGFlow en local : 1 Go max par téléversement, jusqu’à 32 fichiers. Pour cloud.ragflow.io : 10 Mo max par fichier uploadDescription128 fichiers au total.',
       chunk: 'Segment',
       bulk: 'En masse',
       cancel: 'Annuler',
@@ -196,9 +199,12 @@ export default {
     knowledgeConfiguration: {
       titleDescription:
         'Modifiez ici la configuration de votre base de connaissances, notamment la méthode de découpage.',
+      imageTableContextWindow: 'Fenêtre de contexte image & tableau',
+      imageTableContextWindowTip:
+        "Capture N jetons de texte au-dessus et au-dessous de l'image et du tableau pour fournir un contexte plus riche.",
       name: 'Nom de la base de connaissances',
       photo: 'Photo de la base de connaissances',
-      photoTip: 'Vous pouvez téléverser un fichier de 4 Mo',
+      photoTip: 'Vous pouvez télécharger une image jusqu’à 4 Mo.',
       description: 'Description',
       language: 'Langue du document',
       languageMessage: 'Veuillez saisir votre langue !',
@@ -208,7 +214,7 @@ export default {
       chunkTokenNumber: 'Taille de segment recommandée',
       chunkTokenNumberMessage: 'Le nombre de tokens par segment est requis',
       embeddingModelTip:
-        'Modèle d’embedding par défaut. Ne peut pas être modifié si la base contient déjà des segments. Pour le changer, vous devez supprimer tous les segments existants.',
+        'Modèle d’embedding par défaut de la base de connaissances. Une fois que la base de connaissances contient des segments, lors du changement de modèle d’embedding, le système prélève aléatoirement quelques segments pour un contrôle de compatibilité, les ré-encode avec le nouveau modèle d’embedding et calcule la similarité cosinus entre les nouveaux et anciens vecteurs. Le basculement est autorisé uniquement si la similarité moyenne de l’échantillon est ≥ 0.9. Sinon, vous devez supprimer tous les segments de la base de connaissances avant de pouvoir le modifier.',
       permissionsTip:
         "Si défini sur 'Équipe', tous les membres de votre équipe pourront gérer cette base.",
       chunkTokenNumberTip:
@@ -282,7 +288,8 @@ export default {
         'Construit un graphe basé sur les segments de cette base pour répondre à des questions complexes. Voir documentation.',
       graphRagMethod: 'Méthode',
       graphRagMethodTip: `Light : (Par défaut) utilise les prompts de github.com/HKUDS/LightRAG. Moins de consommation.
-    General : utilise ceux de github.com/microsoft/graphrag.`,
+    General : utilise ceux de github.com/microsoft/graphrag.
+    NER : utilise spaCy NER et l'extraction de mots-clés basée sur des règles pour extraire les entités et les relations. Aucun LLM n'est requis pour l'extraction, ce qui la rend rapide et économe en ressources.`,
       resolution: 'Résolution d’entités',
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l’année 2025".',
@@ -290,6 +297,19 @@ export default {
       communityTip: `Un "community" est un groupe d’entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https: //www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
       theDocumentBeingParsedCannotBeDeleted:
         'Le document en cours d’analyse ne peut pas être supprimé',
+      paddleocrOptions: 'Options PaddleOCR',
+      paddleocrApiUrl: 'URL de l’API PaddleOCR',
+      paddleocrApiUrlTip:
+        'URL du point de terminaison de l’API du service PaddleOCR',
+      paddleocrApiUrlPlaceholder:
+        'Par exemple : https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'Jeton d’accès AI Studio',
+      paddleocrAccessTokenTip: 'Jeton d’accès à l’API PaddleOCR (optionnel)',
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAlgorithm: 'Algorithme PaddleOCR',
+      paddleocrAlgorithmTip: 'Algorithme utilisé pour l’analyse PaddleOCR',
+      paddleocrSelectAlgorithm: 'Sélectionner un algorithme',
+      paddleocrModelNamePlaceholder: 'Par exemple : paddleocr-environnement-1',
     },
     chunk: {
       chunk: 'Segment',
@@ -318,6 +338,9 @@ export default {
       delete: 'Supprimer',
     },
     chat: {
+      chatSupport: 'Support par chat',
+      replyInstantly: 'Nous répondons généralement instantanément',
+      typeYourMessage: 'Tapez votre message...',
       newConversation: 'Nouvelle conversation',
       createAssistant: 'Créer un assistant',
       assistantSetting: 'Paramètres de l’assistant',
@@ -386,7 +409,7 @@ export default {
       frequencyPenaltyTip: `Similaire à la pénalité de présence, cela réduit la tendance du modèle à répéter fréquemment les mêmes mots.`,
       maxTokens: 'Nombre max de tokens',
       maxTokensMessage: 'Le nombre max de tokens est requis',
-      maxTokensTip: `Définit la longueur maximale de la sortie du modèle, mesurée en nombre de tokens (mots ou morceaux de mots). Par défaut 512. Si désactivé, aucune limite maximale n’est imposée, le modèle décide alors du nombre de tokens dans ses réponses.`,
+      maxTokensTip: `La taille maximale de contexte de l’modèle ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
       maxTokensInvalidMessage:
         'Veuillez saisir un nombre valide pour le nombre max de tokens.',
       maxTokensMinMessage:
@@ -459,6 +482,14 @@ export default {
       crossLanguage: 'Recherche inter-langues',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n’est sélectionnée, le système recherche avec la requête originale.`,
     },
+    language: {
+      english: 'Anglais',
+      chinese: 'Chinois',
+      russian: 'Russe',
+      bulgarian: 'Bulgare',
+      arabic: 'Arabe',
+      turkish: 'Turc',
+    },
     setting: {
       profile: 'Profil',
       avatar: 'Avatar',
@@ -467,7 +498,7 @@ export default {
         'Mettez à jour votre photo et vos informations personnelles ici.',
       maxTokens: 'Nombre maximum de tokens',
       maxTokensMessage: 'Le nombre maximum de tokens est requis',
-      maxTokensTip: `Cela définit la longueur maximale de la sortie du modèle, mesurée en nombre de tokens (mots ou morceaux de mots). Par défaut à 512. Si désactivé, la limite maximale de tokens est levée, permettant au modèle de déterminer le nombre de tokens dans ses réponses.`,
+      maxTokensTip: `La taille maximale de contexte de l’modèle ; une valeur invalide ou incorrecte provoquera une erreur. Valeur par défaut : 512.`,
       maxTokensInvalidMessage:
         'Veuillez saisir un nombre valide pour le nombre maximum de tokens.',
       maxTokensMinMessage:
@@ -524,6 +555,8 @@ export default {
         "Si votre clé API provient d'OpenAI, ignorez ceci. Tout autre fournisseur intermédiaire fournira cette URL de base avec la clé API.",
       tongyiBaseUrlTip:
         'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://dashscope.aliyuncs.com/compatible-mode/v1. Pour les utilisateurs internationaux, utilisez https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      siliconBaseUrlTip:
+        'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://api.siliconflow.cn/v1. Pour les utilisateurs internationaux, utilisez https://api.siliconflow.com/v1',
       tongyiBaseUrlPlaceholder:
         "(Utilisateurs internationaux uniquement, veuillez consulter l'astuce)",
       minimaxBaseUrlTip:
@@ -563,13 +596,25 @@ export default {
       modelTypeMessage: 'Veuillez saisir le type de votre modèle !',
       addLlmBaseUrl: 'URL de base',
       baseUrlNameMessage: 'Veuillez saisir votre URL de base !',
+      paddleocr: {
+        apiUrl: 'URL de l’API PaddleOCR',
+        apiUrlPlaceholder:
+          'Par exemple : https://paddleocr-server.com/layout-parsing',
+        accessToken: 'Jeton d’accès AI Studio',
+        accessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+        algorithm: 'Algorithme PaddleOCR',
+        selectAlgorithm: 'Sélectionner un algorithme',
+        modelNamePlaceholder: 'Par exemple : paddleocr-from-env-1',
+        modelNameRequired: 'Le nom du modèle est obligatoire',
+        apiUrlRequired: 'L’URL de l’API PaddleOCR est obligatoire',
+      },
       vision: 'Supporte-t-il la vision ?',
       ollamaLink: 'Comment intégrer {{name}}',
       FishAudioLink: 'Comment utiliser FishAudio',
       TencentCloudLink: 'Comment utiliser TencentCloud ASR',
       volcModelNameMessage: 'Veuillez saisir le nom de votre modèle !',
-      addEndpointID: 'EndpointID du modèle',
-      endpointIDMessage: "Veuillez saisir l'EndpointID du modèle",
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Veuillez saisir le Model ID du modèle',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Veuillez saisir votre ARK_API_KEY',
       bedrockModelNameMessage: 'Veuillez saisir le nom de votre modèle !',
@@ -586,10 +631,6 @@ export default {
       'eu-central-1': 'Europe (Francfort)',
       'us-gov-west-1': 'AWS GovCloud (US-Ouest)',
       'ap-southeast-2': 'Asie Pacifique (Sydney)',
-      addHunyuanSID: 'ID secret Hunyuan',
-      HunyuanSIDMessage: 'Veuillez saisir votre ID secret',
-      addHunyuanSK: 'Clé secrète Hunyuan',
-      HunyuanSKMessage: 'Veuillez saisir votre clé secrète',
       addTencentCloudSID: 'ID secret TencentCloud',
       TencentCloudSIDMessage: 'Veuillez saisir votre ID secret',
       addTencentCloudSK: 'Clé secrète TencentCloud',
@@ -652,6 +693,8 @@ export default {
       modelsToBeAddedTooltip:
         'Si votre fournisseur de modèle n\'est pas listé mais prétend être "compatible OpenAI", sélectionnez la carte compatible OpenAI-API pour ajouter le(s) modèle(s) pertinent(s).',
       mcp: 'MCP',
+      dingtalkAITableDescription:
+        "Connectez-vous à Dingtalk AI Table et synchronisez les enregistrements d'une table spécifiée.",
     },
     message: {
       registered: 'Enregistré !',
@@ -703,7 +746,7 @@ export default {
       directory: 'Répertoire',
       uploadTitle: 'Glissez-déposez votre fichier ici pour téléverser',
       uploadDescription:
-        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour demo.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
+        'Prise en charge du téléversement de fichiers uniques ou en lot. Pour un déploiement local de RAGFlow : la taille totale des fichiers par téléversement est limitée à 1 Go, avec un maximum de 32 fichiers par lot. Il n’y a pas de limite sur le nombre total de fichiers par compte. Pour cloud.ragflow.io, la taille totale des fichiers par téléversement est limitée à 10 Mo, chaque fichier ne devant pas dépasser 10 Mo, avec un maximum de 128 fichiers par compte.',
       local: 'Téléversements locaux',
       s3: 'Téléversements S3',
       preview: 'Aperçu',
@@ -788,15 +831,29 @@ export default {
         'Un composant qui recherche sur baidu.com, utilisant TopN pour spécifier le nombre de résultats. Il complète les bases de connaissances existantes.',
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
-        'Un composant qui recherche sur duckduckgo.com, vous permettant de spécifier le nombre de résultats avec TopN. Il complète les bases de connaissances existantes.',
+        'Un composant qui recherche sur duckduckgo.com, vous permettant de spécifier le nombre de résultats de recherche avec TopN. Il complète les bases de connaissances existantes.',
       searXNG: 'SearXNG',
       searXNGDescription:
         "Un composant qui effectue des recherches via la URL de l'instance de SearXNG que vous fournissez. Spécifiez TopN et l'URL de l'instance.",
-      channel: 'Canal',
-      channelTip:
-        "Effectuer une recherche de texte ou d'actualités sur l'entrée du composant",
-      text: 'Texte',
-      news: 'Actualités',
+      docGenerator: 'Générateur de Documents',
+      docGeneratorDescription: `Génère un fichier à partir de contenu Markdown.`,
+      subtitle: 'Sous-titre',
+      logoImage: 'Image Logo',
+      logoPosition: 'Position Logo',
+      logoWidth: 'Largeur Logo',
+      logoHeight: 'Hauteur Logo',
+      fontFamily: 'Famille Police',
+      fontSize: 'Taille Police',
+      titleFontSize: 'Taille Police Titre',
+      pageSize: 'Taille Page',
+      orientation: 'Orientation',
+      marginTop: 'Marge Supérieure',
+      marginBottom: 'Marge Inférieure',
+      filename: 'Nom Fichier',
+      outputDirectory: 'Répertoire Sortie',
+      addPageNumbers: 'Ajouter Numéros Page',
+      addTimestamp: 'Ajouter Timestamp',
+      watermarkText: 'Texte Filigrane',
       messageHistoryWindowSize:
         "Taille de la fenêtre d'historique des messages",
       messageHistoryWindowSizeTip:
@@ -1118,11 +1175,12 @@ export default {
         'Un composant qui formate la sortie des autres composants. 1. Supporte les templates Jinja2, convertit d’abord l’entrée en objet puis rend le template, 2. Conserve en parallèle la méthode originale de remplacement de chaîne {parameter}',
       emailComponent: 'Email',
       emailDescription: 'Envoyer un email à une adresse spécifiée.',
-      smtpServer: 'Serveur SMTP',
+      smtpServer: 'Hôte SMTP',
       smtpPort: 'Port SMTP',
-      senderEmail: 'Email de l’expéditeur',
-      authCode: 'Code d’autorisation',
-      senderName: 'Nom de l’expéditeur',
+      senderEmail: 'Adresse d’expéditeur (From)',
+      smtpUsername: 'Nom d’utilisateur SMTP',
+      authCode: 'Mot de passe SMTP / mot de passe d’application',
+      senderName: 'Nom d’affichage de l’expéditeur',
       toEmail: 'Email du destinataire',
       ccEmail: 'Email en copie',
       emailSubject: 'Sujet',
@@ -1172,8 +1230,7 @@ export default {
       }`,
       datatype: 'Type MIME de la requête HTTP',
       insertVariableTip: `Entrer / Insérer des variables`,
-      historyversion: 'Historique des versions',
-      filename: 'Nom du fichier',
+      historyVersion: 'Historique des versions',
       version: {
         created: 'Créé',
         details: 'Détails de la version',
@@ -1224,7 +1281,7 @@ export default {
         'Vos utilisateurs verront ce message d’accueil au début.',
       modeTip: 'Le mode définit comment le workflow est initié.',
       beginInputTip:
-        'En définissant des paramètres d’entrée, ce contenu peut être utilisé par d’autres composants dans les processus suivants.',
+        'Les paramètres d’entrée définis ici peuvent être accessibles par les composants du workflow en aval.',
       query: 'Variables de requête',
       agent: 'Agent',
       agentDescription:

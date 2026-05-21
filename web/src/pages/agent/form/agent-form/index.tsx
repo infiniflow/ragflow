@@ -19,7 +19,6 @@ import { Input, NumberInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
@@ -33,6 +32,7 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
+import { useSaveOnBlur } from '../../hooks/use-save-on-blur';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -42,9 +42,9 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
+import { SchemaDialog } from '../components/schema-dialog';
+import { SchemaPanel } from '../components/schema-panel';
 import { AgentTools, Agents } from './agent-tools';
-import { StructuredOutputDialog } from './structured-output-dialog';
-import { StructuredOutputPanel } from './structured-output-panel';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import {
   useHandleShowStructuredOutput,
@@ -93,6 +93,8 @@ function AgentForm({ node }: INextOperatorForm) {
   const defaultValues = useValues(node);
 
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
+
+  const { handleSaveOnBlur } = useSaveOnBlur();
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
     (x) => ({
@@ -159,11 +161,11 @@ function AgentForm({ node }: INextOperatorForm) {
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
           <LargeModelFormField showSpeech2TextModel></LargeModelFormField>
-          {findLlmByUuid(llmId)?.model_type === LlmModelType.Image2text && (
+          {findLlmByUuid(llmId)?.tags?.includes('IMAGE2TEXT') && (
             <QueryVariable
               name="visual_files_var"
               label="Visual Input File"
-              type={VariableType.File}
+              types={[VariableType.File]}
             ></QueryVariable>
           )}
           <FormField
@@ -178,6 +180,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     placeholder={t('flow.messagePlaceholder')}
                     showToolbar={true}
                     extraOptions={extraOptions}
+                    onBlur={handleSaveOnBlur}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>
@@ -195,6 +198,7 @@ function AgentForm({ node }: INextOperatorForm) {
                       <PromptEditor
                         {...field}
                         showToolbar={true}
+                        onBlur={handleSaveOnBlur}
                       ></PromptEditor>
                     </section>
                   </FormControl>
@@ -213,7 +217,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 name={`cite`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel tooltip={t('flow.citeTip')}>
+                    <FormLabel tooltip={t('chat.quoteTip')}>
                       {t('flow.cite')}
                     </FormLabel>
                     <FormControl>
@@ -242,7 +246,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 name={`delay_after_error`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel>{t('flow.delayEfterError')}</FormLabel>
+                    <FormLabel>{t('flow.delayAfterError')}</FormLabel>
                     <FormControl>
                       <NumberInput {...field} max={5} step={0.1}></NumberInput>
                     </FormControl>
@@ -327,19 +331,17 @@ function AgentForm({ node }: INextOperatorForm) {
                 </Button>
               </div>
 
-              <StructuredOutputPanel
-                value={structuredOutput}
-              ></StructuredOutputPanel>
+              <SchemaPanel value={structuredOutput}></SchemaPanel>
             </section>
           )}
         </FormWrapper>
       </Form>
       {structuredOutputDialogVisible && (
-        <StructuredOutputDialog
+        <SchemaDialog
           hideModal={hideStructuredOutputDialog}
           onOk={handleStructuredOutputDialogOk}
           initialValues={structuredOutput}
-        ></StructuredOutputDialog>
+        ></SchemaDialog>
       )}
     </>
   );

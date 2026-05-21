@@ -7,6 +7,7 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
+import { AutoMetadata } from './common-item';
 
 export function ManualConfiguration() {
   return (
@@ -16,6 +17,7 @@ export function ManualConfiguration() {
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>
+        <AutoMetadata />
         <AutoKeywordsFormField></AutoKeywordsFormField>
         <AutoQuestionsFormField></AutoQuestionsFormField>
       </ConfigurationFormContainer>

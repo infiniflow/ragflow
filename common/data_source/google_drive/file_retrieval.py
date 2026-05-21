@@ -33,10 +33,18 @@ def generate_time_range_filter(
     start: SecondsSinceUnixEpoch | None = None,
     end: SecondsSinceUnixEpoch | None = None,
 ) -> str:
+    """Build a Google Drive API query filter clause for the given time range.
+
+    Checks both modifiedTime and createdTime so that files uploaded with
+    older modification timestamps are still discovered on incremental syncs.
+    """
     time_range_filter = ""
     if start is not None:
         time_start = datetime.fromtimestamp(start, tz=timezone.utc).isoformat()
-        time_range_filter += f" and {GoogleFields.MODIFIED_TIME.value} > '{time_start}'"
+        time_range_filter += (
+            f" and ({GoogleFields.MODIFIED_TIME.value} > '{time_start}'"
+            f" or {GoogleFields.CREATED_TIME.value} >= '{time_start}')"
+        )
     if end is not None:
         time_stop = datetime.fromtimestamp(end, tz=timezone.utc).isoformat()
         time_range_filter += f" and {GoogleFields.MODIFIED_TIME.value} <= '{time_stop}'"
@@ -141,7 +149,7 @@ def crawl_folders_for_files(
             # Only mark a folder as done if it was fully traversed without errors
             # This usually indicates that the owner of the folder was impersonated.
             # In cases where this never happens, most likely the folder owner is
-            # not part of the google workspace in question (or for oauth, the authenticated
+            # not part of the Google Workspace in question (or for oauth, the authenticated
             # user doesn't own the folder)
             if found_files:
                 update_traversed_ids_func(parent_id)
@@ -232,7 +240,7 @@ def get_files_in_shared_drive(
         **kwargs,
     ):
         # If we found any files, mark this drive as traversed. When a user has access to a drive,
-        # they have access to all the files in the drive. Also not a huge deal if we re-traverse
+        # they have access to all the files in the drive. Also, not a huge deal if we re-traverse
         # empty drives.
         # NOTE: ^^ the above is not actually true due to folder restrictions:
         # https://support.google.com/a/users/answer/12380484?hl=en
@@ -341,6 +349,6 @@ def get_all_files_for_oauth(
 
 # Just in case we need to get the root folder id
 def get_root_folder_id(service: Resource) -> str:
-    # we dont paginate here because there is only one root folder per user
+    # we don't paginate here because there is only one root folder per user
     # https://developers.google.com/drive/api/guides/v2-to-v3-reference
     return service.files().get(fileId="root", fields=GoogleFields.ID.value).execute()[GoogleFields.ID.value]

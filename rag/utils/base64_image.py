@@ -21,45 +21,79 @@ from io import BytesIO
 
 from PIL import Image
 
+
+
+from common.misc_utils import thread_pool_exec
+from rag.utils.lazy_image import open_image_for_processing
+
 test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAA6ElEQVR4nO3QwQ3AIBDAsIP9d25XIC+EZE8QZc18w5l9O+AlZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBT+IYAHHLHkdEgAAAABJRU5ErkJggg=="
 test_image = base64.b64decode(test_image_base64)
 
 
-async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="imagetemps"):
+async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str = "imagetemps"):
     import logging
     from io import BytesIO
-    import trio
     from rag.svr.task_executor import minio_limiter
+
     if "image" not in d:
         return
     if not d["image"]:
         del d["image"]
         return
 
-    with BytesIO() as output_buffer:
-        if isinstance(d["image"], bytes):
-            output_buffer.write(d["image"])
-            output_buffer.seek(0)
-        else:
-            # If the image is in RGBA mode, convert it to RGB mode before saving it in JPEG format.
-            if d["image"].mode in ("RGBA", "P"):
-                converted_image = d["image"].convert("RGB")
-                d["image"] = converted_image
+    def encode_image():
+        with BytesIO() as buf:
+            img, close_after = open_image_for_processing(d["image"], allow_bytes=False)
+
+            if isinstance(img, bytes):
+                buf.write(img)
+                buf.seek(0)
+                return buf.getvalue()
+
+            if not isinstance(img, Image.Image):
+                return None
+
+            if img.mode in ("RGBA", "P"):
+                orig_img = img
+                img = img.convert("RGB")
+                if close_after:
+                    try:
+                        orig_img.close()
+                    except Exception:
+                        pass
+
             try:
-                d["image"].save(output_buffer, format='JPEG')
+                img.save(buf, format="JPEG")
+                buf.seek(0)
+                return buf.getvalue()
             except OSError as e:
-                logging.warning(
-                    "Saving image exception, ignore: {}".format(str(e)))
+                logging.warning(f"Saving image exception: {e}")
+                return None
+            finally:
+                if close_after:
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
 
-        async with minio_limiter:
-            await trio.to_thread.run_sync(lambda: storage_put_func(bucket=bucket, fnm=objname, binary=output_buffer.getvalue()))
-        d["img_id"] = f"{bucket}-{objname}"
-        if not isinstance(d["image"], bytes):
-            d["image"].close()
-        del d["image"]  # Remove image reference
+    jpeg_binary = await thread_pool_exec(encode_image)
+    if jpeg_binary is None:
+        del d["image"]
+        return
+
+    async with minio_limiter:
+        await thread_pool_exec(
+            lambda: storage_put_func(bucket=bucket, fnm=objname, binary=jpeg_binary)
+        )
+
+    d["img_id"] = f"{bucket}-{objname}"
+
+    if not isinstance(d["image"], bytes):
+        d["image"].close()
+    del d["image"]
 
 
-def id2image(image_id:str|None, storage_get_func: partial):
+def id2image(image_id: str | None, storage_get_func: partial):
     if not image_id:
         return
     arr = image_id.split("-")
@@ -67,7 +101,7 @@ def id2image(image_id:str|None, storage_get_func: partial):
         return
     bkt, nm = image_id.split("-")
     try:
-        blob = storage_get_func(bucket=bkt, filename=nm)
+        blob = storage_get_func(bucket=bkt, fnm=nm)
         if not blob:
             return
         return Image.open(BytesIO(blob))

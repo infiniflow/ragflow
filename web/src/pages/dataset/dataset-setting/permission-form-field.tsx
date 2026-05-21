@@ -22,7 +22,8 @@ export function PermissionFormField() {
     >
       <SelectWithSearch
         options={teamOptions}
-        triggerClassName="w-3/4"
+        triggerClassName="w-full"
+        testId="ds-settings-basic-permissions-select"
       ></SelectWithSearch>
     </RAGFlowFormItem>
   );

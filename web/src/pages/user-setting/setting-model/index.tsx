@@ -12,22 +12,27 @@ import {
   useSubmitBedrock,
   useSubmitFishAudio,
   useSubmitGoogle,
-  useSubmitHunyuan,
+  useSubmitMinerU,
   useSubmitOllama,
+  useSubmitOpenDataLoader,
+  useSubmitPaddleOCR,
   useSubmitSpark,
   useSubmitSystemModelSetting,
   useSubmitTencentCloud,
   useSubmitVolcEngine,
   useSubmityiyan,
+  useVerifySettings,
 } from './hooks';
 import ApiKeyModal from './modal/api-key-modal';
 import AzureOpenAIModal from './modal/azure-openai-modal';
 import BedrockModal from './modal/bedrock-modal';
 import FishAudioModal from './modal/fish-audio-modal';
 import GoogleModal from './modal/google-modal';
-import HunyuanModal from './modal/hunyuan-modal';
+import MinerUModal from './modal/mineru-modal';
 import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
+import OpenDataLoaderModal from './modal/opendataloader-modal';
+import PaddleOCRModal from './modal/paddleocr-modal';
 import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
@@ -63,14 +68,6 @@ const ModelProviders = () => {
     onVolcAddingOk,
     volcAddingLoading,
   } = useSubmitVolcEngine();
-
-  const {
-    HunyuanAddingVisible,
-    hideHunyuanAddingModal,
-    showHunyuanAddingModal,
-    onHunyuanAddingOk,
-    HunyuanAddingLoading,
-  } = useSubmitHunyuan();
 
   const {
     GoogleAddingVisible,
@@ -128,28 +125,56 @@ const ModelProviders = () => {
     AzureAddingLoading,
   } = useSubmitAzure();
 
+  const {
+    mineruVisible,
+    hideMineruModal,
+    showMineruModal,
+    onMineruOk,
+    mineruLoading,
+  } = useSubmitMinerU();
+
+  const {
+    paddleocrVisible,
+    hidePaddleOCRModal,
+    showPaddleOCRModal,
+    onPaddleOCROk,
+    paddleocrLoading,
+  } = useSubmitPaddleOCR();
+
+  const {
+    opendataloaderVisible,
+    hideOpenDataLoaderModal,
+    showOpenDataLoaderModal,
+    onOpenDataLoaderOk,
+    opendataloaderLoading,
+  } = useSubmitOpenDataLoader();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
       [LLMFactory.VolcEngine]: showVolcAddingModal,
-      [LLMFactory.TencentHunYuan]: showHunyuanAddingModal,
       [LLMFactory.XunFeiSpark]: showSparkAddingModal,
       [LLMFactory.BaiduYiYan]: showyiyanAddingModal,
       [LLMFactory.FishAudio]: showFishAudioAddingModal,
       [LLMFactory.TencentCloud]: showTencentCloudAddingModal,
       [LLMFactory.GoogleCloud]: showGoogleAddingModal,
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
+      [LLMFactory.MinerU]: showMineruModal,
+      [LLMFactory.PaddleOCR]: showPaddleOCRModal,
+      [LLMFactory.OpenDataLoader]: showOpenDataLoaderModal,
     }),
     [
       showBedrockAddingModal,
       showVolcAddingModal,
-      showHunyuanAddingModal,
-      showTencentCloudAddingModal,
       showSparkAddingModal,
       showyiyanAddingModal,
       showFishAudioAddingModal,
+      showTencentCloudAddingModal,
       showGoogleAddingModal,
       showAzureAddingModal,
+      showMineruModal,
+      showPaddleOCRModal,
+      showOpenDataLoaderModal,
     ],
   );
 
@@ -192,6 +217,81 @@ const ModelProviders = () => {
     },
     [showApiKeyModal, showLlmAddingModal, ModalMap, detailedLlmList],
   );
+
+  const handleOk = useMemo(() => {
+    if (apiKeyVisible) {
+      return onApiKeySavingOk;
+    }
+    if (llmAddingVisible) {
+      return onLlmAddingOk;
+    }
+    if (volcAddingVisible) {
+      return onVolcAddingOk;
+    }
+    if (TencentCloudAddingVisible) {
+      return onTencentCloudAddingOk;
+    }
+    if (SparkAddingVisible) {
+      return onSparkAddingOk;
+    }
+    if (yiyanAddingVisible) {
+      return onyiyanAddingOk;
+    }
+    if (FishAudioAddingVisible) {
+      return onFishAudioAddingOk;
+    }
+    if (bedrockAddingVisible) {
+      return onBedrockAddingOk;
+    }
+    if (AzureAddingVisible) {
+      return onAzureAddingOk;
+    }
+    if (mineruVisible) {
+      return onMineruOk;
+    }
+    if (paddleocrVisible) {
+      return onPaddleOCROk;
+    }
+    if (opendataloaderVisible) {
+      return onOpenDataLoaderOk;
+    }
+    if (GoogleAddingVisible) {
+      return onGoogleAddingOk;
+    }
+    return () => {};
+  }, [
+    GoogleAddingVisible,
+    onGoogleAddingOk,
+    apiKeyVisible,
+    onApiKeySavingOk,
+    llmAddingVisible,
+    onLlmAddingOk,
+    volcAddingVisible,
+    onVolcAddingOk,
+    TencentCloudAddingVisible,
+    onTencentCloudAddingOk,
+    SparkAddingVisible,
+    onSparkAddingOk,
+    yiyanAddingVisible,
+    onyiyanAddingOk,
+    FishAudioAddingVisible,
+    onFishAudioAddingOk,
+    bedrockAddingVisible,
+    onBedrockAddingOk,
+    AzureAddingVisible,
+    onAzureAddingOk,
+    mineruVisible,
+    onMineruOk,
+    paddleocrVisible,
+    onPaddleOCROk,
+    opendataloaderVisible,
+    onOpenDataLoaderOk,
+  ]);
+
+  const { onApiKeyVerifying } = useVerifySettings({
+    onVerify: handleOk,
+  });
+
   return (
     <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
       <Spotlight />
@@ -215,37 +315,36 @@ const ModelProviders = () => {
         initialValue={initialApiKey}
         editMode={editMode}
         onOk={onApiKeySavingOk}
+        onVerify={onApiKeyVerifying}
         llmFactory={llmFactory}
       ></ApiKeyModal>
-      <OllamaModal
-        visible={llmAddingVisible}
-        hideModal={hideLlmAddingModal}
-        onOk={onLlmAddingOk}
-        loading={llmAddingLoading}
-        editMode={llmEditMode}
-        initialValues={llmInitialValues}
-        llmFactory={selectedLlmFactory}
-      ></OllamaModal>
+      {llmAddingVisible && (
+        <OllamaModal
+          visible={llmAddingVisible}
+          hideModal={hideLlmAddingModal}
+          onOk={onLlmAddingOk}
+          loading={llmAddingLoading}
+          editMode={llmEditMode}
+          initialValues={llmInitialValues}
+          llmFactory={selectedLlmFactory}
+          onVerify={onApiKeyVerifying}
+        ></OllamaModal>
+      )}
       <VolcEngineModal
         visible={volcAddingVisible}
         hideModal={hideVolcAddingModal}
         onOk={onVolcAddingOk}
         loading={volcAddingLoading}
         llmFactory={LLMFactory.VolcEngine}
+        onVerify={onApiKeyVerifying}
       ></VolcEngineModal>
-      <HunyuanModal
-        visible={HunyuanAddingVisible}
-        hideModal={hideHunyuanAddingModal}
-        onOk={onHunyuanAddingOk}
-        loading={HunyuanAddingLoading}
-        llmFactory={LLMFactory.TencentHunYuan}
-      ></HunyuanModal>
       <GoogleModal
         visible={GoogleAddingVisible}
         hideModal={hideGoogleAddingModal}
         onOk={onGoogleAddingOk}
         loading={GoogleAddingLoading}
         llmFactory={LLMFactory.GoogleCloud}
+        onVerify={onApiKeyVerifying}
       ></GoogleModal>
       <TencentCloudModal
         visible={TencentCloudAddingVisible}
@@ -253,6 +352,7 @@ const ModelProviders = () => {
         onOk={onTencentCloudAddingOk}
         loading={TencentCloudAddingLoading}
         llmFactory={LLMFactory.TencentCloud}
+        onVerify={onApiKeyVerifying}
       ></TencentCloudModal>
       <SparkModal
         visible={SparkAddingVisible}
@@ -260,6 +360,7 @@ const ModelProviders = () => {
         onOk={onSparkAddingOk}
         loading={SparkAddingLoading}
         llmFactory={LLMFactory.XunFeiSpark}
+        onVerify={onApiKeyVerifying}
       ></SparkModal>
       <YiyanModal
         visible={yiyanAddingVisible}
@@ -267,6 +368,7 @@ const ModelProviders = () => {
         onOk={onyiyanAddingOk}
         loading={yiyanAddingLoading}
         llmFactory={LLMFactory.BaiduYiYan}
+        onVerify={onApiKeyVerifying}
       ></YiyanModal>
       <FishAudioModal
         visible={FishAudioAddingVisible}
@@ -274,6 +376,7 @@ const ModelProviders = () => {
         onOk={onFishAudioAddingOk}
         loading={FishAudioAddingLoading}
         llmFactory={LLMFactory.FishAudio}
+        onVerify={onApiKeyVerifying}
       ></FishAudioModal>
       <BedrockModal
         visible={bedrockAddingVisible}
@@ -281,6 +384,7 @@ const ModelProviders = () => {
         onOk={onBedrockAddingOk}
         loading={bedrockAddingLoading}
         llmFactory={LLMFactory.Bedrock}
+        onVerify={onApiKeyVerifying}
       ></BedrockModal>
       <AzureOpenAIModal
         visible={AzureAddingVisible}
@@ -288,7 +392,29 @@ const ModelProviders = () => {
         onOk={onAzureAddingOk}
         loading={AzureAddingLoading}
         llmFactory={LLMFactory.AzureOpenAI}
+        onVerify={onApiKeyVerifying}
       ></AzureOpenAIModal>
+      <MinerUModal
+        visible={mineruVisible}
+        hideModal={hideMineruModal}
+        onOk={onMineruOk}
+        loading={mineruLoading}
+        onVerify={onApiKeyVerifying}
+      ></MinerUModal>
+      <PaddleOCRModal
+        visible={paddleocrVisible}
+        hideModal={hidePaddleOCRModal}
+        onOk={onPaddleOCROk}
+        loading={paddleocrLoading}
+        onVerify={onApiKeyVerifying}
+      ></PaddleOCRModal>
+      <OpenDataLoaderModal
+        visible={opendataloaderVisible}
+        hideModal={hideOpenDataLoaderModal}
+        onOk={onOpenDataLoaderOk}
+        loading={opendataloaderLoading}
+        onVerify={onApiKeyVerifying}
+      ></OpenDataLoaderModal>
     </div>
   );
 };

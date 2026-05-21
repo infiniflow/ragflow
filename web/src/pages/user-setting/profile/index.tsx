@@ -1,6 +1,7 @@
 // src/components/ProfilePage.tsx
 import { AvatarUpload } from '@/components/avatar-upload';
 import PasswordInput from '@/components/originui/password-input';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,20 +14,21 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Loader2Icon, PenLine } from 'lucide-react';
-import { FC, useEffect } from 'react';
+import { FC, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import {
-  ProfileSettingWrapperCard,
-  UserSettingHeader,
-} from '../components/user-setting-header';
+import { ProfileSettingWrapperCard } from '../components/user-setting-header';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
+
+const timezoneOptions = TimezoneList.map(({ name }) => ({
+  value: name,
+  label: name,
+}));
 
 const baseSchema = z.object({
   userName: z
@@ -78,6 +80,7 @@ const passwordSchema = baseSchema
       });
     }
   });
+
 const ProfilePage: FC = () => {
   const { t } = useTranslate('setting');
 
@@ -119,14 +122,23 @@ const ProfilePage: FC = () => {
   //     );
   //   };
 
+  const timezone = useMemo(() => {
+    const tz = TimezoneList.find((tz) => tz.name === profile.timeZone);
+    return tz?.name ?? '';
+  }, [profile.timeZone]);
+
   return (
     // <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
     <ProfileSettingWrapperCard
       header={
-        <UserSettingHeader
-          name={t('profile')}
-          description={t('profileDescription')}
-        />
+        <header>
+          <h2 className="text-2xl font-medium text-text-primary">
+            {t('profile')}
+          </h2>
+          <p className="mt-1 text-sm text-text-secondary ">
+            {t('profileDescription')}
+          </p>
+        </header>
       }
     >
       <Spotlight />
@@ -142,11 +154,11 @@ const ProfilePage: FC = () => {
             <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
               {profile.userName}
             </div>
+
             <Button
-              variant={'ghost'}
+              variant="outline"
               type="button"
               onClick={() => handleEditClick(EditType.editName)}
-              className="text-sm text-text-secondary flex gap-1 px-1 border border-border-button"
             >
               <PenLine size={12} /> {t('edit')}
             </Button>
@@ -171,14 +183,13 @@ const ProfilePage: FC = () => {
             {t('timezone')}
           </label>
           <div className="flex-1 flex items-center gap-4">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
-              {profile.timeZone}
+            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2 empty:before:content-['_'] empty:before:whitespace-pre">
+              {timezone}
             </div>
             <Button
-              variant={'ghost'}
+              variant="outline"
               type="button"
               onClick={() => handleEditClick(EditType.editTimeZone)}
-              className="text-sm text-text-secondary flex gap-1 px-1 border border-border-button"
             >
               <PenLine size={12} /> {t('edit')}
             </Button>
@@ -208,10 +219,9 @@ const ProfilePage: FC = () => {
               {profile.currPasswd ? '********' : ''}
             </div>
             <Button
-              variant={'ghost'}
+              variant="outline"
               type="button"
               onClick={() => handleEditClick(EditType.editPassword)}
-              className="text-sm text-text-secondary flex gap-1 px-1 border border-border-button"
             >
               <PenLine size={12} /> {t('edit')}
             </Button>
@@ -276,12 +286,10 @@ const ProfilePage: FC = () => {
                         <FormLabel className="text-sm text-text-secondary whitespace-nowrap">
                           {t('timezone')}
                         </FormLabel>
-                        <RAGFlowSelect
-                          options={TimezoneList.map((timeStr) => {
-                            return { value: timeStr, label: timeStr };
-                          })}
+                        <SelectWithSearch
+                          options={timezoneOptions}
                           placeholder="Select a timeZone"
-                          onValueChange={field.onChange}
+                          onChange={field.onChange}
                           value={field.value}
                         />
                       </div>

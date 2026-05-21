@@ -9,36 +9,25 @@ import { AgentFormContext, AgentInstanceContext } from '@/pages/agent/context';
 import useGraphStore from '@/pages/agent/store';
 import { Position } from '@xyflow/react';
 import { t } from 'i18next';
-import { PropsWithChildren, useCallback, useContext, useEffect } from 'react';
+import { useContext, useEffect } from 'react';
 import { useGetAgentMCPIds, useGetAgentToolNames } from '../use-get-tools';
 import { MCPCommand, ToolCommand } from './tool-command';
 import { useUpdateAgentNodeMCP } from './use-update-mcp';
-import { useUpdateAgentNodeTools } from './use-update-tools';
 
 enum ToolType {
   Common = 'common',
   MCP = 'mcp',
 }
 
-export function ToolPopover({ children }: PropsWithChildren) {
+export function ToolPopover({ children }: React.PropsWithChildren) {
   const { addCanvasNode } = useContext(AgentInstanceContext);
   const node = useContext(AgentFormContext);
-  const { updateNodeTools } = useUpdateAgentNodeTools();
   const { toolNames } = useGetAgentToolNames();
   const deleteAgentToolNodeById = useGraphStore(
     (state) => state.deleteAgentToolNodeById,
   );
   const { mcpIds } = useGetAgentMCPIds();
   const { updateNodeMCP } = useUpdateAgentNodeMCP();
-
-  const handleChange = useCallback(
-    (value: string[]) => {
-      if (Array.isArray(value) && node?.id) {
-        updateNodeTools(value);
-      }
-    },
-    [node?.id, updateNodeTools],
-  );
 
   useEffect(() => {
     const total = toolNames.length + mcpIds.length;
@@ -72,10 +61,7 @@ export function ToolPopover({ children }: PropsWithChildren) {
             <TabsTrigger value={ToolType.MCP}>MCP</TabsTrigger>
           </TabsList>
           <TabsContent value={ToolType.Common}>
-            <ToolCommand
-              onChange={handleChange}
-              value={toolNames}
-            ></ToolCommand>
+            <ToolCommand />
           </TabsContent>
           <TabsContent value={ToolType.MCP}>
             <MCPCommand value={mcpIds} onChange={updateNodeMCP}></MCPCommand>

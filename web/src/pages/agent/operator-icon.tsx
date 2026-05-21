@@ -1,25 +1,15 @@
-import { ReactComponent as ArxivIcon } from '@/assets/svg/arxiv.svg';
-import { ReactComponent as BingIcon } from '@/assets/svg/bing.svg';
-import { ReactComponent as CrawlerIcon } from '@/assets/svg/crawler.svg';
-import { ReactComponent as DuckIcon } from '@/assets/svg/duck.svg';
-import { ReactComponent as GithubIcon } from '@/assets/svg/github.svg';
-import { ReactComponent as GoogleScholarIcon } from '@/assets/svg/google-scholar.svg';
-import { ReactComponent as GoogleIcon } from '@/assets/svg/google.svg';
-import { ReactComponent as PubMedIcon } from '@/assets/svg/pubmed.svg';
-import { ReactComponent as SearXNGIcon } from '@/assets/svg/searxng.svg';
-import { ReactComponent as TavilyIcon } from '@/assets/svg/tavily.svg';
-import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
-import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
-import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
-
 import { IconFontFill } from '@/components/icon-font';
+import SvgIcon from '@/components/svg-icon';
 import { cn } from '@/lib/utils';
 import {
   FileCode,
+  FileText,
+  Globe,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
 } from 'lucide-react';
+import { Component } from 'react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -48,34 +38,55 @@ export const OperatorIconMap = {
 };
 
 export const SVGIconMap = {
-  [Operator.ArXiv]: ArxivIcon,
-  [Operator.GitHub]: GithubIcon,
-  [Operator.Bing]: BingIcon,
-  [Operator.DuckDuckGo]: DuckIcon,
-  [Operator.Google]: GoogleIcon,
-  [Operator.GoogleScholar]: GoogleScholarIcon,
-  [Operator.PubMed]: PubMedIcon,
-  [Operator.SearXNG]: SearXNGIcon,
-  [Operator.TavilyExtract]: TavilyIcon,
-  [Operator.TavilySearch]: TavilyIcon,
-  [Operator.Wikipedia]: WikipediaIcon,
-  [Operator.YahooFinance]: YahooFinanceIcon,
-  [Operator.WenCai]: WenCaiIcon,
-  [Operator.Crawler]: CrawlerIcon,
+  [Operator.ArXiv]: 'arxiv',
+  [Operator.GitHub]: 'github',
+  [Operator.Bing]: 'bing',
+  [Operator.DuckDuckGo]: 'duck',
+  [Operator.Google]: 'google',
+  [Operator.GoogleScholar]: 'google-scholar',
+  [Operator.PubMed]: 'pubmed',
+  [Operator.SearXNG]: 'searxng',
+  [Operator.TavilyExtract]: 'tavily',
+  [Operator.TavilySearch]: 'tavily',
+  [Operator.Wikipedia]: 'wikipedia',
+  [Operator.YahooFinance]: 'yahoo-finance',
+  [Operator.WenCai]: 'wencai',
+  [Operator.Crawler]: 'crawler',
 };
 export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
+  [Operator.DocGenerator]: FileText,
+  [Operator.Browser]: Globe,
 };
 
 const Empty = () => {
   return <div className="hidden"></div>;
 };
 
+class SvgErrorBoundary extends Component<{
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || <Empty />;
+    }
+
+    return this.props.children;
+  }
+}
+
 const OperatorIcon = ({ name, className }: IProps) => {
   const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap];
-  const SvgIcon = SVGIconMap[name as keyof typeof SVGIconMap];
+  const svgIcon = SVGIconMap[name as keyof typeof SVGIconMap];
   const LucideIcon = LucideIconMap[name as keyof typeof LucideIconMap];
 
   if (name === Operator.Begin) {
@@ -93,19 +104,33 @@ const OperatorIcon = ({ name, className }: IProps) => {
 
   if (Icon) {
     return (
-      <IconFontFill
-        name={Icon}
-        className={cn('size-5 ', className)}
-      ></IconFontFill>
+      <SvgErrorBoundary fallback={<Empty />}>
+        <IconFontFill
+          name={Icon}
+          className={cn('size-5 ', className)}
+        ></IconFontFill>
+      </SvgErrorBoundary>
     );
   }
 
   if (LucideIcon) {
-    return <LucideIcon className={cn('size-5', className)} />;
+    return (
+      <SvgErrorBoundary fallback={<Empty />}>
+        <LucideIcon className={cn('size-5', className)} />
+      </SvgErrorBoundary>
+    );
   }
 
-  if (SvgIcon) {
-    return <SvgIcon className={cn('size-5 fill-current', className)}></SvgIcon>;
+  if (svgIcon) {
+    return (
+      <SvgErrorBoundary fallback={<Empty />}>
+        <SvgIcon
+          name={svgIcon}
+          width={'100%'}
+          className={cn('size-5 fill-current', className)}
+        ></SvgIcon>
+      </SvgErrorBoundary>
+    );
   }
 
   return <Empty></Empty>;

@@ -1,7 +1,7 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
-import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { MemoriesFormField } from '@/components/memories-form-field';
 import {
   MetadataFilter,
   MetadataFilterSchema,
@@ -19,19 +19,26 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import {
+  UseFormReturn,
+  useForm,
+  useFormContext,
+  useWatch,
+} from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialRetrievalValues } from '../../constant';
+import { RetrievalFrom, initialRetrievalValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
+import { UserIdFormField } from '../components/user-id-form-field';
 import { useValues } from './use-values';
 
 export const RetrievalPartialSchema = {
@@ -39,19 +46,63 @@ export const RetrievalPartialSchema = {
   keywords_similarity_weight: z.coerce.number(),
   top_n: z.coerce.number(),
   top_k: z.coerce.number(),
-  kb_ids: z.array(z.string()),
+  dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
   cross_languages: z.array(z.string()),
   use_kg: z.boolean(),
   toc_enhance: z.boolean(),
   ...MetadataFilterSchema,
+  memory_ids: z.array(z.string()).optional(),
+  retrieval_from: z.string(),
+  user_id: z.string().optional(),
 };
 
 export const FormSchema = z.object({
   query: z.string().optional(),
   ...RetrievalPartialSchema,
 });
+
+export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
+
+export function MemoryDatasetForm() {
+  const { t } = useTranslation();
+  const form = useFormContext();
+  const retrievalFrom = useWatch({
+    control: form.control,
+    name: 'retrieval_from',
+  });
+
+  return (
+    <>
+      <RAGFlowFormItem name="retrieval_from" label={t('flow.retrievalFrom')}>
+        <Radio.Group>
+          <Radio value={RetrievalFrom.Dataset}>
+            {t('knowledgeDetails.dataset')}
+          </Radio>
+          <Radio value={RetrievalFrom.Memory}>{t('header.memories')}</Radio>
+        </Radio.Group>
+      </RAGFlowFormItem>
+      {retrievalFrom === RetrievalFrom.Memory ? (
+        <>
+          <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+          <UserIdFormField></UserIdFormField>
+        </>
+      ) : (
+        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
+      )}
+    </>
+  );
+}
+
+export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
+  const retrievalFrom = useWatch({
+    control: form.control,
+    name: 'retrieval_from',
+  });
+
+  return retrievalFrom === RetrievalFrom.Memory;
+}
 
 export function EmptyResponseField() {
   const { t } = useTranslation();
@@ -104,31 +155,40 @@ function RetrievalForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
 
+  const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
+
   useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <RAGFlowFormItem name="query" label={t('flow.query')}>
-            <PromptEditor></PromptEditor>
-          </RAGFlowFormItem>
-          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        </FormContainer>
+        <RAGFlowFormItem name="query" label={t('flow.query')}>
+          <PromptEditor></PromptEditor>
+        </RAGFlowFormItem>
+        <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
-          <FormContainer>
+          <section className="space-y-5">
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
-            <RerankFormFields></RerankFormFields>
-            <MetadataFilter canReference></MetadataFilter>
+            {hideKnowledgeGraphField || (
+              <>
+                <RerankFormFields></RerankFormFields>
+                <MetadataFilter canReference></MetadataFilter>
+              </>
+            )}
             <EmptyResponseField></EmptyResponseField>
-            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-            <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
-          </FormContainer>
+            {hideKnowledgeGraphField || (
+              <>
+                <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+                <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
+              </>
+            )}
+          </section>
         </Collapse>
         <Output list={outputList}></Output>
       </FormWrapper>

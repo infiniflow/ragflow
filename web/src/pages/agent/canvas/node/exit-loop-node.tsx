@@ -14,7 +14,7 @@ export function ExitLoopNode({ id, data, selected }: NodeProps<BaseNode<any>>) {
       showRun={false}
       showCopy={false}
     >
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
       </NodeWrapper>

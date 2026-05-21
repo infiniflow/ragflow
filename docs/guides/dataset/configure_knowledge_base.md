@@ -1,11 +1,13 @@
 ---
 sidebar_position: -10
 slug: /configure_knowledge_base
+sidebar_custom_props: {
+  categoryIcon: LucideCog
+}
 ---
-
 # Configure dataset
 
-Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in **File Management** into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:
+Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in RAGFlow's File system into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:
 
 - Create a dataset
 - Configure a dataset
@@ -39,20 +41,20 @@ This section covers the following topics:
 
 RAGFlow offers multiple built-in chunking template to facilitate chunking files of different layouts and ensure semantic integrity. From the **Built-in** chunking method dropdown under **Parse type**, you can choose the default template that suits the layouts and formats of your files. The following table shows the descriptions and the compatible file formats of each supported chunk template:
 
-| **Template** | Description                                                           | File format                                                                                   |
-|--------------|-----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
-| General      | Files are consecutively chunked based on a preset chunk token number. | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
-| Q&A          | Retrieves relevant information and generates answers to respond to questions.     | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
-| Resume       | Enterprise edition only. You can also try it out on demo.ragflow.io.  | DOCX, PDF, TXT                                                                                |
-| Manual       |                                                                       | PDF                                                                                           |
-| Table        | The table mode uses TSI technology for efficient data parsing. | XLSX, XLS (Excel 97-2003), CSV/TXT                                                             |
-| Paper        |                                                                       | PDF                                                                                           |
-| Book         |                                                                       | DOCX, PDF, TXT                                                                                |
-| Laws         |                                                                       | DOCX, PDF, TXT                                                                                |
-| Presentation |                                                                       | PDF, PPTX                                                                                     |
-| Picture      |                                                                       | JPEG, JPG, PNG, TIF, GIF                                                                      |
-| One          | Each document is chunked in its entirety (as one).                    | DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT                                                      |
-| Tag          | The dataset functions as a tag set for the others.             | XLSX, CSV/TXT                                                                                 |
+| **Template** | Description                                                                   | File format                                                                                             |
+|--------------|-------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| General      | Files are consecutively chunked based on a preset chunk token number.         | MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML |
+| Q&A          | Retrieves relevant information and generates answers to respond to questions. | XLSX, XLS (Excel 97-2003), CSV/TXT                                                                      |
+| Resume       | Enterprise edition only. You can also try it out on cloud.ragflow.io.          | DOCX, PDF, TXT                                                                                          |
+| Manual       |                                                                               | PDF                                                                                                     |
+| Table        | The table mode uses TSI technology for efficient data parsing.                | XLSX, XLS (Excel 97-2003), CSV/TXT                                                                      |
+| Paper        |                                                                               | PDF                                                                                                     |
+| Book         |                                                                               | DOCX, PDF, TXT                                                                                          |
+| Laws         |                                                                               | DOCX, PDF, TXT                                                                                          |
+| Presentation |                                                                               | PDF, PPTX                                                                                               |
+| Picture      |                                                                               | JPEG, JPG, PNG, TIF, GIF                                                                                |
+| One          | Each document is chunked in its entirety (as one).                            | DOCX, XLSX, XLS (Excel 97-2003), PDF, TXT                                                               |
+| Tag          | The dataset functions as a tag set for the others.                            | XLSX, CSV/TXT                                                                                           |
 
 You can also change a file's chunking method on the **Files** page.
 
@@ -82,10 +84,10 @@ Some embedding models are optimized for specific languages, so performance may b
 
 ### Upload file
 
-- RAGFlow's **File Management** allows you to link a file to multiple datasets, in which case each target dataset holds a reference to the file.
+- RAGFlow's File system allows you to link a file to multiple datasets, in which case each target dataset holds a reference to the file.
 - In **Knowledge Base**, you are also given the option of uploading a single file or a folder of files (bulk upload) from your local machine to a dataset, in which case the dataset holds file copies. 
 
-While uploading files directly to a dataset seems more convenient, we *highly* recommend uploading files to **File Management** and then linking them to the target datasets. This way, you can avoid permanently deleting files uploaded to the dataset. 
+While uploading files directly to a dataset seems more convenient, we *highly* recommend uploading files to RAGFlow's File system and then linking them to the target datasets. This way, you can avoid permanently deleting files uploaded to the dataset. 
 
 ### Parse file
 
@@ -133,7 +135,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.22.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.25.5, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 
@@ -142,6 +144,6 @@ As of RAGFlow v0.22.1, the search feature is still in a rudimentary form, suppor
 You are allowed to delete a dataset. Hover your mouse over the three dot of the intended dataset card and the **Delete** option appears. Once you delete a dataset, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. The consequence is:
 
 - The files uploaded directly to the dataset are gone;  
-- The file references, which you created from within **File Management**, are gone, but the associated files still exist in **File Management**. 
+- The file references, which you created from within RAGFlow's File system, are gone, but the associated files still exist. 
 
 ![delete dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_datasets.jpg)

@@ -96,7 +96,7 @@ function ParameterForm({
       },
       [],
     );
-  }, []);
+  }, [t]);
 
   const type = useWatch({
     control: form.control,
@@ -210,7 +210,7 @@ export function ParameterDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
+      <DialogContent className="max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('flow.variableSettings')}</DialogTitle>
         </DialogHeader>

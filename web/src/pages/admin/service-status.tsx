@@ -68,6 +68,8 @@ import {
 } from './utils';
 
 import JsonView from 'react18-json-view';
+import 'react18-json-view/src/style.css';
+
 import ServiceDetail from './service-detail';
 import TaskExecutorDetail from './task-executor-detail';
 
@@ -227,19 +229,8 @@ function AdminServiceStatus() {
             <div className="flex items-center gap-4">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="border-0.5"
-                    // className="
-                    //   text-text-secondary
-                    //   dark:bg-bg-input dark:border-border-button
-                    //   hover:bg-border-button dark:hover:bg-border-button
-                    //   focus-visible:ring-0 focus-visible:text-text-primary
-                    //   focus-visible:bg-border-button focus-visible:border-border-button
-                    // "
-                  >
-                    <LucideFilter className="h-4 w-4" />
+                  <Button size="icon-lg" variant="outline">
+                    <LucideFilter className="size-4" />
                   </Button>
                 </PopoverTrigger>
 

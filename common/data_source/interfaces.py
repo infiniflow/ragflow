@@ -2,20 +2,35 @@
 import abc
 import uuid
 from abc import ABC, abstractmethod
-from enum import IntFlag, auto
+from enum import IntEnum, IntFlag, auto
 from types import TracebackType
 from typing import Any, Dict, Generator, TypeVar, Generic, Callable, TypeAlias
-
+from collections.abc import Iterator
 from anthropic import BaseModel
 
 from common.data_source.models import (
     Document,
+    KeyRecord,
     SlimDocument,
     ConnectorCheckpoint,
     ConnectorFailure,
     SecondsSinceUnixEpoch, GenerateSlimDocumentOutput
 )
 
+
+class IncrementalCapability(IntEnum):
+    """How a connector handles incremental sync.
+
+    FULL_RESYNC  -- every sync re-pulls; no per-key state.
+    CURSOR       -- "give me everything since cursor X"; opaque cursor persisted across syncs.
+    FINGERPRINT  -- list_keys() returns (key, fingerprint) cheaply; bodies fetched lazily.
+    """
+    FULL_RESYNC = 0
+    CURSOR = 1
+    FINGERPRINT = 2
+
+
+GenerateDocumentsOutput = Iterator[list[Document]]
 
 class LoadConnector(ABC):
     """Load connector interface"""
@@ -59,8 +74,6 @@ class SlimConnectorWithPermSync(ABC):
     @abstractmethod
     def retrieve_all_slim_docs_perm_sync(
         self,
-        start: SecondsSinceUnixEpoch | None = None,
-        end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> Generator[list[SlimDocument], None, None]:
         """Retrieve all simplified documents (with permission sync)"""
@@ -236,16 +249,13 @@ class BaseConnector(abc.ABC, Generic[CT]):
 
     def validate_perm_sync(self) -> None:
         """
-        Don't override this; add a function to perm_sync_valid.py in the ee package
-        to do permission sync validation
+        Permission-sync validation hook.
+
+        RAGFlow doesn't ship the Onyx EE permission-sync validation package.
+        Connectors that support permission sync should override
+        `validate_connector_settings()` as needed.
         """
-        """
-        validate_connector_settings_fn = fetch_ee_implementation_or_noop(
-            "onyx.connectors.perm_sync_valid",
-            "validate_perm_sync",
-            noop_return_value=None,
-        )
-        validate_connector_settings_fn(self)"""
+        return None
 
     def set_allow_images(self, value: bool) -> None:
         """Implement if the underlying connector wants to skip/allow image downloading
@@ -344,6 +354,17 @@ class CheckpointOutputWrapper(Generic[CT]):
         yield None, None, self.next_checkpoint
 
 
+class CheckpointedConnectorWithPermSyncGH(CheckpointedConnector[CT]):
+    @abc.abstractmethod
+    def load_from_checkpoint_with_perm_sync(
+        self,
+        start: SecondsSinceUnixEpoch,
+        end: SecondsSinceUnixEpoch,
+        checkpoint: CT,
+    ) -> CheckpointOutput[CT]:
+        raise NotImplementedError
+
+
 # Slim connectors retrieve just the ids of documents
 class SlimConnector(BaseConnector):
     @abc.abstractmethod
@@ -395,8 +416,7 @@ class AttachmentProcessingResult(BaseModel):
 
 
 class IndexingHeartbeatInterface(ABC):
-    """Defines a callback interface to be passed to
-    to run_indexing_entrypoint."""
+    """Defines a callback interface to be passed to run_indexing_entrypoint."""
 
     @abstractmethod
     def should_stop(self) -> bool:
@@ -408,4 +428,40 @@ class IndexingHeartbeatInterface(ABC):
         Amount can be a positive number to indicate progress or <= 0
         just to act as a keep-alive.
         """
+
+
+class FingerprintConnector(ABC):
+    """Tier 1 connector: cheap full listing with per-key fingerprint.
+
+    Sources that can enumerate their entire keyspace via a metadata-only call
+    (e.g. S3 list_objects_v2 returning ETag + LastModified) implement this to
+    let the orchestrator skip GetObject for keys whose fingerprint hasn't
+    changed since the last sync.
+
+    The fingerprint is an opaque equality token: two equal fingerprints mean
+    the content is unchanged from the orchestrator's point of view. Format is
+    a 32-char hex string so it fits the existing Document.content_hash column;
+    connectors are responsible for normalizing whatever the source exposes
+    (typically by hashing it with xxhash128).
+    """
+
+    INCREMENTAL_CAPABILITY: IncrementalCapability = IncrementalCapability.FINGERPRINT
+
+    @abstractmethod
+    def list_keys(self) -> Iterator[KeyRecord]:
+        """Yield one KeyRecord per object currently in the source.
+
+        Must enumerate the full current keyspace -- the orchestrator diffs the
+        result against persisted state to detect adds, updates, and deletes.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_value(self, key: str) -> Document:
+        """Fetch the body for a single key, returning a fully populated Document.
+
+        Called only when list_keys()'s fingerprint differs from the persisted
+        content_hash for that key (or when no persisted fingerprint exists).
+        """
+        raise NotImplementedError
 

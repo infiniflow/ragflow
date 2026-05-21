@@ -2,12 +2,14 @@
 
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 interface CreateSearchProps {
   name: string;
   description?: string;
@@ -84,21 +86,33 @@ interface SearchListResponse {
   message: string;
 }
 
-export const useFetchSearchList = (params?: SearchListParams) => {
-  const [searchParams, setSearchParams] = useState<SearchListParams>({
-    page: 1,
-    page_size: 50,
-    ...params,
-  });
+export const useFetchSearchList = () => {
+  const { handleInputChange, searchString, pagination, setPagination } =
+    useHandleSearchChange();
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
   >({
-    queryKey: ['searchList', searchParams],
+    queryKey: [
+      'searchList',
+      {
+        debouncedSearchString,
+        ...pagination,
+      },
+    ],
     queryFn: async () => {
-      const { data: response } =
-        await searchService.getSearchList(searchParams);
+      const { data: response } = await searchService.getSearchList(
+        {
+          params: {
+            keywords: debouncedSearchString,
+            page_size: pagination.pageSize,
+            page: pagination.current,
+          },
+        },
+        true,
+      );
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search list');
       }
@@ -106,19 +120,14 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     },
   });
 
-  const setSearchListParams = (newParams: SearchListParams) => {
-    setSearchParams((prevParams) => ({
-      ...prevParams,
-      ...newParams,
-    }));
-  };
-
   return {
     data,
     isLoading,
     isError,
-    searchParams,
-    setSearchListParams,
+    pagination,
+    searchString,
+    handleInputChange,
+    setPagination,
     refetch,
   };
 };
@@ -176,6 +185,10 @@ export interface ISearchAppDetailProps {
       method: string;
       manual: { key: string; op: string; value: string }[];
     };
+    reference_metadata?: {
+      include?: boolean;
+      fields?: string[];
+    };
   };
   tenant_id: string;
   update_time: number;
@@ -193,24 +206,21 @@ export const useFetchSearchDetail = (tenantId?: string) => {
   const [searchParams] = useSearchParams();
   const shared_id = searchParams.get('shared_id');
   const searchId = id || shared_id;
-  let param: { search_id: string | null; tenant_id?: string } = {
-    search_id: searchId,
-  };
-  if (shared_id) {
-    param = {
-      search_id: searchId,
-      tenant_id: tenantId,
-    };
-  }
-  const fetchSearchDetailFunc = shared_id
-    ? searchService.getSearchDetailShare
-    : searchService.getSearchDetail;
 
   const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
     queryKey: ['searchDetail', searchId],
     enabled: !shared_id || !!tenantId,
     queryFn: async () => {
-      const { data: response } = await fetchSearchDetailFunc(param);
+      let res;
+      if (shared_id) {
+        res = await searchService.getSearchDetailShare(
+          { params: { search_id: searchId, tenant_id: tenantId } },
+          true,
+        );
+      } else {
+        res = await searchService.getSearchDetail({ search_id: searchId });
+      }
+      const response = res.data;
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search detail');
       }
@@ -332,10 +342,10 @@ export const useRenameSearch = () => {
       setLoading(true);
       if (search?.id) {
         try {
-          const reponse = await searchService.getSearchDetail({
+          const response = await searchService.getSearchDetail({
             search_id: search?.id,
           });
-          const detail = reponse.data?.data;
+          const detail = response.data?.data;
           console.log('detail-->', detail);
 
           // eslint-disable-next-line @typescript-eslint/no-unused-vars

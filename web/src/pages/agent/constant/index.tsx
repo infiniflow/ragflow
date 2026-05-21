@@ -15,20 +15,22 @@ import {
   initialLlmBaseValues,
 } from '@/constants/agent';
 export {
+  AgentDialogueMode,
   AgentStructuredOutputField,
+  BeginId,
   JsonSchemaDataType,
   Operator,
+  initialBeginValues,
 } from '@/constants/agent';
 
 export * from './pipeline';
 
-export enum AgentDialogueMode {
-  Conversational = 'conversational',
-  Task = 'task',
-}
-
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
+import {
+  buildDefaultCodeOutput,
+  serializeCodeOutputContract,
+} from '../form/code-form/utils';
 
 // DuckDuckGo's channel options
 export enum Channel {
@@ -49,8 +51,6 @@ import {
   ToggleLeft,
   WrapText,
 } from 'lucide-react';
-
-export const BeginId = 'begin';
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -78,6 +78,11 @@ export const DataOperationsOperatorOptions = [
 
 export const SwitchElseTo = 'end_cpn_ids';
 
+export enum RetrievalFrom {
+  Dataset = 'dataset',
+  Memory = 'memory',
+}
+
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
@@ -90,6 +95,7 @@ export const initialRetrievalValues = {
   use_kg: false,
   toc_enhance: false,
   cross_languages: [],
+  retrieval_from: RetrievalFrom.Dataset,
   outputs: {
     formalized_content: {
       type: 'string',
@@ -100,11 +106,6 @@ export const initialRetrievalValues = {
       value: [],
     },
   },
-};
-
-export const initialBeginValues = {
-  mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const initialRewriteQuestionValues = {
@@ -132,6 +133,31 @@ export const initialCategorizeValues = {
 
 export const initialMessageValues = {
   content: [''],
+};
+
+export const initialExcelProcessorValues = {
+  input_files: [],
+  operation: 'read',
+  sheet_selection: 'all',
+  merge_strategy: 'concat',
+  join_on: '',
+  transform_data: '',
+  output_format: 'xlsx',
+  output_filename: 'output',
+  outputs: {
+    data: {
+      type: 'object',
+      value: {},
+    },
+    summary: {
+      type: 'string',
+      value: '',
+    },
+    markdown: {
+      type: 'string',
+      value: '',
+    },
+  },
 };
 
 export const initialDuckValues = {
@@ -367,6 +393,7 @@ export const initialEmailValues = {
   smtp_server: '',
   smtp_port: 465,
   email: '',
+  smtp_username: '',
   password: '',
   sender_name: '',
   to_email: '',
@@ -389,7 +416,7 @@ export const initialIterationValues = {
 export const initialIterationStartValues = {
   outputs: {
     item: {
-      type: 'unkown',
+      type: 'unknown',
     },
     index: {
       type: 'integer',
@@ -404,7 +431,7 @@ export const initialCodeValues = {
     arg1: '',
     arg2: '',
   },
-  outputs: {},
+  outputs: serializeCodeOutputContract(buildDefaultCodeOutput()),
 };
 
 export const initialWaitingDialogueValues = {};
@@ -560,7 +587,7 @@ export enum SortMethod {
 }
 
 export enum ListOperations {
-  TopN = 'topN',
+  Nth = 'nth',
   Head = 'head',
   Tail = 'tail',
   Filter = 'filter',
@@ -570,7 +597,8 @@ export enum ListOperations {
 
 export const initialListOperationsValues = {
   query: '',
-  operations: ListOperations.TopN,
+  operations: ListOperations.Nth,
+  strict: false,
   outputs: {
     // result: {
     //   type: 'Array<?>',
@@ -614,7 +642,7 @@ export const CategorizeAnchorPointPositions = [
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
-  [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
+  [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
     Operator.Begin,
@@ -661,14 +689,16 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
-  [Operator.Splitter]: [Operator.Begin],
-  [Operator.HierarchicalMerger]: [Operator.Begin],
+  [Operator.TokenChunker]: [Operator.Begin],
+  [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
+  [Operator.DocGenerator]: [Operator.Begin],
+  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -708,8 +738,8 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
-  [Operator.Splitter]: 'splitterNode',
-  [Operator.HierarchicalMerger]: 'splitterNode',
+  [Operator.TokenChunker]: 'chunkerNode',
+  [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
@@ -718,6 +748,9 @@ export const NodeMap = {
   [Operator.Loop]: 'loopNode',
   [Operator.LoopStart]: 'loopStartNode',
   [Operator.ExitLoop]: 'exitLoopNode',
+  [Operator.ExcelProcessor]: 'ragNode',
+  [Operator.DocGenerator]: 'ragNode',
+  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -749,17 +782,18 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
+  Operator.Tool,
 ];
 
 export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
-  Operator.Splitter,
-  Operator.HierarchicalMerger,
+  Operator.TokenChunker,
+  Operator.TitleChunker,
   Operator.Extractor,
 ];
 
@@ -831,6 +865,7 @@ export enum ExportFileType {
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',
+  Excel = 'xlsx',
 }
 
 export enum TypesWithArray {
@@ -930,3 +965,99 @@ export enum AgentVariableType {
   Begin = 'begin',
   Conversation = 'conversation',
 }
+
+export const initialDocGeneratorValues = {
+  output_format: 'pdf',
+  content: '',
+  filename: '',
+  header_text: '',
+  footer_text: '',
+  watermark_text: '',
+  add_page_numbers: true,
+  add_timestamp: true,
+  include_download_info_in_content: false,
+  font_size: 12,
+  outputs: {
+    download: { type: 'string' },
+  },
+};
+
+export const initialBrowserValues = {
+  ...initialLlmBaseValues,
+  prompts: `{${AgentGlobals.SysQuery}}`,
+  max_steps: 30,
+  headless: true,
+  enable_default_extensions: false,
+  chromium_sandbox: false,
+  persist_session: true,
+  upload_sources: '',
+  outputs: {
+    content: { type: 'string', value: '' },
+    downloaded_files: { type: 'Array<Object>', value: [] },
+  },
+};
+
+export enum WebhookMethod {
+  Post = 'POST',
+  Get = 'GET',
+  Put = 'PUT',
+  Patch = 'PATCH',
+  Delete = 'DELETE',
+  Head = 'HEAD',
+}
+
+export enum WebhookContentType {
+  ApplicationJson = 'application/json',
+  MultipartFormData = 'multipart/form-data',
+  ApplicationXWwwFormUrlencoded = 'application/x-www-form-urlencoded',
+  TextPlain = 'text/plain',
+  ApplicationOctetStream = 'application/octet-stream',
+}
+
+export enum WebhookExecutionMode {
+  Immediately = 'Immediately',
+  Streaming = 'Streaming',
+}
+
+export enum WebhookSecurityAuthType {
+  None = 'none',
+  Token = 'token',
+  Basic = 'basic',
+  Jwt = 'jwt',
+}
+
+export enum WebhookRateLimitPer {
+  Second = 'second',
+  Minute = 'minute',
+  Hour = 'hour',
+  Day = 'day',
+}
+
+export const RateLimitPerList = Object.values(WebhookRateLimitPer);
+
+export const WebhookMaxBodySize = ['1MB', '5MB', '10MB'];
+
+export enum WebhookRequestParameters {
+  File = VariableType.File,
+  String = TypesWithArray.String,
+  Number = TypesWithArray.Number,
+  Boolean = TypesWithArray.Boolean,
+}
+
+export enum WebhookStatus {
+  Testing = 'testing',
+  Live = 'live',
+  Stopped = 'stopped',
+}
+
+// Map BeginQueryType to TypesWithArray
+export const BeginQueryTypeMap = {
+  [BeginQueryType.Line]: TypesWithArray.String,
+  [BeginQueryType.Paragraph]: TypesWithArray.String,
+  [BeginQueryType.Options]: TypesWithArray.ArrayString,
+  [BeginQueryType.File]: 'File',
+  [BeginQueryType.Integer]: TypesWithArray.Number,
+  [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+};
+
+export const VariableRegex = /{([^{}]*)}/g;

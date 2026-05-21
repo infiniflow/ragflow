@@ -171,7 +171,7 @@ export function EditMcpDialog({
     <Modal
       title={id ? t('mcp.editMCP') : t('mcp.addMCP')}
       open={true}
-      onOpenChange={hideModal}
+      onCancel={hideModal}
       cancelText={t('common.cancel')}
       okText={t('common.save')}
       footer={
@@ -196,7 +196,7 @@ export function EditMcpDialog({
         form={form}
         setFieldChanged={setFieldChanged}
       ></EditMcpForm>
-      <Card className="bg-transparent">
+      <Card className="bg-transparent mt-4">
         <CardContent className="p-3">
           <Collapse
             title={

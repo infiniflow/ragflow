@@ -116,10 +116,13 @@ class UserService(CommonService):
             kwargs["password"] = generate_password_hash(
                 str(kwargs["password"]))
 
-        kwargs["create_time"] = current_timestamp()
-        kwargs["create_date"] = datetime_format(datetime.now())
-        kwargs["update_time"] = current_timestamp()
-        kwargs["update_date"] = datetime_format(datetime.now())
+        current_ts = current_timestamp()
+        current_date = datetime_format(datetime.now())
+
+        kwargs["create_time"] = current_ts
+        kwargs["create_date"] = current_date
+        kwargs["update_time"] = current_ts
+        kwargs["update_date"] = current_date
         obj = cls.model(**kwargs).save(force_insert=True)
         return obj
 
@@ -161,7 +164,7 @@ class UserService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_all_users(cls):
-        users = cls.model.select()
+        users = cls.model.select().order_by(cls.model.email)
         return list(users)
 
 
@@ -222,6 +225,12 @@ class TenantService(CommonService):
     def user_gateway(cls, tenant_id):
         hash_obj = hashlib.sha256(tenant_id.encode("utf-8"))
         return int(hash_obj.hexdigest(), 16)%len(settings.MINIO)
+
+    @classmethod
+    @DB.connection_context()
+    def get_null_tenant_model_id_rows(cls):
+        objs = cls.model.select().orwhere(cls.model.tenant_llm_id.is_null(), cls.model.tenant_embd_id.is_null(), cls.model.tenant_asr_id.is_null(), cls.model.tenant_tts_id.is_null(), cls.model.tenant_rerank_id.is_null(), cls.model.tenant_img2txt_id.is_null())
+        return list(objs)
 
 
 class UserTenantService(CommonService):

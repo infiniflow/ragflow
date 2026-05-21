@@ -6,14 +6,14 @@ const {
   listFile,
   removeFile,
   uploadFile,
-  renameFile,
   getAllParentFolder,
   createFolder,
   connectFileToKnowledge,
-  get_document_file,
+  getDocumentFile,
   getFile,
   moveFile,
-  get_document_file_download,
+  getDatasetDocumentFileDownload,
+  getDocumentFileDownload,
 } = api;
 
 const methods = {
@@ -23,14 +23,10 @@ const methods = {
   },
   removeFile: {
     url: removeFile,
-    method: 'post',
+    method: 'delete',
   },
   uploadFile: {
     url: uploadFile,
-    method: 'post',
-  },
-  renameFile: {
-    url: renameFile,
     method: 'post',
   },
   getAllParentFolder: {
@@ -51,7 +47,7 @@ const methods = {
     responseType: 'blob',
   },
   getDocumentFile: {
-    url: get_document_file,
+    url: getDocumentFile,
     method: 'get',
     responseType: 'blob',
   },
@@ -67,9 +63,23 @@ const fileManagerService = registerServer<keyof typeof methods>(
 );
 
 export const downloadFile = (data: { docId: string; ext: string }) => {
-  return request.get(get_document_file_download(data.docId), {
+  return request.get(getDocumentFileDownload(data.docId), {
     params: { ext: data.ext },
     responseType: 'blob',
   });
+};
+
+export const downloadDatasetDocument = (data: {
+  datasetId: string;
+  docId: string;
+  ext: string;
+}) => {
+  return request.get(
+    getDatasetDocumentFileDownload(data.datasetId, data.docId),
+    {
+      params: { ext: data.ext },
+      responseType: 'blob',
+    },
+  );
 };
 export default fileManagerService;

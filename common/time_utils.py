@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import datetime
+import logging
 import time
 
 def current_timestamp():
@@ -124,3 +125,30 @@ def delta_seconds(date_string: str):
     """
     dt = datetime.datetime.strptime(date_string, "%Y-%m-%d %H:%M:%S")
     return (datetime.datetime.now() - dt).total_seconds()
+
+
+def format_iso_8601_to_ymd_hms(time_str: str) -> str:
+    """
+    Convert ISO 8601 formatted string to "YYYY-MM-DD HH:MM:SS" format.
+
+    Args:
+        time_str: ISO 8601 date string (e.g. "2024-01-01T12:00:00Z")
+
+    Returns:
+        str: Date string in "YYYY-MM-DD HH:MM:SS" format
+
+    Example:
+        >>> format_iso_8601_to_ymd_hms("2024-01-01T12:00:00Z")
+        '2024-01-01 12:00:00'
+    """
+    from dateutil import parser
+
+    try:
+        if parser.isoparse(time_str):
+            dt = datetime.datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            return time_str
+    except Exception as e:
+        logging.error(str(e))
+        return time_str

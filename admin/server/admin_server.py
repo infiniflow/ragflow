@@ -14,12 +14,13 @@
 #  limitations under the License.
 #
 
+import time
+start_ts = time.time()
+
 import os
 import signal
 import logging
-import time
 import threading
-import traceback
 import faulthandler
 
 from flask import Flask
@@ -56,7 +57,7 @@ if __name__ == '__main__':
         os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
     )
     Session(app)
-    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f'RAGFlow admin version: {get_ragflow_version()}')
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
@@ -66,17 +67,17 @@ if __name__ == '__main__':
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
     try:
-        logging.info("RAGFlow Admin service start...")
+        logging.info(f"RAGFlow admin is ready after {time.time() - start_ts}s initialization.")
         run_simple(
             hostname="0.0.0.0",
             port=9381,
             application=app,
             threaded=True,
             use_reloader=False,
-            use_debugger=True,
+            use_debugger=False,
         )
-    except Exception:
-        traceback.print_exc()
+    except Exception as e:
+        logging.exception(f"Unhandled exception: {e}")
         stop_event.set()
         time.sleep(1)
         os.kill(os.getpid(), signal.SIGKILL)

@@ -33,9 +33,9 @@ class TestChunksDeletion:
         chunk_ids = [chunk.id for chunk in chunks]
         payload = payload(chunk_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             document.delete_chunks(**payload)
-        assert "rm_chunk deleted chunks" in str(excinfo.value), str(excinfo.value)
+        assert "rm_chunk deleted chunks" in str(exception_info.value), str(exception_info.value)
 
         remaining_chunks = document.list_chunks()
         assert len(remaining_chunks) == 1, str(remaining_chunks)
@@ -46,9 +46,9 @@ class TestChunksDeletion:
         chunk_ids = [chunk.id for chunk in chunks]
         document.delete_chunks(ids=chunk_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             document.delete_chunks(ids=chunk_ids)
-        assert "rm_chunk deleted chunks 0, expect" in str(excinfo.value), str(excinfo.value)
+        assert "rm_chunk deleted chunks 0, expect" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_duplicate_deletion(self, add_chunks_func):
@@ -88,12 +88,12 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            pytest.param(None, "TypeError", 5, marks=pytest.mark.skip),
+            pytest.param(None, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": ["invalid_id"]}, "rm_chunk deleted chunks 0, expect 1", 5, marks=pytest.mark.p3),
             pytest.param("not json", "UnboundLocalError", 5, marks=pytest.mark.skip(reason="pull/6376")),
             pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, "", 1, marks=pytest.mark.p1),
-            pytest.param({"ids": []}, "", 0, marks=pytest.mark.p3),
+            pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
         ],
     )
     def test_basic_scenarios(self, add_chunks_func, payload, expected_message, remaining):
@@ -103,11 +103,14 @@ class TestChunksDeletion:
             payload = payload(chunk_ids)
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.delete_chunks(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
-            document.delete_chunks(**payload)
+            if payload is None:
+                document.delete_chunks()
+            else:
+                document.delete_chunks(**payload)
 
         remaining_chunks = document.list_chunks()
         assert len(remaining_chunks) == remaining, str(remaining_chunks)

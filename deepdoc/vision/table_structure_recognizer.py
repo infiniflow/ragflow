@@ -155,7 +155,7 @@ class TableStructureRecognizer(Recognizer):
         while i < len(boxes):
             if TableStructureRecognizer.is_caption(boxes[i]):
                 if is_english:
-                    cap + " "
+                    cap += " "
                 cap += boxes[i]["text"]
                 boxes.pop(i)
                 i -= 1
@@ -394,7 +394,7 @@ class TableStructureRecognizer(Recognizer):
 
     @staticmethod
     def __desc_table(cap, hdr_rowno, tbl, is_english):
-        # get text of every colomn in header row to become header text
+        # get text of every column in header row to become header text
         clmno = len(tbl[0])
         rowno = len(tbl)
         headers = {}

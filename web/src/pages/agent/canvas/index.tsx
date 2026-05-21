@@ -40,20 +40,21 @@ import { useDropdownManager } from './context';
 
 import { AgentBackground } from '@/components/canvas/background';
 import Spotlight from '@/components/spotlight';
+import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
-  useShowLogSheet,
 } from '../hooks/use-show-drawer';
 import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
-import styles from './index.less';
+import styles from './index.module.less';
 import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { ChunkerNode } from './node/chunker-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExitLoopNode } from './node/exit-loop-node';
@@ -69,7 +70,6 @@ import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
-import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
@@ -95,7 +95,7 @@ export const nodeTypes: NodeTypes = {
   fileNode: FileNode,
   parserNode: ParserNode,
   tokenizerNode: TokenizerNode,
-  splitterNode: SplitterNode,
+  chunkerNode: ChunkerNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
   listOperationsNode: ListOperationsNode,
@@ -133,6 +133,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     useState<ReactFlowInstance<any, any>>();
 
   const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessageById,
+    clearEventList,
+    currentMessageId,
+    latestTaskId,
+  } = useCacheChatLog();
+
+  const {
     onNodeClick,
     clickedNode,
     formDrawerVisible,
@@ -145,26 +154,20 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunOrChatDrawer,
     showChatModal,
     showFormDrawer,
+    logSheetVisible,
+    showLogSheet,
+    hideLogSheet,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
-  });
-
-  const {
-    addEventList,
-    setCurrentMessageId,
-    currentEventListWithoutMessageById,
-    clearEventList,
-    currentMessageId,
-    currentTaskId,
-  } = useCacheChatLog();
-
-  const { stopMessage } = useStopMessageUnmount(chatVisible, currentTaskId);
-
-  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
   });
+
+  const { stopMessage } = useStopMessageUnmount(chatVisible, latestTaskId);
+
   const [lastSendLoading, setLastSendLoading] = useState(false);
+
+  const [currentSendLoading, setCurrentSendLoading] = useState(false);
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -176,12 +179,13 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
-      stopMessage(currentTaskId);
+      stopMessage(latestTaskId);
       clearEventList();
     }
-  }, [chatVisible, clearEventList, currentTaskId, stopMessage]);
+  }, [chatVisible, clearEventList, latestTaskId, stopMessage]);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+    setCurrentSendLoading(!!loading);
     if (messageId === currentMessageId) {
       setLastSendLoading(loading);
     } else {
@@ -249,7 +253,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     clearActiveDropdown,
     removePlaceholderNode,
   ]);
-
+  const { lastNode, setDerivedMessages, startButNotFinishedNodeIds } =
+    useNodeLoading({
+      currentEventListWithoutMessageById,
+    });
   return (
     <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
       <svg
@@ -285,7 +292,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
+      <AgentInstanceContext.Provider
+        value={{
+          addCanvasNode,
+          showFormDrawer,
+          lastNode,
+          currentSendLoading,
+          startButNotFinishedNodeIds,
+        }}
+      >
         <ReactFlow
           connectionMode={ConnectionMode.Loose}
           nodes={nodes}
@@ -316,6 +331,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           }}
           deleteKeyCode={['Delete', 'Backspace']}
           onBeforeDelete={handleBeforeDelete}
+          panActivationKeyCode={null}
         >
           <AgentBackground></AgentBackground>
           <Spotlight className="z-0" opcity={0.7} coverage={70} />
@@ -380,9 +396,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           ></FormSheet>
         </AgentInstanceContext.Provider>
       )}
+
       {chatVisible && (
         <AgentChatContext.Provider
-          value={{ showLogSheet, setLastSendLoadingFunc }}
+          value={{ showLogSheet, setLastSendLoadingFunc, setDerivedMessages }}
         >
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}

@@ -19,20 +19,22 @@ import copy
 import re
 
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
-from common.constants import ParserType
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
+from common.constants import ParserType, MAXIMUM_PAGE_NUMBER
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, \
+    tokenize_chunks, attach_media_context
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.app.naive import by_plaintext, PARSERS
+from common.parser_config_utils import normalize_layout_recognizer
 
 
 class Pdf(PdfParser):
     def __init__(self):
-        self.model_speciess = ParserType.PAPER.value
+        self.model_species = ParserType.PAPER.value
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+                 to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
         start = timer()
         callback(msg="OCR started")
@@ -65,7 +67,7 @@ class Pdf(PdfParser):
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
             logging.debug("two_column................... {} {}".format(column_width,
-                  self.page_images[0].size[0] / zoomin / 2))
+                                                                       self.page_images[0].size[0] / zoomin / 2))
             self.boxes = self.sort_X_by_page(self.boxes, column_width / 2)
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
@@ -88,7 +90,7 @@ class Pdf(PdfParser):
         title = ""
         authors = []
         i = 0
-        while i < min(32, len(self.boxes)-1):
+        while i < min(32, len(self.boxes) - 1):
             b = self.boxes[i]
             i += 1
             if b.get("layoutno", "").find("title") >= 0:
@@ -97,10 +99,15 @@ class Pdf(PdfParser):
                     title = ""
                     break
                 for j in range(3):
-                    if _begin(self.boxes[i + j]["text"]):
+                    next_idx = i + j
+                    if next_idx >= len(self.boxes):
                         break
-                    authors.append(self.boxes[i + j]["text"])
-                    break
+                    candidate = self.boxes[next_idx]["text"]
+                    if _begin(candidate):
+                        break
+                    if "@" in candidate:
+                        break
+                    authors.append(candidate)
                 break
         # get abstract
         abstr = ""
@@ -139,7 +146,7 @@ class Pdf(PdfParser):
         }
 
 
-def chunk(filename, binary=None, from_page=0, to_page=100000,
+def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER,
           lang="Chinese", callback=None, **kwargs):
     """
         Only pdf is supported.
@@ -149,7 +156,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -162,7 +171,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
+            sections = paper.get("sections", [])
         else:
+            kwargs.pop("parse_method", None)
+            kwargs.pop("mineru_llm_name", None)
             sections, tables, pdf_parser = pdf_parser(
                 filename=filename,
                 binary=binary,
@@ -171,6 +183,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 lang=lang,
                 callback=callback,
                 pdf_cls=Pdf,
+                layout_recognizer=layout_recognizer,
+                mineru_llm_name=parser_model_name,
                 parse_method="paper",
                 **kwargs
             )
@@ -183,8 +197,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "tables": tables
             }
 
-        tbls=paper["tables"]
-        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+        tbls = paper["tables"]
+        tbls = vision_figure_parser_pdf_wrapper(
+            tbls=tbls,
+            sections=sections,
+            callback=callback,
+            **kwargs,
+        )
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
@@ -238,6 +257,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
     if table_ctx or image_ctx:
         attach_media_context(res, table_ctx, image_ctx)
+    
     return res
 
 
@@ -322,6 +342,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
+
     chunk(sys.argv[1], callback=dummy)

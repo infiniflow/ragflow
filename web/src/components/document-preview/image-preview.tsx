@@ -51,7 +51,7 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
   return (
     <div
       className={classNames(
-        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md image-previewer',
+        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md image-previewer max-h-[80vh] overflow-auto',
         className,
       )}
     >
@@ -62,14 +62,12 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
       )}
 
       {!isLoading && imageSrc && (
-        <div className="max-h-[80vh] overflow-auto p-2">
-          <img
-            src={imageSrc}
-            alt={'image'}
-            className="w-full h-auto max-w-full object-contain"
-            onLoad={() => URL.revokeObjectURL(imageSrc!)}
-          />
-        </div>
+        <img
+          src={imageSrc}
+          alt={'image'}
+          className="w-full h-auto max-w-full object-contain"
+          onLoad={() => URL.revokeObjectURL(imageSrc!)}
+        />
       )}
     </div>
   );

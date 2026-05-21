@@ -30,6 +30,7 @@ fN33jCHRoDUW81IH9zjij/vaw8IbVyb6vuwg6MX6inOEBRRzVbRYxXOu1wkWY6SsI8X70oF9aeLFp/Pz
 X8f7fp9c7vUsfOCkM+gHY3PadG+QHa7KI7mzTKgUTZImK6BZtfRBATDTthEUbbaTewY4H0MnWiCeeDhcbeQao6cFy1To8pE3RpmxnGnS8BsBn8w=="""
 
 INVALID_API_TOKEN = "invalid_key_123"
+INVALID_ID_32 = "0" * 32
 DATASET_NAME_LIMIT = 128
 DOCUMENT_NAME_LIMIT = 255
 CHAT_ASSISTANT_NAME_LIMIT = 255
@@ -45,6 +46,7 @@ DEFAULT_PARSER_CONFIG = {
     "image_context_size": 0,
     "table_context_size": 0,
     "topn_tags": 3,
+    "llm_id": "glm-4-flash@ZHIPU-AI",
     "raptor": {
         "use_raptor": True,
         "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
@@ -63,5 +65,11 @@ DEFAULT_PARSER_CONFIG = {
             "category",
         ],
         "method": "light",
+        "batch_chunk_token_size": 4096,
     },
+    "parent_child": {
+        "use_parent_child": False,
+        "children_delimiter": "\n",
+    },
+    "children_delimiter": "",
 }

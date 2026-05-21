@@ -25,8 +25,9 @@ const Preview = ({
   return (
     <>
       {fileType === 'pdf' && highlights && setWidthAndHeight && (
-        <section>
+        <section className="h-full">
           <PdfPreviewer
+            className={className}
             highlights={highlights}
             setWidthAndHeight={setWidthAndHeight}
             url={url}
@@ -67,7 +68,7 @@ const Preview = ({
           <VideoPreviewer className={className} url={url} />
         </section>
       )}
-      {['pptx'].indexOf(fileType) > -1 && (
+      {['ppt', 'pptx'].indexOf(fileType) > -1 && (
         <section>
           <PptPreviewer className={className} url={url} />
         </section>
@@ -82,7 +83,7 @@ const Preview = ({
           <CSVFileViewer className={className} url={url} />
         </section>
       )}
-      {['md'].indexOf(fileType) > -1 && (
+      {['md', 'mdx'].indexOf(fileType) > -1 && (
         <section>
           <Md className={className} url={url} />
         </section>

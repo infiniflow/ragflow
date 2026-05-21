@@ -4,19 +4,20 @@ import { useSendAgentMessage } from './use-send-agent-message';
 
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
+import MarkdownContent from '@/components/next-markdown-content';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import {
   useFetchAgent,
-  useUploadCanvasFileWithProgress,
+  useUploadAgentFileWithProgress,
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback } from 'react';
-import { useParams } from 'umi';
+import { memo, useCallback, useContext } from 'react';
+import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
-import { useAwaitCompentData } from '../hooks/use-chat-logic';
+import { useAwaitComponentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
 import { useGetFileIcon } from './use-get-file-icon';
 
@@ -34,30 +35,32 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
+    removeFile,
   } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
-  const { id: canvasId } = useParams();
-  const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
+  const { uploadAgentFile, loading } = useUploadAgentFileWithProgress();
 
-  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
-    canvasId: canvasId as string,
   });
+
+  const { setDerivedMessages } = useContext(AgentChatContext);
+  setDerivedMessages?.(derivedMessages);
 
   const isTaskMode = useIsTaskMode();
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
-        const ret = await uploadCanvasFile({ files, options });
+        const ret = await uploadAgentFile({ files, options });
         appendUploadResponseList(ret.data, files);
       },
-      [appendUploadResponseList, uploadCanvasFile],
+      [appendUploadResponseList, uploadAgentFile],
     );
 
   return (
@@ -65,6 +68,7 @@ function AgentChatBox() {
       <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
         <div className="flex-1 overflow-auto" ref={messageContainerRef}>
           <div>
+            {!sendLoading && <div data-testid="agent-run-idle" />}
             {/* <Spin spinning={sendLoading}> */}
             {derivedMessages?.map((message, i) => {
               return (
@@ -98,8 +102,10 @@ function AgentChatBox() {
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 !== i && (
                       <div>
-                        <div>{message?.data?.tips}</div>
-
+                        <MarkdownContent
+                          content={message?.data?.tips}
+                          loading={false}
+                        ></MarkdownContent>
                         <div>
                           {buildInputList(message)?.map((item) => item.value)}
                         </div>
@@ -116,13 +122,15 @@ function AgentChatBox() {
           <NextMessageInput
             value={value}
             sendLoading={sendLoading}
-            disabled={isWaitting}
-            sendDisabled={sendLoading || isWaitting}
-            isUploading={loading || isWaitting}
+            disabled={isWaiting}
+            sendDisabled={sendLoading || isWaiting}
+            isUploading={loading || isWaiting}
+            resize="vertical"
             onPressEnter={handlePressEnter}
             onInputChange={handleInputChange}
             stopOutputMessage={stopOutputMessage}
             onUpload={handleUploadFile}
+            removeFile={removeFile}
             conversationId=""
           />
         )}

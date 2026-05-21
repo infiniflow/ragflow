@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import datetime
 import json
 import logging
 import random
 from timeit import default_timer as timer
-import trio
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled, TaskService, CANVAS_DEBUG_DOC_ID
@@ -152,8 +152,9 @@ class Pipeline(Graph):
                 #else:
                 #    cpn_obj.invoke(**last_cpn.output())
 
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(invoke)
+            tasks = []
+            tasks.append(asyncio.create_task(invoke()))
+            await asyncio.gather(*tasks)
 
             if cpn_obj.error():
                 self.error = "[ERROR]" + cpn_obj.error()

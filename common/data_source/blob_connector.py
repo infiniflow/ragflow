@@ -1,8 +1,11 @@
 """Blob storage connector"""
 import logging
 import os
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any, Optional
+
+import xxhash
 
 from common.data_source.utils import (
     create_s3_client,
@@ -18,11 +21,35 @@ from common.data_source.exceptions import (
     CredentialExpiredError,
     InsufficientPermissionsError
 )
-from common.data_source.interfaces import LoadConnector, PollConnector
-from common.data_source.models import Document, SecondsSinceUnixEpoch, GenerateDocumentsOutput
+from common.data_source.interfaces import (
+    FingerprintConnector,
+    LoadConnector,
+    PollConnector,
+)
+from common.data_source.models import (
+    Document,
+    KeyRecord,
+    SecondsSinceUnixEpoch,
+    GenerateDocumentsOutput,
+    GenerateSlimDocumentOutput,
+    SlimDocument,
+)
 
 
-class BlobStorageConnector(LoadConnector, PollConnector):
+def _normalize_etag(raw_etag: Optional[str]) -> Optional[str]:
+    """Return a 32-char hex fingerprint derived from an S3 ETag.
+
+    S3 ETags are MD5 (32 hex chars) for single-part uploads and "<md5>-<n>"
+    (34+ chars) for multipart. We always hash so the column format is uniform
+    regardless of upload type or provider quirks; equality of the hashed value
+    is sufficient for change detection.
+    """
+    if not raw_etag:
+        return None
+    return xxhash.xxh128(raw_etag.strip('"').encode()).hexdigest()
+
+
+class BlobStorageConnector(LoadConnector, PollConnector, FingerprintConnector):
     """Blob storage connector"""
 
     def __init__(
@@ -42,6 +69,11 @@ class BlobStorageConnector(LoadConnector, PollConnector):
         self.size_threshold: int | None = BLOB_STORAGE_SIZE_THRESHOLD
         self.bucket_region: Optional[str] = None
         self.european_residency: bool = european_residency
+        # Populated by list_keys() so a subsequent get_value(key) can find the
+        # raw S3 object metadata (LastModified, ETag, Key, Size) without a second
+        # head_object call. Lifetime is one list_keys() pass.
+        self._listing_cache: dict[str, dict[str, Any]] = {}
+        self._filename_counts: dict[str, int] = {}
 
     def set_allow_images(self, allow_images: bool) -> None:
         """Set whether to process images"""
@@ -56,7 +88,7 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
         # Validate credentials
         if self.bucket_type == BlobType.R2:
-            if not all(
+            if not all( 
                 credentials.get(key)
                 for key in ["r2_access_key_id", "r2_secret_access_key", "account_id"]
             ):
@@ -64,15 +96,23 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
         elif self.bucket_type == BlobType.S3:
             authentication_method = credentials.get("authentication_method", "access_key")
+
             if authentication_method == "access_key":
                 if not all(
                     credentials.get(key)
                     for key in ["aws_access_key_id", "aws_secret_access_key"]
                 ):
                     raise ConnectorMissingCredentialError("Amazon S3")
+
             elif authentication_method == "iam_role":
                 if not credentials.get("aws_role_arn"):
                     raise ConnectorMissingCredentialError("Amazon S3 IAM role ARN is required")
+                
+            elif authentication_method == "assume_role":
+                pass
+
+            else:
+                raise ConnectorMissingCredentialError("Unsupported S3 authentication method")
 
         elif self.bucket_type == BlobType.GOOGLE_CLOUD_STORAGE:
             if not all(
@@ -108,68 +148,178 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
         return None
 
+    def _build_document_from_obj(
+        self,
+        obj: dict[str, Any],
+        filename_counts: dict[str, int],
+    ) -> Optional[Document]:
+        """Materialize a Document for one S3 object, downloading its body."""
+        key = obj["Key"]
+        file_name = os.path.basename(key)
+        last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
+
+        size_bytes = extract_size_bytes(obj)
+        if (
+            self.size_threshold is not None
+            and isinstance(size_bytes, int)
+            and size_bytes > self.size_threshold
+        ):
+            logging.warning(
+                f"{file_name} exceeds size threshold of {self.size_threshold}. Skipping."
+            )
+            return None
+
+        blob = download_object(
+            self.s3_client, self.bucket_name, key, self.size_threshold
+        )
+        if blob is None:
+            return None
+
+        return Document(
+            id=f"{self.bucket_type}:{self.bucket_name}:{key}",
+            blob=blob,
+            source=DocumentSource(self.bucket_type.value),
+            semantic_identifier=self._get_semantic_id(key, file_name, filename_counts),
+            extension=get_file_ext(file_name),
+            doc_updated_at=last_modified,
+            size_bytes=size_bytes if size_bytes else 0,
+            fingerprint=_normalize_etag(obj.get("ETag")),
+        )
+
     def _yield_blob_objects(
         self,
         start: datetime,
         end: datetime,
     ) -> GenerateDocumentsOutput:
         """Generate bucket objects"""
+        all_objects, filename_counts = self._collect_blob_objects(start, end)
+
+        batch: list[Document] = []
+        for obj in all_objects:
+            try:
+                doc = self._build_document_from_obj(obj, filename_counts)
+                if doc is None:
+                    continue
+                batch.append(doc)
+                if len(batch) == self.batch_size:
+                    yield batch
+                    batch = []
+            except Exception:
+                logging.exception(f"Error decoding object {obj.get('Key')}")
+
+        if batch:
+            yield batch
+
+    def list_keys(self) -> Iterator[KeyRecord]:
+        """Enumerate the full bucket keyspace with per-object fingerprints.
+
+        Cheap path: relies on list_objects_v2 which returns ETag in the listing,
+        so no GetObject call is needed. Caches each object's metadata so a
+        subsequent get_value(key) call can rebuild the Document without a second
+        round-trip to S3.
+        """
+        if self.s3_client is None:
+            raise ConnectorMissingCredentialError("Blob storage")
+
+        all_objects, filename_counts = self._collect_blob_objects(
+            start=datetime(1970, 1, 1, tzinfo=timezone.utc),
+            end=datetime.now(timezone.utc),
+        )
+        self._filename_counts = filename_counts
+        self._listing_cache = {}
+
+        for obj in all_objects:
+            doc_id = f"{self.bucket_type}:{self.bucket_name}:{obj['Key']}"
+            self._listing_cache[doc_id] = obj
+            yield KeyRecord(
+                key=doc_id,
+                fingerprint=_normalize_etag(obj.get("ETag")),
+            )
+
+    def get_value(self, key: str) -> Document:
+        """Materialize the Document for a key previously yielded by list_keys().
+
+        Must be called within the same list_keys() pass that produced the key,
+        since the metadata cache lives on the connector instance and is reset
+        each list_keys() call.
+        """
+        obj = self._listing_cache.get(key)
+        if obj is None:
+            raise KeyError(
+                f"get_value({key!r}) called before list_keys() yielded the key, "
+                "or after a subsequent list_keys() reset the cache"
+            )
+        doc = self._build_document_from_obj(obj, self._filename_counts)
+        if doc is None:
+            raise RuntimeError(f"Failed to materialize Document for key {key!r}")
+        return doc
+
+    def _collect_blob_objects(
+        self,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        """Collect object metadata for files in the requested window."""
         if self.s3_client is None:
             raise ConnectorMissingCredentialError("Blob storage")
 
         paginator = self.s3_client.get_paginator("list_objects_v2")
         pages = paginator.paginate(Bucket=self.bucket_name, Prefix=self.prefix)
 
-        batch: list[Document] = []
+        # Collect all objects first to count filename occurrences
+        all_objects: list[dict[str, Any]] = []
         for page in pages:
             if "Contents" not in page:
                 continue
-
             for obj in page["Contents"]:
                 if obj["Key"].endswith("/"):
                     continue
-
                 last_modified = obj["LastModified"].replace(tzinfo=timezone.utc)
+                if start < last_modified <= end:
+                    all_objects.append(obj)
 
-                if not (start < last_modified <= end):
-                    continue
+        filename_counts: dict[str, int] = {}
+        for obj in all_objects:
+            file_name = os.path.basename(obj["Key"])
+            filename_counts[file_name] = filename_counts.get(file_name, 0) + 1
 
-                file_name = os.path.basename(obj["Key"])
-                key = obj["Key"]
+        return all_objects, filename_counts
 
-                size_bytes = extract_size_bytes(obj)
-                if (
-                    self.size_threshold is not None
-                    and isinstance(size_bytes, int)
-                    and size_bytes > self.size_threshold
-                ):
-                    logging.warning(
-                        f"{file_name} exceeds size threshold of {self.size_threshold}. Skipping."
-                    )
-                    continue
-                try:
-                    blob = download_object(self.s3_client, self.bucket_name, key, self.size_threshold)
-                    if blob is None:
-                        continue
+    def _get_semantic_id(
+        self,
+        key: str,
+        file_name: str,
+        filename_counts: dict[str, int],
+    ) -> str:
+        """Use full relative path only when filenames collide."""
+        if filename_counts.get(file_name, 0) > 1:
+            relative_path = key
+            if self.prefix and key.startswith(self.prefix):
+                relative_path = key[len(self.prefix):]
+            return relative_path.replace("/", " / ") if relative_path else file_name
+        return file_name
 
-                    batch.append(
-                        Document(
-                            id=f"{self.bucket_type}:{self.bucket_name}:{key}",
-                            blob=blob,
-                            source=DocumentSource(self.bucket_type.value),
-                            semantic_identifier=file_name,
-                            extension=get_file_ext(file_name),
-                            doc_updated_at=last_modified,
-                            size_bytes=size_bytes if size_bytes else 0
-                        )
-                    )
-                    if len(batch) == self.batch_size:
-                        yield batch
-                        batch = []
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> GenerateSlimDocumentOutput:
+        """Return a full current snapshot of blob object IDs without downloading content."""
+        del callback
 
-                except Exception:
-                    logging.exception(f"Error decoding object {key}")
-        
+        all_objects, _ = self._collect_blob_objects(
+            start=datetime(1970, 1, 1, tzinfo=timezone.utc),
+            end=datetime.now(timezone.utc),
+        )
+
+        batch: list[SlimDocument] = []
+        for obj in all_objects:
+            batch.append(
+                SlimDocument(id=f"{self.bucket_type}:{self.bucket_name}:{obj['Key']}")
+            )
+            if len(batch) == self.batch_size:
+                yield batch
+                batch = []
+
         if batch:
             yield batch
 

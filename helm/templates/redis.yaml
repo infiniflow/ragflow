@@ -1,3 +1,4 @@
+{{- if .Values.redis.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -40,9 +41,9 @@ spec:
       annotations:
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
-      {{- if or .Values.imagePullSecrets .Values.redis.image.pullSecrets }}
+      {{- if or .Values.global.imagePullSecrets .Values.redis.image.pullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
+        {{- with .Values.global.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- with .Values.redis.image.pullSecrets }}
@@ -52,7 +53,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: redis
-          image: {{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}
+          image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.redis.image.repository) }}:{{ .Values.redis.image.tag }}
           {{- with .Values.redis.image.pullPolicy }}
           imagePullPolicy: {{ . }}
           {{- end }}
@@ -131,3 +132,4 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: redis
+{{- end }}

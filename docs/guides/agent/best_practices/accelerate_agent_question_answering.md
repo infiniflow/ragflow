@@ -45,13 +45,13 @@ Click the light bulb icon above the *current* dialogue and scroll down the popup
 
 
 | Item name         | Description                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------------- |
+|-------------------|-----------------------------------------------------------------------------------------------|
 | Total             | Total time spent on this conversation round, including chunk retrieval and answer generation. |
 | Check LLM         | Time to validate the specified LLM.                                                           |
 | Create retriever  | Time to create a chunk retriever.                                                             |
 | Bind embedding    | Time to initialize an embedding model instance.                                               |
 | Bind LLM          | Time to initialize an LLM instance.                                                           |
-| Tune question     | Time to optimize the user query using the context of the mult-turn conversation.              |
+| Tune question     | Time to optimize the user query using the context of the multi-turn conversation.             |
 | Bind reranker     | Time to initialize an reranker model instance for chunk retrieval.                            |
 | Generate keywords | Time to extract keywords from the user query.                                                 |
 | Retrieval         | Time to retrieve the chunks.                                                                  |

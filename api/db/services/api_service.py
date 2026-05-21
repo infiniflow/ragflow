@@ -44,12 +44,20 @@ class APITokenService(CommonService):
 class API4ConversationService(CommonService):
     model = API4Conversation
 
+    @staticmethod
+    def _normalize_query_date(value, is_end=False):
+        if "T" in value:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
+        elif len(value) == 10:
+            value = f"{value} 23:59:59" if is_end else f"{value} 00:00:00"
+        return value
+
     @classmethod
     @DB.connection_context()
     def get_list(cls, dialog_id, tenant_id,
                  page_number, items_per_page,
-                 orderby, desc, id, user_id=None, include_dsl=True, keywords="",
-                 from_date=None, to_date=None
+                 orderby, desc, id=None, user_id=None, include_dsl=True, keywords="",
+                 from_date=None, to_date=None, exp_user_id=None
                  ):
         if include_dsl:
             sessions = cls.model.select().where(cls.model.dialog_id == dialog_id)
@@ -62,10 +70,13 @@ class API4ConversationService(CommonService):
             sessions = sessions.where(cls.model.user_id == user_id)
         if keywords:
             sessions = sessions.where(peewee.fn.LOWER(cls.model.message).contains(keywords.lower()))
+        date_field = cls.model.update_date if orderby.startswith("update_") else cls.model.create_date
         if from_date:
-            sessions = sessions.where(cls.model.create_date >= from_date)
+            sessions = sessions.where(date_field >= cls._normalize_query_date(from_date))
         if to_date:
-            sessions = sessions.where(cls.model.create_date <= to_date)
+            sessions = sessions.where(date_field <= cls._normalize_query_date(to_date, is_end=True))
+        if exp_user_id:
+            sessions = sessions.where(cls.model.exp_user_id == exp_user_id)
         if desc:
             sessions = sessions.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -74,6 +85,17 @@ class API4ConversationService(CommonService):
         sessions = sessions.paginate(page_number, items_per_page)
 
         return count, list(sessions.dicts())
+    
+    @classmethod
+    @DB.connection_context()
+    def get_names(cls, dialog_id, exp_user_id):
+        fields = [cls.model.id, cls.model.name,]
+        sessions = cls.model.select(*fields).where(
+            cls.model.dialog_id == dialog_id,
+            cls.model.exp_user_id == exp_user_id
+            ).order_by(cls.model.getter_by("create_date").desc())
+
+        return list(sessions.dicts())
 
     @classmethod
     @DB.connection_context()

@@ -4,12 +4,12 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
-import kbService from '@/services/knowledge-service';
+import { checkEmbedding } from '@/services/knowledge-service';
 import { useIsFetching } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import { z } from 'zod';
 import { formSchema } from './form-schema';
 
@@ -31,13 +31,14 @@ export function useHasParsedDocument(isEdit?: boolean) {
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration({
     isEdit,
   });
-  return knowledgeDetails.chunk_num > 0;
+  return knowledgeDetails.chunk_count > 0;
 }
 
 export const useFetchKnowledgeConfigurationOnMount = (
-  form: UseFormReturn<z.infer<typeof formSchema>, any, undefined>,
+  form: UseFormReturn<z.infer<typeof formSchema>>,
 ) => {
-  const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
+  const { data: knowledgeDetails, loading } =
+    useFetchKnowledgeBaseConfiguration();
 
   useEffect(() => {
     const parser_config = {
@@ -59,19 +60,19 @@ export const useFetchKnowledgeConfigurationOnMount = (
         'description',
         'name',
         'permission',
-        'embd_id',
-        'parser_id',
         'language',
         'parser_config',
         'connectors',
         'pagerank',
         'avatar',
       ]),
+      embedding_model: knowledgeDetails.embedding_model,
+      chunk_method: knowledgeDetails.chunk_method,
     } as z.infer<typeof formSchema>;
     form.reset(formValues);
   }, [form, knowledgeDetails]);
 
-  return knowledgeDetails;
+  return { knowledgeDetails, loading };
 };
 
 export const useSelectKnowledgeDetailsLoading = () =>
@@ -107,8 +108,7 @@ export const useHandleKbEmbedding = () => {
   const knowledgeBaseId = searchParams.get('id') || id;
   const handleChange = useCallback(
     async ({ embed_id }: { embed_id: string }) => {
-      const res = await kbService.checkEmbedding({
-        kb_id: knowledgeBaseId,
+      const res = await checkEmbedding(knowledgeBaseId || '', {
         embd_id: embed_id,
       });
       return res.data;

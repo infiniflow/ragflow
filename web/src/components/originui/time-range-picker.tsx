@@ -1,15 +1,3 @@
-import {
-  endOfMonth,
-  endOfYear,
-  format,
-  startOfMonth,
-  startOfYear,
-  subDays,
-  subMonths,
-  subYears,
-} from 'date-fns';
-import { useEffect, useId, useState } from 'react';
-
 import { Calendar, DateRange } from '@/components/originui/calendar';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,7 +6,20 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import {
+  endOfDay,
+  endOfMonth,
+  endOfYear,
+  format,
+  startOfDay,
+  startOfMonth,
+  startOfYear,
+  subDays,
+  subMonths,
+  subYears,
+} from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 
 const CalendarComp = ({
   selectDateRange,
@@ -27,20 +28,20 @@ const CalendarComp = ({
 }: ITimeRangePickerProps) => {
   const today = new Date();
   const yesterday = {
-    from: subDays(today, 1),
-    to: subDays(today, 1),
+    from: startOfDay(subDays(today, 1)),
+    to: endOfDay(subDays(today, 1)),
   };
   const last7Days = {
-    from: subDays(today, 6),
-    to: today,
+    from: startOfDay(subDays(today, 6)),
+    to: endOfDay(today),
   };
   const last30Days = {
-    from: subDays(today, 29),
-    to: today,
+    from: startOfDay(subDays(today, 29)),
+    to: endOfDay(today),
   };
   const monthToDate = {
     from: startOfMonth(today),
-    to: today,
+    to: endOfDay(today),
   };
   const lastMonth = {
     from: startOfMonth(subMonths(today, 1)),
@@ -48,7 +49,7 @@ const CalendarComp = ({
   };
   const yearToDate = {
     from: startOfYear(today),
-    to: today,
+    to: endOfDay(today),
   };
   const lastYear = {
     from: startOfYear(subYears(today, 1)),
@@ -65,9 +66,7 @@ const CalendarComp = ({
   ];
   const [month, setMonth] = useState(today);
   const [date, setDate] = useState<DateRange>(selectDateRange || last7Days);
-  useEffect(() => {
-    onSelect?.(date);
-  }, [date, onSelect]);
+
   return (
     <div>
       <div className="rounded-md border">
@@ -80,11 +79,13 @@ const CalendarComp = ({
                   size="sm"
                   className="w-full justify-start"
                   onClick={() => {
-                    setDate({
-                      from: today,
-                      to: today,
-                    });
+                    const newDateRange = {
+                      from: startOfDay(today),
+                      to: endOfDay(today),
+                    };
+                    setDate(newDateRange);
                     setMonth(today);
+                    onSelect?.(newDateRange);
                   }}
                 >
                   Today
@@ -98,6 +99,7 @@ const CalendarComp = ({
                     onClick={() => {
                       setDate(dateRange.value);
                       setMonth(dateRange.value.to);
+                      onSelect?.(dateRange.value);
                     }}
                   >
                     {dateRange.key}
@@ -111,7 +113,13 @@ const CalendarComp = ({
             selected={date}
             onSelect={(newDate) => {
               if (newDate) {
-                setDate(newDate as DateRange);
+                const dateRange = newDate as DateRange;
+                const newDateRange = {
+                  from: startOfDay(dateRange.from),
+                  to: dateRange.to ? endOfDay(dateRange.to) : undefined,
+                };
+                setDate(newDateRange);
+                onSelect?.(newDateRange);
               }
             }}
             month={month}
@@ -130,7 +138,7 @@ const CalendarComp = ({
 
 export type ITimeRangePickerProps = {
   onSelect: (e: DateRange) => void;
-  selectDateRange: DateRange;
+  selectDateRange?: DateRange;
   className?: string;
 };
 const TimeRangePicker = ({
@@ -140,11 +148,40 @@ const TimeRangePicker = ({
 }: ITimeRangePickerProps) => {
   const id = useId();
   const today = new Date();
+
+  // Initialize without timezone conversion
   const [date, setDate] = useState<DateRange | undefined>(
-    selectDateRange || { from: today, to: today },
+    selectDateRange
+      ? {
+          from: startOfDay(selectDateRange.from),
+          to: selectDateRange.to ? endOfDay(selectDateRange.to) : undefined,
+        }
+      : {
+          from: startOfDay(today),
+          to: endOfDay(today),
+        },
   );
+
   useEffect(() => {
-    setDate(selectDateRange);
+    if (!selectDateRange || !selectDateRange.from) return;
+
+    try {
+      const fromDate = new Date(selectDateRange.from);
+      const toDate = selectDateRange.to
+        ? new Date(selectDateRange.to)
+        : undefined;
+
+      if (isNaN(fromDate.getTime())) return;
+
+      if (toDate && isNaN(toDate.getTime())) return;
+
+      setDate({
+        from: startOfDay(fromDate),
+        to: toDate ? endOfDay(toDate) : undefined,
+      });
+    } catch (error) {
+      console.error('Error updating date range from props:', error);
+    }
   }, [selectDateRange]);
   const onChange = (e: DateRange | undefined) => {
     if (!e) return;

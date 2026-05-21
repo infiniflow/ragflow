@@ -32,7 +32,7 @@ spec:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: elasticsearch
   {{- with .Values.elasticsearch.deployment.strategy }}
-  strategy:
+  updateStrategy:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
   template:
@@ -44,9 +44,9 @@ spec:
         checksum/config-es: {{ include (print $.Template.BasePath "/elasticsearch-config.yaml") . | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
-      {{- if or .Values.imagePullSecrets .Values.elasticsearch.image.pullSecrets }}
+      {{- if or .Values.global.imagePullSecrets .Values.elasticsearch.image.pullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
+        {{- with .Values.global.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- with .Values.elasticsearch.image.pullSecrets }}
@@ -55,7 +55,7 @@ spec:
       {{- end }}
       initContainers:
       - name: fix-data-volume-permissions
-        image: {{ .Values.elasticsearch.initContainers.alpine.repository }}:{{ .Values.elasticsearch.initContainers.alpine.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.initContainers.alpine.repository) }}:{{ .Values.elasticsearch.initContainers.alpine.tag }}
         {{- with .Values.elasticsearch.initContainers.alpine.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
@@ -67,7 +67,7 @@ spec:
           - mountPath: /usr/share/elasticsearch/data
             name: es-data
       - name: sysctl
-        image: {{ .Values.elasticsearch.initContainers.busybox.repository }}:{{ .Values.elasticsearch.initContainers.busybox.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.initContainers.busybox.repository) }}:{{ .Values.elasticsearch.initContainers.busybox.tag }}
         {{- with .Values.elasticsearch.initContainers.busybox.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
@@ -77,7 +77,7 @@ spec:
         command: ["sysctl", "-w", "vm.max_map_count=262144"]
       containers:
       - name: elasticsearch
-        image: {{ .Values.elasticsearch.image.repository }}:{{ .Values.elasticsearch.image.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.elasticsearch.image.repository) }}:{{ .Values.elasticsearch.image.tag }}
         {{- with .Values.elasticsearch.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}

@@ -1,20 +1,19 @@
 import { Button } from '@/components/ui/button';
 import { Modal, ModalType } from '@/components/ui/modal/modal';
 import { t } from 'i18next';
-import { DataSourceInfo } from '../contant';
-import { IDataSourceBase } from '../interface';
+import { IDataSourceBase, IDataSourceInfoMap } from '../interface';
 
 export type IDelSourceModalProps<T> = Partial<ModalType> & {
   data?: T;
   type?: 'delete' | 'unlink';
   onOk?: (data?: T) => void;
+  dataSourceInfo: IDataSourceInfoMap;
 };
 
 export const delSourceModal = <T extends IDataSourceBase>(
   props: IDelSourceModalProps<T>,
 ) => {
-  const { data, onOk, type = 'delete', ...otherProps } = props;
-  console.log('data', data);
+  const { data, onOk, type = 'delete', dataSourceInfo, ...otherProps } = props;
   const config = {
     title:
       type === 'delete'
@@ -39,7 +38,7 @@ export const delSourceModal = <T extends IDataSourceBase>(
         )}
         <div className="flex items-center gap-1 p-2 border border-border-button rounded-md mb-3">
           <div className="w-6 h-6 flex-shrink-0">
-            {data?.source ? DataSourceInfo[data?.source].icon : ''}
+            {data?.source ? dataSourceInfo[data?.source].icon : ''}
           </div>
           <div className="flex items-center gap-2 text-text-secondary text-xs">
             {/* <div className="h-6 flex-shrink-0 text-text-primary text-base">

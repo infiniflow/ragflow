@@ -16,8 +16,9 @@
 import os
 import json
 import secrets
-from datetime import date
 import logging
+from datetime import date
+
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
@@ -31,12 +32,20 @@ import rag.utils.ob_conn
 import rag.utils.opensearch_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
+from rag.utils.gcs_conn import RAGFlowGCS
 from rag.utils.minio_conn import RAGFlowMinio
 from rag.utils.opendal_conn import OpenDALStorage
+from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.s3_conn import RAGFlowS3
 from rag.utils.oss_conn import RAGFlowOSS
 
 from rag.nlp import search
+
+import memory.utils.es_conn as memory_es_conn
+import memory.utils.infinity_conn as memory_infinity_conn
+import memory.utils.ob_conn as memory_ob_conn
+
+TIMEZONE = os.getenv("TZ", "Asia/Shanghai")
 
 LLM = None
 LLM_FACTORY = None
@@ -75,9 +84,11 @@ FEISHU_OAUTH = None
 OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
+DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
 
 
 docStoreConn = None
+msgStoreConn = None
 
 retriever = None
 kg_retriever = None
@@ -85,6 +96,8 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+# SSO-only mode: hide password login form
+DISABLE_PASSWORD_LOGIN = False
 
 # sandbox-executor-manager
 SANDBOX_HOST = None
@@ -109,6 +122,7 @@ MINIO = {}
 OB = {}
 OSS = {}
 OS = {}
+GCS = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
 DOC_BULK_SIZE: int = 4
@@ -127,7 +141,7 @@ def get_svr_queue_name(priority: int) -> str:
 def get_svr_queue_names():
     return [get_svr_queue_name(priority) for priority in [1, 0]]
 
-def _get_or_create_secret_key():
+def init_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
     if secret_key and len(secret_key) >= 32:
         return secret_key
@@ -136,13 +150,33 @@ def _get_or_create_secret_key():
     configured_key = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key")
     if configured_key and configured_key != str(date.today()) and len(configured_key) >= 32:
         return configured_key
+    return None
+
+
+def get_secret_key():
+    global SECRET_KEY
+    if SECRET_KEY is None:
+        return _get_or_create_secret_key()
+    return SECRET_KEY
+
+def _get_or_create_secret_key():
+    # secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
+    # if secret_key and len(secret_key) >= 32:
+    #     return secret_key
+    #
+    # # Check if there's a configured secret key
+    # configured_key = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("secret_key")
+    # if configured_key and configured_key != str(date.today()) and len(configured_key) >= 32:
+    #     return configured_key
 
     # Generate a new secure key and warn about it
     import logging
 
-    new_key = secrets.token_hex(32)
-    logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
-    return new_key
+    generated_key = secrets.token_hex(32)
+    secret_key = REDIS_CONN.get_or_create_secret_key("ragflow:system:secret_key", generated_key)
+    if generated_key == secret_key:
+        logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
+    return secret_key
 
 class StorageFactory:
     storage_mapping = {
@@ -151,7 +185,8 @@ class StorageFactory:
         Storage.AZURE_SAS: RAGFlowAzureSasBlob,
         Storage.AWS_S3: RAGFlowS3,
         Storage.OSS: RAGFlowOSS,
-        Storage.OPENDAL: OpenDALStorage
+        Storage.OPENDAL: OpenDALStorage,
+        Storage.GCS: RAGFlowGCS,
     }
 
     @classmethod
@@ -163,7 +198,7 @@ def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
-
+    
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}
     llm_default_models = llm_settings.get("default_models", {}) or {}
@@ -174,6 +209,17 @@ def init_settings():
     global REGISTER_ENABLED
     try:
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
+    except Exception:
+        pass
+
+    global DISABLE_PASSWORD_LOGIN
+    try:
+        env_val = os.environ.get("DISABLE_PASSWORD_LOGIN", "").lower()
+        if env_val in ("1", "true", "yes"):
+            DISABLE_PASSWORD_LOGIN = True
+        else:
+            authentication_conf = get_base_config("authentication", {})
+            DISABLE_PASSWORD_LOGIN = bool(authentication_conf.get("disable_password_login", False))
     except Exception:
         pass
 
@@ -207,7 +253,10 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
+    EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    if "tei-" in compose_profiles:
+        EMBEDDING_MDL = os.getenv("TEI_MODEL", EMBEDDING_MDL or "BAAI/bge-small-en-v1.5")
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
@@ -217,7 +266,7 @@ def init_settings():
     HOST_PORT = get_base_config(RAG_FLOW_SERVICE_NAME, {}).get("http_port")
 
     global SECRET_KEY
-    SECRET_KEY = _get_or_create_secret_key()
+    SECRET_KEY = init_secret_key()
 
 
     # authentication
@@ -231,15 +280,20 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, docStoreConn, ES, OB, OS, INFINITY
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
+    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
+    DOC_ENGINE_OCEANBASE = (DOC_ENGINE.lower() == "oceanbase")
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+        INFINITY = get_base_config("infinity", {
+            "uri": "infinity:23817",
+            "postgres_port": 5432,
+            "db_name": "default_db"
+        })
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
         OS = get_base_config("os", {})
@@ -247,10 +301,28 @@ def init_settings():
     elif lower_case_doc_engine == "oceanbase":
         OB = get_base_config("oceanbase", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
+    elif lower_case_doc_engine == "seekdb":
+        OB = get_base_config("seekdb", {})
+        docStoreConn = rag.utils.ob_conn.OBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    global AZURE, S3, MINIO, OSS
+    global msgStoreConn
+    # use the same engine for message store
+    if DOC_ENGINE == "elasticsearch":
+        ES = get_base_config("es", {})
+        msgStoreConn = memory_es_conn.ESConnection()
+    elif DOC_ENGINE == "infinity":
+        INFINITY = get_base_config("infinity", {
+            "uri": "infinity:23817",
+            "postgres_port": 5432,
+            "db_name": "default_db"
+        })
+        msgStoreConn = memory_infinity_conn.InfinityConnection()
+    elif lower_case_doc_engine in ["oceanbase", "seekdb"]:
+        msgStoreConn = memory_ob_conn.OBConnection()
+
+    global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
         AZURE = get_base_config("azure", {})
     elif STORAGE_IMPL_TYPE == 'AWS_S3':
@@ -259,13 +331,35 @@ def init_settings():
         MINIO = decrypt_database_config(name="minio")
     elif STORAGE_IMPL_TYPE == 'OSS':
         OSS = get_base_config("oss", {})
+    elif STORAGE_IMPL_TYPE == 'GCS':
+        GCS = get_base_config("gcs", {})
 
     global STORAGE_IMPL
-    STORAGE_IMPL = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+    storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+    
+    # Define crypto settings
+    crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
+    
+    # Check if encryption is enabled
+    if crypto_enabled:
+        try:
+            from rag.utils.encrypted_storage import create_encrypted_storage
+            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+            
+            STORAGE_IMPL = create_encrypted_storage(storage_impl, 
+                algorithm=algorithm, 
+                key=crypto_key, 
+                encryption_enabled=crypto_enabled)
+        except Exception as e:
+            logging.error(f"Failed to initialize encrypted storage: {e}")
+            STORAGE_IMPL = storage_impl
+    else:
+        STORAGE_IMPL = storage_impl
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)
-    from graphrag import search as kg_search
+    from rag.graphrag import search as kg_search
 
     kg_retriever = kg_search.KGSearch(docStoreConn)
 
@@ -292,6 +386,9 @@ def init_settings():
     DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
     DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
     EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
+
+    os.environ["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"
+
 
 def check_and_install_torch():
     global PARALLEL_DEVICES

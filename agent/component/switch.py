@@ -134,7 +134,7 @@ class Switch(ComponentBase, ABC):
             except Exception:
                 return True if input <= value else False
 
-        raise ValueError('Not supported operator' + operator)
+        raise ValueError(f'Not supported operator: {operator}')
 
     def thoughts(self) -> str:
         return "I’m weighing a few options and will pick the next step shortly."
