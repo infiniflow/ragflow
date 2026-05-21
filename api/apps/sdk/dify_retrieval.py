@@ -294,9 +294,15 @@ async def retrieval(tenant_id):
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
+        doc_ids = list(set([c["doc_id"] for c in ranks["chunks"]]))
+        docs = DocumentService.get_by_ids(doc_ids)
+        doc_map = {doc.id: doc for doc in docs}
+
         records = []
         for c in ranks["chunks"]:
-            e, doc = DocumentService.get_by_id(c["doc_id"])
+            doc = doc_map.get(c["doc_id"])
+            if not doc:
+                continue
             c.pop("vector", None)
             meta = getattr(doc, 'meta_fields', {})
             meta["doc_id"] = c["doc_id"]
