@@ -58,8 +58,11 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.Name != "PPIO" {
 		t.Errorf("provider.Name=%q", provider.Name)
 	}
-	if provider.URL["default"] != "https://api.ppinfra.com/v3/openai" {
+	if provider.URL["default"] != "https://api.ppio.com/openai/v1" {
 		t.Errorf("default URL=%q", provider.URL["default"])
+	}
+	if provider.URL["us"] != "https://api.ppinfra.com/v3/openai" {
+		t.Errorf("us URL=%q", provider.URL["us"])
 	}
 	if provider.URLSuffix.Chat != "chat/completions" {
 		t.Errorf("chat suffix=%q", provider.URLSuffix.Chat)
@@ -73,8 +76,8 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.ModelDriver.Name() != "ppio" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 19 {
-		t.Fatalf("PPIO model count=%d, want 19", len(provider.Models))
+	if len(provider.Models) != 21 {
+		t.Fatalf("PPIO model count=%d, want 21", len(provider.Models))
 	}
 	for _, model := range provider.Models {
 		if !model.ModelTypeMap["chat"] {
@@ -89,8 +92,8 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(models) != 19 {
-		t.Errorf("ListModels count=%d, want 19", len(models))
+	if len(models) != 21 {
+		t.Errorf("ListModels count=%d, want 21", len(models))
 	}
 
 	model, err := pm.GetModelByName("ppio", "deepseek/deepseek-r1")
@@ -100,12 +103,26 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if model.MaxTokens != 64000 {
 		t.Errorf("deepseek/deepseek-r1 max_tokens=%d", model.MaxTokens)
 	}
+	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-pro")
+	if err != nil {
+		t.Fatalf("GetModelByName v4 pro: %v", err)
+	}
+	if model.MaxTokens != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-pro max_tokens=%d", model.MaxTokens)
+	}
+	model, err = pm.GetModelByName("ppio", "deepseek/deepseek-v4-flash")
+	if err != nil {
+		t.Fatalf("GetModelByName v4 flash: %v", err)
+	}
+	if model.MaxTokens != 1048576 {
+		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", model.MaxTokens)
+	}
 
 	resp := pm.SearchByType("chat")
 	if resp.Code != 0 {
 		t.Fatalf("SearchByType code=%d message=%q", resp.Code, resp.Message)
 	}
-	if len(resp.Data) != 19 {
-		t.Errorf("SearchByType data count=%d, want 19", len(resp.Data))
+	if len(resp.Data) != 21 {
+		t.Errorf("SearchByType data count=%d, want 21", len(resp.Data))
 	}
 }

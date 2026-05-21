@@ -424,6 +424,18 @@ func TestPPIOEndpointTrimsTrailingSlash(t *testing.T) {
 	}
 }
 
+func TestPPIODefaultEndpointUsesPPIOAPI(t *testing.T) {
+	model := NewPPIOModel(map[string]string{"default": "https://api.ppio.com/openai/v1"}, URLSuffix{Chat: "chat/completions"})
+	apiKey := "test-key"
+	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey}, model.URLSuffix.Chat)
+	if err != nil {
+		t.Fatalf("endpoint: %v", err)
+	}
+	if endpoint != "https://api.ppio.com/openai/v1/chat/completions" {
+		t.Errorf("endpoint=%q", endpoint)
+	}
+}
+
 func TestPPIOEmptyRegionCustomBaseURL(t *testing.T) {
 	model := NewPPIOModel(map[string]string{"": "https://custom.example/openai/v1"}, URLSuffix{Models: "models"})
 	apiKey := "test-key"
@@ -439,16 +451,16 @@ func TestPPIOEmptyRegionCustomBaseURL(t *testing.T) {
 
 func TestPPIONamedRegionBaseURL(t *testing.T) {
 	model := NewPPIOModel(map[string]string{
-		"default": "https://api.ppinfra.com/v3/openai",
-		"custom":  "https://custom.example/openai/v1",
+		"default": "https://api.ppio.com/openai/v1",
+		"us":      "https://api.ppinfra.com/v3/openai",
 	}, URLSuffix{Chat: "chat/completions"})
 	apiKey := "test-key"
-	region := "custom"
+	region := "us"
 	endpoint, err := model.endpoint(&APIConfig{ApiKey: &apiKey, Region: &region}, model.URLSuffix.Chat)
 	if err != nil {
 		t.Fatalf("endpoint: %v", err)
 	}
-	if endpoint != "https://custom.example/openai/v1/chat/completions" {
+	if endpoint != "https://api.ppinfra.com/v3/openai/chat/completions" {
 		t.Errorf("endpoint=%q", endpoint)
 	}
 }

@@ -1,7 +1,8 @@
 {
   "name": "PPIO",
   "url": {
-    "default": "https://api.ppinfra.com/v3/openai"
+    "default": "https://api.ppio.com/openai/v1",
+    "us": "https://api.ppinfra.com/v3/openai"
   },
   "url_suffix": {
     "chat": "chat/completions",
@@ -9,6 +10,20 @@
   },
   "class": "ppio",
   "models": [
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
     {
       "name": "deepseek/deepseek-r1/community",
       "max_tokens": 64000,
