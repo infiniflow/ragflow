@@ -12,7 +12,7 @@ import (
 	"ragflow/internal/common"
 )
 
-type Executor struct {
+type Ingestor struct {
 	id     string
 	client common.IngestionManagerClient
 	stream common.IngestionManager_ActionClient
@@ -38,9 +38,9 @@ type TaskContext struct {
 	CancelFunc context.CancelFunc
 }
 
-func NewExecutor(id string, maxConcurrency int32, supportedTypes []string) *Executor {
+func NewIngestor(id string, maxConcurrency int32, supportedTypes []string) *Ingestor {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Executor{
+	return &Ingestor{
 		id:                id,
 		ctx:               ctx,
 		cancel:            cancel,
@@ -52,7 +52,7 @@ func NewExecutor(id string, maxConcurrency int32, supportedTypes []string) *Exec
 }
 
 // Connect connects to the admin and establishes a bidirectional stream
-func (e *Executor) Connect(serverAddr string) error {
+func (e *Ingestor) Connect(serverAddr string) error {
 	conn, err := grpc.Dial(serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -83,13 +83,10 @@ func (e *Executor) Connect(serverAddr string) error {
 	// 3. Start heartbeat loop
 	go e.heartbeatLoop()
 
-	// 4. Start pull loop
-	go e.pullLoop()
-
 	return nil
 }
 
-func (e *Executor) sendRegister() error {
+func (e *Ingestor) sendRegister() error {
 	msg := &common.IngestionMessage{
 		IngestionServerId: e.id,
 		MessageType:       "REGISTER",
@@ -102,7 +99,7 @@ func (e *Executor) sendRegister() error {
 	return e.stream.Send(msg)
 }
 
-func (e *Executor) sendHeartbeat() error {
+func (e *Ingestor) sendHeartbeat() error {
 	e.tasksMu.RLock()
 	taskIDs := make([]string, 0, len(e.currentTasks))
 	for tid := range e.currentTasks {
@@ -122,15 +119,7 @@ func (e *Executor) sendHeartbeat() error {
 	return e.stream.Send(msg)
 }
 
-func (e *Executor) sendPullRequest() error {
-	msg := &common.IngestionMessage{
-		IngestionServerId: e.id,
-		MessageType:       "PULL_REQUEST",
-	}
-	return e.stream.Send(msg)
-}
-
-func (e *Executor) sendTaskResult(taskID, status, resultURL, errorMsg string) error {
+func (e *Ingestor) sendTaskResult(taskID, status, resultURL, errorMsg string) error {
 	msg := &common.IngestionMessage{
 		IngestionServerId: e.id,
 		MessageType:       "TASK_RESULT",
@@ -144,7 +133,7 @@ func (e *Executor) sendTaskResult(taskID, status, resultURL, errorMsg string) er
 	return e.stream.Send(msg)
 }
 
-func (e *Executor) sendTaskProgress(taskID string, progress int32, info string) error {
+func (e *Ingestor) sendTaskProgress(taskID string, progress int32, info string) error {
 	msg := &common.IngestionMessage{
 		IngestionServerId: e.id,
 		MessageType:       "TASK_PROGRESS",
@@ -157,7 +146,7 @@ func (e *Executor) sendTaskProgress(taskID string, progress int32, info string) 
 	return e.stream.Send(msg)
 }
 
-func (e *Executor) receiveLoop() {
+func (e *Ingestor) receiveLoop() {
 	for {
 		msg, err := e.stream.Recv()
 		if err != nil {
@@ -182,10 +171,8 @@ func (e *Executor) receiveLoop() {
 	}
 }
 
-func (e *Executor) handleTaskAssignment(task *common.TaskAssignment) {
+func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 	if task == nil {
-		// No task available, keep waiting
-		log.Printf("No task available")
 		return
 	}
 
@@ -220,7 +207,7 @@ func (e *Executor) handleTaskAssignment(task *common.TaskAssignment) {
 	go e.executeTask(taskCtx, taskContext)
 }
 
-func (e *Executor) executeTask(ctx context.Context, taskCtx *TaskContext) {
+func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 	defer e.wg.Done()
 	defer func() {
 		e.tasksMu.Lock()
@@ -258,7 +245,7 @@ func (e *Executor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 }
 
 // executeWithSubTasks demonstrates subtask splitting and parallel execution
-func (e *Executor) executeWithSubTasks(task *common.TaskAssignment) {
+func (e *Ingestor) executeWithSubTasks(task *common.TaskAssignment) {
 	log.Printf("Task %s: splitting into subtasks", task.TaskId)
 
 	// Simulate splitting into 4 subtasks
@@ -309,7 +296,7 @@ func (e *Executor) executeWithSubTasks(task *common.TaskAssignment) {
 	}
 }
 
-func (e *Executor) heartbeatLoop() {
+func (e *Ingestor) heartbeatLoop() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -326,40 +313,8 @@ func (e *Executor) heartbeatLoop() {
 	}
 }
 
-func (e *Executor) pullLoop() {
-	for {
-		select {
-		case <-e.ctx.Done():
-			return
-		default:
-		}
-
-		// Check if there is an available slot
-		e.tasksMu.RLock()
-		runningCount := len(e.currentTasks)
-		e.tasksMu.RUnlock()
-
-		if runningCount >= int(e.maxConcurrency) {
-			// No available slot, wait and retry
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// Send pull request
-		if err := e.sendPullRequest(); err != nil {
-			log.Printf("Failed to send pull request: %v", err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// Wait before sending the next pull request
-		// In production, admin returns tasks in the response, no need to wait
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
 // Stop gracefully shuts down the executor
-func (e *Executor) Stop() {
+func (e *Ingestor) Stop() {
 	log.Printf("Stopping executor %s", e.id)
 	e.cancel()
 

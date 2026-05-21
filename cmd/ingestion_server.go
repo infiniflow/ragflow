@@ -40,6 +40,7 @@ func printIngestionServerHelp() {
 	fmt.Fprintf(os.Stderr, "RAGFlow Ingestion Worker - Document ingestion processing\n\n")
 	fmt.Fprintf(os.Stderr, "Options:\n")
 	fmt.Fprintf(os.Stderr, "  -f string\t\tPath to config file (default: auto-detect)\n")
+	fmt.Fprintf(os.Stderr, "  --name string\t\tIngestion server name (default: \"default_ingestion\")\n")
 	fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host (overrides config file)\n")
 	fmt.Fprintf(os.Stderr, "  --admin-port int\tAdmin server port (overrides config file)\n")
 	fmt.Fprintf(os.Stderr, "  -h, --help\t\tShow this help message and exit\n")
@@ -52,10 +53,12 @@ func printIngestionServerHelp() {
 func main() {
 	// Parse command line flags
 	var configPath string
+	var name string
 	var adminHost string
 	var adminPort int
 
 	flag.StringVar(&configPath, "f", "", "Path to config file (overrides auto-detect)")
+	flag.StringVar(&name, "name", "default_ingestion", "Ingestion server name")
 	flag.StringVar(&adminHost, "admin-host", "", "Admin server host (overrides config file)")
 	flag.IntVar(&adminPort, "admin-port", 0, "Admin server port (overrides config file)")
 
@@ -149,18 +152,18 @@ func main() {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	executor := ingestion.NewExecutor("exec-001", 2, []string{"pdf", "docx", "txt"})
+	ingestor := ingestion.NewIngestor(name, 2, []string{"pdf", "docx", "txt"})
 
 	// Connect to the admin server
 	serverAddress := fmt.Sprintf("%s:%d", config.Admin.Host, config.Admin.IngestionManagerPort)
-	if err := executor.Connect(serverAddress); err != nil {
+	if err := ingestor.Connect(serverAddress); err != nil {
 		common.Fatal("Failed to connect: %v", zap.Error(err))
 	}
 
 	ch := make(chan struct{})
 	<-ch
 
-	executor.Stop()
+	ingestor.Stop()
 
 	common.Info("Ingestion worker initialization complete")
 }

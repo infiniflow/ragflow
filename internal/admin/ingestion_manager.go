@@ -35,11 +35,11 @@ type IngestionManager struct {
 	// Registered ingestion servers
 	ingestionServers map[string]*IngestionState
 
-	// Pull request queue of executors waiting for tasks
-	pendingPulls map[string][]chan *common.TaskAssignment
-
 	// In-memory task queue
 	taskQueue chan *pendingTask
+
+	// Notifies that an ingestor slot may have freed up
+	slotFreed chan struct{}
 
 	grpcServer *grpc.Server // gRPC server instance for graceful shutdown via Stop()
 
@@ -63,13 +63,15 @@ type pendingTask struct {
 
 func NewAdminServer() *IngestionManager {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &IngestionManager{
+	s := &IngestionManager{
 		ingestionServers: make(map[string]*IngestionState),
-		pendingPulls:     make(map[string][]chan *common.TaskAssignment),
 		taskQueue:        make(chan *pendingTask, 10000),
+		slotFreed:        make(chan struct{}, 100),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+	go s.dispatchLoop()
+	return s
 }
 
 // Action handles the bidirectional streaming RPC from ingestion servers
@@ -135,9 +137,6 @@ func (s *IngestionManager) handleMessage(
 	case "TASK_PROGRESS":
 		s.handleTaskProgress(msg, *ingestionServerID, *state)
 
-	case "PULL_REQUEST":
-		s.handlePullRequest(stream, msg, *ingestionServerID, *state)
-
 	default:
 		log.Printf("Unknown message type: %s", msg.MessageType)
 		stream.Send(&common.AdminMessage{
@@ -184,11 +183,11 @@ func (s *IngestionManager) handleRegister(
 		},
 	})
 
-	log.Printf("Executor %s registered, max_concurrency=%d, supported_types=%v",
+	log.Printf("Ingestor %s registered, max_concurrency=%d, supported_types=%v",
 		*ingestionServerID, msg.RegisterInfo.MaxConcurrency, msg.RegisterInfo.SupportedDocTypes)
 }
 
-func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, executorID string, state *IngestionState) {
+func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
 	if state == nil {
 		return
 	}
@@ -203,90 +202,38 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, executo
 		}
 		state.CurrentTasks = newTasks
 
-		log.Printf("Heartbeat from %s: %d active tasks", executorID, len(newTasks))
+		log.Printf("Heartbeat from %s: %d active tasks", ingestorID, len(newTasks))
 	}
 }
 
-func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, executorID string, state *IngestionState) {
+func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
 	if msg.TaskResult == nil {
 		return
 	}
 
 	result := msg.TaskResult
-	log.Printf("Task result from %s: task=%s, status=%s", executorID, result.TaskId, result.Status)
+	log.Printf("Task result from %s: task=%s, status=%s", ingestorID, result.TaskId, result.Status)
 
 	// Remove from the ingestion_server's current task list
 	if state != nil {
 		delete(state.CurrentTasks, result.TaskId)
 	}
 
-	// Could trigger callback or notify clients waiting for results
-	// In production, could notify API Server that the task is complete
+	// Signal that a slot may have freed up for pending tasks
+	select {
+	case s.slotFreed <- struct{}{}:
+	default:
+	}
 }
 
-func (s *IngestionManager) handleTaskProgress(msg *common.IngestionMessage, executorID string, state *IngestionState) {
+func (s *IngestionManager) handleTaskProgress(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
 	if msg.TaskProgress == nil {
 		return
 	}
 
 	progress := msg.TaskProgress
 	log.Printf("Task progress from %s: task=%s, progress=%d%%, detail=%s",
-		executorID, progress.TaskId, progress.Progress, progress.Info)
-}
-
-func (s *IngestionManager) handlePullRequest(
-	stream common.IngestionManager_ActionServer,
-	msg *common.IngestionMessage,
-	executorID string,
-	state *IngestionState,
-) {
-	if state == nil {
-		stream.Send(&common.AdminMessage{
-			MessageType:  "ERROR",
-			ErrorMessage: "not registered",
-		})
-		return
-	}
-
-	// Check if there is an available slot
-	if len(state.CurrentTasks) >= int(state.Info.MaxConcurrency) {
-		// No available slot, return empty (non-blocking)
-		stream.Send(&common.AdminMessage{
-			MessageType:    "TASK_ASSIGNMENT",
-			TaskAssignment: nil, // nil means no task
-		})
-		return
-	}
-
-	// Dequeue a task
-	select {
-	case pending := <-s.taskQueue:
-		// Task available, assign to this ingestion_server
-		state.CurrentTasks[pending.Task.TaskId] = true
-
-		stream.Send(&common.AdminMessage{
-			MessageType:    "TASK_ASSIGNMENT",
-			TaskAssignment: pending.Task,
-		})
-		log.Printf("Assigned task %s to ingestion_server %s", pending.Task.TaskId, executorID)
-
-	default:
-		// No task available, return empty
-		stream.Send(&common.AdminMessage{
-			MessageType:    "TASK_ASSIGNMENT",
-			TaskAssignment: nil,
-		})
-	}
-}
-
-func (s *IngestionManager) cleanupIngestionServer(executorID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.ingestionServers[executorID]; exists {
-		delete(s.ingestionServers, executorID)
-		log.Printf("Executor %s cleaned up", executorID)
-	}
+		ingestorID, progress.TaskId, progress.Progress, progress.Info)
 }
 
 // SubmitTask is for API Server to call (non-gRPC, for testing only)
@@ -296,6 +243,87 @@ func (s *IngestionManager) SubmitTask(task *common.TaskAssignment) {
 		CreatedAt: time.Now(),
 	}
 	log.Printf("Task %s submitted to queue", task.TaskId)
+
+	// Wake up dispatchLoop if it's blocked waiting for a slot
+	select {
+	case s.slotFreed <- struct{}{}:
+	default:
+	}
+}
+
+// dispatchLoop pulls tasks from the queue and assigns them to available ingestors.
+// Runs in a background goroutine.
+func (s *IngestionManager) dispatchLoop() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case pending := <-s.taskQueue:
+			go s.tryAssign(pending.Task)
+		}
+	}
+}
+
+// tryAssign repeatedly tries to find an available ingestor and assign the task.
+// Blocks until either the task is assigned or the context is canceled.
+func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
+	for {
+		s.mu.RLock()
+		var target *IngestionState
+		for _, state := range s.ingestionServers {
+			if state.Status == "active" && len(state.CurrentTasks) < int(state.Info.MaxConcurrency) {
+				target = state
+				break
+			}
+		}
+		s.mu.RUnlock()
+
+		if target != nil {
+			s.assignToIngestor(task, target)
+			return
+		}
+
+		// No ingestor available, wait for a slot to free up
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-s.slotFreed:
+			// A slot might be free, retry
+		case <-time.After(2 * time.Second):
+			// Periodic retry as fallback
+		}
+	}
+}
+
+func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *IngestionState) {
+	s.mu.Lock()
+	state.CurrentTasks[task.TaskId] = true
+	s.mu.Unlock()
+
+	err := state.Stream.Send(&common.AdminMessage{
+		MessageType:    "TASK_ASSIGNMENT",
+		TaskAssignment: task,
+	})
+	if err != nil {
+		log.Printf("Failed to assign task %s to ingestor %s: %v", task.TaskId, state.ID, err)
+		s.mu.Lock()
+		delete(state.CurrentTasks, task.TaskId)
+		s.mu.Unlock()
+		// Re-queue the task
+		s.taskQueue <- &pendingTask{Task: task, CreatedAt: time.Now()}
+		return
+	}
+	log.Printf("Assigned task %s to ingestion_server %s", task.TaskId, state.ID)
+}
+
+func (s *IngestionManager) cleanupIngestionServer(ingestorID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.ingestionServers[ingestorID]; exists {
+		delete(s.ingestionServers, ingestorID)
+		log.Printf("Ingestor %s cleaned up", ingestorID)
+	}
 }
 
 // Start starts the admin service
@@ -330,28 +358,3 @@ func (s *IngestionManager) Stop() {
 
 	common.Info("RAGFlow ingestion manager stopped")
 }
-
-//func main() {
-//	server := NewAdminServer()
-//
-//	// 模拟一个提交任务的 goroutine（实际应由 API Server 调用）
-//	go func() {
-//		taskID := 1
-//		for {
-//			time.Sleep(3 * time.Second)
-//			server.SubmitTask(&common.TaskAssignment{
-//				TaskId:         string(rune(taskID)),
-//				DocType:        "pdf",
-//				DocUrl:         "http://example.com/doc.pdf",
-//				Config:         `{"ocr": true}`,
-//				AssignToken:    "token-" + string(rune(taskID)),
-//				TimeoutSeconds: 300,
-//			})
-//			taskID++
-//		}
-//	}()
-//
-//	if err := server.Start(":50051"); err != nil {
-//		log.Fatal(err)
-//	}
-//}

@@ -161,7 +161,6 @@ func main() {
 
 	// Start HTTP server in a goroutine
 	go func() {
-
 		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", cfg.Admin.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
