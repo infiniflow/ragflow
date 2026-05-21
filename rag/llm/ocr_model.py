@@ -21,6 +21,7 @@ from typing import Any, Optional
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
+from rag.llm.retry import retry
 
 
 class Base:
@@ -75,6 +76,7 @@ class MinerUOcrModel(Base, MinerUParser):
         server_url = server_url or self.mineru_server_url
         return self.check_installation(backend=backend, server_url=server_url)
 
+    @retry
     def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
         ok, reason = self.check_available()
         if not ok:
@@ -140,6 +142,7 @@ class PaddleOCROcrModel(Base, PaddleOCRParser):
     def check_available(self) -> tuple[bool, str]:
         return self.check_installation()
 
+    @retry
     def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
         ok, reason = self.check_available()
         if not ok:

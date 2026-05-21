@@ -16,6 +16,7 @@
 import json
 import os
 import threading
+import time
 from abc import ABC
 from contextlib import contextmanager
 from urllib.parse import urljoin
@@ -27,6 +28,7 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
+from rag.llm.retry import retry
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
@@ -165,6 +167,7 @@ class OpenAIEmbed(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
         # OpenAI requires batch size <=16
         batch_size = 16
@@ -181,6 +184,7 @@ class OpenAIEmbed(Base):
                 raise Exception(f"Error: {res}")
         return np.array(ress), total_tokens
 
+    @retry
     def encode_queries(self, text):
         res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
         try:
@@ -200,6 +204,7 @@ class LocalAIEmbed(Base):
         self.client = OpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         ress = []
@@ -284,9 +289,8 @@ class QWenEmbed(Base):
         # Native API root for the SDK; None if base_url is absent or not a known DashScope host.
         self._dashscope_http_api_url = _dashscope_native_http_api_url(base_url)
 
+    @retry
     def encode(self, texts: list):
-        import time
-
         import dashscope
 
         batch_size = 4
@@ -319,6 +323,7 @@ class QWenEmbed(Base):
                 raise
         return np.array(res), token_count
 
+    @retry
     def encode_queries(self, text):
         with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
             resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
@@ -336,6 +341,7 @@ class ZhipuEmbed(Base):
         self.client = ZhipuAI(api_key=key)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
         arr = []
         tks_num = 0
@@ -357,6 +363,7 @@ class ZhipuEmbed(Base):
                 raise Exception(f"Error: {res}")
         return np.array(arr), tks_num
 
+    @retry
     def encode_queries(self, text):
         res = self.client.embeddings.create(input=text, model=self.model_name)
         try:
@@ -376,6 +383,7 @@ class OllamaEmbed(Base):
         self.model_name = model_name
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
 
+    @retry
     def encode(self, texts: list):
         arr = []
         tks_num = 0
@@ -392,6 +400,7 @@ class OllamaEmbed(Base):
             tks_num += 128
         return np.array(arr), tks_num
 
+    @retry
     def encode_queries(self, text):
         # remove special tokens if they exist
         for token in OllamaEmbed._special_tokens:
@@ -412,6 +421,7 @@ class XinferenceEmbed(Base):
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         ress = []
@@ -427,6 +437,7 @@ class XinferenceEmbed(Base):
                 raise Exception(f"Error: {res}")
         return np.array(ress), total_tokens
 
+    @retry
     def encode_queries(self, text):
         res = None
         try:
@@ -468,6 +479,7 @@ class JinaMultiVecEmbed(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list[str | bytes], task="retrieval.passage"):
         batch_size = 16
         ress = []
@@ -527,45 +539,22 @@ class MistralEmbed(Base):
         self.client = MistralClient(api_key=key)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
-        import time
-        import random
-
         texts = [truncate(t, 8196) for t in texts]
         batch_size = 16
         ress = []
         token_count = 0
         for i in range(0, len(texts), batch_size):
-            retry_max = 5
-            while retry_max > 0:
-                try:
-                    res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
-                    ress.extend([d.embedding for d in res.data])
-                    token_count += total_token_count_from_response(res)
-                    break
-                except Exception as _e:
-                    if retry_max == 1:
-                        log_exception(_e)
-                    delay = random.uniform(20, 60)
-                    time.sleep(delay)
-                    retry_max -= 1
+            res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
+            ress.extend([d.embedding for d in res.data])
+            token_count += total_token_count_from_response(res)
         return np.array(ress), token_count
 
+    @retry
     def encode_queries(self, text):
-        import time
-        import random
-
-        retry_max = 5
-        while retry_max > 0:
-            try:
-                res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
-                return np.array(res.data[0].embedding), total_token_count_from_response(res)
-            except Exception as _e:
-                if retry_max == 1:
-                    log_exception(_e)
-                delay = random.randint(20, 60)
-                time.sleep(delay)
-                retry_max -= 1
+        res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
+        return np.array(res.data[0].embedding), total_token_count_from_response(res)
 
 
 class BedrockEmbed(Base):
@@ -612,6 +601,7 @@ class BedrockEmbed(Base):
         else:  # assume_role
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
 
+    @retry
     def encode(self, texts: list):
         texts = [truncate(t, 8196) for t in texts]
         embeddings = []
@@ -623,15 +613,13 @@ class BedrockEmbed(Base):
                 body = {"texts": [text], "input_type": "search_document"}
 
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
-            try:
-                model_response = json.loads(response["body"].read())
-                embeddings.extend([model_response["embedding"]])
-                token_count += num_tokens_from_string(text)
-            except Exception as _e:
-                log_exception(_e, response)
+            model_response = json.loads(response["body"].read())
+            embeddings.extend([model_response["embedding"]])
+            token_count += num_tokens_from_string(text)
 
         return np.array(embeddings), token_count
 
+    @retry
     def encode_queries(self, text):
         embeddings = []
         token_count = num_tokens_from_string(text)
@@ -641,11 +629,8 @@ class BedrockEmbed(Base):
             body = {"texts": [truncate(text, 8196)], "input_type": "search_query"}
 
         response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
-        try:
-            model_response = json.loads(response["body"].read())
-            embeddings.extend(model_response["embedding"])
-        except Exception as _e:
-            log_exception(_e, response)
+        model_response = json.loads(response["body"].read())
+        embeddings.extend(model_response["embedding"])
 
         return np.array(embeddings), token_count
 
@@ -703,6 +688,7 @@ class GeminiEmbed(Base):
             # Compatible with SDK versions that do not accept title in embed config.
             return self.types.EmbedContentConfig(task_type=task_type)
 
+    @retry
     def encode(self, texts: list):
         texts = [truncate(t, 2048) for t in texts]
         token_count = sum(num_tokens_from_string(text) for text in texts)
@@ -723,6 +709,7 @@ class GeminiEmbed(Base):
                 raise Exception(f"Error: {result}")
         return np.array(ress), token_count
 
+    @retry
     def encode_queries(self, text):
         config = self._build_embedding_config()
         result = None
@@ -759,6 +746,7 @@ class NvidiaEmbed(Base):
         if model_name == "snowflake/arctic-embed-l":
             self.base_url = "https://ai.api.nvidia.com/v1/retrieval/snowflake/arctic-embed-l/embeddings"
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         ress = []
@@ -817,6 +805,7 @@ class CoHereEmbed(Base):
         self.client = Client(api_key=key)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         ress = []
@@ -836,6 +825,7 @@ class CoHereEmbed(Base):
                 raise Exception(f"Error: {res}")
         return np.array(ress), token_count
 
+    @retry
     def encode_queries(self, text):
         res = self.client.embed(
             texts=[text],
@@ -894,6 +884,7 @@ class SILICONFLOWEmbed(Base):
         self.base_url = normalized_base_url
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         ress = []
@@ -922,6 +913,7 @@ class SILICONFLOWEmbed(Base):
 
         return np.array(ress), token_count
 
+    @retry
     def encode_queries(self, text):
         payload = {
             "model": self.model_name,
@@ -946,6 +938,7 @@ class ReplicateEmbed(Base):
         self.model_name = model_name
         self.client = Client(api_token=key)
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         token_count = sum([num_tokens_from_string(text) for text in texts])
@@ -955,6 +948,7 @@ class ReplicateEmbed(Base):
             ress.extend(res)
         return np.array(ress), token_count
 
+    @retry
     def encode_queries(self, text):
         res = self.client.embed(self.model_name, input={"texts": [text]})
         return np.array(res), num_tokens_from_string(text)
@@ -972,6 +966,7 @@ class BaiduYiyanEmbed(Base):
         self.client = qianfan.Embedding(ak=ak, sk=sk)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list, batch_size=16):
         res = self.client.do(model=self.model_name, texts=texts).body
         try:
@@ -983,6 +978,7 @@ class BaiduYiyanEmbed(Base):
             log_exception(_e, res)
             raise Exception(f"Error: {res}")
 
+    @retry
     def encode_queries(self, text):
         res = self.client.do(model=self.model_name, texts=[text]).body
         try:
@@ -1004,6 +1000,7 @@ class VoyageEmbed(Base):
         self.client = voyageai.Client(api_key=key)
         self.model_name = model_name
 
+    @retry
     def encode(self, texts: list):
         batch_size = 16
         ress = []
@@ -1018,6 +1015,7 @@ class VoyageEmbed(Base):
                 raise Exception(f"Error: {res}")
         return np.array(ress), token_count
 
+    @retry
     def encode_queries(self, text):
         res = self.client.embed(texts=text, model=self.model_name, input_type="query")
         try:
@@ -1037,6 +1035,7 @@ class HuggingFaceEmbed(Base):
         self.model_name = model_name.split("___")[0]
         self.base_url = base_url or "http://127.0.0.1:8080"
 
+    @retry
     def encode(self, texts: list):
         response = requests.post(f"{self.base_url}/embed", json={"inputs": texts}, headers={"Content-Type": "application/json"}, timeout=30)
         if response.status_code == 200:
@@ -1045,6 +1044,7 @@ class HuggingFaceEmbed(Base):
             raise Exception(f"Error: {response.status_code} - {response.text}")
         return np.array(embeddings), sum([num_tokens_from_string(text) for text in texts])
 
+    @retry
     def encode_queries(self, text: str):
         response = requests.post(f"{self.base_url}/embed", json={"inputs": text}, headers={"Content-Type": "application/json"}, timeout=30)
         if response.status_code == 200:
@@ -1090,6 +1090,7 @@ class VolcEngineEmbed(Base):
             raise KeyError("Missing 'embedding' in response item")
         return item["embedding"]
 
+    @retry
     def _encode_texts(self, texts: list[str]):
         from common.http_client import sync_request
 
@@ -1104,11 +1105,8 @@ class VolcEngineEmbed(Base):
             if response.status_code != 200:
                 raise Exception(f"Error: {response.status_code} - {response.text}")
             result = response.json()
-            try:
-                ress.append(self._extract_embedding(result))
-                total_tokens += total_token_count_from_response(result)
-            except Exception as _e:
-                log_exception(_e)
+            ress.append(self._extract_embedding(result))
+            total_tokens += total_token_count_from_response(result)
 
         return np.array(ress), total_tokens
 
@@ -1233,6 +1231,7 @@ class PerplexityEmbed(Base):
     def _is_contextualized(self):
         return "context" in self.model_name
 
+    @retry
     def encode(self, texts: list):
         batch_size = 512
         ress = []

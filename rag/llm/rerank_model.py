@@ -26,6 +26,8 @@ from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.llm.retry import retry
+
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -57,6 +59,7 @@ class JinaRerank(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
@@ -88,6 +91,7 @@ class XInferenceRerank(Base):
         if key and key != "x":
             self.headers["Authorization"] = f"Bearer {key}"
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
@@ -119,9 +123,11 @@ class LocalAIRerank(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
+        # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
@@ -167,6 +173,7 @@ class NvidiaRerank(Base):
             "Authorization": f"Bearer {key}",
         }
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
@@ -212,9 +219,11 @@ class OpenAI_APIRerank(Base):
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
+        # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
@@ -251,6 +260,7 @@ class CoHereRerank(Base):
         self.client = Client(**client_kwargs)
         self.model_name = model_name.split("___")[0]
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
@@ -298,6 +308,7 @@ class SILICONFLOWRerank(Base):
             "authorization": f"Bearer {key}",
         }
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
@@ -334,6 +345,7 @@ class BaiduYiyanRerank(Base):
         self.client = Reranker(ak=ak, sk=sk, request_timeout=30)
         self.model_name = model_name
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
@@ -361,6 +373,7 @@ class VoyageRerank(Base):
         self.client = voyageai.Client(api_key=key, timeout=30.0)
         self.model_name = model_name
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
@@ -385,10 +398,11 @@ class QWenRerank(Base):
         # Remove invalid global timeout, use official SDK per-request timeout parameter
         self.request_timeout = 30.0
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
-            
+
         import dashscope
 
         # Pass official request_timeout parameter to both API call branches
@@ -455,6 +469,7 @@ class HuggingfaceRerank(Base):
         self.model_name = model_name.split("___")[0]
         self.base_url = base_url
 
+    @retry
     def similarity(self, query: str, texts: List) -> tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
@@ -479,10 +494,11 @@ class GPUStackRerank(Base):
             "authorization": f"Bearer {key}",
         }
 
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
-            
+
         payload = {
             "model": self.model_name,
             "query": query,
@@ -490,23 +506,25 @@ class GPUStackRerank(Base):
             "top_n": len(texts),
         }
 
+        response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
+        response.raise_for_status()
+        response_json = response.json()
+
+        rank = np.zeros(len(texts), dtype=float)
+
+        token_count = 0
+        for t in texts:
+            token_count += num_tokens_from_string(t)
         try:
-            response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
-            response.raise_for_status()
-            response_json = response.json()
+            for result in response_json.get("results", []):
+                rank[result["index"]] = result["relevance_score"]
+        except Exception as _e:
+            log_exception(_e, response)
 
-            rank = np.zeros(len(texts), dtype=float)
-            token_count = sum(num_tokens_from_string(t) for t in texts)
-            try:
-                for result in response_json.get("results", []):
-                    rank[result["index"]] = result["relevance_score"]
-            except Exception as _e:
-                log_exception(_e, response)
-
-            return (rank, token_count)
-
-        except requests.exceptions.RequestException as e:
-            raise ValueError(f"Error calling GPUStackRerank model {self.model_name}: {str(e)}") from e
+        return (
+            rank,
+            token_count,
+        )
 
 
 class NovitaRerank(JinaRerank):
@@ -583,12 +601,12 @@ class RAGconRerank(Base):
         
         self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
         self.model_name = model_name
-        
-    
+
+    @retry
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
-            
+        # noway to config Ragflow , use fix setting
         texts = [truncate(t, 500) for t in texts]
         data = {
             "model": self.model_name,
