@@ -564,6 +564,7 @@ class TestDocumentMetadataUnit:
         assert "image boom" in res["message"]
 
     def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
+        """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
         module = document_app_module
 
         class _Headers(dict):
