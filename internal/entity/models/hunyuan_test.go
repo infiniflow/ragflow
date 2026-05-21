@@ -9,9 +9,13 @@ import (
 	"testing"
 )
 
-func newHunyuanServer(t *testing.T, expectedPath string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
+func newHunyuanServer(t *testing.T, expectedMethod, expectedPath string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != expectedMethod {
+			t.Errorf("expected method=%s, got %s", expectedMethod, r.Method)
+			return
+		}
 		if r.URL.Path != expectedPath {
 			t.Errorf("expected path=%s, got %s", expectedPath, r.URL.Path)
 			return
@@ -92,7 +96,7 @@ func TestHunyuanFactory(t *testing.T) {
 }
 
 func TestHunyuanChatHappyPath(t *testing.T) {
-	srv := newHunyuanServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newHunyuanServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "hunyuan-pro" {
 			t.Errorf("model=%v", body["model"])
 		}
@@ -137,7 +141,7 @@ func TestHunyuanChatHappyPath(t *testing.T) {
 }
 
 func TestHunyuanChatNoReasoning(t *testing.T) {
-	srv := newHunyuanServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newHunyuanServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{"content": "hi"},
@@ -182,7 +186,7 @@ func TestHunyuanChatRequiresMessages(t *testing.T) {
 }
 
 func TestHunyuanChatPropagatesHTTPError(t *testing.T) {
-	srv := newHunyuanServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+	srv := newHunyuanServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"bad key"}`))
 	})
@@ -357,7 +361,7 @@ func TestHunyuanStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestHunyuanListModelsHappyPath(t *testing.T) {
-	srv := newHunyuanServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"id": "hunyuan-pro"},
@@ -387,7 +391,7 @@ func TestHunyuanListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestHunyuanCheckConnectionDelegatesToListModels(t *testing.T) {
-	srv := newHunyuanServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{{"id": "hunyuan-pro"}},
 		})
@@ -401,7 +405,7 @@ func TestHunyuanCheckConnectionDelegatesToListModels(t *testing.T) {
 }
 
 func TestHunyuanCheckConnectionPropagatesError(t *testing.T) {
-	srv := newHunyuanServer(t, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"bad key"}`))
 	})
