@@ -2107,10 +2107,11 @@ def _load_chat_api_module(monkeypatch):
 
     dialog_svc_mod = ModuleType("api.db.services.dialog_service")
     dialog_svc_mod.DialogService = SimpleNamespace(
+        model=SimpleNamespace(_meta=SimpleNamespace(fields=[])),
         query=lambda **_k: [SimpleNamespace(id="chat-1", icon="")],
         get_by_id=lambda _id: (True, SimpleNamespace(
             prompt_config={"prologue": ""},
-            tenant_id="authenticated-user",
+            tenant_id="tenant-1",
             llm_id="model",
             kb_ids=[],
             id=_id,
@@ -2200,7 +2201,7 @@ def test_create_session_user_id_not_spoofable(monkeypatch):
     res = _run(inspect.unwrap(module.create_session)("chat-1"))
 
     assert res["code"] == 0, res
-    assert saved_kwargs["user_id"] == "authenticated-user"
+    assert saved_kwargs["user_id"] == module.current_user.id
     assert saved_kwargs["user_id"] != "attacker-id"
 
 
@@ -2230,4 +2231,4 @@ def test_session_completion_user_id_not_spoofable(monkeypatch):
 
     _run(inspect.unwrap(module.session_completion)())
 
-    assert captured_user_ids == ["authenticated-user"]
+    assert captured_user_ids == [module.current_user.id]
