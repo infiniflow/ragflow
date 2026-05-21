@@ -46,6 +46,15 @@ def _qwen3_no_think_extra_body(model_name: str) -> dict[str, bool] | None:
     return None
 
 
+def _remove_sampling_params(model_name: str, gen_conf: dict | None) -> dict:
+    """Remove sampling options from Qwen3.x CV requests for now."""
+    sanitized_gen_conf = dict(gen_conf or {})
+    if "qwen3." in model_name.lower():
+        for key in ("temperature", "top_p"):
+            sanitized_gen_conf.pop(key, None)
+    return sanitized_gen_conf
+
+
 class Base(ABC):
     def __init__(self, **kwargs):
         # Configure retry parameters
@@ -355,6 +364,7 @@ class QWenCV(GptV4):
         return "Please summarize this video in proper sentences."
 
     async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        gen_conf = _remove_sampling_params(self.model_name, gen_conf)
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
