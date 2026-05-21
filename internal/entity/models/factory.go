@@ -93,10 +93,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewLocalAIModel(baseURL, urlSuffix), nil
 	case "xinference":
 		return NewXinferenceModel(baseURL, urlSuffix), nil
+	case "astraflow":
+		return NewAstraflowModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
+	case "avian":
+		return NewAvianModel(baseURL, urlSuffix), nil
 	case "replicate":
 		return NewReplicateModel(baseURL, urlSuffix), nil
 	case "togetherai":
@@ -117,6 +121,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru_local":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "perplexity":
+		return NewPerplexityModel(baseURL, urlSuffix), nil
 	case "gpustack":
 		return NewGPUStackModel(baseURL, urlSuffix), nil
 	case "n1n":
