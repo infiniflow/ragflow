@@ -380,8 +380,114 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 	return sender(&endOfStream, nil)
 }
 
+// Index is *int so a missing JSON field is distinguishable from index 0.
+type xinferenceEmbeddingResponse struct {
+	Data []struct {
+		Index     *int      `json:"index"`
+		Embedding []float64 `json:"embedding"`
+	} `json:"data"`
+}
+
+// Embed POSTs the input texts to the tenant's Xinference /v1/embeddings
+// endpoint and returns one EmbeddingData per input in the original input
+// order.
+//
+// Mirrors the Python XinferenceEmbed class in rag/llm/embedding_model.py
+// for payload shape (OpenAI-compatible: model + input → data[*].index +
+// data[*].embedding) and tolerates the same no-auth default Xinference
+// deployments use. Authorization: Bearer <api_key> is only set when the
+// tenant configured a non-empty API key, via setXinferenceAuth.
+//
+// The response is validated by index: duplicate, missing, or
+// out-of-range data[*].index values fail with a clear error rather than
+// silently producing misaligned vectors. EmbeddingConfig.Dimension, when
+// > 0, is forwarded as the OpenAI-style "dimensions" field for models
+// that support truncated output vectors.
 func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	baseURL, err := x.baseURLForRegion(xinferenceRegion(apiConfig))
+	if err != nil {
+		return nil, err
+	}
+	if x.URLSuffix.Embedding == "" {
+		return nil, fmt.Errorf("xinference: no embedding URL suffix configured")
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	setXinferenceAuth(req, apiConfig)
+
+	resp, err := x.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Xinference embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed xinferenceEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([]EmbeddingData, len(texts))
+	seen := make([]bool, len(texts))
+	for _, d := range parsed.Data {
+		if d.Index == nil {
+			return nil, fmt.Errorf("xinference: missing embedding index in response item")
+		}
+		idx := *d.Index
+		if idx < 0 || idx >= len(texts) {
+			return nil, fmt.Errorf("xinference: embedding index %d out of range for %d inputs", idx, len(texts))
+		}
+		if len(d.Embedding) == 0 {
+			return nil, fmt.Errorf("xinference: missing embedding vector for response item at index %d", idx)
+		}
+		if seen[idx] {
+			return nil, fmt.Errorf("xinference: duplicate embedding index %d", idx)
+		}
+		embeddings[idx] = EmbeddingData{Embedding: d.Embedding, Index: idx}
+		seen[idx] = true
+	}
+	for i, ok := range seen {
+		if !ok {
+			return nil, fmt.Errorf("xinference: missing embedding for input at index %d", i)
+		}
+	}
+
+	return embeddings, nil
 }
 
 type xinferenceRerankResult struct {
