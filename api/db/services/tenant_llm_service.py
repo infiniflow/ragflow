@@ -17,17 +17,12 @@ import os
 import json
 import logging
 from peewee import IntegrityError
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from common import settings
 from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
-from api.db.services.langfuse_service import (
-    TenantLangfuseService,
-    end_langfuse_observation,
-    resolve_langfuse_user_id,
-    start_langfuse_observation,
-)
+from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.user_service import TenantService
 
 
@@ -512,10 +507,8 @@ class LLM4Tenant:
 
         self.is_tools = model_config.get("is_tools", False)
         self.verbose_tool_use = kwargs.get("verbose_tool_use")
-        self.langfuse_user_id = resolve_langfuse_user_id(
-            kwargs.get("langfuse_user_id") or kwargs.get("user_id"),
-            tenant_id,
-        )
+        user_id = kwargs.get("user_id")
+        self.user_id = str(user_id) if user_id else tenant_id
 
         langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
         self.langfuse = None
@@ -530,19 +523,23 @@ class LLM4Tenant:
                 # Skip langfuse tracing if connection fails
                 pass
 
-    def set_langfuse_user_id(self, user_id=None) -> None:
-        self.langfuse_user_id = resolve_langfuse_user_id(user_id, self.tenant_id)
-
     def _start_langfuse_observation(self, **kwargs):
         if not self.langfuse:
             return None, None
         kwargs.setdefault("trace_context", self.trace_context)
-        return start_langfuse_observation(
-            self.langfuse,
-            self.langfuse_user_id,
-            self.tenant_id,
-            **kwargs,
-        )
+        ctx = None
+        if self.user_id:
+            ctx = propagate_attributes(user_id=self.user_id)
+            ctx.__enter__()
+        try:
+            return self.langfuse.start_observation(**kwargs), ctx
+        except Exception:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
+            raise
 
     def _end_langfuse_observation(self, generation, ctx) -> None:
-        end_langfuse_observation(generation, ctx)
+        if generation is not None:
+            generation.end()
+        if ctx is not None:
+            ctx.__exit__(None, None, None)

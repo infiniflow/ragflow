@@ -15,42 +15,12 @@
 #
 
 from datetime import datetime
-from typing import Any, Optional, Tuple
 
 import peewee
-from langfuse import propagate_attributes
 
 from api.db.db_models import DB, TenantLangfuse
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
-
-
-def resolve_langfuse_user_id(user_id: Any, tenant_id: Any) -> str:
-    """Use request user_id for Langfuse traces; fall back to tenant_id when empty."""
-    if user_id is None:
-        return str(tenant_id)
-    user_id_str = str(user_id).strip()
-    if not user_id_str:
-        return str(tenant_id)
-    return user_id_str
-
-
-def start_langfuse_observation(langfuse_client, user_id: Any, tenant_id: Any, **kwargs) -> Tuple[Any, Any]:
-    """Start a Langfuse observation with trace-level user_id propagated."""
-    ctx = propagate_attributes(user_id=resolve_langfuse_user_id(user_id, tenant_id))
-    ctx.__enter__()
-    try:
-        return langfuse_client.start_observation(**kwargs), ctx
-    except Exception:
-        ctx.__exit__(None, None, None)
-        raise
-
-
-def end_langfuse_observation(generation: Optional[Any], ctx: Optional[Any]) -> None:
-    if generation is not None:
-        generation.end()
-    if ctx is not None:
-        ctx.__exit__(None, None, None)
 
 
 class TenantLangfuseService(CommonService):

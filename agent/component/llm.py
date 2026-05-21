@@ -91,7 +91,7 @@ class LLM(ComponentBase):
             chat_model_config,
             max_retries=self._param.max_retries,
             retry_interval=self._param.delay_after_error,
-            langfuse_user_id=self._canvas.get_langfuse_user_id(),
+            user_id=self._canvas.globals.get("sys.user_id"),
         )
         self.imgs = []
 
@@ -258,7 +258,7 @@ class LLM(ComponentBase):
                 self._param.llm_id,
                 max_retries=self._param.max_retries,
                 retry_interval=self._param.delay_after_error,
-                langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                user_id=self._canvas.globals.get("sys.user_id"),
             )
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
@@ -279,13 +279,11 @@ class LLM(ComponentBase):
         return pts, sys_prompt
 
     async def _generate_async(self, msg: list[dict], **kwargs) -> str:
-        self.chat_mdl.set_langfuse_user_id(self._canvas.get_langfuse_user_id())
         if not self.imgs:
             return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
         return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
-        self.chat_mdl.set_langfuse_user_id(self._canvas.get_langfuse_user_id())
         async def delta_wrapper(txt_iter):
             ans = ""
             last_idx = 0
@@ -326,7 +324,6 @@ class LLM(ComponentBase):
             yield t
 
     async def _stream_output_async(self, prompt, msg):
-        self.chat_mdl.set_langfuse_user_id(self._canvas.get_langfuse_user_id())
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
         last_idx = 0

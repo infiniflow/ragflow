@@ -125,7 +125,7 @@ class Retrieval(ToolBase, ABC):
             embd_mdl = LLMBundle(
                 tenant_id,
                 embd_model_config,
-                langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                user_id=self._canvas.globals.get("sys.user_id"),
             )
 
         rerank_mdl = None
@@ -134,7 +134,7 @@ class Retrieval(ToolBase, ABC):
             rerank_mdl = LLMBundle(
                 kbs[0].tenant_id,
                 rerank_model_config,
-                langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                user_id=self._canvas.globals.get("sys.user_id"),
             )
 
         vars = self.get_input_elements_from_text(query_text)
@@ -191,7 +191,7 @@ class Retrieval(ToolBase, ABC):
                 chat_mdl = LLMBundle(
                     tenant_id,
                     chat_model_config,
-                    langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                    user_id=self._canvas.globals.get("sys.user_id"),
                 )
 
             doc_ids = await apply_meta_data_filter(
@@ -234,7 +234,7 @@ class Retrieval(ToolBase, ABC):
                 chat_mdl = LLMBundle(
                     tenant_id,
                     chat_model_config,
-                    langfuse_user_id=self._canvas.get_langfuse_user_id(),
+                    user_id=self._canvas.globals.get("sys.user_id"),
                 )
                 cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
                                                           chat_mdl, self._param.top_n)

@@ -127,7 +127,7 @@ class Categorize(LLM, ABC):
         chat_mdl = LLMBundle(
             self._canvas.get_tenant_id(),
             chat_model_config,
-            langfuse_user_id=self._canvas.get_langfuse_user_id(),
+            user_id=self._canvas.globals.get("sys.user_id"),
         )
 
         user_prompt = """
