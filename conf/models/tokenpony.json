@@ -1,7 +1,7 @@
 {
   "name": "TokenPony",
   "url": {
-    "default": "https://ragflow.vip-api.tokenpony.cn/v1"
+    "default": "https://api.tokenpony.cn/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
