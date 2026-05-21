@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for `get_agent_session` (api/apps/restful_apis/agent_api.py)."""
+"""Regression tests for agent session routes in api/apps/restful_apis/agent_api.py."""
 
 import importlib.util
 import sys
@@ -42,6 +42,12 @@ def _load_agent_api(monkeypatch, get_by_id_result):
     `get_by_id_result` is the `(exists, conv)` tuple the stub
     `API4ConversationService.get_by_id` will return for any session_id.
     """
+    delete_calls = []
+
+    def _delete_by_id(session_id):
+        delete_calls.append(session_id)
+        return True
+
     _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
@@ -49,7 +55,12 @@ def _load_agent_api(monkeypatch, get_by_id_result):
     _stub(
         monkeypatch,
         "api.db.services.api_service",
-        API4ConversationService=SimpleNamespace(get_by_id=lambda _session_id: get_by_id_result, save=lambda **_kwargs: True, delete_by_id=lambda *_args, **_kwargs: True, query=lambda **_kwargs: []),
+        API4ConversationService=SimpleNamespace(
+            get_by_id=lambda _session_id: get_by_id_result,
+            save=lambda **_kwargs: True,
+            delete_by_id=_delete_by_id,
+            query=lambda **_kwargs: [],
+        ),
     )
     _stub(
         monkeypatch,
@@ -87,6 +98,7 @@ def _load_agent_api(monkeypatch, get_by_id_result):
     module.manager = _PassthroughManager()
     monkeypatch.setitem(sys.modules, "test_get_agent_session_agent_api", module)
     spec.loader.exec_module(module)
+    module._delete_calls = delete_calls
     return module
 
 
@@ -117,7 +129,10 @@ class TestGetAgentSession:
     @pytest.mark.p1
     def test_returns_session_dict_when_found(self, monkeypatch):
         """When the session exists, the route returns its `to_dict()` payload."""
-        conv = SimpleNamespace(to_dict=lambda: {"id": "sess-1", "messages": []})
+        conv = SimpleNamespace(
+            dialog_id="agent-1",
+            to_dict=lambda: {"id": "sess-1", "messages": []},
+        )
         module = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
 
         result = module.get_agent_session(agent_id="agent-1", session_id="sess-1", tenant_id="tenant-1")
@@ -127,3 +142,57 @@ class TestGetAgentSession:
             "message": "",
             "data": {"id": "sess-1", "messages": []},
         }
+
+    @pytest.mark.p1
+    def test_rejects_session_belonging_to_different_agent(self, monkeypatch):
+        """GET must bind session_id to path agent_id (IDOR regression)."""
+        conv = SimpleNamespace(
+            dialog_id="agent-victim",
+            to_dict=lambda: (_ for _ in ()).throw(AssertionError("to_dict must not run for foreign session")),
+        )
+        module = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.get_agent_session(agent_id="agent-attacker", session_id="sess-victim", tenant_id="tenant-1")
+
+        assert result == {
+            "code": 102,
+            "message": "Session not found!",
+            "data": None,
+        }
+
+
+@pytest.mark.p1
+class TestDeleteAgentSessionItem:
+    def test_returns_error_when_session_missing(self, monkeypatch):
+        module = _load_agent_api(monkeypatch, get_by_id_result=(False, None))
+
+        result = module.delete_agent_session_item(agent_id="agent-1", session_id="does-not-exist", tenant_id="tenant-1")
+
+        assert result == {
+            "code": 102,
+            "message": "Session not found!",
+            "data": None,
+        }
+        assert module._delete_calls == []
+
+    def test_rejects_session_belonging_to_different_agent(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-victim")
+        module = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.delete_agent_session_item(agent_id="agent-attacker", session_id="sess-victim", tenant_id="tenant-1")
+
+        assert result == {
+            "code": 102,
+            "message": "Session not found!",
+            "data": None,
+        }
+        assert module._delete_calls == []
+
+    def test_deletes_when_session_belongs_to_agent(self, monkeypatch):
+        conv = SimpleNamespace(dialog_id="agent-1")
+        module = _load_agent_api(monkeypatch, get_by_id_result=(True, conv))
+
+        result = module.delete_agent_session_item(agent_id="agent-1", session_id="sess-1", tenant_id="tenant-1")
+
+        assert result == {"code": 0, "message": "", "data": True}
+        assert module._delete_calls == ["sess-1"]

@@ -133,6 +133,11 @@ def _run(coro):
 
 def _load_doc_module(monkeypatch):
     repo_root = Path(__file__).resolve().parents[4]
+    apps_mod = ModuleType("api.apps")
+    apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
@@ -187,6 +192,7 @@ def _load_doc_module(monkeypatch):
     document_service_mod = ModuleType("api.db.services.document_service")
     document_service_mod.DocumentService = SimpleNamespace(
         query=lambda **_kwargs: [],
+        accessible=lambda **_kwargs: False,
         filter_update=lambda *_args, **_kwargs: 0,
         get_by_id=lambda *_args, **_kwargs: (False, None),
         update_by_id=lambda *_args, **_kwargs: True,
@@ -503,68 +509,57 @@ class TestDocRoutesUnit:
         module = _load_doc_module(monkeypatch)
         _patch_send_file(monkeypatch, module)
         _patch_storage(monkeypatch, module, file_stream=b"")
-        res = _run(module.download.__wrapped__("tenant-1", "ds-1", ""))
-        assert res["message"] == "Specify document_id please."
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
-        res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "do not own the dataset" in res["message"]
-
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-        res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert "not own the document" in res["message"]
-
-        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
-        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
-        res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1"))
-        assert res["message"] == "This file is empty."
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer"}))
-        res = _run(module.download_doc("doc-1"))
-        assert "Authorization is not valid" in res["message"]
-
-        monkeypatch.setattr(module, "request", SimpleNamespace(headers={"Authorization": "Bearer token"}))
-        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [])
-        res = _run(module.download_doc("doc-1"))
-        assert "API key is invalid" in res["message"]
-
-        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1"), SimpleNamespace(tenant_id="tenant-2")])
-        res = _run(module.download_doc("doc-1"))
-        assert "API key configuration is ambiguous" in res["message"]
-
-        monkeypatch.setattr(module.APIToken, "query", lambda **_kwargs: [SimpleNamespace(tenant_id="tenant-1")])
-        res = _run(module.download_doc(""))
+        res = _run(module.download("ds-1", ""))
         assert res["message"] == "Specify document_id please."
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
-        res = _run(module.download_doc("doc-1"))
-        assert "not own the document" in res["message"]
+        res = _run(module.download("ds-1", "doc-1"))
+        assert res["message"] == "Document not found!"
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
-        kb_query_calls = []
-
-        def _deny_kb_query(**kwargs):
-            kb_query_calls.append(kwargs)
-            return []
-
-        monkeypatch.setattr(module.KnowledgebaseService, "query", _deny_kb_query)
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
         monkeypatch.setattr(
             module.File2DocumentService,
             "get_storage_address",
             lambda **_kwargs: (_ for _ in ()).throw(AssertionError("storage lookup must not run before tenant authorization")),
         )
-        res = _run(module.download_doc("doc-1"))
-        assert res["message"] == "You do not have access to this document."
-        assert kb_query_calls == [{"id": "kb-1", "tenant_id": "tenant-1"}]
+        res = _run(module.download("ds-1", "doc-1"))
+        assert res["message"] == "Document not found!"
 
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
         monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
-        _patch_storage(monkeypatch, module, file_stream=b"")
-        res = _run(module.download_doc("doc-1"))
+        res = _run(module.download("ds-1", "doc-1"))
         assert res["message"] == "This file is empty."
 
         _patch_storage(monkeypatch, module, file_stream=b"abc")
-        res = _run(module.download_doc("doc-1"))
+        res = _run(module.download("ds-1", "doc-1"))
+        assert res["filename"] == "doc.txt"
+
+        res = _run(module.download_document(""))
+        assert res["message"] == "Specify document_id please."
+
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
+        res = _run(module.download_document("doc-1"))
+        assert res["message"] == "Document not found!"
+
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(
+            module.File2DocumentService,
+            "get_storage_address",
+            lambda **_kwargs: (_ for _ in ()).throw(AssertionError("storage lookup must not run before tenant authorization")),
+        )
+        res = _run(module.download_document("doc-1"))
+        assert res["message"] == "Document not found!"
+
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
+        _patch_storage(monkeypatch, module, file_stream=b"")
+        res = _run(module.download_document("doc-1"))
+        assert res["message"] == "This file is empty."
+
+        _patch_storage(monkeypatch, module, file_stream=b"abc")
+        res = _run(module.download_document("doc-1"))
         assert res["filename"] == "doc.txt"
 
 

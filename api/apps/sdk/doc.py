@@ -18,7 +18,7 @@ from io import BytesIO
 
 from quart import send_file
 
-from api.apps import login_required
+from api.apps import current_user, login_required
 from api.db.db_models import Document, Task
 from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -93,7 +93,15 @@ async def download(dataset_id, document_id):
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_error_data_result(message="Document not found!")
+    if not DocumentService.accessible(document_id, current_user.id):
+        logging.warning(
+            "Rejected SDK dataset document download cross-tenant access: user_id=%s dataset_id=%s document_id=%s",
+            current_user.id,
+            dataset_id,
+            document_id,
+        )
+        return get_error_data_result(message="Document not found!")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
@@ -154,7 +162,14 @@ async def download_document(document_id):
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_error_data_result(message="Document not found!")
+    if not DocumentService.accessible(document_id, current_user.id):
+        logging.warning(
+            "Rejected SDK document download cross-tenant access: user_id=%s document_id=%s",
+            current_user.id,
+            document_id,
+        )
+        return get_error_data_result(message="Document not found!")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
