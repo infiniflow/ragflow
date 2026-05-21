@@ -49,11 +49,11 @@ func (f *FishAudioModel) Name() string {
 }
 
 func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf(f.Name() + " no such method")
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf(f.Name() + " no such method")
+	return fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
