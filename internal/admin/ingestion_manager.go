@@ -18,6 +18,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -61,17 +62,23 @@ type pendingTask struct {
 	CreatedAt time.Time
 }
 
+var ingestionManager *IngestionManager
+
+func GetIngestionManager() *IngestionManager {
+	return ingestionManager
+}
+
 func NewAdminServer() *IngestionManager {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &IngestionManager{
+	ingestionManager = &IngestionManager{
 		ingestionServers: make(map[string]*IngestionState),
 		taskQueue:        make(chan *pendingTask, 10000),
 		slotFreed:        make(chan struct{}, 100),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
-	go s.dispatchLoop()
-	return s
+	go ingestionManager.dispatchLoop()
+	return ingestionManager
 }
 
 // Action handles the bidirectional streaming RPC from ingestion servers
@@ -138,7 +145,7 @@ func (s *IngestionManager) handleMessage(
 		s.handleTaskProgress(msg, *ingestionServerID, *state)
 
 	default:
-		log.Printf("Unknown message type: %s", msg.MessageType)
+		common.Info(fmt.Sprintf("Unknown message type: %s", msg.MessageType))
 		stream.Send(&common.AdminMessage{
 			MessageType:  "ERROR",
 			ErrorMessage: "unknown message type",
@@ -183,8 +190,8 @@ func (s *IngestionManager) handleRegister(
 		},
 	})
 
-	log.Printf("Ingestor %s registered, max_concurrency=%d, supported_types=%v",
-		*ingestionServerID, msg.RegisterInfo.MaxConcurrency, msg.RegisterInfo.SupportedDocTypes)
+	common.Info(fmt.Sprintf("Ingestor %s registered, max_concurrency=%d, supported_types=%v",
+		*ingestionServerID, msg.RegisterInfo.MaxConcurrency, msg.RegisterInfo.SupportedDocTypes))
 }
 
 func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
@@ -202,7 +209,7 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 		}
 		state.CurrentTasks = newTasks
 
-		log.Printf("Heartbeat from %s: %d active tasks", ingestorID, len(newTasks))
+		common.Info(fmt.Sprintf("Heartbeat from %s: %d active tasks", ingestorID, len(newTasks)))
 	}
 }
 
@@ -212,7 +219,7 @@ func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingest
 	}
 
 	result := msg.TaskResult
-	log.Printf("Task result from %s: task=%s, status=%s", ingestorID, result.TaskId, result.Status)
+	common.Info(fmt.Sprintf("Task result from %s: task=%s, status=%s", ingestorID, result.TaskId, result.Status))
 
 	// Remove from the ingestion_server's current task list
 	if state != nil {
@@ -232,8 +239,8 @@ func (s *IngestionManager) handleTaskProgress(msg *common.IngestionMessage, inge
 	}
 
 	progress := msg.TaskProgress
-	log.Printf("Task progress from %s: task=%s, progress=%d%%, detail=%s",
-		ingestorID, progress.TaskId, progress.Progress, progress.Info)
+	common.Info(fmt.Sprintf("Task progress from %s: task=%s, progress=%d%%, detail=%s",
+		ingestorID, progress.TaskId, progress.Progress, progress.Info))
 }
 
 // SubmitTask is for API Server to call (non-gRPC, for testing only)
@@ -242,7 +249,7 @@ func (s *IngestionManager) SubmitTask(task *common.TaskAssignment) {
 		Task:      task,
 		CreatedAt: time.Now(),
 	}
-	log.Printf("Task %s submitted to queue", task.TaskId)
+	common.Info(fmt.Sprintf("Task %s submitted to queue", task.TaskId))
 
 	// Wake up dispatchLoop if it's blocked waiting for a slot
 	select {
@@ -305,7 +312,7 @@ func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *
 		TaskAssignment: task,
 	})
 	if err != nil {
-		log.Printf("Failed to assign task %s to ingestor %s: %v", task.TaskId, state.ID, err)
+		common.Info(fmt.Sprintf("Failed to assign task %s to ingestor %s: %v", task.TaskId, state.ID, err))
 		s.mu.Lock()
 		delete(state.CurrentTasks, task.TaskId)
 		s.mu.Unlock()
@@ -313,7 +320,7 @@ func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *
 		s.taskQueue <- &pendingTask{Task: task, CreatedAt: time.Now()}
 		return
 	}
-	log.Printf("Assigned task %s to ingestion_server %s", task.TaskId, state.ID)
+	common.Info(fmt.Sprintf("Assigned task %s to ingestion_server %s", task.TaskId, state.ID))
 }
 
 func (s *IngestionManager) cleanupIngestionServer(ingestorID string) {
@@ -322,7 +329,7 @@ func (s *IngestionManager) cleanupIngestionServer(ingestorID string) {
 
 	if _, exists := s.ingestionServers[ingestorID]; exists {
 		delete(s.ingestionServers, ingestorID)
-		log.Printf("Ingestor %s cleaned up", ingestorID)
+		common.Info(fmt.Sprintf("Ingestor %s cleaned up", ingestorID))
 	}
 }
 

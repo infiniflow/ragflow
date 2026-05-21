@@ -1587,6 +1587,35 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseAdminAdminCommand() (*Command, error) {
+	p.nextToken() // consume ADMIN
+	switch p.curToken.Type {
+	case TokenIngest:
+		return p.parseAdminIngestCommand()
+	default:
+		return nil, fmt.Errorf("invalid admin command: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminIngestCommand() (*Command, error) {
+	p.nextToken() // consume Ingest
+
+	uri, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("admin_ingest_command")
+	cmd.Params["uri"] = uri
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
 func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
 	p.nextToken() // consume UNSET
 

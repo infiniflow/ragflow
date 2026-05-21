@@ -1281,3 +1281,39 @@ func (c *RAGFlowClient) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
+func (c *RAGFlowClient) AdminIngestCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	fileURI, ok := cmd.Params["uri"].(string)
+	if !ok {
+		return nil, fmt.Errorf("uri not provided")
+	}
+	payload := map[string]interface{}{
+		"uri": fileURI,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/admin/ingestion", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to drop token: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+
+}

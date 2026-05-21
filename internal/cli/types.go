@@ -157,6 +157,7 @@ const (
 	TokenURL
 	TokenTask
 	TokenTasks
+	TokenIngest
 	TokenLog
 	TokenLevel
 	TokenDebug

@@ -1256,6 +1256,27 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
 }
 
+type IngestionRequest struct {
+	FileURI string `json:"uri" binding:"required"`
+}
+
+func (h *Handler) Ingestion(c *gin.Context) {
+	var req IngestionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri is required", 400)
+		return
+	}
+
+	taskID := common.GenerateUUID()
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:   taskID,
+		TaskType: "ingestion",
+		Config:   req.FileURI,
+	})
+
+	success(c, gin.H{"task_id": taskID}, "Send task for ingestion successfully")
+}
+
 // Reports handle heartbeat reports from servers
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
