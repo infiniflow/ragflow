@@ -39,6 +39,13 @@ from rag.prompts.generator import vision_llm_describe_prompt
 
 from common.misc_utils import thread_pool_exec
 
+def _qwen3_no_think_extra_body(model_name: str) -> dict[str, bool] | None:
+    """Build DashScope-compatible options that disable Qwen3.x thinking."""
+    if "qwen3." in model_name.lower():
+        return {"enable_thinking": False}
+    return None
+
+
 class Base(ABC):
     def __init__(self, **kwargs):
         # Configure retry parameters
@@ -310,6 +317,9 @@ class QWenCV(GptV4):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        # Qwen3.x models can be registered as IMAGE2TEXT and routed through this CV wrapper.
+        # Disable thinking here so parser-side extraction tasks do not emit reasoning text.
+        self.extra_body = _qwen3_no_think_extra_body(self.model_name) or self.extra_body
 
     @staticmethod
     def _extract_text_from_content(content):
