@@ -1691,10 +1691,10 @@ async def get_document_image(image_id):
               format: binary
     """
     try:
-        arr = image_id.split("-")
-        if len(arr) != 2:
+        parts = image_id.split("-", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
             return get_data_error_result(message="Image not found.")
-        bkt, nm = image_id.split("-")
+        bkt, nm = parts
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
