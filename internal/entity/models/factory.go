@@ -121,6 +121,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru_local":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "perplexity":
+		return NewPerplexityModel(baseURL, urlSuffix), nil
 	case "gpustack":
 		return NewGPUStackModel(baseURL, urlSuffix), nil
 	case "n1n":
