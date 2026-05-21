@@ -29,7 +29,7 @@ import (
 )
 
 type IngestionManager struct {
-	common.IngestionManagerServer
+	common.UnimplementedIngestionManagerServer
 	mu sync.RWMutex
 
 	// Registered ingestion servers
@@ -72,8 +72,8 @@ func NewAdminServer() *IngestionManager {
 	}
 }
 
-// RegisterAndWork handle the message from ingestion server
-func (s *IngestionManager) RegisterAndWork(stream common.IngestionManager_ActionServer) error {
+// Action handles the bidirectional streaming RPC from ingestion servers
+func (s *IngestionManager) Action(stream common.IngestionManager_ActionServer) error {
 	var ingestionServerID string
 	var state *IngestionState
 
