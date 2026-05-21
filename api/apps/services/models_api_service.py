@@ -176,7 +176,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
     model_type = MODEL_TAG_TO_TYPE.get(model_type, model_type)
     # Check if model is disabled
     model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
-        provider_obj.id, instance_obj.id, model_name, model_type
+        provider_obj.id, instance_obj.id, model_type, model_name
     )
     if model_entity:
         if model_entity.status == "inactive":
