@@ -263,7 +263,6 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
