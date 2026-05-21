@@ -13,6 +13,7 @@ import {
   initialArXivValues,
   initialBeginValues,
   initialBingValues,
+  initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
   initialCrawlerValues,
@@ -181,6 +182,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
       [Operator.DocGenerator]: initialDocGeneratorValues,
+      [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
     };
   }, [llmId]);
