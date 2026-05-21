@@ -1900,7 +1900,8 @@ async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
                 fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
                 content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
 
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
+        b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         response = await make_response(data)
         apply_safe_file_response_headers(response, content_type, ext)
 

@@ -426,12 +426,20 @@ class TestDocumentMetadataUnit:
             lambda _doc_id: (True, SimpleNamespace(name="stub.bin", type=module.FileType.OTHER.value)),
         )
 
-        async def fake_thread_pool_exec(*_args, **_kwargs):
-            return b"attachment"
-
         async def fake_make_response(data):
             return _DummyResponse(data)
 
+        storage_calls = []
+
+        async def fake_thread_pool_exec(fn, *args, **_kwargs):
+            storage_calls.append(args)
+            return b"attachment"
+
+        monkeypatch.setattr(
+            module.File2DocumentService,
+            "get_storage_address",
+            lambda **_kwargs: ("kb-dataset-1", "object-location-key"),
+        )
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
         monkeypatch.setattr(module, "make_response", fake_make_response)
         monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"attachment"))
@@ -443,6 +451,7 @@ class TestDocumentMetadataUnit:
         res = _run(module.download_attachment(attachment_id="att1"))
         assert isinstance(res, _DummyResponse)
         assert res.data == b"attachment"
+        assert storage_calls == [("kb-dataset-1", "object-location-key")]
         assert res.headers["content_type"] == "application/abc"
         assert res.headers["extension"] == "abc"
 
