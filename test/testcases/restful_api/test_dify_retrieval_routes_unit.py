@@ -272,6 +272,11 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
 
     monkeypatch.setattr(module, "jsonify", lambda payload: payload)
     monkeypatch.setattr(module.DocMetadataService, "get_flatted_meta_by_kbs", lambda _kbs: [{"doc_id": "doc-1"}])
+    monkeypatch.setattr(
+        module.DocMetadataService,
+        "get_metadata_for_documents",
+        lambda doc_ids, kb_id: {doc_id: {"origin": f"metadata-{doc_id}", "kb_id": kb_id} for doc_id in doc_ids},
+    )
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB()))
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda _kb_id, _tenant_id: True)
     monkeypatch.setattr(module, "convert_conditions", lambda cond: cond.get("conditions", []))
@@ -303,6 +308,9 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
     top = res["records"][0]
     assert top["title"] == "kg-title", res
     assert top["metadata"]["doc_id"] == "doc-2", res
+    assert top["metadata"]["document_id"] == "doc-2", res
+    assert top["metadata"]["origin"] == "metadata-doc-2", res
+    assert top["metadata"]["kb_id"] == "kb-1", res
     assert "score" in top, res
 
 
