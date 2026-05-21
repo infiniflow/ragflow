@@ -5,7 +5,8 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "embedding": "embeddings"
   },
   "class": "together",
   "models": [
@@ -28,6 +29,27 @@
       "max_tokens": 262144,
       "model_types": [
         "chat"
+      ]
+    },
+    {
+      "name": "intfloat/multilingual-e5-large-instruct",
+      "max_tokens": 514,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "BAAI/bge-large-en-v1.5",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "BAAI/bge-base-en-v1.5",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
       ]
     }
   ]

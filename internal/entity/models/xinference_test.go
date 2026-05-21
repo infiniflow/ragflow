@@ -17,6 +17,7 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 			Chat:      "v1/chat/completions",
 			Embedding: "v1/embeddings",
 			Models:    "v1/models",
+      Rerank:    "v1/rerank",
 		},
 	)
 }
@@ -491,6 +492,9 @@ func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 
 	if _, err := x.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
+  }
+	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+		t.Errorf("Embed: expected no such method, got %v", err)
 	}
 	if _, err := x.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
@@ -509,5 +513,192 @@ func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	}
 	if _, err := x.OCRFile(&model, nil, nil, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
+	}
+}
+
+func newXinferenceRerankServer(t *testing.T, expectedAuth string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rerank" {
+			t.Errorf("path=%s want /v1/rerank", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != expectedAuth {
+			t.Errorf("Authorization=%q want %q", got, expectedAuth)
+		}
+		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Errorf("Content-Type=%q", got)
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Errorf("unmarshal: %v\nraw=%s", err, string(raw))
+			return
+		}
+		handler(t, body, w)
+	}))
+}
+
+func TestXinferenceRerankHappyPathReordersByIndex(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "bge-reranker-v2-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if body["query"] != "capital of France" {
+			t.Errorf("query=%v", body["query"])
+		}
+		if got := body["top_n"].(float64); got != 3 {
+			t.Errorf("top_n=%v want 3", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"index": 2, "relevance_score": 0.91},
+				{"index": 0, "relevance_score": 0.88},
+				{"index": 1, "relevance_score": 0.42},
+			},
+		})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	resp, err := x.Rerank(&model, "capital of France",
+		[]string{"Paris is the capital of France.", "Eiffel Tower.", "Berlin is the capital of Germany."},
+		&APIConfig{}, nil,
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 3 {
+		t.Fatalf("Data len=%d", len(resp.Data))
+	}
+	if resp.Data[0].Index != 2 || resp.Data[1].Index != 0 || resp.Data[2].Index != 1 {
+		t.Errorf("order=%v %v %v", resp.Data[0].Index, resp.Data[1].Index, resp.Data[2].Index)
+	}
+	if resp.Data[0].RelevanceScore != 0.91 {
+		t.Errorf("top score=%v", resp.Data[0].RelevanceScore)
+	}
+}
+
+func TestXinferenceRerankNormalizesV1BaseURL(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []map[string]interface{}{}})
+	})
+	defer srv.Close()
+
+	x := NewXinferenceModel(
+		map[string]string{"default": srv.URL + "/v1"},
+		URLSuffix{Rerank: "v1/rerank"},
+	)
+	apiKey := "test-key"
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
+
+func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if got := body["top_n"].(float64); got != 2 {
+			t.Errorf("top_n=%v want 2", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []map[string]interface{}{}})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a", "b", "c", "d"}, &APIConfig{}, &RerankConfig{TopN: 2})
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+}
+
+func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
+	x := newXinferenceForTest("http://unused")
+	model := "bge-reranker-v2-m3"
+	resp, err := x.Rerank(&model, "q", nil, &APIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
+	}
+	if len(resp.Data) != 0 {
+		t.Errorf("Data len=%d want 0", len(resp.Data))
+	}
+}
+
+func TestXinferenceRerankRequiresModelName(t *testing.T) {
+	x := newXinferenceForTest("http://unused")
+	_, err := x.Rerank(nil, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{{"index": 5, "relevance_score": 0.1}},
+		})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankRejectsDuplicateIndex(t *testing.T) {
+	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{"index": 0, "relevance_score": 0.9},
+				{"index": 0, "relevance_score": 0.8},
+			},
+		})
+	})
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a", "b"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankSurfacesHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"model not loaded"}`))
+	}))
+	defer srv.Close()
+
+	x := newXinferenceForTest(srv.URL)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Xinference rerank API error") {
+		t.Errorf("err=%v", err)
+	}
+}
+
+func TestXinferenceRerankRejectsMissingRerankSuffix(t *testing.T) {
+	x := NewXinferenceModel(
+		map[string]string{"default": "http://unused"},
+		URLSuffix{Chat: "v1/chat/completions"},
+	)
+	model := "bge-reranker-v2-m3"
+	_, err := x.Rerank(&model, "q", []string{"a"}, &APIConfig{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "no rerank URL suffix configured") {
+		t.Errorf("err=%v", err)
 	}
 }
