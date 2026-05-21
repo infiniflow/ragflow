@@ -117,6 +117,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
 	case "ragcon":
 		return NewRAGconModel(baseURL, urlSuffix), nil
+	case "n1n":
+		return NewN1NModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
