@@ -97,7 +97,10 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
     _stub(
         monkeypatch,
         "api.db.services.document_service",
-        DocumentService=SimpleNamespace(get_by_id=lambda _id: (True, SimpleNamespace(meta_fields={}))),
+        DocumentService=SimpleNamespace(
+            get_by_id=lambda _id: (True, SimpleNamespace(id=_id, meta_fields={})),
+            get_by_ids=lambda ids, cols=None: [SimpleNamespace(id=doc_id, meta_fields={}) for doc_id in ids],
+        ),
     )
     _stub(
         monkeypatch,
