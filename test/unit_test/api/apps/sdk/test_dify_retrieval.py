@@ -53,6 +53,15 @@ def _stub(monkeypatch, name, **attrs):
     for key, value in attrs.items():
         setattr(mod, key, value)
     monkeypatch.setitem(sys.modules, name, mod)
+    # If `name` is a submodule, also overwrite the attribute on the parent
+    # package. Otherwise `from <parent> import <child>` resolves to the
+    # already-cached real submodule via attribute lookup, bypassing our
+    # sys.modules entry and our stub.
+    if "." in name:
+        parent_name, _, child_name = name.rpartition(".")
+        parent_mod = sys.modules.get(parent_name)
+        if parent_mod is not None:
+            monkeypatch.setattr(parent_mod, child_name, mod, raising=False)
     return mod
 
 
