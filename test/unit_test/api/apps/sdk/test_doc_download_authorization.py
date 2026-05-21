@@ -13,39 +13,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for SDK document download authorization in api/apps/sdk/doc.py.
-
-Cross-tenant file download via GET /api/v1/datasets/<dataset_id>/documents/<document_id>
-and GET /api/v1/documents/<document_id> when DocumentService.accessible is not enforced.
-"""
+"""Regression tests for SDK document download authorization in api/apps/sdk/doc.py."""
 
 import asyncio
 import importlib.util
 import logging
 import sys
-from io import BytesIO
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
 
+_MODULE_NAME = "test_doc_download_module"
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_DOC_PATH = _REPO_ROOT / "api" / "apps" / "sdk" / "doc.py"
+
 
 class _PassthroughManager:
     def route(self, *_args, **_kwargs):
         return lambda func: func
-
-
-def _stub(monkeypatch, name, **attrs):
-    mod = ModuleType(name)
-    for key, value in attrs.items():
-        setattr(mod, key, value)
-    monkeypatch.setitem(sys.modules, name, mod)
-    if "." in name:
-        parent_name, _, child_name = name.rpartition(".")
-        parent_mod = sys.modules.get(parent_name)
-        if parent_mod is not None:
-            monkeypatch.setattr(parent_mod, child_name, mod, raising=False)
-    return mod
 
 
 class _DummyDoc:
@@ -54,120 +40,154 @@ class _DummyDoc:
         self.kb_id = "kb-victim"
 
 
-def _load_doc_download_module(monkeypatch, *, accessible, storage_get=None):
-    owner_user = SimpleNamespace(id="user-owner")
-    attacker_user = SimpleNamespace(id="user-attacker")
-
-    apps_mod = ModuleType("api.apps")
-    apps_mod.current_user = owner_user
-    apps_mod.login_required = lambda func: func
-    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
-
+def _install_dependency_stubs(monkeypatch, *, accessible, storage_get):
+    """Replace dependency modules unconditionally so import order is stable."""
     storage_calls = []
 
     def _storage_get(*_args, **_kwargs):
         storage_calls.append(True)
-        if storage_get is None:
-            return b"leaked-bytes"
         return storage_get(*_args, **_kwargs)
 
-    _stub(
-        monkeypatch,
-        "common.settings",
-        STORAGE_IMPL=SimpleNamespace(get=_storage_get),
-    )
-    _stub(monkeypatch, "common", settings=sys.modules["common.settings"])
-    _stub(
-        monkeypatch,
-        "common.constants",
-        RetCode=SimpleNamespace(DATA_ERROR=102),
-        LLMType=SimpleNamespace(),
-        TaskStatus=SimpleNamespace(),
-    )
-
     acc_fn = accessible if callable(accessible) else (lambda *_a, **_k: accessible)
-    _stub(
-        monkeypatch,
-        "api.db.services.document_service",
-        DocumentService=SimpleNamespace(
-            query=lambda **_kwargs: [_DummyDoc()],
-            accessible=acc_fn,
-        ),
-    )
-    _stub(
-        monkeypatch,
-        "api.db.services.file2document_service",
-        File2DocumentService=SimpleNamespace(
-            get_storage_address=lambda **_kwargs: ("bucket", "object-key"),
-        ),
-    )
-    _stub(
-        monkeypatch,
-        "api.db.services.knowledgebase_service",
-        KnowledgebaseService=SimpleNamespace(accessible=lambda *_a, **_k: True),
-    )
-    _stub(
-        monkeypatch,
-        "api.utils.api_utils",
-        get_error_data_result=lambda message="", code=102: {"code": code, "message": message},
-        construct_json_result=lambda message="", code=102: {"code": code, "message": message},
-        check_duplicate_ids=lambda ids, _kind: (ids, []),
-        get_request_json=lambda: {},
-        get_result=lambda **_kwargs: {},
-        server_error_response=lambda e: {"message": str(e)},
-        token_required=lambda func: func,
-    )
 
-    quart_stub = ModuleType("quart")
-    sent = {}
+    apps_mod = ModuleType("api.apps")
+    apps_mod.current_user = SimpleNamespace(id="user-owner")
+    apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=_storage_get)
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    common_mod = ModuleType("common")
+    common_mod.settings = common_settings_mod
+    monkeypatch.setitem(sys.modules, "common", common_mod)
+
+    common_constants_mod = ModuleType("common.constants")
+    common_constants_mod.RetCode = SimpleNamespace(DATA_ERROR=102)
+    common_constants_mod.LLMType = SimpleNamespace()
+    common_constants_mod.TaskStatus = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
+
+    common_metadata_mod = ModuleType("common.metadata_utils")
+    common_metadata_mod.convert_conditions = lambda conditions: conditions
+    common_metadata_mod.meta_filter = lambda *_args, **_kwargs: []
+    monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_mod)
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.Document = type("Document", (), {})
+    db_models_mod.Task = type("Task", (), {})
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
+
+    tenant_model_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_mod.get_model_config_by_id = lambda *_a, **_k: {}
+    tenant_model_mod.get_model_config_by_type_and_name = lambda *_a, **_k: {}
+    tenant_model_mod.get_tenant_default_model_by_type = lambda *_a, **_k: {}
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_mod)
+
+    document_service_mod = ModuleType("api.db.services.document_service")
+    document_service_mod.DocumentService = SimpleNamespace(
+        query=lambda **_kwargs: [_DummyDoc()],
+        accessible=acc_fn,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
+
+    file2document_mod = ModuleType("api.db.services.file2document_service")
+    file2document_mod.File2DocumentService = SimpleNamespace(
+        get_storage_address=lambda **_kwargs: ("bucket", "object-key"),
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.file2document_service", file2document_mod)
+
+    kb_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    kb_service_mod.KnowledgebaseService = SimpleNamespace(accessible=lambda *_a, **_k: True)
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
+
+    for name, attrs in (
+        ("api.db.services.doc_metadata_service", {"DocMetadataService": SimpleNamespace()}),
+        ("api.db.services.llm_service", {"LLMBundle": SimpleNamespace()}),
+        ("api.db.services.task_service", {"TaskService": SimpleNamespace(), "cancel_all_task_of": lambda *_a, **_k: None, "queue_tasks": lambda *_a, **_k: None}),
+        ("api.db.services.tenant_llm_service", {"TenantLLMService": SimpleNamespace()}),
+    ):
+        mod = ModuleType(name)
+        for key, value in attrs.items():
+            setattr(mod, key, value)
+        monkeypatch.setitem(sys.modules, name, mod)
+
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.get_error_data_result = lambda message="", code=102: {"code": code, "message": message}
+    api_utils_mod.construct_json_result = lambda message="", code=102: {"code": code, "message": message}
+    api_utils_mod.check_duplicate_ids = lambda ids, _kind: (ids, [])
+    api_utils_mod.get_request_json = lambda: {}
+    api_utils_mod.get_result = lambda **_kwargs: {}
+    api_utils_mod.server_error_response = lambda e: {"message": str(e)}
+    api_utils_mod.token_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    ref_meta_mod = ModuleType("api.utils.reference_metadata_utils")
+    ref_meta_mod.enrich_chunks_with_document_metadata = lambda *_a, **_k: None
+    ref_meta_mod.resolve_reference_metadata_preferences = lambda req, _cfg=None: req
+    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", ref_meta_mod)
+
+    rag_tag_mod = ModuleType("rag.app.tag")
+    rag_tag_mod.label_question = lambda *_a, **_k: {}
+    monkeypatch.setitem(sys.modules, "rag.app.tag", rag_tag_mod)
+
+    rag_nlp_mod = ModuleType("rag.nlp")
+    rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx_{tenant_id}")
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
+
+    rag_prompts_mod = ModuleType("rag.prompts.generator")
+    rag_prompts_mod.cross_languages = lambda *_a, **_k: ""
+    rag_prompts_mod.keyword_extraction = lambda *_a, **_k: ""
+    monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_prompts_mod)
+
+    quart_mod = ModuleType("quart")
 
     async def _fake_send_file(file_obj, **kwargs):
-        sent["payload"] = file_obj.read()
-        sent["filename"] = kwargs.get("attachment_filename")
-        return sent
+        return {"payload": file_obj.read(), "filename": kwargs.get("attachment_filename")}
 
-    quart_stub.send_file = _fake_send_file
-    monkeypatch.setitem(sys.modules, "quart", quart_stub)
+    quart_mod.send_file = _fake_send_file
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
-    for stub_name in (
-        "api.db.db_models",
-        "api.db.joint_services.tenant_model_service",
-        "api.db.services.doc_metadata_service",
-        "api.db.services.llm_service",
-        "api.db.services.task_service",
-        "api.db.services.tenant_llm_service",
-        "api.utils.reference_metadata_utils",
-        "common.metadata_utils",
-        "rag.app.tag",
-        "rag.nlp",
-        "rag.prompts.generator",
-    ):
-        if stub_name not in sys.modules:
-            monkeypatch.setitem(sys.modules, stub_name, ModuleType(stub_name))
+    return storage_calls
 
-    repo_root = Path(__file__).resolve().parents[5]
-    module_path = repo_root / "api" / "apps" / "sdk" / "doc.py"
-    spec = importlib.util.spec_from_file_location("test_doc_download_module", module_path)
+
+def _load_doc_module(monkeypatch, *, accessible, storage_get=None):
+    if storage_get is None:
+        storage_get = lambda *_a, **_k: b"leaked-bytes"
+
+    monkeypatch.delitem(sys.modules, _MODULE_NAME, raising=False)
+    storage_calls = _install_dependency_stubs(monkeypatch, accessible=accessible, storage_get=storage_get)
+
+    spec = importlib.util.spec_from_file_location(_MODULE_NAME, _DOC_PATH)
     module = importlib.util.module_from_spec(spec)
     module.manager = _PassthroughManager()
-    monkeypatch.setitem(sys.modules, "test_doc_download_module", module)
+    monkeypatch.setitem(sys.modules, _MODULE_NAME, module)
     spec.loader.exec_module(module)
+
     module._storage_calls = storage_calls
-    module._owner_user = owner_user
-    module._attacker_user = attacker_user
+    module._owner_user = SimpleNamespace(id="user-owner")
+    module._attacker_user = SimpleNamespace(id="user-attacker")
     return module
 
 
 @pytest.mark.p1
 class TestSdkDocumentDownloadAuthorization:
-    def test_dataset_download_cross_tenant_is_rejected(self, monkeypatch, caplog):
-        module = _load_doc_download_module(
-            monkeypatch,
-            accessible=lambda doc_id, user_id: user_id == "user-owner",
-        )
-        import api.apps as apps_mod
+    def test_dataset_download_missing_doc_returns_generic_message(self, monkeypatch):
+        module = _load_doc_module(monkeypatch, accessible=lambda *_a, **_k: True)
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
 
-        apps_mod.current_user = module._attacker_user
+        result = asyncio.run(module.download("kb-victim", "doc-missing"))
+
+        assert result["message"] == "Document not found!"
+        assert module._storage_calls == []
+
+    def test_dataset_download_cross_tenant_is_rejected(self, monkeypatch, caplog):
+        module = _load_doc_module(
+            monkeypatch,
+            accessible=lambda _doc_id, user_id: user_id == "user-owner",
+        )
+        module.current_user = module._attacker_user
         caplog.set_level(logging.WARNING, logger=module.__name__)
 
         result = asyncio.run(module.download("kb-victim", "doc-victim"))
@@ -184,16 +204,12 @@ class TestSdkDocumentDownloadAuthorization:
             storage_calls.append(True)
             return b"ok"
 
-        module = _load_doc_download_module(
+        module = _load_doc_module(
             monkeypatch,
             accessible=lambda _doc_id, _user_id: True,
             storage_get=_storage_get,
         )
-        monkeypatch.setattr(
-            module.File2DocumentService,
-            "get_storage_address",
-            lambda **_kwargs: ("bucket", "object-key"),
-        )
+        module.current_user = module._owner_user
 
         result = asyncio.run(module.download("kb-owner", "doc-owner"))
 
@@ -201,14 +217,21 @@ class TestSdkDocumentDownloadAuthorization:
         assert result["payload"] == b"ok"
         assert storage_calls
 
-    def test_document_download_cross_tenant_is_rejected(self, monkeypatch, caplog):
-        module = _load_doc_download_module(
-            monkeypatch,
-            accessible=lambda doc_id, user_id: user_id == "user-owner",
-        )
-        import api.apps as apps_mod
+    def test_document_download_missing_doc_returns_generic_message(self, monkeypatch):
+        module = _load_doc_module(monkeypatch, accessible=lambda *_a, **_k: True)
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
 
-        apps_mod.current_user = module._attacker_user
+        result = asyncio.run(module.download_document("doc-missing"))
+
+        assert result["message"] == "Document not found!"
+        assert module._storage_calls == []
+
+    def test_document_download_cross_tenant_is_rejected(self, monkeypatch, caplog):
+        module = _load_doc_module(
+            monkeypatch,
+            accessible=lambda _doc_id, user_id: user_id == "user-owner",
+        )
+        module.current_user = module._attacker_user
         caplog.set_level(logging.WARNING, logger=module.__name__)
 
         result = asyncio.run(module.download_document("doc-victim"))
@@ -225,19 +248,32 @@ class TestSdkDocumentDownloadAuthorization:
             storage_calls.append(True)
             return b"ok"
 
-        module = _load_doc_download_module(
+        module = _load_doc_module(
             monkeypatch,
             accessible=lambda _doc_id, _user_id: True,
             storage_get=_storage_get,
         )
-        monkeypatch.setattr(
-            module.File2DocumentService,
-            "get_storage_address",
-            lambda **_kwargs: ("bucket", "object-key"),
-        )
+        module.current_user = module._owner_user
 
         result = asyncio.run(module.download_document("doc-owner"))
 
         assert result["filename"] == "secret.pdf"
         assert result["payload"] == b"ok"
         assert storage_calls
+
+    def test_missing_and_unauthorized_return_same_message(self, monkeypatch):
+        module = _load_doc_module(
+            monkeypatch,
+            accessible=lambda _doc_id, user_id: user_id == "user-owner",
+        )
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
+        missing = asyncio.run(module.download_document("doc-missing"))
+
+        module = _load_doc_module(
+            monkeypatch,
+            accessible=lambda _doc_id, user_id: user_id == "user-owner",
+        )
+        module.current_user = module._attacker_user
+        unauthorized = asyncio.run(module.download_document("doc-victim"))
+
+        assert missing["message"] == unauthorized["message"] == "Document not found!"

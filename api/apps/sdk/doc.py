@@ -93,7 +93,7 @@ async def download(dataset_id, document_id):
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_error_data_result(message="Document not found!")
     if not DocumentService.accessible(document_id, current_user.id):
         logging.warning(
             "Rejected SDK dataset document download cross-tenant access: user_id=%s dataset_id=%s document_id=%s",
@@ -162,7 +162,7 @@ async def download_document(document_id):
         return get_error_data_result(message="Specify document_id please.")
     doc = DocumentService.query(id=document_id)
     if not doc:
-        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+        return get_error_data_result(message="Document not found!")
     if not DocumentService.accessible(document_id, current_user.id):
         logging.warning(
             "Rejected SDK document download cross-tenant access: user_id=%s document_id=%s",

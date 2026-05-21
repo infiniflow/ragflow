@@ -514,7 +514,7 @@ class TestDocRoutesUnit:
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         res = _run(module.download("ds-1", "doc-1"))
-        assert "not own the document" in res["message"]
+        assert res["message"] == "Document not found!"
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
         monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
@@ -540,7 +540,7 @@ class TestDocRoutesUnit:
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         res = _run(module.download_document("doc-1"))
-        assert "not own the document" in res["message"]
+        assert res["message"] == "Document not found!"
 
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
         monkeypatch.setattr(module.DocumentService, "accessible", lambda *_args, **_kwargs: False)
