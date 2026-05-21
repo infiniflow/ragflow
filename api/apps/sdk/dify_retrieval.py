@@ -253,6 +253,13 @@ async def retrieval(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
+        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+            logger.warning(
+                "Rejected /dify/retrieval cross-tenant access: caller_tenant=%s knowledge_id=%s",
+                tenant_id,
+                kb_id,
+            )
+            return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
         if kb.tenant_embd_id:
             model_config = get_model_config_by_id(kb.tenant_embd_id)
         else:
