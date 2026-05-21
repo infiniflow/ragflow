@@ -761,9 +761,12 @@ func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 		reqBody["response_format"] = ttsConfig.Format
 	}
 
-	if voice, ok := reqBody["voice"]; !ok || voice == nil {
+	voice, ok := reqBody["voice"]
+	if !ok || voice == nil {
 		return nil, fmt.Errorf("voice is required")
-	} else if voiceString, ok := voice.(string); ok && strings.TrimSpace(voiceString) == "" {
+	}
+	voiceString, ok := voice.(string)
+	if !ok || strings.TrimSpace(voiceString) == "" {
 		return nil, fmt.Errorf("voice is required")
 	}
 

@@ -82,7 +82,9 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 		}
 
 		if err := r.ParseMultipartForm(1024 * 1024); err != nil {
-			t.Fatalf("ParseMultipartForm: %v", err)
+			t.Errorf("ParseMultipartForm: %v", err)
+			http.Error(w, "bad multipart", http.StatusBadRequest)
+			return
 		}
 		if got := r.FormValue("model"); got != "whisper-1" {
 			t.Errorf("model=%q, want whisper-1", got)
@@ -96,12 +98,16 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 
 		file, _, err := r.FormFile("file")
 		if err != nil {
-			t.Fatalf("FormFile: %v", err)
+			t.Errorf("FormFile: %v", err)
+			http.Error(w, "missing file", http.StatusBadRequest)
+			return
 		}
 		defer file.Close()
 		content, err := io.ReadAll(file)
 		if err != nil {
-			t.Fatalf("read upload: %v", err)
+			t.Errorf("read upload: %v", err)
+			http.Error(w, "read upload failed", http.StatusBadRequest)
+			return
 		}
 		if string(content) != "audio-bytes" {
 			t.Errorf("file content=%q, want audio-bytes", string(content))
@@ -152,7 +158,9 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
+			t.Errorf("decode body: %v", err)
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
 		}
 		if body["model"] != "tts-1" {
 			t.Errorf("model=%v, want tts-1", body["model"])
@@ -207,6 +215,22 @@ func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
 		&input,
 		&APIConfig{ApiKey: &apiKey},
 		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "voice is required") {
+		t.Fatalf("err=%v, want voice is required", err)
+	}
+}
+
+func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
+	apiKey := "test-key"
+	model := "tts-1"
+	input := "hello"
+
+	_, err := newOpenAIForTest("http://unused").AudioSpeech(
+		&model,
+		&input,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Params: map[string]interface{}{"voice": 123}},
 	)
 	if err == nil || !strings.Contains(err.Error(), "voice is required") {
 		t.Fatalf("err=%v, want voice is required", err)
