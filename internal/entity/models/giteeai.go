@@ -1,0 +1,466 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package models
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+const giteeAIDefaultBaseURL = "https://ai.gitee.com/v1"
+
+type GiteeAIModel struct {
+	BaseURL    map[string]string
+	URLSuffix  URLSuffix
+	httpClient *http.Client
+}
+
+func NewGiteeAIModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeAIModel {
+	if baseURL == nil {
+		baseURL = map[string]string{}
+	}
+	if baseURL["default"] == "" {
+		baseURL["default"] = giteeAIDefaultBaseURL
+	}
+	if urlSuffix.Chat == "" {
+		urlSuffix.Chat = "chat/completions"
+	}
+	if urlSuffix.Models == "" {
+		urlSuffix.Models = "models"
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 100
+	transport.MaxIdleConnsPerHost = 10
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.DisableCompression = false
+	transport.ResponseHeaderTimeout = 60 * time.Second
+
+	return &GiteeAIModel{
+		BaseURL:   baseURL,
+		URLSuffix: urlSuffix,
+		httpClient: &http.Client{
+			Transport: transport,
+		},
+	}
+}
+
+func (g *GiteeAIModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewGiteeAIModel(baseURL, g.URLSuffix)
+}
+
+func (g *GiteeAIModel) Name() string {
+	return "giteeai"
+}
+
+func (g *GiteeAIModel) baseURLForRegion(region string) (string, error) {
+	base, ok := g.BaseURL[region]
+	if !ok || base == "" {
+		return "", fmt.Errorf("giteeai: no base URL configured for region %q", region)
+	}
+	return strings.TrimSuffix(base, "/"), nil
+}
+
+func (g *GiteeAIModel) endpointURL(apiConfig *APIConfig, suffix string) (string, error) {
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := g.baseURLForRegion(region)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
+}
+
+func (g *GiteeAIModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
+	apiMessages := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		apiMessages[i] = map[string]interface{}{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	reqBody := map[string]interface{}{
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   stream,
+	}
+
+	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+		}
+		if chatModelConfig.Temperature != nil {
+			reqBody["temperature"] = *chatModelConfig.Temperature
+		}
+		if chatModelConfig.TopP != nil {
+			reqBody["top_p"] = *chatModelConfig.TopP
+		}
+		if chatModelConfig.Stop != nil {
+			reqBody["stop"] = *chatModelConfig.Stop
+		}
+	}
+
+	return reqBody
+}
+
+type giteeAIChatMessage struct {
+	Content          string `json:"content"`
+	ReasoningContent string `json:"reasoning_content"`
+	Reasoning        string `json:"reasoning"`
+}
+
+type giteeAIChatChoice struct {
+	Message      giteeAIChatMessage `json:"message"`
+	Delta        giteeAIChatMessage `json:"delta"`
+	FinishReason string             `json:"finish_reason"`
+}
+
+type giteeAIChatResponse struct {
+	Choices      []giteeAIChatChoice `json:"choices"`
+	Error        interface{}         `json:"error"`
+	FinishReason string              `json:"finish_reason"`
+}
+
+func (g *GiteeAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
+	url, err := g.endpointURL(apiConfig, g.URLSuffix.Chat)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonData, err := json.Marshal(g.chatPayload(modelName, messages, false, chatModelConfig))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result giteeAIChatResponse
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("giteeai: upstream error: %v", result.Error)
+	}
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
+	}
+
+	rawContent := result.Choices[0].Message.Content
+	content, reasonContent := splitNovitaThink(rawContent)
+	if r := result.Choices[0].Message.ReasoningContent; r != "" {
+		if reasonContent != "" {
+			reasonContent += "\n" + r
+		} else {
+			reasonContent = r
+		}
+	} else if r := result.Choices[0].Message.Reasoning; r != "" {
+		if reasonContent != "" {
+			reasonContent += "\n" + r
+		} else {
+			reasonContent = r
+		}
+	}
+
+	return &ChatResponse{
+		Answer:        &content,
+		ReasonContent: &reasonContent,
+	}, nil
+}
+
+const giteeAIStreamTimeout = 10 * time.Minute
+
+func (g *GiteeAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("api key is required")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is required")
+	}
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+	if chatModelConfig != nil && chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+
+	url, err := g.endpointURL(apiConfig, g.URLSuffix.Chat)
+	if err != nil {
+		return err
+	}
+
+	jsonData, err := json.Marshal(g.chatPayload(modelName, messages, true, chatModelConfig))
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), giteeAIStreamTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	extractor := &novitaThinkExtractor{}
+	sawTerminal := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(line[5:])
+		if data == "[DONE]" {
+			sawTerminal = true
+			break
+		}
+
+		var event giteeAIChatResponse
+		if err = json.Unmarshal([]byte(data), &event); err != nil {
+			return fmt.Errorf("giteeai: invalid SSE event: %w", err)
+		}
+		if event.Error != nil {
+			return fmt.Errorf("giteeai: upstream stream error: %v", event.Error)
+		}
+		if len(event.Choices) == 0 {
+			continue
+		}
+
+		choice := event.Choices[0]
+		if choice.Delta.ReasoningContent != "" {
+			if err := sender(nil, &choice.Delta.ReasoningContent); err != nil {
+				return err
+			}
+		}
+		if choice.Delta.Reasoning != "" {
+			if err := sender(nil, &choice.Delta.Reasoning); err != nil {
+				return err
+			}
+		}
+		if choice.Delta.Content != "" {
+			for _, seg := range extractor.Feed(choice.Delta.Content) {
+				if seg.reasoning != "" {
+					reasoning := seg.reasoning
+					if err := sender(nil, &reasoning); err != nil {
+						return err
+					}
+				}
+				if seg.content != "" {
+					content := seg.content
+					if err := sender(&content, nil); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if choice.FinishReason != "" || event.FinishReason != "" {
+			sawTerminal = true
+			break
+		}
+	}
+
+	if seg := extractor.Flush(); seg != nil {
+		if seg.reasoning != "" {
+			reasoning := seg.reasoning
+			if err := sender(nil, &reasoning); err != nil {
+				return err
+			}
+		}
+		if seg.content != "" {
+			content := seg.content
+			if err := sender(&content, nil); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !sawTerminal {
+		return fmt.Errorf("giteeai: stream ended before [DONE] or finish_reason")
+	}
+
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
+}
+
+type giteeAIModelInfo struct {
+	ID string `json:"id"`
+}
+
+type giteeAIListModelsResponse struct {
+	Data []giteeAIModelInfo `json:"data"`
+}
+
+func (g *GiteeAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	url, err := g.endpointURL(apiConfig, g.URLSuffix.Models)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result giteeAIListModelsResponse
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, model := range result.Data {
+		if model.ID != "" {
+			models = append(models, model.ID)
+		}
+	}
+	return models, nil
+}
+
+func (g *GiteeAIModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := g.ListModels(apiConfig)
+	return err
+}
+
+func (g *GiteeAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GiteeAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
