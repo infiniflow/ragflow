@@ -180,6 +180,9 @@ declare namespace AdminService {
     label?: string;
     placeholder?: string;
     description?: string;
+    multiline?: boolean;
+    readonly?: boolean;
+    scope?: 'runtime' | 'deployment';
   };
 
   export type SandboxConfigStringField = SandboxConfigFieldBase & {
