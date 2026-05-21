@@ -1,21 +1,17 @@
 import { LLMFactory } from '@/constants/llm';
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
-  ISystemModelSettingSavingParams,
-  useAddProvider,
+  useAddInstanceModel,
   useAddProviderInstance,
-  useDeleteFactory,
-  useDeleteLlm,
-  useEnableLlm,
-  useSaveTenantInfo,
-  useSelectLlmOptionsByModelType,
+  useFetchAddedProviders,
+  useFetchProviderInstances,
 } from '@/hooks/use-llm-request';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { getRealModelName } from '@/utils/llm-util';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ApiKeyPostBody } from '../interface';
 import { MinerUFormValues } from './modal/mineru-modal';
+import { splitProviderPayload } from './payload-utils';
 
 type SavingParamsState = {
   llm_factory: string;
@@ -30,23 +26,65 @@ export type VerifyResult = {
 };
 
 const useSubmitProviderInstance = () => {
-  const { addProvider } = useAddProvider();
   const { addProviderInstance } = useAddProviderInstance();
+  const { addInstanceModel } = useAddInstanceModel();
 
   return useCallback(
     async (payload: IAddProviderInstanceRequestBody, isVerify = false) => {
       if (isVerify) {
         return addProviderInstance({ ...payload, verify: true });
       }
-      const providerRet = await addProvider({
-        provider_name: payload.llm_factory,
-      });
-      if (providerRet.code !== 0) {
-        return providerRet;
+
+      const { instancePayload, modelPayload } = splitProviderPayload(payload);
+      const hasModelPayload =
+        !!modelPayload.model_name && !!modelPayload.model_type;
+
+      const instanceRet = await addProviderInstance({
+        ...instancePayload,
+        llm_factory: payload.llm_factory,
+        instance_name: payload.instance_name,
+      } as IAddProviderInstanceRequestBody);
+      if (instanceRet.code !== 0 || !hasModelPayload) {
+        return instanceRet;
       }
-      return addProviderInstance(payload);
+
+      if (!hasModelPayload) {
+        return { code: 0, data: null } as any;
+      }
+
+      return addInstanceModel({
+        provider_name: payload.llm_factory,
+        instance_name: payload.instance_name,
+        ...modelPayload,
+      });
     },
-    [addProvider, addProviderInstance],
+    [addProviderInstance, addInstanceModel],
+  );
+};
+
+export const useFetchInstanceNameSet = (providerName: string) => {
+  const { data: addedProviders } = useFetchAddedProviders();
+  const providerExists = useMemo(
+    () => addedProviders.some((p) => p.name === providerName),
+    [addedProviders, providerName],
+  );
+  const { data: instances } = useFetchProviderInstances(
+    providerExists ? providerName : '',
+  );
+  const instanceNameSet = useMemo(
+    () => new Set(instances.map((i) => i.instance_name)),
+    [instances],
+  );
+  return { instanceNameSet, providerExists };
+};
+
+export const useHideWhenInstanceExists = (instanceNameSet: Set<string>) => {
+  return useCallback(
+    (formValues: any) => {
+      const name = ((formValues?.instance_name as string) || '').trim();
+      return !(name && instanceNameSet.has(name));
+    },
+    [instanceNameSet],
   );
 };
 export const useSubmitApiKey = () => {
@@ -146,49 +184,6 @@ export const useSubmitApiKey = () => {
     hideApiKeyModal,
     showApiKeyModal: onShowApiKeyModal,
   };
-};
-
-export const useSubmitSystemModelSetting = () => {
-  const { data: systemSetting } = useFetchTenantInfo();
-  const { saveTenantInfo: saveSystemModelSetting, loading } =
-    useSaveTenantInfo();
-  const {
-    visible: systemSettingVisible,
-    hideModal: hideSystemSettingModal,
-    showModal: showSystemSettingModal,
-  } = useSetModalState();
-
-  const onSystemSettingSavingOk = useCallback(
-    async (
-      payload: Omit<ISystemModelSettingSavingParams, 'tenant_id' | 'name'>,
-    ) => {
-      const ret = await saveSystemModelSetting({
-        tenant_id: systemSetting.tenant_id,
-        name: systemSetting.name,
-        ...payload,
-      });
-
-      if (ret === 0) {
-        hideSystemSettingModal();
-      }
-    },
-    [hideSystemSettingModal, saveSystemModelSetting, systemSetting],
-  );
-
-  return {
-    saveSystemModelSettingLoading: loading,
-    onSystemSettingSavingOk,
-    systemSettingVisible,
-    hideSystemSettingModal,
-    showSystemSettingModal,
-  };
-};
-
-export const useFetchSystemModelSettingOnMount = () => {
-  const { data: systemSetting } = useFetchTenantInfo();
-  const allOptions = useSelectLlmOptionsByModelType();
-
-  return { systemSetting, allOptions };
 };
 
 export const useSubmitOllama = () => {
@@ -676,46 +671,6 @@ export const useSubmitAzure = () => {
     hideAzureAddingModal,
     showAzureAddingModal,
   };
-};
-
-export const useHandleDeleteLlm = (llmFactory: string) => {
-  const { deleteLlm } = useDeleteLlm();
-  const showDeleteConfirm = useShowDeleteConfirm();
-
-  const handleDeleteLlm = (name: string) => {
-    showDeleteConfirm({
-      onOk: async () => {
-        deleteLlm({ llm_factory: llmFactory, llm_name: name });
-      },
-    });
-  };
-
-  return { handleDeleteLlm };
-};
-
-export const useHandleEnableLlm = (llmFactory: string) => {
-  const { enableLlm } = useEnableLlm();
-
-  const handleEnableLlm = (name: string, enable: boolean) => {
-    enableLlm({ llm_factory: llmFactory, llm_name: name, enable });
-  };
-
-  return { handleEnableLlm };
-};
-
-export const useHandleDeleteFactory = (llmFactory: string) => {
-  const { deleteFactory } = useDeleteFactory();
-  const showDeleteConfirm = useShowDeleteConfirm();
-
-  const handleDeleteFactory = () => {
-    showDeleteConfirm({
-      onOk: async () => {
-        deleteFactory({ llm_factory: llmFactory });
-      },
-    });
-  };
-
-  return { handleDeleteFactory, deleteFactory };
 };
 
 export const useSubmitMinerU = () => {

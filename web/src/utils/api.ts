@@ -11,7 +11,6 @@ export default {
   setting: `${restAPIv1}/users/me`,
   userInfo: `${restAPIv1}/users/me`,
   tenantInfo: `${restAPIv1}/users/me/models`,
-  setTenantInfo: `${restAPIv1}/users/me/models`,
   loginChannels: `${restAPIv1}/auth/login/channels`,
   loginChannel: (channel: string) => `${restAPIv1}/auth/login/${channel}`,
 
@@ -25,14 +24,8 @@ export default {
   agreeTenant: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}`,
 
   // llm model
-  factoriesList: `${webAPI}/llm/factories`,
-  llmList: `${webAPI}/llm/list`,
-  myLlm: `${webAPI}/llm/my_llms`,
-  setApiKey: `${webAPI}/llm/set_api_key`,
-  addLlm: `${webAPI}/llm/add_llm`,
-  deleteLlm: `${webAPI}/llm/delete_llm`,
-  enableLlm: `${webAPI}/llm/enable_llm`,
-  deleteFactory: `${webAPI}/llm/delete_factory`,
+  listAllAddedModels: `${restAPIv1}/models`,
+  defaultModel: `${restAPIv1}/models/default`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers/`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
@@ -40,6 +33,21 @@ export default {
   listProviderInstances: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
   listInstanceModels: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+  showProviderInstance: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+  addInstanceModel: ({
     provider_name,
     instance_name,
   }: {

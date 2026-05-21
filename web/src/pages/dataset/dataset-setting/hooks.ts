@@ -1,8 +1,6 @@
-import { LlmModelType } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
 
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import { checkEmbedding } from '@/services/knowledge-service';
 import { useIsFetching } from '@tanstack/react-query';
@@ -20,11 +18,6 @@ export function useSelectChunkMethodList() {
   const parserList = useSelectParserList();
 
   return parserList.filter((x) => !HiddenFields.some((y) => y === x.value));
-}
-
-export function useSelectEmbeddingModelOptions() {
-  const allOptions = useSelectLlmOptionsByModelType();
-  return allOptions[LlmModelType.Embedding];
 }
 
 export function useHasParsedDocument(isEdit?: boolean) {

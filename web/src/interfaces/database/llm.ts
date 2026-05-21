@@ -48,14 +48,33 @@ export interface IAvailableProvider {
 }
 
 export interface IProviderInstance {
+  api_key: string;
   id: string;
   instance_name: string;
+  provider_id: string;
+  region: string;
+  status: string;
+}
+export interface IAddedModel {
+  model_type: string[];
+  name: string;
+  provider_id: string;
   provider_name: string;
+  instance_id: string;
+  instance_name: string;
 }
 
 export interface IInstanceModel {
   max_tokens: number;
-  model_type: string;
+  model_type: string[];
   name: string;
   status: string;
+}
+
+export interface IDefaultModel {
+  enable: boolean;
+  model_instance: string;
+  model_name: string;
+  model_provider: string;
+  model_type: string;
 }

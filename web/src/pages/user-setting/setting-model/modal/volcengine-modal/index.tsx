@@ -9,8 +9,12 @@ import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback, useRef } from 'react';
+import {
+  useFetchInstanceNameSet,
+  useHideWhenInstanceExists,
+  VerifyResult,
+} from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -37,70 +41,74 @@ const VolcEngineModal = ({
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const formRef = useRef<DynamicFormRef>(null);
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'instance_name',
-      label: t('instanceName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('instanceNameMessage'),
-      tooltip: t('instanceNameTip'),
-      validation: { message: t('instanceNameMessage') },
-    },
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
-      defaultValue: 'chat',
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('volcModelNameMessage'),
-    },
-    {
-      name: 'endpoint_id',
-      label: t('addEndpointID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('endpointIDMessage'),
-    },
-    {
-      name: 'ark_api_key',
-      label: t('addArkApiKey'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('ArkApiKeyMessage'),
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
+  const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
+
+  const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+
+  const fields: FormFieldConfig[] = useMemo(
+    () => [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: { message: t('instanceNameMessage') },
       },
-    },
-  ];
+      {
+        name: 'model_type',
+        label: t('modelType'),
+        type: FormFieldType.MultiSelect,
+        required: true,
+        options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
+        defaultValue: ['chat'],
+      },
+      {
+        name: 'llm_name',
+        label: t('modelName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('volcModelNameMessage'),
+      },
+      {
+        name: 'endpoint_id',
+        label: t('addEndpointID'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('endpointIDMessage'),
+        shouldRender: hideWhenInstanceExists,
+      },
+      {
+        name: 'ark_api_key',
+        label: t('addArkApiKey'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('ArkApiKeyMessage'),
+        shouldRender: hideWhenInstanceExists,
+      },
+      {
+        name: 'max_tokens',
+        label: t('maxTokens'),
+        type: FormFieldType.Number,
+        required: true,
+        placeholder: t('maxTokensTip'),
+        validation: {
+          min: 0,
+        },
+      },
+    ],
+    [t, buildModelTypeOptions, hideWhenInstanceExists],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
-
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
 
     const data: VolcEngineLlmRequest = {
       instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
-      model_type: modelType,
+      model_type: values.model_type,
       endpoint_id: values.endpoint_id as string,
       ark_api_key: values.ark_api_key as string,
       max_tokens: values.max_tokens as number,
@@ -111,13 +119,9 @@ const VolcEngineModal = ({
 
   const verifyParamsFunc = useCallback(() => {
     const values = formRef.current?.getValues();
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
     return {
       llm_factory: llmFactory,
-      model_type: modelType,
+      model_type: values.model_type,
     };
   }, [llmFactory]);
 
@@ -147,8 +151,8 @@ const VolcEngineModal = ({
         defaultValues={
           {
             instance_name: '',
-            model_type: 'chat',
-            vision: false,
+            model_type: ['chat'],
+            max_tokens: 8192,
           } as FieldValues
         }
         labelClassName="font-normal"

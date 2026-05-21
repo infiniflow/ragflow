@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
+import { ModelStatus } from '@/constants/llm';
 import {
   useDeleteProviderInstance,
   useFetchAddedProviders,
@@ -106,10 +107,6 @@ function InstanceRow({
   const [visible, setVisible] = useState(false);
   const { deleteProviderInstance } = useDeleteProviderInstance();
 
-  // const handleApiKeyClick = () => {
-  //   handleAddModel(providerName);
-  // };
-
   const handleDelete = async () => {
     await deleteProviderInstance({
       provider_name: providerName,
@@ -179,7 +176,9 @@ function InstanceModelList({
   const modelTypes = useMemo(() => {
     const types = new Set<string>();
     models.forEach((m) => {
-      if (m.model_type) types.add(m.model_type);
+      if (m.model_type) {
+        m.model_type.forEach((type) => types.add(type));
+      }
     });
     return Array.from(types);
   }, [models]);
@@ -233,7 +232,7 @@ function ModelListItem({
       provider_name: providerName,
       instance_name: instanceName,
       model_name: model.name,
-      status: checked ? 'active' : 'inactive',
+      status: checked ? ModelStatus.Active : ModelStatus.Inactive,
     });
   };
 
@@ -241,12 +240,17 @@ function ModelListItem({
     <li className="flex items-center border-b-[0.5px] border-border-button justify-between p-3 hover:bg-bg-card transition-colors last:border-b-0">
       <div className="flex items-center space-x-3">
         <span className="font-medium text-text-primary">{model.name}</span>
-        <span className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md">
-          {model.model_type}
-        </span>
+        {model.model_type.map((modelType) => (
+          <span
+            className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
+            key={modelType}
+          >
+            {modelType}
+          </span>
+        ))}
       </div>
       <Switch
-        checked={model.status === 'enabled'}
+        checked={model.status === ModelStatus.Active}
         onCheckedChange={handleStatusChange}
       />
     </li>

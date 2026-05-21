@@ -1,6 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useCreateChat, usePatchChat } from '@/hooks/use-chat-request';
-import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { IDialog } from '@/interfaces/database/chat';
 import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
@@ -16,7 +16,7 @@ export const useRenameChat = () => {
   const { createChat, loading: createLoading } = useCreateChat();
   const { patchChat, loading: patchLoading } = usePatchChat();
   const { t } = useTranslation();
-  const tenantInfo = useFetchTenantInfo();
+  const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const InitialData = useMemo(
     () => ({
@@ -38,14 +38,14 @@ export const useRenameChat = () => {
         parameters: [{ key: 'knowledge', optional: false }],
         toc_enhance: false,
       },
-      llm_id: tenantInfo.data.llm_id,
+      llm_id: defaultModelDictionary?.llm_id,
       llm_setting: {},
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.3,
       top_n: 8,
       top_k: 1024,
     }),
-    [t, tenantInfo.data.llm_id],
+    [t, defaultModelDictionary?.llm_id],
   );
 
   const onChatRenameOk = useCallback(

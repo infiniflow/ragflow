@@ -17,7 +17,6 @@ import {
   useSubmitOpenDataLoader,
   useSubmitPaddleOCR,
   useSubmitSpark,
-  useSubmitSystemModelSetting,
   useSubmitTencentCloud,
   useSubmitVolcEngine,
   useSubmityiyan,
@@ -37,8 +36,6 @@ import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
 const ModelProviders = () => {
-  const { saveSystemModelSettingLoading, onSystemSettingSavingOk } =
-    useSubmitSystemModelSetting();
   // const { data: detailedLlmList } = useFetchMyLlmListDetailed();
   const {
     saveApiKeyLoading,
@@ -296,10 +293,7 @@ const ModelProviders = () => {
     <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
       <Spotlight />
       <section className="flex flex-col gap-4 w-3/5 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
-        <SystemSetting
-          onOk={onSystemSettingSavingOk}
-          loading={saveSystemModelSettingLoading}
-        />
+        <SystemSetting />
         <UsedModel handleAddModel={handleAddModel} />
       </section>
       <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">

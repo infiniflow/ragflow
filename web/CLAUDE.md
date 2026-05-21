@@ -38,6 +38,27 @@ For translation tasks, add keys **only to the explicitly requested language file
 When refactoring or extracting components, **verify layout behavior after each structural change** (especially `flex-1`, conditional rendering, or flex direction changes). Check that existing buttons, alignment, and responsive behavior remain intact. After extraction, verify: (1) all original props and behavior are preserved, (2) layout in parent contexts is identical, and (3) no syntax or type errors were introduced.
 
 ### State Management and Data Fetching
+
+#### Query Key Factory (Mandatory)
+**Never write raw `queryKey` arrays inline.** Always use a query key factory object that returns `as const` tuples. Raw arrays duplicated across `useQuery` and `invalidateQueries` are brittle, unreadable, and cause stale-cache bugs when key structures drift.
+
+```ts
+// ❌ Bad — raw array, hard to match with useQuery
+queryClient.invalidateQueries({
+  queryKey: [LLMApiAction.AddedProviders, params.provider_name, params.instance_name, 'models'],
+});
+
+// ✅ Good — factory reference, self-documenting
+queryClient.invalidateQueries({
+  queryKey: LlmKeys.instanceModels(params.provider_name, params.instance_name),
+});
+```
+
+- Place the factory in the same file as the hooks, named `{Domain}Keys` (e.g., `LlmKeys`, `DatasetKeys`).
+- Every `useQuery` and every `invalidateQueries` must reference the same factory function.
+- Use `as const` on each factory return value for type-safe readonly tuples.
+
+#### Cache Debugging
 For React Query / cache invalidation bugs, **carefully compare query keys across all consuming components and mutation hooks**. Mismatched keys (e.g., with/without `refreshCount`) are a common root cause of stale data or duplicate requests.
 - Systematically: (1) list every component/hook that calls `useQuery` for this data, (2) compare their query keys character-for-character, (3) check every mutation's `onSuccess` for cache invalidation, and (4) verify no parent re-renders are remounting the observer.
 
@@ -74,3 +95,4 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - **General utilities**: Lodash is available for utility functions when needed.
 - **Project utilities first**: Before reaching for a third-party library, check if the project already has an existing utility or hook that covers the need.
 - **Extract and share**: If repeated logic cannot be satisfied by an existing project utility or a third-party library, extract it into an appropriate shared hook (`src/hooks/`) or utility file (`src/utils/`).
+- **Check for duplicate patterns before adding**: When asked to add logic (validation, existence checks, API calls, etc.), first search for existing hooks/functions that do the same or similar thing — especially in the same file or sibling hooks. If a hook already does X, call it instead of re-implementing X inline. This applies to mutations calling mutations, utility wrappers, and boilerplate around API calls.
