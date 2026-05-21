@@ -106,7 +106,8 @@ func TestGiteeAIChatWithMessages(t *testing.T) {
 		}
 		messages, ok := body["messages"].([]interface{})
 		if !ok || len(messages) != 1 {
-			t.Fatalf("messages=%v", body["messages"])
+			t.Errorf("messages=%v", body["messages"])
+			return
 		}
 		first, ok := messages[0].(map[string]interface{})
 		if !ok || first["role"] != "user" || first["content"] != "ping" {
