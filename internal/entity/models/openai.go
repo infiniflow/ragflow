@@ -23,7 +23,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -596,20 +600,235 @@ func (z *OpenAIModel) Rerank(modelName *string, query string, documents []string
 
 // TranscribeAudio transcribe audio
 func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+	if strings.TrimSpace(o.URLSuffix.ASR) == "" {
+		return nil, fmt.Errorf("openai ASR URL suffix is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := o.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.URLSuffix.ASR, "/"))
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	part, err := writer.CreateFormFile("file", filepath.Base(*file))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file: %w", err)
+	}
+	if _, err = io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", err)
+	}
+	if err = writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	responseFormat := ""
+	if asrConfig != nil && asrConfig.Params != nil {
+		if value, ok := asrConfig.Params["response_format"].(string); ok {
+			responseFormat = value
+		}
+		for key, value := range asrConfig.Params {
+			if err = writeOpenAIMultipartField(writer, key, value); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenAI ASR API error: %s, body: %s", resp.Status, string(respBody))
+	}
+
+	switch responseFormat {
+	case "text", "srt", "vtt":
+		return &ASRResponse{Text: string(respBody)}, nil
+	}
+
+	var result struct {
+		Text string `json:"text"`
+	}
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w, body=%s", err, string(respBody))
+	}
+
+	return &ASRResponse{Text: result.Text}, nil
 }
 
 func (z *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
+	response, err := z.TranscribeAudio(modelName, file, apiConfig, asrConfig)
+	if err != nil {
+		return err
+	}
+	if response != nil && response.Text != "" {
+		if err = sender(&response.Text, nil); err != nil {
+			return err
+		}
+	}
+
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
 }
 
 // AudioSpeech convert text to audio
 func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("audio content is empty")
+	}
+	if strings.TrimSpace(o.URLSuffix.TTS) == "" {
+		return nil, fmt.Errorf("openai TTS URL suffix is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := o.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.URLSuffix.TTS, "/"))
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": *audioContent,
+	}
+
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
+	}
+
+	if voice, ok := reqBody["voice"]; !ok || voice == nil {
+		return nil, fmt.Errorf("voice is required")
+	} else if voiceString, ok := voice.(string); ok && strings.TrimSpace(voiceString) == "" {
+		return nil, fmt.Errorf("voice is required")
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenAI TTS API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	return &TTSResponse{Audio: body}, nil
 }
 
 func (z *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+	return fmt.Errorf("%s, streaming TTS not implemented", z.Name())
+}
+
+func writeOpenAIMultipartField(writer *multipart.Writer, key string, value interface{}) error {
+	var val string
+
+	switch v := value.(type) {
+	case string:
+		val = v
+	case bool:
+		val = strconv.FormatBool(v)
+	case int:
+		val = strconv.Itoa(v)
+	case int64:
+		val = strconv.FormatInt(v, 10)
+	case float32:
+		val = strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case float64:
+		val = strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		val = fmt.Sprintf("%v", v)
+	}
+
+	if err := writer.WriteField(key, val); err != nil {
+		return fmt.Errorf("failed to write field %s: %w", key, err)
+	}
+	return nil
 }
 
 // OCRFile OCR file
