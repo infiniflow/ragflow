@@ -208,16 +208,19 @@ export default {
           'Geçersiz beceri: "name" küçük harfli ve URL uyumlu olmalıdır (yalnızca harf, rakam ve tire).',
         invalid_version:
           'Geçersiz beceri: "version" geçerli semver olmalıdır (örn. 1.0.0).',
-        invalid_metadata: 'Geçersiz beceri: meta veriler geçersiz alanlar içeriyor.',
+        invalid_metadata:
+          'Geçersiz beceri: meta veriler geçersiz alanlar içeriyor.',
         invalid_file_type:
           'Geçersiz beceri: Yalnızca metin tabanlı dosyalara izin verilir.',
-        invalid_path: 'Geçersiz beceri: Dosya yolu geçersiz karakterler içeriyor.',
+        invalid_path:
+          'Geçersiz beceri: Dosya yolu geçersiz karakterler içeriyor.',
         file_too_large:
           'Geçersiz beceri: Tekil dosya boyutu 5MB sınırını aşıyor.',
         total_size_exceeded:
           'Geçersiz beceri: Toplam paket boyutu 50MB sınırını aşıyor.',
         no_files: 'Dosya seçilmedi. Lütfen bir beceri klasörü seçin.',
-        noValidFiles: 'Geçerli dosya bulunamadı. Lütfen seçiminizi kontrol edin.',
+        noValidFiles:
+          'Geçerli dosya bulunamadı. Lütfen seçiminizi kontrol edin.',
         junkFilesFound:
           'Geçici dosyalar algılandı (örn. .DS_Store). Lütfen yüklemeden önce bunları kaldırın.',
         read_failed: 'Geçersiz beceri: SKILL.md dosyası okunamadı.',
@@ -232,8 +235,8 @@ export default {
       upload: 'Yükle',
       importFromGit: "Git'ten içe aktar",
       gitPlatform: 'Platform',
-      repoUrl: 'Depo URL\'si',
-      repoUrlHelp: 'İsteğe bağlı yol içeren depo URL\'sini destekler',
+      repoUrl: "Depo URL'si",
+      repoUrlHelp: "İsteğe bağlı yol içeren depo URL'sini destekler",
       accessToken: 'Erişim Tokenı',
       githubTokenHelp:
         'Özel depolar veya daha yüksek hız limitleri için (5000 istek/saat)',
@@ -250,7 +253,8 @@ export default {
     },
     skillSearch: {
       configTitle: 'Beceri Arama Yapılandırması',
-      configDesc: 'Becerilerin nasıl indeksleneceğini ve aranacağını yapılandırın',
+      configDesc:
+        'Becerilerin nasıl indeksleneceğini ve aranacağını yapılandırın',
       embeddingModel: 'Embedding Modeli',
       embeddingModelPlaceholder: 'Bir embedding modeli seçin',
       vectorSimilarityWeight: 'Vektör Benzerlik Ağırlığı',

@@ -383,3 +383,76 @@ RAGFlow(user)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/text.jpg
 | Parallel to these organizational innovations there were significant complementary technical innovations (e.g., improved methods of manufacturing cast-iron pipe and of coating interiors for pressure maintenance, and newer paving and construction material... |
 +------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
+
+### 6.26 Chunk Management Commands
+
+- Create a dataset table with vector size
+```
+RAGFlow(user)> CREATE DATASET TABLE 'test' VECTOR SIZE 384
+```
+
+- Insert data from JSON files
+```
+RAGFlow(user)> INSERT DATASET FROM FILE 'insert_kb.json'
+```
+
+- Update a chunk's content
+```
+RAGFlow(user)> UPDATE CHUNK 'deb165dc6a732a64' OF DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
+```
+
+- Remove tags from a dataset
+```
+RAGFlow(user)> REMOVE TAGS 'tag1', 'tag2' FROM DATASET 'test'
+```
+
+- Remove specific chunks from a document
+```
+RAGFlow(user)> REMOVE CHUNKS '29cc4f6d7a5c6e7c' '0360e3d8519eab12' FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+```
+
+- Remove all chunks from a document
+```
+RAGFlow(user)> REMOVE ALL CHUNKS FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+```
+
+- Drop dataset table
+```
+RAGFlow(user)> DROP DATASET TABLE 'test'
+```
+
+- Search chunks
+```
+RAGFlow(user)> SEARCH '曹操' ON DATASETS 'test'
+```
+
+- Get chunks
+```
+RAGFlow(user)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+```
+
+### 6.27 Metadata Management Commands
+
+- Create metadata table
+```
+RAGFlow(user)> CREATE METADATA TABLE
+```
+
+- Insert data from JSON files
+```
+RAGFlow(user)> INSERT METADATA FROM FILE 'insert_metadata.json'
+```
+- Set metadata for a document
+```
+RAGFlow(user)> SET METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' TO '{"author": ["John", "Tom"], "category": "tech"}';
+```
+
+- Drop metadata table
+```
+RAGFlow(user)> DROP METADATA TABLE
+```
+
+- List metadata
+```
+RAGFlow(user)> LIST METADATA OF DATASET 'test' 'test2'
+```

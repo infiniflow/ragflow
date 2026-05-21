@@ -63,6 +63,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOllamaModel(baseURL, urlSuffix), nil
 	case "openai":
 		return NewOpenAIModel(baseURL, urlSuffix), nil
+	case "azure-openai":
+		return NewAzureOpenAIModel(baseURL, urlSuffix), nil
 	case "nvidia":
 		return NewNvidiaModel(baseURL, urlSuffix), nil
 	case "openrouter":
@@ -91,10 +93,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewLocalAIModel(baseURL, urlSuffix), nil
 	case "xinference":
 		return NewXinferenceModel(baseURL, urlSuffix), nil
+	case "astraflow":
+		return NewAstraflowModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
+	case "avian":
+		return NewAvianModel(baseURL, urlSuffix), nil
 	case "replicate":
 		return NewReplicateModel(baseURL, urlSuffix), nil
 	case "togetherai":
@@ -113,6 +119,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewJieKouAIModel(baseURL, urlSuffix), nil
 	case "302.ai":
 		return NewAI302Model(baseURL, urlSuffix), nil
+	case "mineru_local":
+		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "perplexity":
+		return NewPerplexityModel(baseURL, urlSuffix), nil
+	case "gpustack":
+		return NewGPUStackModel(baseURL, urlSuffix), nil
+	case "n1n":
+		return NewN1NModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

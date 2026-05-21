@@ -9,6 +9,39 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.5
+
+Released on May 20, 2026.
+
+### New features
+
+- Adds local & SSH providers in admin panel. [#15039](https://github.com/infiniflow/ragflow/pull/15039)
+
+### Improvements
+
+- Accelerated dataset search path, reducing latency by 50–100% by removing expensive vector fetch and rerank similarity computation steps. [#14970](https://github.com/infiniflow/ragflow/pull/14970)
+- Pushes metadata filters down to Infinity, significantly speeding up metadata filtering. [#14974](https://github.com/infiniflow/ragflow/pull/14974)
+- added Redis caching for TTS. [#14851](https://github.com/infiniflow/ragflow/pull/14851)
+- atomic document counter updates [#14867](https://github.com/infiniflow/ragflow/pull/14974)
+- Improved server startup speed and memory usage [#14973](https://github.com/infiniflow/ragflow/pull/14973)
+- Agent: structured output aggregation [#13384](https://github.com/infiniflow/ragflow/issues/13384) [#14848](https://github.com/infiniflow/ragflow/pull/14848)
+- Agent: metadata filter reuse. [#14849](https://github.com/infiniflow/ragflow/pull/14849)
+- Optimizes connector dashboard. [#14979](https://github.com/infiniflow/ragflow/pull/14979)
+- Data source: GitHub connector now syncs PRs/Issues by default.
+- Bump minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
+- Bump nginx to 1.31.0. [#15007](https://github.com/infiniflow/ragflow/pull/15007)
+
+### Bug fixes
+
+- Fixed Tongyi-Qianwen embedding API calls [#14784](https://github.com/infiniflow/ragflow/pull/14784)
+- Agent: Fixed MCP tool name duplication.
+- Agent: top_k passing issues [#14760](https://github.com/infiniflow/ragflow/pull/14760)
+- Chat file attachment loss.
+- IMAP multi-address parsing [#15006](https://github.com/infiniflow/ragflow/pull/15006)
+- Langfuse token usage reporting. [#13294](https://github.com/infiniflow/ragflow/pull/13294)
+- Reranking robustness.
+
+
 ## v0.25.4
 
 Released on May 14, 2026
