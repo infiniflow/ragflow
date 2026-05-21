@@ -251,7 +251,11 @@ class Retrieval(ToolBase, ABC):
                                                      [kb.tenant_id for kb in kbs],
                                                      kb_ids,
                                                      embd_mdl,
-                                                     LLMBundle(tenant_id, chat_model_config))
+                                                     LLMBundle(
+                                                         tenant_id,
+                                                         chat_model_config,
+                                                         user_id=self._canvas.globals.get("sys.user_id"),
+                                                     ))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -261,8 +265,17 @@ class Retrieval(ToolBase, ABC):
 
         if self._param.use_kg and kbs:
             chat_model_config = get_tenant_default_model_by_type(kbs[0].tenant_id, LLMType.CHAT)
-            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
-                                                 LLMBundle(kbs[0].tenant_id, chat_model_config))
+            ck = await settings.kg_retriever.retrieval(
+                query,
+                [kb.tenant_id for kb in kbs],
+                filtered_kb_ids,
+                embd_mdl,
+                LLMBundle(
+                    kbs[0].tenant_id,
+                    chat_model_config,
+                    user_id=self._canvas.globals.get("sys.user_id"),
+                ),
+            )
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:

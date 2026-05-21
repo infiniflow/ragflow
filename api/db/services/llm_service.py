@@ -283,14 +283,15 @@ class LLMBundle(LLM4Tenant):
     def tts(self, text: str) -> Generator[bytes, None, None]:
         generation, langfuse_ctx = self._start_langfuse_observation(as_type="generation", name="tts", input={"text": text})
 
-        for chunk in self.mdl.tts(text):
-            if isinstance(chunk, int):
-                if not TenantLLMService.increase_usage_by_id(self.model_config["id"], chunk):
-                    logging.error("LLMBundle.tts can't update token usage for {}/TTS".format(self.tenant_id))
-                return
-            yield chunk
-
-        self._end_langfuse_observation(generation, langfuse_ctx)
+        try:
+            for chunk in self.mdl.tts(text):
+                if isinstance(chunk, int):
+                    if not TenantLLMService.increase_usage_by_id(self.model_config["id"], chunk):
+                        logging.error("LLMBundle.tts can't update token usage for {}/TTS".format(self.tenant_id))
+                    return
+                yield chunk
+        finally:
+            self._end_langfuse_observation(generation, langfuse_ctx)
 
     def _remove_reasoning_content(self, txt: str) -> str:
         if txt is None:
