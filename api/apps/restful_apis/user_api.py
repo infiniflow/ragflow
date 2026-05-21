@@ -623,6 +623,8 @@ async def set_tenant_info():
     req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
+        if tid != current_user.id:
+            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
         update_dict = ensure_tenant_model_id_for_params(tid, req)
         TenantService.update_by_id(tid, update_dict)
         return get_json_result(data=True)
