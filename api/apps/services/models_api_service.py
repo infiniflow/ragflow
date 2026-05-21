@@ -178,8 +178,10 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
     model_entity = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
         provider_obj.id, instance_obj.id, model_name, model_type
     )
-    if model_entity and model_entity.status == "inactive":
-        return False, f"Model '{model_name}' isn't available"
+    if model_entity:
+        if model_entity.status == "inactive":
+            return False, f"Model '{model_name}' isn't available"
+        return True, None
 
     llms = factory_info[0].get("llm", [])
     target_llm = [llm for llm in llms if llm["llm_name"] == model_name]
