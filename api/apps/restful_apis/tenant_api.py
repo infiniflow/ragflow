@@ -118,8 +118,9 @@ async def create(tenant_id):
                 inviter=user_name or current_user.email,
             )
         )
-        _background_tasks.add(task)
-        task.add_done_callback(_on_invite_email_done)
+        if isinstance(task, asyncio.Task):
+            _background_tasks.add(task)
+            task.add_done_callback(_on_invite_email_done)
     except Exception as exc:
         logging.exception(f"Failed to send invite email to {invite_user_email}: {exc}")
         return get_json_result(

@@ -1794,8 +1794,9 @@ async def webhook(agent_id: str):
                         logging.exception("Failed to append webhook trace")
 
         task = asyncio.create_task(background_run())
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        if isinstance(task, asyncio.Task):
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
         return resp
     else:
         async def sse():
