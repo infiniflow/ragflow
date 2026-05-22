@@ -8,7 +8,7 @@ mysql:
   name: 'rag_flow'
   user: 'root'
   password: 'infini_rag_flow'
-  host: 'remotehost'
+  host: 'localhost'
   port: 3306
   max_connections: 900
   stale_timeout: 300
@@ -16,19 +16,19 @@ mysql:
 minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
-  host: 'remotehost:9000'
+  host: 'localhost:9000'
   bucket: ''
   prefix_path: ''
 es:
-  hosts: 'http://remotehost:1200'
+  hosts: 'http://localhost:1200'
   username: 'elastic'
   password: 'infini_rag_flow'
 os:
-  hosts: 'http://remotehost:1201'
+  hosts: 'http://localhost:1201'
   username: 'admin'
   password: 'infini_rag_flow_OS_01'
 infinity:
-  uri: 'remotehost:23817'
+  uri: 'localhost:23817'
   postgres_port: 5432
   db_name: 'default_db'
 oceanbase:
@@ -37,13 +37,13 @@ oceanbase:
     db_name: 'test'
     user: 'root@ragflow'
     password: 'infini_rag_flow'
-    host: 'remotehost'
+    host: 'localhost'
     port: 2881
 redis:
   db: 1
   username: ''
   password: 'infini_rag_flow'
-  host: 'remotehost:6379'
+  host: 'localhost:6379'
 task_executor:
   message_queue_type: 'redis'
 user_default_llm:
@@ -52,7 +52,7 @@ user_default_llm:
       name: 'bge-m3'
       factory: 'xxxx'
       api_key: 'xxx'
-      base_url: 'http://remotehost:6380'
+      base_url: 'http://localhost:6380'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -103,7 +103,7 @@ user_default_llm:
 #       base_url: 'https://api.xx.com'
 #     embedding_model:
 #       api_key: 'xxx'
-#       base_url: 'http://remotehost:6380'
+#       base_url: 'http://localhost:6380'
 #     rerank_model: 'bge-reranker-v2'
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name
