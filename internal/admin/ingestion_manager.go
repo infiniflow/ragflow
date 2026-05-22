@@ -137,6 +137,8 @@ func (s *IngestionManager) Action(stream common.IngestionManager_ActionServer) e
 		s.cleanupIngestionServer(ingestionServerID)
 		return err
 	case <-sendDone:
+		// Stream context cancelled (client disconnect or server shutdown)
+		s.cleanupIngestionServer(ingestionServerID)
 		return nil
 	}
 }
@@ -374,6 +376,12 @@ func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *
 func (s *IngestionManager) cleanupIngestionServer(ingestorID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if ingestorID == "" {
+		// Client disconnected before REGISTER completed — nothing to clean up
+		common.Info("Unregistered ingestion server disconnected")
+		return
+	}
 
 	if _, exists := s.ingestionServers[ingestorID]; exists {
 		delete(s.ingestionServers, ingestorID)
