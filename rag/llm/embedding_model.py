@@ -13,7 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import base64
 import json
+import logging
 import os
 import threading
 from abc import ABC
@@ -30,10 +32,9 @@ from zhipuai import ZhipuAI
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
-import logging
-import base64
 
 logger = logging.getLogger(__name__)
+_dashscope_native_api_url_lock = threading.RLock()
 
 
 def _dashscope_base_url_for_log(base_url: str) -> str:
@@ -91,17 +92,20 @@ def _dashscope_native_http_api_url(base_url: str | None) -> str | None:
 def _dashscope_native_api_url_scope(url: str | None):
     """
     Temporarily set ``dashscope.base_http_api_url`` for the duration of a single SDK call,
-    then restore the previous value. Narrows the window where concurrent threads see a mismatch.
+    then restore the previous value. The DashScope SDK stores this endpoint in process-global
+    state, so callers using the default endpoint also take the lock while another caller may
+    be using a configured native endpoint.
     """
-    if not url:
-        yield
-        return
-    prev = getattr(dashscope, "base_http_api_url", None)
-    dashscope.base_http_api_url = url
-    try:
-        yield
-    finally:
-        dashscope.base_http_api_url = prev
+    with _dashscope_native_api_url_lock:
+        if not url:
+            yield
+            return
+        prev = getattr(dashscope, "base_http_api_url", None)
+        dashscope.base_http_api_url = url
+        try:
+            yield
+        finally:
+            dashscope.base_http_api_url = prev
 
 
 class Base(ABC):
