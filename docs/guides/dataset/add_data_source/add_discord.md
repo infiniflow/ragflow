@@ -50,7 +50,6 @@ With the bot active in your server, you can finalize the integration inside RAGF
 - Save your settings to establish the connection.
 - Attach this newly created Discord data source to your target dataset to begin syncing your conversations.
 
-
 ### Link to a dataset
 
 1. Navigate to the **Dataset** tab.
