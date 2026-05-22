@@ -158,6 +158,8 @@ const (
 	TokenTask
 	TokenTasks
 	TokenIngest
+	TokenIngestor
+	TokenIngestors
 	TokenLog
 	TokenLevel
 	TokenDebug

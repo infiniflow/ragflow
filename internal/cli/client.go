@@ -185,6 +185,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowModel(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
+	case "admin_list_ingestors":
+		return c.ListAdminIngestors(cmd)
 	case "admin_ingest_command":
 		return c.AdminIngestCommand(cmd)
 	// TODO: Implement other commands

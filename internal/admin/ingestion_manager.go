@@ -86,6 +86,7 @@ func GetIngestionManager() *IngestionManager {
 func NewAdminServer() *IngestionManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	ingestionManager = &IngestionManager{
+		taskStates:       make(map[string]*TaskState),
 		ingestionServers: make(map[string]*IngestionState),
 		taskQueue:        make(chan *pendingTask, 10000),
 		slotFreed:        make(chan struct{}, 100),
@@ -242,12 +243,6 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 			localTaskState.assignTo = msg.IngestorId
 		}
 		s.mu.Unlock()
-		// Update current task list
-		//newTasks := make(map[string]bool)
-		//for _, tid := range msg.HeartbeatInfo.TaskStates {
-		//	newTasks[tid] = true
-		//}
-		//state.CurrentTasks = newTasks
 
 		common.Info(fmt.Sprintf("Heartbeat from %s:", ingestorID))
 	}
@@ -311,13 +306,22 @@ func (s *IngestionManager) dispatchLoop() {
 	}
 }
 
-func (s *IngestionManager) SelectIngestor() *IngestionState {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *IngestionState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	for _, state := range s.ingestionServers {
-		if state.Status == "active" && len(state.CurrentTasks) < int(state.Info.MaxConcurrency) {
-			return state
+	for _, ingestor := range s.ingestionServers {
+		if ingestor.Status == "active" && len(ingestor.CurrentTasks) < int(ingestor.Info.MaxConcurrency) {
+
+			s.taskStates[task.TaskId] = &TaskState{
+				taskID:     task.TaskId,
+				status:     "dispatched",
+				comeFrom:   "CLI",
+				lastUpdate: time.Now(),
+				assignTo:   ingestor.ID,
+			}
+
+			return ingestor
 		}
 	}
 	return nil
@@ -327,16 +331,8 @@ func (s *IngestionManager) SelectIngestor() *IngestionState {
 // Blocks until either the task is assigned or the context is canceled.
 func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 	for {
-		s.mu.RLock()
-		var target *IngestionState
-		for _, state := range s.ingestionServers {
-			if state.Status == "active" && len(state.CurrentTasks) < int(state.Info.MaxConcurrency) {
-				target = state
-				break
-			}
-		}
-		s.mu.RUnlock()
 
+		target := s.SelectIngestorForTask(task)
 		if target != nil {
 			s.assignToIngestor(task, target)
 			return
@@ -383,6 +379,32 @@ func (s *IngestionManager) cleanupIngestionServer(ingestorID string) {
 		delete(s.ingestionServers, ingestorID)
 		common.Info(fmt.Sprintf("Ingestor %s cleaned up", ingestorID))
 	}
+}
+
+func (s *IngestionManager) ListIngestors() ([]map[string]interface{}, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var result []map[string]interface{}
+	for ingestorID, state := range s.ingestionServers {
+
+		var taskCount int64
+		for _, task := range s.taskStates {
+			if task.assignTo == ingestorID {
+				taskCount++
+			}
+		}
+
+		result = append(result, map[string]interface{}{
+			"id":             ingestorID,
+			"name":           state.Info.Name,
+			"address":        state.Address,
+			"last_heartbeat": state.LastHeartbeat,
+			"task_count":     taskCount,
+			"status":         state.Status,
+		})
+	}
+	return result, nil
 }
 
 // Start starts the admin service

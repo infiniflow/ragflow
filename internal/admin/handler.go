@@ -1277,6 +1277,15 @@ func (h *Handler) Ingestion(c *gin.Context) {
 	success(c, gin.H{"task_id": taskID}, "Send task for ingestion successfully")
 }
 
+func (h *Handler) ListIngestors(c *gin.Context) {
+	ingestionMgr := GetIngestionManager()
+	ingestors, err := ingestionMgr.ListIngestors()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, ingestors, "Get all tasks")
+}
+
 // Reports handle heartbeat reports from servers
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage

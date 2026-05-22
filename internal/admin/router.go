@@ -138,6 +138,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			protected.POST("/ingestion", r.handler.Ingestion)
+			protected.GET("/ingestors", r.handler.ListIngestors)
 		}
 	}
 

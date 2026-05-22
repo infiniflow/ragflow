@@ -192,6 +192,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListFiles()
 	case TokenTasks:
 		return p.parseAdminListTasks()
+	case TokenIngestors:
+		return p.parseAdminListIngestors()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -373,6 +375,12 @@ func (p *Parser) parseAdminListFiles() (*Command, error) {
 func (p *Parser) parseAdminListTasks() (*Command, error) {
 	p.nextToken() // consume TASKS
 	cmd := NewCommand("list_admin_tasks")
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminListIngestors() (*Command, error) {
+	p.nextToken() // consume TASKS
+	cmd := NewCommand("admin_list_ingestors")
 	return cmd, nil
 }
 
