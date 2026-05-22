@@ -233,7 +233,7 @@ jobs:
       - name: Run sdk tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
@@ -243,7 +243,7 @@ jobs:
       - name: Run New RESTFUL api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
@@ -309,7 +309,7 @@ jobs:
           ADMIN_HOST="${USER_HOST}"
           ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
 
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
@@ -417,7 +417,7 @@ jobs:
       - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
@@ -427,7 +427,7 @@ jobs:
       - name: Run New RESTFUL api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
@@ -493,7 +493,7 @@ jobs:
           ADMIN_HOST="${USER_HOST}"
           ADMIN_PORT="${ADMIN_SVR_HTTP_PORT}"
 
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/api/v1/system/ping > /dev/null 2>&1; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null 2>&1; do
             echo "Waiting for service to be available... (last exit code: $?)"
             sleep 5
           done
