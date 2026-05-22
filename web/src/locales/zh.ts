@@ -1535,6 +1535,20 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      maxSteps: '最大步数',
+      headless: '无头模式',
+      enableDefaultExtensions: '启用默认扩展',
+      enableDefaultExtensionsTip:
+        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
+      chromiumSandbox: 'Chromium 沙箱',
+      chromiumSandboxTip:
+        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
+      persistSession: '持久化登录态',
+      persistSessionTip:
+        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
+      uploadSources: '上传来源',
+      uploadSourcesTip:
+        '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -1649,6 +1663,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
+      browser: 'Browser',
+      browserDescription:
+        '使用 Browser 自动执行浏览器任务。支持模型与提示词配置，上传来源支持文件 ID 与 URL，并可将下载文件保存到指定目录。',
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',

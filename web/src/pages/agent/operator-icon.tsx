@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   FileCode,
   FileText,
+  Globe,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
@@ -57,6 +58,7 @@ export const LucideIconMap = {
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
   [Operator.DocGenerator]: FileText,
+  [Operator.Browser]: Globe,
 };
 
 const Empty = () => {

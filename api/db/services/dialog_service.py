@@ -54,12 +54,6 @@ from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
 
-def _resolve_reference_metadata(request_payload=None, config=None):
-    return resolve_reference_metadata_preferences(request_payload or {}, config)
-
-def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
-    enrich_chunks_with_document_metadata(chunks, metadata_fields)
-
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     if len(kb_ids or []) == 1:
         return kb_ids[0]
