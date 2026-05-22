@@ -52,6 +52,7 @@ const MarkdownContent = ({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -61,19 +62,23 @@ const MarkdownContent = ({
   const { t } = useTranslation();
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
+  const sanitizedContent = useMemo(
+    () =>
+      DOMPurify.sanitize(content, {
+        ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
+        ADD_ATTR: ['class'],
+      }),
+    [content],
+  );
+  const showTypingIndicator = loading && sanitizedContent === '';
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
-      ADD_ATTR: ['class'],
-    });
-
-    // let text = content;
+    let text = sanitizedContent;
     if (text === '') {
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
     return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
-  }, [content, t]);
+  }, [sanitizedContent, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -256,6 +261,23 @@ const MarkdownContent = ({
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
+  if (showTypingIndicator) {
+    return (
+      <div
+        dir={dir}
+        className={styles.markdownContentWrapper}
+        aria-live="polite"
+        aria-label={t('chat.searching')}
+      >
+        <div className={styles.typingIndicator}>
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
