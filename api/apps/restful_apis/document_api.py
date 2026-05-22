@@ -1881,27 +1881,10 @@ async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
         # Keep backward compatibility with older callers and unit tests that still
         # pass `attachment_id` instead of the route parameter name.
         doc_id = doc_id or attachment_id
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
-
-        e, doc = DocumentService.get_by_id(doc_id)
-        if not e:
-            return get_data_error_result(message="Document not found!")
-
-        ext_arg = request.args.get("ext")
-        if ext_arg:
-            ext = ext_arg.lower().lstrip(".")
-            content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
-        else:
-            m = re.search(r"\.([^.]+)$", doc.name.lower())
-            ext = m.group(1) if m else None
-            content_type = None
-            if ext:
-                fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
-                content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
-
+        ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
         response = await make_response(data)
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
         apply_safe_file_response_headers(response, content_type, ext)
 
         return response
