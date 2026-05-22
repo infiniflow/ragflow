@@ -84,7 +84,7 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
 @pytest.mark.p2
 def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
-    # /api/v1/retrieval is SDK compatibility endpoint from api/apps/sdk/doc.py.
+    # /api/v1/retrieval is SDK compatibility endpoint registered from chunk_api.py.
     res = rest_client.post(
         "/retrieval",
         json={"dataset_ids": [dataset_id], "question": "test TXT file", "top_k": 5},

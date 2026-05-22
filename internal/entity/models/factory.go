@@ -63,6 +63,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOllamaModel(baseURL, urlSuffix), nil
 	case "openai":
 		return NewOpenAIModel(baseURL, urlSuffix), nil
+	case "groq":
+		return NewGroqModel(baseURL, urlSuffix), nil
 	case "azure-openai":
 		return NewAzureOpenAIModel(baseURL, urlSuffix), nil
 	case "nvidia":
@@ -99,6 +101,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "hunyuan":
 		return NewHunyuanModel(baseURL, urlSuffix), nil
+	case "tokenpony":
+		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":

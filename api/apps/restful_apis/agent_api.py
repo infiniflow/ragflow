@@ -26,8 +26,9 @@ import logging
 import time
 from functools import partial, wraps
 
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 import jwt
-from quart import Response, jsonify, request
+from quart import Response, jsonify, request, make_response
 
 from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
@@ -2267,3 +2268,28 @@ async def webhook_trace(agent_id: str):
             "finished": finished,
         }
     )
+
+@manager.route("/agents/<attachment_id>/download", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def download_attachment(tenant_id=None, attachment_id=None):
+    """Stream a document's underlying file to the requesting user.
+
+    Mirrors the authorization model of the preview endpoint: the user must belong
+    to the tenant that owns the document's knowledge base. A denial returns the
+    same "Document not found!" response so the endpoint cannot be used to
+    enumerate doc ids across tenants.
+    """
+    try:
+        # Keep backward compatibility with older callers and unit tests that still
+        # pass `attachment_id` instead of the route parameter name.
+        ext = request.args.get("ext", "markdown")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        response = await make_response(data)
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
