@@ -297,6 +297,7 @@ async def retrieval(tenant_id):
         doc_ids = list(set([c["doc_id"] for c in ranks["chunks"]]))
         docs = DocumentService.get_by_ids(doc_ids)
         doc_map = {doc.id: doc for doc in docs}
+        metadata_map = DocMetadataService.get_metadata_for_documents(doc_ids, kb_id) if doc_ids else {}
 
         records = []
         for c in ranks["chunks"]:
@@ -304,7 +305,7 @@ async def retrieval(tenant_id):
             if not doc:
                 continue
             c.pop("vector", None)
-            meta = getattr(doc, 'meta_fields', {})
+            meta = dict(metadata_map.get(c["doc_id"], {}))
             meta["doc_id"] = c["doc_id"]
             # Dify expects metadata.document_id for external retrieval sources.
             meta["document_id"] = c["doc_id"]

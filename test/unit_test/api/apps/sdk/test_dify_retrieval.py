@@ -83,7 +83,7 @@ class _FakeKGRetriever:
         return {"content_with_weight": ""}
 
 
-def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=None):
+def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=None, metadata_by_doc=None):
     """Load dify_retrieval.py with minimum stubs to exercise the retrieval handler."""
     _stub(
         monkeypatch,
@@ -105,7 +105,12 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
     _stub(
         monkeypatch,
         "api.db.services.doc_metadata_service",
-        DocMetadataService=SimpleNamespace(get_flatted_meta_by_kbs=lambda _ids: {}),
+        DocMetadataService=SimpleNamespace(
+            get_flatted_meta_by_kbs=lambda _ids: {},
+            get_metadata_for_documents=lambda doc_ids, _kb_id: {
+                doc_id: dict(metadata_by_doc.get(doc_id, {})) for doc_id in doc_ids
+            } if metadata_by_doc else {},
+        ),
     )
 
     acc_fn = accessible if callable(accessible) else (lambda *_a, **_k: accessible)
@@ -229,6 +234,34 @@ class TestDifyRetrievalTenantCheck:
         assert len(result["records"]) == 1
         assert result["records"][0]["content"] == "hello world"
         assert module._fake_retriever.retrieval_calls, "retriever was not called on legitimate request"
+
+    @pytest.mark.p1
+    def test_retrieval_returns_metadata_from_doc_metadata_service(self, monkeypatch):
+        """Dify metadata comes from the document metadata index, not Document.meta_fields."""
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        request_body = {
+            "knowledge_id": "kb-owner",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.0},
+        }
+
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body=request_body,
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello world", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+            metadata_by_doc={"d1": {"author": "alice", "source": "metadata-index"}},
+        )
+
+        result = asyncio.run(module.retrieval(tenant_id="tenant-owner"))
+
+        assert len(result["records"]) == 1
+        metadata = result["records"][0]["metadata"]
+        assert metadata["author"] == "alice"
+        assert metadata["source"] == "metadata-index"
+        assert metadata["doc_id"] == "d1"
+        assert metadata["document_id"] == "d1"
 
     @pytest.mark.p1
     def test_missing_knowledge_base_returns_not_found(self, monkeypatch):
