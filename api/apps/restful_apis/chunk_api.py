@@ -240,7 +240,7 @@ async def retrieval_test(tenant_id):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))
     if len(embd_nms) != 1:
-        return get_result(message='Datasets use different embedding models."', code=RetCode.DATA_ERROR)
+        return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = int(req.get("page", 1))
@@ -343,7 +343,7 @@ async def retrieval_test(tenant_id):
         ranks["chunks"] = [{key_mapping.get(key, key): value for key, value in chunk.items()} for chunk in ranks["chunks"]]
         return get_result(data=ranks)
     except Exception as e:
-        if str(e).find("not_found") > 0:
+        if "not_found" in str(e):
             return get_result(message="No chunk found! Check the chunk status please!", code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
