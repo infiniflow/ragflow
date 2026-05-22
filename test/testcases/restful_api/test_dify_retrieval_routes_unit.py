@@ -45,10 +45,19 @@ class _AwaitableValue:
 
 
 class _DummyKB:
-    def __init__(self, tenant_id="tenant-1", embd_id="embd-1", tenant_embd_id=1):
+    def __init__(
+        self,
+        tenant_id="tenant-1",
+        embd_id="embd-1",
+        tenant_embd_id=1,
+        similarity_threshold=0.2,
+        vector_similarity_weight=0.3,
+    ):
         self.tenant_id = tenant_id
         self.embd_id = embd_id
         self.tenant_embd_id = tenant_embd_id
+        self.similarity_threshold = similarity_threshold
+        self.vector_similarity_weight = vector_similarity_weight
 
 
 class _DummyRetriever:
