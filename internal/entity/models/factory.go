@@ -105,6 +105,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewReplicateModel(baseURL, urlSuffix), nil
 	case "togetherai":
 		return NewTogetherAIModel(baseURL, urlSuffix), nil
+	case "ppio":
+		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage":
 		return NewVoyageModel(baseURL, urlSuffix), nil
 	case "paddleocr":
