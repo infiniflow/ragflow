@@ -133,6 +133,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGPUStackModel(baseURL, urlSuffix), nil
 	case "n1n":
 		return NewN1NModel(baseURL, urlSuffix), nil
+	case "bedrock":
+		return NewBedrockModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
