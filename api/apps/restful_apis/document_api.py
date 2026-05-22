@@ -13,13 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from io import BytesIO
 import logging
 import json
 import os
 import re
 from pathlib import Path
 
-from quart import request, make_response
+from quart import request, make_response,send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -38,7 +39,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
+from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
@@ -1843,8 +1844,6 @@ async def get(doc_id):
     enumeration.
     """
     try:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
@@ -1865,29 +1864,116 @@ async def get(doc_id):
     except Exception as e:
         return server_error_response(e)
 
-
-@manager.route("/documents/<doc_id>/download", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
-async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
-    """Stream a document's underlying file to the requesting user.
-
-    Mirrors the authorization model of the preview endpoint: the user must belong
-    to the tenant that owns the document's knowledge base. A denial returns the
-    same "Document not found!" response so the endpoint cannot be used to
-    enumerate doc ids across tenants.
+async def download(dataset_id, document_id):
     """
-    try:
-        # Keep backward compatibility with older callers and unit tests that still
-        # pass `attachment_id` instead of the route parameter name.
-        doc_id = doc_id or attachment_id
-        ext = request.args.get("ext", "markdown")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
-        response = await make_response(data)
-        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
-        apply_safe_file_response_headers(response, content_type, ext)
+    Download a document from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(kb_id=dataset_id, id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
 
-        return response
-
-    except Exception as e:
-        return server_error_response(e)
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def download_document(document_id):
+    """
+    Download a document.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
