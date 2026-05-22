@@ -10,6 +10,7 @@ import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { Button } from '@/components/ui/button';
 import { SingleFormSlider } from '@/components/ui/dual-range-slider';
@@ -23,14 +24,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
-import {
-  useComposeLlmOptionsByModelTypes,
-  useSelectLlmOptionsByModelType,
-} from '@/hooks/use-llm-request';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,7 +35,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { LlmModelType } from '../dataset/dataset/constant';
 import {
   ISearchAppDetailProps,
   IUpdateSearchProps,
@@ -189,16 +184,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       setWidth0('w-[440px]');
     }
   }, [open]);
-
-  const allOptions = useSelectLlmOptionsByModelType();
-  const rerankModelOptions = useMemo(() => {
-    return allOptions[LlmModelType.Rerank];
-  }, [allOptions]);
-
-  const aiSummeryModelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Chat,
-    LlmModelType.Image2text,
-  ]);
 
   const rerankModelDisabled = useWatch({
     control: formMethods.control,
@@ -454,11 +439,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         {t('chat.model')}
                       </FormLabel>
                       <FormControl>
-                        <RAGFlowSelect
+                        <ModelTreeSelect
+                          modelTypes={['rerank']}
                           {...field}
-                          options={rerankModelOptions}
-                          triggerClassName={'bg-bg-input'}
-                          // disabled={disabled}
                           placeholder={t('chat.model')}
                         />
                       </FormControl>
@@ -526,7 +509,6 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               // ></LlmSettingFieldItems>
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
-                options={aiSummeryModelOptions}
                 showFields={[
                   'temperature',
                   'top_p',
