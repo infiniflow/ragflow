@@ -25,6 +25,16 @@ class UserTenantRole(StrEnum):
     INVITE = 'invite'
 
 
+class AccountRole(StrEnum):
+    """Global account tier (see issue #5965).
+
+    ADMIN accounts have full access; USER accounts are read-only — they may use
+    assistants/models but cannot create, modify, or delete any resource.
+    """
+    ADMIN = 'admin'
+    USER = 'user'
+
+
 class TenantPermission(StrEnum):
     ME = 'me'
     TEAM = 'team'

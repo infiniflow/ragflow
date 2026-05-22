@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, validator
 from quart import request
 
 from api.apps import login_required
+from api.common.permission import require_admin_account
 from api.db.joint_services.tenant_model_service import (
     get_model_config_by_id,
     get_model_config_by_type_and_name,
@@ -132,6 +133,7 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
+@require_admin_account
 async def parse(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -187,6 +189,7 @@ async def parse(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
+@require_admin_account
 async def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -461,6 +464,7 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def add_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import rag_tokenizer, search
@@ -552,6 +556,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def rm_chunk(tenant_id, dataset_id, document_id):
     from rag.nlp import search
@@ -601,6 +606,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PATCH"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     from rag.app.qa import beAdoc, rmPrefix
@@ -690,6 +696,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["PATCH"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def switch_chunks(tenant_id, dataset_id, document_id):
     from rag.nlp import search

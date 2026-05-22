@@ -18,6 +18,7 @@ import re
 
 from quart import request, make_response
 from api.apps import login_required
+from api.common.permission import require_admin_account
 from api.db import FileType
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import (
@@ -44,6 +45,7 @@ from api.apps.services import file_api_service
 
 @manager.route("/files", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def create_or_upload(tenant_id: str = None):
     """
@@ -155,6 +157,7 @@ async def list_files(tenant_id: str = None):
 
 @manager.route("/files", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def delete(tenant_id: str = None):
     """
@@ -212,6 +215,7 @@ async def delete(tenant_id: str = None):
 
 @manager.route("/files/move", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def move(tenant_id: str = None):
     """

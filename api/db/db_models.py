@@ -723,6 +723,7 @@ class User(DataBaseModel, AuthUser):
     login_channel = CharField(null=True, help_text="from which user login", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
     is_superuser = BooleanField(null=True, help_text="is root", default=False, index=True)
+    account_role = CharField(max_length=16, null=False, help_text="global account role: admin|user", default="admin", index=True)
 
     def __str__(self):
         return self.email
@@ -1651,6 +1652,7 @@ def migrate_db():
     # Migrate system_settings.value from CharField to TextField for longer sandbox configs
     alter_db_column_type(migrator, "system_settings", "value", TextField(null=False, help_text="Configuration value (JSON, string, etc.)"))
     alter_db_add_column(migrator, "document", "content_hash", CharField(max_length=32, null=True, help_text="xxhash128 of document content for change detection", default="", index=True))
+    alter_db_add_column(migrator, "user", "account_role", CharField(max_length=16, null=False, help_text="global account role: admin|user", default="admin", index=True))
     update_tenant_llm_to_id_primary_key()
     alter_db_add_column(migrator, "tenant", "tenant_llm_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_embd_id", IntegerField(null=True, help_text="id in tenant_llm", index=True))
