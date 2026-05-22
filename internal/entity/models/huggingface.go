@@ -26,12 +26,6 @@ func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *Huggin
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
 		},
 	}
 }
@@ -41,12 +35,6 @@ func (h *HuggingFaceModel) NewInstance(baseURL map[string]string) ModelDriver {
 		URLSuffix: h.URLSuffix,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
 		},
 	}
 }
@@ -204,7 +192,7 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", h.BaseURL[region])
+	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -351,15 +339,14 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 	return scanner.Err()
 }
 
-type hfEmbeddingRequest struct {
-	Inputs []string `json:"inputs"`
-}
-
-type hfEmbeddingResponse [][]float64
-
-func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
+	}
+
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -379,7 +366,7 @@ func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *
 		return nil, err
 	}
 
-	url := fmt.Sprintf("https://router.huggingface.co/hf-inference/models/%s", *modelName)
+	url := fmt.Sprintf("%s/%s/%s", h.BaseURL[region], h.URLSuffix.Embedding, *modelName)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -404,16 +391,52 @@ func (h *HuggingFaceModel) Encode(modelName *string, texts []string, apiConfig *
 		return nil, fmt.Errorf("HF embeddings API error: %s", string(body))
 	}
 
-	var result [][]float64
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, err
+	var parsed openaiEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return result, nil
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsed.Data {
+		var embeddingData EmbeddingData
+		embeddingData.Embedding = dataElem.Embedding
+		embeddingData.Index = dataElem.Index
+		embeddings = append(embeddings, embeddingData)
+	}
+
+	return embeddings, nil
 }
 
 func (h *HuggingFaceModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
+}
+
+// TranscribeAudio transcribe audio
+func (h *HuggingFaceModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+func (z *HuggingFaceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (h *HuggingFaceModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+func (z *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (h *HuggingFaceModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
+}
+
+// ParseFile parse file
+func (z *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -478,4 +501,12 @@ func (h *HuggingFaceModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 func (h *HuggingFaceModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := h.ListModels(apiConfig)
 	return err
+}
+
+func (z *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

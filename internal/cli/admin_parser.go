@@ -1173,7 +1173,7 @@ func (p *Parser) parseAdminSetVariable() (*Command, error) {
 	}
 
 	p.nextToken()
-	varValue, err := p.parseIdentifier()
+	varValue, err := p.parseVariableValue()
 	if err != nil {
 		return nil, err
 	}

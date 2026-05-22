@@ -15,7 +15,11 @@
 #
 
 import json
+import logging
+
 from .base import Base
+
+logger = logging.getLogger(__name__)
 
 
 class Session(Base):
@@ -33,11 +37,67 @@ class Session(Base):
         super().__init__(rag, res_dict)
 
 
-    def ask(self, question="", stream=False, **kwargs):
+    def ask(
+        self,
+        question="",
+        stream=False,
+        inputs=None,
+        release=None,
+        return_trace=None,
+        **kwargs,
+    ):
         """
-        Ask a question to the session. If stream=True, yields Message objects as they arrive (SSE streaming).
-        If stream=False, returns a single Message object for the final answer.
+        Ask a question to the session.
+
+        Parameters
+        ----------
+        question : str
+            The user's question. May be empty when the agent is driven solely by
+            Begin component inputs.
+        stream : bool
+            If ``True``, yields ``Message`` objects as they arrive (SSE streaming).
+            If ``False``, yields a single ``Message`` with the final answer.
+        inputs : dict, optional
+            Values for variables declared on the agent's **Begin** component. Each
+            value must be a dict containing at least a ``"value"`` key, and may
+            include ``"type"``. Example::
+
+                session.ask(
+                    "",
+                    stream=False,
+                    inputs={"key1": {"type": "line", "value": "hello"}},
+                )
+
+            Only meaningful for agent sessions; ignored for chat sessions.
+        release : bool, optional
+            If ``True``, run against the latest published agent version instead of
+            the editable draft. Only meaningful for agent sessions.
+        return_trace : bool, optional
+            If ``True``, include execution trace information in the response.
+            Only meaningful for agent sessions.
+        **kwargs
+            Additional fields forwarded verbatim to the completion endpoint
+            (e.g. ``session_id``, ``files``, ``user_id``, ``custom_header``).
+            See the HTTP API reference for the full list.
         """
+        if inputs is not None:
+            kwargs["inputs"] = inputs
+        if release is not None:
+            kwargs["release"] = release
+        if return_trace is not None:
+            kwargs["return_trace"] = return_trace
+
+        if inputs is not None or release is not None or return_trace is not None:
+            logger.debug(
+                "Session.ask explicit-params session_type=%s session_id=%s "
+                "input_keys=%s release=%s return_trace=%s",
+                self.__session_type,
+                getattr(self, "id", None),
+                list(inputs.keys()) if isinstance(inputs, dict) else None,
+                release,
+                return_trace,
+            )
+
         if self.__session_type == "agent":
             res = self._ask_agent(question, stream, **kwargs)
         elif self.__session_type == "chat":

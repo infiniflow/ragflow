@@ -64,6 +64,16 @@ class LoopItem(ComponentBase, ABC):
             elif operator == "not empty":
                 return var != ""
 
+        elif isinstance(var, bool):
+            if operator == "is":
+                return var is value
+            elif operator == "is not":
+                return var is not value
+            elif operator == "empty":
+                return var is None
+            elif operator == "not empty":
+                return var is not None
+
         elif isinstance(var, (int, float)):
             if operator == "=":
                 return var == value
@@ -77,16 +87,6 @@ class LoopItem(ComponentBase, ABC):
                 return var >= value
             elif operator == "≤":
                 return var <= value
-            elif operator == "empty":
-                return var is None
-            elif operator == "not empty":
-                return var is not None
-
-        elif isinstance(var, bool):
-            if operator == "is":
-                return var is value
-            elif operator == "is not":
-                return var is not value
             elif operator == "empty":
                 return var is None
             elif operator == "not empty":

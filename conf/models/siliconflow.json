@@ -8,7 +8,9 @@
     "models": "models",
     "embedding": "embeddings",
     "rerank": "rerank",
-    "balance": "user/info"
+    "balance": "user/info",
+    "tts": "audio/speech",
+    "asr": "audio/transcriptions"
   },
   "models": [
     {
@@ -44,6 +46,27 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "fnlp/MOSS-TTSD-v0.5",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "FunAudioLLM/CosyVoice2-0.5B",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "FunAudioLLM/SenseVoiceSmall",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
       ]
     }
   ]

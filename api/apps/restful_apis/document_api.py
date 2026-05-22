@@ -995,7 +995,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
             if not doc_ids_filter:
                 return RetCode.SUCCESS, "", [], return_empty_metadata
 
-    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else [], return_empty_metadata
+    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else None, return_empty_metadata
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
@@ -1881,8 +1881,6 @@ async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
         # Keep backward compatibility with older callers and unit tests that still
         # pass `attachment_id` instead of the route parameter name.
         doc_id = doc_id or attachment_id
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
         ext = request.args.get("ext", "markdown")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
         response = await make_response(data)

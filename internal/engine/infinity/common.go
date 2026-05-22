@@ -25,101 +25,58 @@ import (
 	"strings"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
+
+	"go.uber.org/zap"
 )
 
-// Delete deletes rows from either a dataset table or metadata table.
-// If indexName starts with "ragflow_doc_meta_", it's a metadata table.
-// Otherwise, it's a dataset table: {indexName}_{datasetID}
-func (e *infinityEngine) Delete(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
-	var tableName string
-	if strings.HasPrefix(indexName, "ragflow_doc_meta_") {
-		tableName = indexName
-	} else {
-		tableName = fmt.Sprintf("%s_%s", indexName, datasetID)
+// dropTable drops a table from Infinity
+func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error {
+	if tableName == "" {
+		return fmt.Errorf("table name cannot be empty")
+	}
+
+	// Check if table exists
+	exists, err := e.tableExists(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("failed to check table existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("table '%s' does not exist", tableName)
 	}
 
 	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get database: %w", err)
+		return fmt.Errorf("failed to get database: %w", err)
 	}
 
-	table, err := db.GetTable(tableName)
+	_, err = db.DropTable(tableName, infinity.ConflictTypeError)
 	if err != nil {
-		common.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
-		return 0, nil
+		return fmt.Errorf("failed to drop table: %w", err)
 	}
 
-	// Get table columns for building filter
-	clmns := make(map[string]struct {
-		Type    string
-		Default interface{}
-	})
-	colsResp, err := table.ShowColumns()
-	if err != nil {
-		return 0, fmt.Errorf("failed to get columns: %w", err)
-	}
-	result, ok := colsResp.(*infinity.QueryResult)
-	if ok {
-		if nameArr, ok := result.Data["name"]; ok {
-			if typeArr, ok := result.Data["type"]; ok {
-				if defArr, ok := result.Data["default"]; ok {
-					for i := 0; i < len(nameArr); i++ {
-						colName, _ := nameArr[i].(string)
-						colType, _ := typeArr[i].(string)
-						var colDefault interface{}
-						if i < len(defArr) {
-							colDefault = defArr[i]
-						}
-						clmns[colName] = struct {
-							Type    string
-							Default interface{}
-						}{colType, colDefault}
-					}
-				}
-			}
-		}
-	}
-
-	// Build filter from condition
-	filter := buildFilterFromCondition(condition, clmns)
-
-	delResp, err := table.Delete(filter)
-	if err != nil {
-		return 0, fmt.Errorf("failed to delete: %w", err)
-	}
-
-	return delResp.DeletedRows, nil
-}
-
-// DropTable deletes a table/index
-func (e *infinityEngine) DropTable(ctx context.Context, indexName string) error {
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return fmt.Errorf("Failed to get database: %w", err)
-	}
-
-	_, err = db.DropTable(indexName, infinity.ConflictTypeIgnore)
-	if err != nil {
-		return fmt.Errorf("Failed to drop table: %w", err)
-	}
+	common.Info("Infinity dropped table", zap.String("tableName", tableName))
 	return nil
 }
 
-// TableExists checks if table/index exists
-func (e *infinityEngine) TableExists(ctx context.Context, indexName string) (bool, error) {
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return false, fmt.Errorf("Failed to get database: %w", err)
+// tableExists checks if a table exists in Infinity
+func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (bool, error) {
+	if tableName == "" {
+		return false, fmt.Errorf("table name cannot be empty")
 	}
 
-	_, err = db.GetTable(indexName)
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
 	if err != nil {
-		// Check if error is "table not found"
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "not found") || strings.Contains(errLower, "notexist") || strings.Contains(errLower, "doesn't exist") {
+		return false, fmt.Errorf("failed to get database: %w", err)
+	}
+
+	// Try to get the table - if it exists, no error
+	_, err = db.GetTable(tableName)
+	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("failed to check table existence: %w", err)
 	}
 	return true, nil
 }
@@ -334,4 +291,19 @@ func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) 
 		}
 	}
 	return false, nil
+}
+
+// buildChunkTableName returns the chunk table name for a dataset
+// Skill Table: table name is just baseName (e.g., "skill_abc123_def456")
+// Regular chunk Table: table name is {baseName}_{datasetID}
+func buildChunkTableName(baseName, datasetID string) string {
+	if datasetID == "skill" {
+		return baseName
+	}
+	return fmt.Sprintf("%s_%s", baseName, datasetID)
+}
+
+// buildMetadataTableName returns the metadata table name for a tenant
+func buildMetadataTableName(tenantID string) string {
+	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }
