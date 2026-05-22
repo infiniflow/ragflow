@@ -9,6 +9,8 @@
     "async_result": "async-result",
     "embedding": "embeddings",
     "rerank": "rerank",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech",
     "files": "files",
     "models": "models"
   },
