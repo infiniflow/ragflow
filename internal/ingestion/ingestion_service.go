@@ -19,11 +19,15 @@ import (
 type Ingestor struct {
 	id     string
 	name   string
+	serverAddr string
+	conn   *grpc.ClientConn
 	client common.IngestionManagerClient
 	stream common.IngestionManager_ActionClient
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	reconnectMu sync.Mutex
 
 	// Configuration
 	maxConcurrency    int32
@@ -62,6 +66,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 
 // Connect connects to the admin and establishes a bidirectional stream
 func (e *Ingestor) Connect(serverAddr string) error {
+	e.serverAddr = serverAddr
 	conn, err := grpc.Dial(serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithBlock(),
@@ -70,11 +75,13 @@ func (e *Ingestor) Connect(serverAddr string) error {
 	if err != nil {
 		return err
 	}
+	e.conn = conn
 
 	e.client = common.NewIngestionManagerClient(conn)
 
 	stream, err := e.client.Action(e.ctx)
 	if err != nil {
+		conn.Close()
 		return err
 	}
 	e.stream = stream
@@ -195,7 +202,8 @@ func (e *Ingestor) receiveLoop() {
 	for {
 		msg, err := e.stream.Recv()
 		if err != nil {
-			log.Printf("Receive error: %v", err)
+			log.Printf("Receive error: %v, attempting to reconnect", err)
+			e.reconnect()
 			return
 		}
 
@@ -351,11 +359,85 @@ func (e *Ingestor) heartbeatLoop() {
 			return
 		case <-ticker.C:
 			if err := e.sendHeartbeat(); err != nil {
-				log.Printf("Failed to send heartbeat: %v", err)
+				log.Printf("Failed to send heartbeat: %v, attempting to reconnect", err)
+				e.reconnect()
 				return
 			}
 		}
 	}
+}
+
+// reconnect closes the old connection and establishes a new one with exponential backoff.
+// Only one reconnection attempt runs at a time; concurrent callers return immediately.
+func (e *Ingestor) reconnect() {
+	if !e.reconnectMu.TryLock() {
+		return
+	}
+	defer e.reconnectMu.Unlock()
+
+	common.Info(fmt.Sprintf("Ingestor %s attempting to reconnect to admin at %s", e.id, e.serverAddr))
+
+	// Close old stream and connection
+	if e.stream != nil {
+		e.stream.CloseSend()
+	}
+	if e.conn != nil {
+		e.conn.Close()
+	}
+
+	backoff := 1 * time.Second
+	maxBackoff := 30 * time.Second
+
+	for {
+		conn, err := grpc.Dial(e.serverAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+			grpc.WithTimeout(5*time.Second),
+		)
+		if err != nil {
+			common.Info(fmt.Sprintf("Reconnect dial failed: %v, retrying in %v", err, backoff))
+			time.Sleep(backoff)
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+		e.conn = conn
+		e.client = common.NewIngestionManagerClient(conn)
+
+		stream, err := e.client.Action(e.ctx)
+		if err != nil {
+			conn.Close()
+			common.Info(fmt.Sprintf("Reconnect create stream failed: %v, retrying in %v", err, backoff))
+			time.Sleep(backoff)
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+		e.stream = stream
+
+		if err = e.sendRegister(); err != nil {
+			stream.CloseSend()
+			conn.Close()
+			common.Info(fmt.Sprintf("Reconnect register failed: %v, retrying in %v", err, backoff))
+			time.Sleep(backoff)
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+			continue
+		}
+
+		common.Info(fmt.Sprintf("Ingestor %s reconnected to admin", e.id))
+		break
+	}
+
+	// Restart the loops on the new stream
+	go e.receiveLoop()
+	go e.heartbeatLoop()
 }
 
 // Stop gracefully shuts down the executor
