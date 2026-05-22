@@ -954,6 +954,7 @@ async def reset_agent(agent_id, tenant_id):
 @manager.route("/agents/rerun", methods=["POST"])  # noqa: F821
 @validate_request("id", "dsl", "component_id")
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def rerun_agent(tenant_id):
     from rag.nlp import search

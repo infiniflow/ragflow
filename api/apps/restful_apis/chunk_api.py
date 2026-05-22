@@ -133,7 +133,6 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
-@require_admin_account
 async def parse(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
@@ -189,7 +188,6 @@ async def parse(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
-@require_admin_account
 async def stop_parsing(tenant_id, dataset_id):
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")

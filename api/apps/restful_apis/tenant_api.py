@@ -56,6 +56,7 @@ def user_list(tenant_id):
 
 @manager.route("/tenants/<tenant_id>/users", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @validate_request("email")
 async def create(tenant_id):
     if current_user.id != tenant_id:
@@ -121,6 +122,7 @@ async def create(tenant_id):
 
 @manager.route("/tenants/<tenant_id>/users", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 @validate_request("user_id")
 async def rm(tenant_id):
     req = await get_request_json()
@@ -163,8 +165,11 @@ async def set_account_role(tenant_id, user_id):
     if user_id == current_user.id:
         return get_data_error_result(message="You cannot change your own account role.")
 
-    if not UserTenantService.query(user_id=user_id, tenant_id=tenant_id):
+    members = UserTenantService.query(user_id=user_id, tenant_id=tenant_id)
+    if not members:
         return get_data_error_result(message="User is not a member of this team.")
+    if members[0].role == UserTenantRole.INVITE:
+        return get_data_error_result(message="User has not accepted the team invitation yet.")
 
     ok, target = UserService.get_by_id(user_id)
     if not ok or not target:

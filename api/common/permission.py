@@ -28,12 +28,15 @@ from api.db import AccountRole
 
 
 def is_readonly_account(user) -> bool:
-    """True if ``user`` is a read-only ("user" tier) account.
+    """True if ``user`` is a read-only account.
 
-    Accounts predating this feature have no ``account_role``; they default to
-    administrator so existing installs keep full access.
+    Fail closed: only an explicit ``admin`` role grants write access — any
+    other stored value (``user``, an unexpected string, ``None``) is treated
+    as read-only. The sole exception is a genuinely missing ``account_role``
+    attribute, which defaults to administrator so accounts predating this
+    feature keep full access.
     """
-    return getattr(user, "account_role", AccountRole.ADMIN) == AccountRole.USER
+    return getattr(user, "account_role", AccountRole.ADMIN) != AccountRole.ADMIN
 
 
 def require_admin_account(func):
@@ -58,8 +61,9 @@ def require_admin_account(func):
         if is_readonly_account(current_user):
             logging.warning("Read-only account %s blocked from %s", getattr(current_user, "id", "?"), func.__name__)
             return get_error_permission_result(message="This account is read-only and cannot modify resources.")
-        if inspect.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        return func(*args, **kwargs)
+        result = func(*args, **kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     return wrapper

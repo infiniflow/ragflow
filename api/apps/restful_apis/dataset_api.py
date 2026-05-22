@@ -754,6 +754,7 @@ def get_auto_metadata(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def update_auto_metadata(tenant_id, dataset_id):
     """

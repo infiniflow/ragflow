@@ -91,9 +91,26 @@ class TestRequireAdminAccount:
 
         assert asyncio.run(sync_handler()) == "done"
 
+    def test_sync_callable_returning_awaitable(self, monkeypatch):
+        """A non-async callable that returns a coroutine (e.g. a route already
+        wrapped by another decorator) must still be awaited, not returned raw."""
+        module = _load_permission(monkeypatch, account_role="admin")
+
+        async def _inner():
+            return "awaited"
+
+        @module.require_admin_account
+        def handler():  # plain def, but returns a coroutine
+            return _inner()
+
+        assert asyncio.run(handler()) == "awaited"
+
     def test_is_readonly_account(self, monkeypatch):
         module = _load_permission(monkeypatch, account_role="admin")
         assert module.is_readonly_account(SimpleNamespace(account_role="user")) is True
         assert module.is_readonly_account(SimpleNamespace(account_role="admin")) is False
         # Accounts predating the feature have no account_role -> treated as admin.
         assert module.is_readonly_account(SimpleNamespace()) is False
+        # Fail closed: any non-admin stored value is read-only.
+        assert module.is_readonly_account(SimpleNamespace(account_role=None)) is True
+        assert module.is_readonly_account(SimpleNamespace(account_role="USER")) is True
