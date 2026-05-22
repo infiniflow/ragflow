@@ -174,14 +174,14 @@ user_default_llm:
 #     # bind_user_dn: "cn=admin,dc=example,dc=com"
 #     # bind_user_password: "service_account_password"
 #     # user_search_base: "ou=people,dc=example,dc=com"
-#     # user_search_filter: "(uid={username})"
+#     # user_search_filter: '(uid={username})'
 #     # Attribute names returned by the directory; defaults shown.
 #     # email_attr: "mail"
 #     # nickname_attr: "cn"
 #     # username_attr: "uid"
 #     # When true, refuse to authenticate users whose entry has no email
 #     # attribute. When false, fall back to a per-channel synthetic address
-#     # of the form "<uid>@<channel>.ldap.local" so distinct directories
+#     # of the form '<uid>@<channel>.ldap.local' so distinct directories
 #     # cannot collapse onto a single application user.
 #     # require_email: false
 # authentication:
