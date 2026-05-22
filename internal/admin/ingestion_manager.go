@@ -30,6 +30,8 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+const heartbeatTimeout = 30 * time.Second
+
 type IngestionManager struct {
 	common.UnimplementedIngestionManagerServer
 	mu sync.RWMutex
@@ -94,6 +96,7 @@ func NewAdminServer() *IngestionManager {
 		cancel:           cancel,
 	}
 	go ingestionManager.dispatchLoop()
+	//go ingestionManager.heartbeatCheckLoop() no need to check heartbeat timeout
 	return ingestionManager
 }
 
@@ -235,6 +238,10 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 		lastUpdateTime := time.Now()
 		s.mu.Lock()
 		s.ingestionServers[msg.IngestorId].LastHeartbeat = lastUpdateTime
+		if s.ingestionServers[msg.IngestorId].Status == "timeout" {
+			s.ingestionServers[msg.IngestorId].Status = "active"
+			common.Info(fmt.Sprintf("Ingestor %s recovered from timeout, status set to active", msg.IngestorId))
+		}
 
 		for _, ingestorTaskState := range msg.HeartbeatInfo.TaskStates {
 			localTaskState := s.taskStates[ingestorTaskState.TaskId]
@@ -246,7 +253,7 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 		}
 		s.mu.Unlock()
 
-		common.Info(fmt.Sprintf("Heartbeat from %s:", ingestorID))
+		common.Info(fmt.Sprintf("Heartbeat from %s", ingestorID))
 	}
 }
 
@@ -304,6 +311,37 @@ func (s *IngestionManager) dispatchLoop() {
 			return
 		case pending := <-s.taskQueue:
 			go s.tryAssign(pending.Task)
+		}
+	}
+}
+
+// heartbeatCheckLoop periodically checks all registered ingestors for heartbeat timeout.
+// If an ingestor's LastHeartbeat is older than heartbeatTimeout, its status is set to "timeout".
+func (s *IngestionManager) heartbeatCheckLoop() {
+	ticker := time.NewTicker(heartbeatTimeout / 3)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			s.checkHeartbeats()
+		}
+	}
+}
+
+func (s *IngestionManager) checkHeartbeats() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for id, state := range s.ingestionServers {
+		if now.Sub(state.LastHeartbeat) > heartbeatTimeout {
+			if state.Status != "timeout" {
+				state.Status = "timeout"
+				common.Info(fmt.Sprintf("Ingestor %s heartbeat timeout, marked as timeout", id))
+			}
 		}
 	}
 }
