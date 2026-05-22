@@ -202,7 +202,12 @@ func (e *Ingestor) receiveLoop() {
 	for {
 		msg, err := e.stream.Recv()
 		if err != nil {
-			log.Printf("Receive error: %v, attempting to reconnect", err)
+			if e.ctx.Err() != nil {
+				common.Info(fmt.Sprintf("Ingestor %s context cancelled, receive loop exiting", e.id))
+				return
+			}
+			common.Info(fmt.Sprintf("Receive error: %v", err))
+			common.Info("Admin connection lost, attempting to reconnect")
 			e.reconnect()
 			return
 		}
@@ -212,14 +217,14 @@ func (e *Ingestor) receiveLoop() {
 			e.handleTaskAssignment(msg.TaskAssignment)
 
 		case "ACK":
-			log.Printf("Received ACK: task=%s, success=%v, msg=%s",
-				msg.AckInfo.TaskId, msg.AckInfo.Success, msg.AckInfo.Message)
+			common.Info(fmt.Sprintf("Received ACK: task=%s, success=%v, msg=%s",
+				msg.AckInfo.TaskId, msg.AckInfo.Success, msg.AckInfo.Message))
 
 		case "ERROR":
-			log.Printf("Received error from admin: %s", msg.ErrorMessage)
+			common.Info(fmt.Sprintf("Received error from admin: %s", msg.ErrorMessage))
 
 		default:
-			log.Printf("Unknown admin message type: %s", msg.MessageType)
+			common.Info(fmt.Sprintf("Unknown admin message type: %s", msg.MessageType))
 		}
 	}
 }
@@ -229,7 +234,7 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 		return
 	}
 
-	log.Printf("Received task: %s, task_type=%s", task.TaskId, task.TaskType)
+	common.Info(fmt.Sprintf("Received task: %s, task_type=%s", task.TaskId, task.TaskType))
 
 	// Check if there is an available slot
 	e.tasksMu.RLock()
@@ -237,7 +242,7 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 	e.tasksMu.RUnlock()
 
 	if runningCount >= int(e.maxConcurrency) {
-		log.Printf("No available slot for task %s, rejecting", task.TaskId)
+		common.Info(fmt.Sprintf("No available slot for task %s, rejecting", task.TaskId))
 		// Could send a rejection message for admin to re-assign
 		return
 	}
@@ -269,7 +274,7 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 	}()
 
 	task := taskCtx.Task
-	log.Printf("Starting task %s", task.TaskId)
+	common.Info(fmt.Sprintf("Starting task %s", task.TaskId))
 
 	// Simulate task execution progress
 	// In production, this would split into subtasks and execute in parallel
@@ -277,14 +282,14 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 		select {
 		case <-ctx.Done():
 			// Task cancelled
-			log.Printf("Task %s cancelled", task.TaskId)
+			common.Info(fmt.Sprintf("Task %s cancelled", task.TaskId))
 			e.sendTaskResult(task.TaskId, "CANCELLED", "", "task cancelled")
 			return
 		case <-time.After(500 * time.Millisecond):
 			// Simulate progress update
 			taskCtx.Progress = progress
 			e.sendTaskProgress(task.TaskId, progress, "processing...")
-			log.Printf("Task %s progress: %d%%", task.TaskId, progress)
+			common.Info(fmt.Sprintf("Task %s progress: %d%%", task.TaskId, progress))
 		}
 	}
 
@@ -294,12 +299,12 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 	// Task completed
 	resultURL := "http://storage.example.com/results/" + task.TaskId + ".json"
 	e.sendTaskResult(task.TaskId, "COMPLETED", resultURL, "")
-	log.Printf("Task %s completed", task.TaskId)
+	common.Info(fmt.Sprintf("Task %s completed", task.TaskId))
 }
 
 // executeWithSubTasks demonstrates subtask splitting and parallel execution
 func (e *Ingestor) executeWithSubTasks(task *common.TaskAssignment) {
-	log.Printf("Task %s: splitting into subtasks", task.TaskId)
+	common.Info(fmt.Sprintf("Task %s: splitting into subtasks", task.TaskId))
 
 	// Simulate splitting into 4 subtasks
 	subTasks := []struct {
@@ -322,10 +327,10 @@ func (e *Ingestor) executeWithSubTasks(task *common.TaskAssignment) {
 		go func(subID string, idx int) {
 			defer wg.Done()
 
-			log.Printf("Subtask %s started", subID)
+			common.Info(fmt.Sprintf("Subtask %s started", subID))
 			// Simulate subtask execution
 			time.Sleep(1 * time.Second)
-			log.Printf("Subtask %s completed", subID)
+			common.Info(fmt.Sprintf("Subtask %s completed", subID))
 			results <- nil
 		}(st.id, st.index)
 	}
@@ -343,9 +348,9 @@ func (e *Ingestor) executeWithSubTasks(task *common.TaskAssignment) {
 	}
 
 	if failedCount > 0 {
-		log.Printf("Task %s: %d subtasks failed", task.TaskId, failedCount)
+		common.Info(fmt.Sprintf("Task %s: %d subtasks failed", task.TaskId, failedCount))
 	} else {
-		log.Printf("Task %s: all subtasks completed successfully", task.TaskId)
+		common.Info(fmt.Sprintf("Task %s: all subtasks completed successfully", task.TaskId))
 	}
 }
 
@@ -359,7 +364,12 @@ func (e *Ingestor) heartbeatLoop() {
 			return
 		case <-ticker.C:
 			if err := e.sendHeartbeat(); err != nil {
-				log.Printf("Failed to send heartbeat: %v, attempting to reconnect", err)
+				common.Info(fmt.Sprintf("Failed to send heartbeat: %v", err))
+				if e.ctx.Err() != nil {
+					common.Info(fmt.Sprintf("Ingestor %s context cancelled, heartbeat loop exiting", e.id))
+					return
+				}
+				common.Info(fmt.Sprintf("Admin connection lost, attempting to reconnect"))
 				e.reconnect()
 				return
 			}
@@ -370,6 +380,11 @@ func (e *Ingestor) heartbeatLoop() {
 // reconnect closes the old connection and establishes a new one with exponential backoff.
 // Only one reconnection attempt runs at a time; concurrent callers return immediately.
 func (e *Ingestor) reconnect() {
+	if e.ctx.Err() != nil {
+		common.Info(fmt.Sprintf("Ingestor %s is shutting down, skipping reconnection", e.id))
+		return
+	}
+
 	if !e.reconnectMu.TryLock() {
 		return
 	}
