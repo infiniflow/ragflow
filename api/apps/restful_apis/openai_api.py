@@ -14,7 +14,9 @@
 #  limitations under the License.
 #
 
+import base64
 import json
+import mimetypes
 import time
 
 from quart import Response, jsonify
@@ -22,10 +24,12 @@ from quart import Response, jsonify
 from api.apps import current_user, login_required
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.file_service import FileService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
+from common.misc_utils import get_uuid
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
 
@@ -90,6 +94,48 @@ def _build_sse_response(body):
     return resp
 
 
+def _resolve_message_files(files):
+    """Normalize a message's ``files`` list into the stored-file form the
+    chat pipeline expects: ``{id, created_by, mime_type, name}``.
+
+    Inline entries — ``{"blob": "<base64>", "display_name": "a.txt"}`` per
+    issue #5637 — are decoded and persisted to object storage. Entries that
+    already reference a stored file are passed through unchanged.
+    """
+    resolved = []
+    for idx, entry in enumerate(files):
+        if not isinstance(entry, dict):
+            raise ValueError(f"files[{idx}] must be an object.")
+        if "blob" in entry:
+            display_name = entry.get("display_name")
+            if not isinstance(display_name, str) or not display_name.strip():
+                raise ValueError(f"files[{idx}].display_name is required for an inline file.")
+            raw = (entry["blob"] or "").strip()
+            mime = ""
+            if raw.startswith("data:"):
+                header, _, raw = raw.partition(",")
+                mime = header[len("data:") :].split(";", 1)[0].strip()
+            try:
+                blob = base64.b64decode(raw, validate=True)
+            except ValueError:
+                raise ValueError(f"files[{idx}].blob is not valid base64.") from None
+            file_id = get_uuid()
+            FileService.put_blob(current_user.id, file_id, blob)
+            resolved.append(
+                {
+                    "id": file_id,
+                    "created_by": current_user.id,
+                    "name": display_name,
+                    "mime_type": mime or mimetypes.guess_type(display_name)[0] or "application/octet-stream",
+                }
+            )
+        elif "id" in entry:
+            resolved.append(entry)
+        else:
+            raise ValueError(f"files[{idx}] must contain either 'blob' or 'id'.")
+    return resolved
+
+
 @manager.route("/openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("model", "messages")
@@ -151,6 +197,12 @@ async def openai_chat_completions(chat_id):
         if metadata_condition.get("conditions") and not filtered_doc_ids:
             filtered_doc_ids = ["-999"]
         doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
+
+    if isinstance(messages[-1].get("files"), list):
+        try:
+            messages[-1]["files"] = _resolve_message_files(messages[-1]["files"])
+        except ValueError as e:
+            return get_error_data_result(str(e))
 
     msg = []
     for message in messages:
