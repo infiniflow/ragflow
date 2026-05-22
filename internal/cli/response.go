@@ -85,6 +85,42 @@ func (r *CommonDataResponse) PrintOut() {
 	}
 }
 
+type ListDocumentsResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *ListDocumentsResponse) Type() string {
+	return "list_documents"
+}
+
+func (r *ListDocumentsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *ListDocumentsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *ListDocumentsResponse) PrintOut() {
+	if r.Code == 0 {
+		total := r.Data["total"].(float64)
+		fmt.Printf("Total: %0.0f\n", total)
+		docs := r.Data["docs"].([]interface{})
+		table := make([]map[string]interface{}, 0)
+		for _, doc := range docs {
+			table = append(table, doc.(map[string]interface{}))
+		}
+		PrintTableSimpleByFormat(table, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 type SimpleResponse struct {
 	Code         int    `json:"code"`
 	Message      string `json:"message"`
@@ -107,6 +143,34 @@ func (r *SimpleResponse) SetOutputFormat(format OutputFormat) {
 func (r *SimpleResponse) PrintOut() {
 	if r.Code == 0 {
 		fmt.Println("SUCCESS")
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type MessageResponse struct {
+	Code         int    `json:"code"`
+	Message      string `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *MessageResponse) Type() string {
+	return "message"
+}
+
+func (r *MessageResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *MessageResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *MessageResponse) PrintOut() {
+	if r.Code == 0 {
+		fmt.Println(r.Message)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -277,6 +341,86 @@ func (r *KeyValueResponse) PrintOut() {
 	}
 }
 
+type EmbeddingData struct {
+	Index     int       `json:"index"`
+	Embedding []float64 `json:"embedding"`
+}
+
+type EmbeddingsResponse struct {
+	Code         int             `json:"code"`
+	Data         []EmbeddingData `json:"data"`
+	Message      string          `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *EmbeddingsResponse) Type() string {
+	return "common"
+}
+
+func (r *EmbeddingsResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *EmbeddingsResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *EmbeddingsResponse) PrintOut() {
+	var data []map[string]interface{}
+	for _, embedding := range r.Data {
+		data = append(data, map[string]interface{}{
+			"index":     formatValue(embedding.Index),
+			"dimension": len(embedding.Embedding),
+		})
+	}
+
+	if r.Code == 0 {
+		PrintTableSimpleByFormat(data, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
+type SegmentResponse struct {
+	Segments []map[string]interface{} `json:"segments"`
+}
+
+type TaskResponse struct {
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *TaskResponse) Type() string {
+	return "task"
+}
+
+func (r *TaskResponse) TimeCost() float64 {
+	return r.Duration
+}
+
+func (r *TaskResponse) SetOutputFormat(format OutputFormat) {
+	r.OutputFormat = format
+}
+
+func (r *TaskResponse) PrintOut() {
+	if r.Code == 0 {
+		segmentsRaw := r.Data["segments"].([]interface{})
+		segments := make([]map[string]interface{}, len(segmentsRaw))
+		for i, v := range segmentsRaw {
+			segments[i] = v.(map[string]interface{})
+		}
+		PrintTableSimpleByFormat(segments, r.OutputFormat)
+	} else {
+		fmt.Println("ERROR")
+		fmt.Printf("%d, %s\n", r.Code, r.Message)
+	}
+}
+
 // ==================== ContextEngine Commands ====================
 
 // ContextListResponse represents the response for ls command
@@ -325,9 +469,9 @@ func (r *ContextSearchResponse) PrintOut() {
 
 // ContextCatResponse represents the response for cat command
 type ContextCatResponse struct {
-	Code         int          `json:"code"`
-	Content      string       `json:"content"`
-	Message      string       `json:"message"`
+	Code         int    `json:"code"`
+	Content      string `json:"content"`
+	Message      string `json:"message"`
 	Duration     float64
 	OutputFormat OutputFormat
 }
@@ -343,5 +487,3 @@ func (r *ContextCatResponse) PrintOut() {
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
 	}
 }
-
-

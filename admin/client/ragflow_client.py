@@ -43,6 +43,12 @@ def encrypt(input_string):
     return base64.b64encode(cipher_text).decode("utf-8")
 
 
+def _strip_tree_value(value):
+    if isinstance(value, Tree):
+        value = value.children[0]
+    return str(value).strip("'\"")
+
+
 class RAGFlowClient:
     def __init__(self, http_client: HttpClient, server_type: str):
         self.http_client = http_client
@@ -526,10 +532,8 @@ class RAGFlowClient:
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
-        var_name_tree: Tree = command["var_name"]
-        var_name = var_name_tree.children[0].strip("'\"")
-        var_value_tree: Tree = command["var_value"]
-        var_value = var_value_tree.children[0].strip("'\"")
+        var_name = _strip_tree_value(command["var_name"])
+        var_value = _strip_tree_value(command["var_value"])
         response = self.http_client.request("PUT", "/admin/variables",
                                             json_body={"var_name": var_name, "var_value": var_value}, use_api_base=True,
                                             auth_kind="admin")
@@ -544,8 +548,7 @@ class RAGFlowClient:
         if self.server_type != "admin":
             print("This command is only allowed in ADMIN mode")
 
-        var_name_tree: Tree = command["var_name"]
-        var_name = var_name_tree.children[0].strip("'\"")
+        var_name = _strip_tree_value(command["var_name"])
         response = self.http_client.request(method="GET", path="/admin/variables", json_body={"var_name": var_name},
                                             use_api_base=True, auth_kind="admin")
         res_json = response.json()

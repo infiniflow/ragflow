@@ -180,7 +180,13 @@ class Dealer:
             else:
                 matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
-                if not settings.DOC_ENGINE_INFINITY:
+                # ES path no longer fetches chunk vectors here. The clean
+                # cosine score is recovered later via a second KNN-only call
+                # in retrieval(); chunk vectors are fetched on demand for
+                # citations (see Dealer.fetch_chunk_vectors). OceanBase
+                # still relies on local rerank against chunk vectors, so
+                # keep pulling them for that backend.
+                if settings.DOC_ENGINE_OCEANBASE:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
@@ -358,6 +364,113 @@ class Dealer:
                 rank_fea.append(nor / np.sqrt(denor) / q_denor)
         return np.array(rank_fea) * 10. + pageranks
 
+    async def _knn_scores(self, sres: "Dealer.SearchResult",
+                          idx_names: str | list[str],
+                          kb_ids: list[str]) -> dict[str, float]:
+        """
+        Second-pass ES call that returns the cosine similarity between the
+        query embedding and each candidate chunk's embedding, filtered to the
+        chunk ids the original search already surfaced. We rely on ES to do
+        the vector math so the chunk vectors never leave the engine.
+        """
+        if not sres.ids or not sres.query_vector:
+            return {}
+        dim = len(sres.query_vector)
+        matchDense = MatchDenseExpr(
+            f"q_{dim}_vec",
+            sres.query_vector,
+            "float",
+            "cosine",
+            len(sres.ids),
+            {"similarity": 0.0},
+        )
+        condition = {"id": list(sres.ids)}
+        res = await thread_pool_exec(
+            self.dataStore.search,
+            [],  # no _source fields needed; we only want _id and _score
+            [],
+            condition,
+            [matchDense],
+            OrderByExpr(),
+            0,
+            len(sres.ids),
+            idx_names,
+            kb_ids,
+        )
+        return self.dataStore.get_scores(res)
+
+    async def fetch_chunk_vectors(self, chunk_ids: list[str],
+                                  tenant_ids: str | list[str],
+                                  kb_ids: list[str],
+                                  dim: int) -> dict[str, list[float]]:
+        """
+        Citation-time helper: fetch only the embedding vectors for an
+        explicit set of chunk ids. Used by callers that need to compute
+        answer-vs-chunk similarity locally (e.g. insert_citations) so the
+        main retrieval path can keep skipping vector transport.
+        """
+        if not chunk_ids:
+            return {}
+        if isinstance(tenant_ids, str):
+            idx_names = [index_name(tid) for tid in tenant_ids.split(",")]
+        else:
+            idx_names = [index_name(tid) for tid in tenant_ids]
+        vec_field = f"q_{dim}_vec"
+        res = await thread_pool_exec(
+            self.dataStore.search,
+            [vec_field],
+            [],
+            {"id": list(chunk_ids)},
+            [],
+            OrderByExpr(),
+            0,
+            len(chunk_ids),
+            idx_names,
+            kb_ids,
+        )
+        fields = self.dataStore.get_fields(res, [vec_field])
+        out: dict[str, list[float]] = {}
+        zero = [0.0] * dim
+        for cid, doc in fields.items():
+            v = doc.get(vec_field)
+            if isinstance(v, str):
+                v = [get_float(x) for x in v.split("\t")]
+            if not isinstance(v, list) or len(v) != dim:
+                v = zero
+            out[cid] = v
+        return out
+
+    def rerank_with_knn(self, sres, query, knn_scores: dict[str, float],
+                        tkweight=0.3, vtweight=0.7,
+                        cfield="content_ltks",
+                        rank_feature: dict | None = None):
+        """
+        Merge ES-side KNN cosine similarity with locally computed term
+        similarity using the user-configured weights. Replaces the older
+        local-only rerank() for the ES path, which depended on shipping
+        chunk vectors back to the application.
+        """
+        _, keywords = self.qryr.question(query)
+
+        for i in sres.ids:
+            if isinstance(sres.field[i].get("important_kwd", []), str):
+                sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
+        ins_tw = []
+        for i in sres.ids:
+            content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
+            title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
+            question_tks = [t for t in sres.field[i].get("question_tks", "").split() if t]
+            important_kwd = sres.field[i].get("important_kwd", [])
+            tks = content_ltks + title_tks * 2 + important_kwd * 5 + question_tks * 6
+            ins_tw.append(tks)
+
+        tksim = np.array(self.qryr.token_similarity(keywords, ins_tw), dtype=np.float64)
+        vtsim = np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids],
+                         dtype=np.float64)
+        rank_fea = self._rank_feature_scores(rank_feature, sres)
+        sim = tkweight * tksim + vtweight * vtsim + rank_fea
+        return sim, tksim, vtsim
+
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks",
                rank_feature: dict | None = None
@@ -491,7 +604,8 @@ class Dealer:
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
-        sres = await self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
+        idx_names = [index_name(tid) for tid in tenant_ids]
+        sres = await self.search(req, idx_names, kb_ids, embd_mdl, highlight,
                            rank_feature=rank_feature)
         # Temporary retrieval-side guard: prune chunks whose parent document no
         # longer exists before reranking and returning results.
@@ -516,11 +630,26 @@ class Dealer:
                 sim = [s if s is not None else 0.0 for s in sim]
                 tsim = sim
                 vsim = sim
-            else:
-                # ElasticSearch doesn't normalize each way score before fusion.
+            elif settings.DOC_ENGINE_OCEANBASE:
+                # OceanBase still returns chunk vectors in the result; use
+                # the historical local rerank that depends on them.
                 sim, tsim, vsim = self.rerank(
                     sres,
                     question,
+                    1 - vector_similarity_weight,
+                    vector_similarity_weight,
+                    rank_feature=rank_feature,
+                )
+            else:
+                # ES path: ask ES for the clean cosine score via a second
+                # KNN-only call filtered by the candidate ids, then merge it
+                # with locally computed term similarity using the user's
+                # weight. Chunk vectors stay in the index.
+                knn_scores = await self._knn_scores(sres, idx_names, kb_ids)
+                sim, tsim, vsim = self.rerank_with_knn(
+                    sres,
+                    question,
+                    knn_scores,
                     1 - vector_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
@@ -559,6 +688,11 @@ class Dealer:
             did = chunk.get("doc_id", "")
 
             position_int = chunk.get("position_int", [])
+            # Chunk vectors are no longer fetched during the main retrieval
+            # call. Fall back to whatever the chunk happens to carry (Infinity
+            # path) and otherwise emit a zero placeholder so the downstream
+            # shape stays stable. Citation callers refill this via
+            # Dealer.fetch_chunk_vectors when needed.
             d = {
                 "chunk_id": id,
                 "content_ltks": chunk["content_ltks"],
@@ -619,7 +753,13 @@ class Dealer:
                    kb_ids: list[str], max_count=1024,
                    offset=0,
                    fields=["docnm_kwd", "content_with_weight", "img_id"],
-                   sort_by_position: bool = False):
+                   sort_by_position: bool = False,
+                   retrieve_all: bool = False):
+        """Return chunks for a document.
+
+        By default, preserve the historical max_count cap. When retrieve_all is
+        True, keep paging until the doc store returns fewer rows than requested.
+        """
         condition = {"doc_id": doc_id}
 
         fields_set = set(fields or [])
@@ -637,8 +777,9 @@ class Dealer:
 
         res = []
         bs = 128
-        for p in range(offset, max_count, bs):
-            limit = min(bs, max_count - p)
+        p = offset
+        while retrieve_all or p < max_count:
+            limit = bs if retrieve_all else min(bs, max_count - p)
             if limit <= 0:
                 break
             es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, limit, index_name(tenant_id),
@@ -651,6 +792,7 @@ class Dealer:
             chunk_count = len(dict_chunks)
             if chunk_count == 0 or chunk_count < limit:
                 break
+            p += limit
         return res
 
     def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
@@ -781,6 +923,13 @@ class Dealer:
         vector_size = 1024
         for id, cks in mom_chunks.items():
             chunk = self.dataStore.get(id, idx_nms[0], [ck["kb_id"] for ck in cks])
+            if chunk is None:
+                logging.warning(
+                    "Parent chunk '%s' not found in the index; falling back to %d child chunk(s).",
+                    id, len(cks),
+                )
+                chunks.extend(cks)
+                continue
             d = {
                 "chunk_id": id,
                 "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),

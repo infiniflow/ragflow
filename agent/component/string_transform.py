@@ -105,7 +105,7 @@ class StringTransform(Message, ABC):
                 pass
 
         for k,v in kwargs.items():
-            if not v:
+            if v is None:
                 v = ""
             script = re.sub(k, lambda match: v, script)
 

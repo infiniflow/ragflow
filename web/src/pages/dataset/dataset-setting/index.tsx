@@ -57,6 +57,7 @@ const initialEntityTypes = [
 const enum MethodValue {
   General = 'general',
   Light = 'light',
+  NER = 'ner',
 }
 
 export default function DatasetSettings() {
@@ -94,12 +95,15 @@ export default function DatasetSettings() {
           max_cluster: 64,
           random_seed: 0,
           scope: 'file',
+          clustering_method: 'gmm',
+          tree_builder: 'raptor',
           prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {
           use_graphrag: true,
           entity_types: initialEntityTypes,
           method: MethodValue.Light,
+          batch_chunk_token_size: 4096,
         },
         metadata: {
           type: 'object',

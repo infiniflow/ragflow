@@ -46,6 +46,8 @@ column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk ord
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
 column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chunk id")
 column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
+column_raptor_kwd = Column("raptor_kwd", String(256), nullable=True, comment="RAPTOR summary marker")
+column_raptor_layer_int = Column("raptor_layer_int", Integer, nullable=True, comment="RAPTOR summary layer")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -86,6 +88,8 @@ column_definitions: list[Column] = [
     Column("rank_flt", Double, nullable=True, comment="rank of this entity"),
     Column("removed_kwd", String(256), nullable=True, index=True, server_default="'N'",
            comment="whether it has been deleted"),
+    column_raptor_kwd,
+    column_raptor_layer_int,
     column_chunk_data,
     Column("metadata", JSON, nullable=True, comment="metadata for this chunk"),
     Column("extra", JSON, nullable=True, comment="extra information of non-general chunk"),
@@ -127,7 +131,14 @@ FTS_COLUMNS_TKS: list[str] = [
 ]
 
 # Extra columns to add after table creation (for migration)
-EXTRA_COLUMNS: list[Column] = [column_order_id, column_group_id, column_mom_id, column_chunk_data]
+EXTRA_COLUMNS: list[Column] = [
+    column_order_id,
+    column_group_id,
+    column_mom_id,
+    column_chunk_data,
+    column_raptor_kwd,
+    column_raptor_layer_int,
+]
 
 
 class SearchResult(BaseModel):
