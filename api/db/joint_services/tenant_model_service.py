@@ -294,3 +294,11 @@ def get_model_type_by_name(tenant_id: str, model_name: str):
             raise LookupError(f"Model {pure_model_name} not found for model {model_name}.")
         return [llm_list[0]["model_type"]]
     return [model_obj.model_type for model_obj in model_objs]
+
+
+def delete_models_by_instance_ids(instance_ids: list[str]):
+    return TenantModelService.delete_by_instance_ids(instance_ids)
+
+
+def delete_instances_by_provider_ids(provider_ids: list[str]):
+    return TenantModelInstanceService.delete_by_provider_ids(provider_ids)

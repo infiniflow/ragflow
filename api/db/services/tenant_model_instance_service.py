@@ -60,3 +60,10 @@ class TenantModelInstanceService(CommonService):
             cls.model.provider_id == provider_id,
             cls.model.instance_name == instance_name,
         ).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_provider_ids(cls, provider_ids):
+        return cls.model.delete().where(
+            cls.model.provider_id.in_(provider_ids)
+        ).execute()
