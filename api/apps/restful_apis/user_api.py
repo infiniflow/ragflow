@@ -357,7 +357,7 @@ async def ldap_login():
             message="This account has been disabled, please contact the administrator!",
         )
 
-    response_data = user.to_json()
+    response_data = user.to_safe_dict(for_self=True)
     user.access_token = get_uuid()
     login_user(user)
     user.update_time = current_timestamp()
