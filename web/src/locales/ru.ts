@@ -719,7 +719,8 @@ export default {
       graphRagMethod: 'Метод',
       graphRagMethodTip: `
       Light: (по умолчанию) Промпты github.com/HKUDS/LightRAG для извлечения сущностей и связей. Меньше токенов, памяти и вычислений.</br>
-      General: Промпты github.com/microsoft/graphrag`,
+      General: Промпты github.com/microsoft/graphrag.</br>
+      NER: Использует spaCy NER и извлечение ключевых слов на основе правил для извлечения сущностей и связей. LLM не требуется для самого извлечения, что делает его быстрым и эффективным.`,
       resolution: 'Разрешение сущностей',
       resolutionTip: `Переключатель дедубликации сущностей. Когда включен, LLM объединяет похожие сущности (например «2025» и «год 2025») для более точного графа`,
       community: 'Отчёты сообществ',
@@ -1308,8 +1309,8 @@ export default {
       FishAudioLink: 'Как использовать FishAudio',
       TencentCloudLink: 'Как использовать TencentCloud ASR',
       volcModelNameMessage: 'Пожалуйста, введите название вашей модели!',
-      addEndpointID: 'EndpointID модели',
-      endpointIDMessage: 'Пожалуйста, введите EndpointID модели',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: 'Пожалуйста, введите Model ID модели',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: 'Пожалуйста, введите ваш ARK_API_KEY',
       bedrockModelNameMessage: 'Пожалуйста, введите название вашей модели!',

@@ -144,12 +144,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me", r.userHandler.Info)
 				// User settings endpoint
 				users.PATCH("/me", r.userHandler.Setting)
+				// User tenant info endpoint
+				users.GET("/me/models", r.tenantHandler.TenantInfo)
+				// User set tenant info endpoint
+				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
 			}
 
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
 			}
+
+			v1.GET("/tenant/list", r.tenantHandler.TenantList)
 
 			// Document routes
 			documents := v1.Group("/documents")
@@ -159,6 +165,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
+				documents.POST("/parse", r.documentHandler.ParseDocuments)
 			}
 
 			// Chat routes
@@ -173,8 +180,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
+				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
+				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
+				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
+				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
+				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
+
+				// Dataset documents
+				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+
+				// Dataset document chunk
+				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 			}
 
 			// Search routes
@@ -194,6 +213,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
+				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
 			}
 
@@ -261,6 +281,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
 				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckProviderConnection)
+				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
+				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
@@ -268,12 +290,23 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
+				v1.POST("/embeddings", r.providerHandler.EmbedText)
+				v1.POST("/rerank", r.providerHandler.RerankDocument)
+				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
+				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
+				v1.POST("/file/ocr", r.providerHandler.OCRFile)
+				v1.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")
 			{
 				model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+			}
+
+			connector := v1.Group("/connectors")
+			{
+				connector.GET("/", r.connectorHandler.ListConnectors)
 			}
 
 			system := v1.Group("/system")
@@ -300,7 +333,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 		// Knowledge base routes
-		kb := authorized.Group("/v1/kb")
+		kb := v1.Group("/kb")
 		{
 			kb.POST("/update", r.knowledgebaseHandler.UpdateKB)
 			kb.POST("/update_metadata_setting", r.knowledgebaseHandler.UpdateMetadataSetting)
@@ -316,7 +349,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kbByID := kb.Group("/:kb_id")
 			{
 				kbByID.GET("/tags", r.knowledgebaseHandler.ListTags)
-				kbByID.POST("/rm_tags", r.knowledgebaseHandler.RemoveTags)
 				kbByID.POST("/rename_tag", r.knowledgebaseHandler.RenameTag)
 				kbByID.GET("/knowledge_graph", r.knowledgebaseHandler.KnowledgeGraph)
 				kbByID.DELETE("/knowledge_graph", r.knowledgebaseHandler.DeleteKnowledgeGraph)
@@ -324,7 +356,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 		// Tenant routes (per-tenant resources)
-		tenant := authorized.Group("/v1/tenant")
+		tenant := v1.Group("/tenant")
 		{
 			tenant.POST("/doc_engine_metadata_table", r.tenantHandler.CreateMetadataInDocEngine)   // Internal API only for GO
 			tenant.DELETE("/doc_engine_metadata_table", r.tenantHandler.DeleteMetadataInDocEngine) // Internal API only for GO
@@ -332,7 +364,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 		// Document routes
-		doc := authorized.Group("/v1/document")
+		doc := v1.Group("/document")
 		{
 			doc.POST("/list", r.documentHandler.ListDocuments)
 			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
@@ -340,10 +372,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 		// Chunk routes
-		chunk := authorized.Group("/v1/chunk")
+		chunk := v1.Group("/chunk")
 		{
-			chunk.POST("/retrieval_test", r.chunkHandler.RetrievalTest)
-			chunk.GET("/get", r.chunkHandler.Get)
 			chunk.POST("/list", r.chunkHandler.List)
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 			chunk.POST("/rm", r.chunkHandler.Remove)

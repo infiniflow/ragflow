@@ -166,8 +166,9 @@ func startServer(config *server.Config) {
 	// Initialize service layer
 	userService := service.NewUserService()
 	documentService := service.NewDocumentService()
-	datasetsService := service.NewDatasetsService()
-	kbService := service.NewKnowledgebaseService()
+	datasetsService := service.NewDatasetService()
+	knowledgebaseService := service.NewKnowledgebaseService()
+	metadataService := service.NewMetadataService()
 	chunkService := service.NewChunkService()
 	llmService := service.NewLLMService()
 	tenantService := service.NewTenantService()
@@ -187,10 +188,10 @@ func startServer(config *server.Config) {
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
 	tenantHandler := handler.NewTenantHandler(tenantService, userService)
-	documentHandler := handler.NewDocumentHandler(documentService)
-	datasetsHandler := handler.NewDatasetsHandler(datasetsService)
+	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
+	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
-	kbHandler := handler.NewKnowledgebaseHandler(kbService, userService, documentService)
+	knowledgebaseHandler := handler.NewKnowledgebaseHandler(knowledgebaseService, userService, documentService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
 	llmHandler := handler.NewLLMHandler(llmService, userService)
 	chatHandler := handler.NewChatHandler(chatService, userService)
@@ -203,7 +204,7 @@ func startServer(config *server.Config) {
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, kbHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

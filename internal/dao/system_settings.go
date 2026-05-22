@@ -19,7 +19,6 @@ package dao
 import (
 	"errors"
 	"ragflow/internal/entity"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -36,7 +35,7 @@ func NewSystemSettingsDAO() *SystemSettingsDAO {
 // Returns all system settings records from database
 func (d *SystemSettingsDAO) GetAll() ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Find(&settings).Error
+	err := DB.Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +46,18 @@ func (d *SystemSettingsDAO) GetAll() ([]entity.SystemSettings, error) {
 // Returns settings records that match the given name
 func (d *SystemSettingsDAO) GetByName(name string) ([]entity.SystemSettings, error) {
 	var settings []entity.SystemSettings
-	err := DB.Where("name = ?", name).Find(&settings).Error
+	err := DB.Where("name = ?", name).Order("name ASC").Find(&settings).Error
+	if err != nil {
+		return nil, err
+	}
+	return settings, nil
+}
+
+// GetByNamePrefix get system settings by name prefix
+// Returns settings records whose names start with the given prefix.
+func (d *SystemSettingsDAO) GetByNamePrefix(namePrefix string) ([]entity.SystemSettings, error) {
+	var settings []entity.SystemSettings
+	err := DB.Where("name LIKE ?", namePrefix+"%").Order("name ASC").Find(&settings).Error
 	if err != nil {
 		return nil, err
 	}
@@ -57,31 +67,18 @@ func (d *SystemSettingsDAO) GetByName(name string) ([]entity.SystemSettings, err
 // UpdateByName update system settings by name
 // Updates the setting with the given name using the provided data
 func (d *SystemSettingsDAO) UpdateByName(name string, setting *entity.SystemSettings) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-
 	return DB.Model(&entity.SystemSettings{}).
 		Where("name = ?", name).
 		Updates(map[string]interface{}{
-			"value":       setting.Value,
-			"source":      setting.Source,
-			"data_type":   setting.DataType,
-			"update_time": now,
-			"update_date": nowDate,
+			"value":     setting.Value,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
 		}).Error
 }
 
 // Create create a new system setting
 // Inserts a new system setting record into database
 func (d *SystemSettingsDAO) Create(setting *entity.SystemSettings) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-
-	setting.CreateTime = &now
-	setting.CreateDate = &nowDate
-	setting.UpdateTime = &now
-	setting.UpdateDate = &nowDate
-
 	return DB.Create(setting).Error
 }
 
@@ -96,6 +93,8 @@ func (d *SystemSettingsDAO) SaveOrCreate(name string, value string, source strin
 	if len(settings) == 1 {
 		setting := &settings[0]
 		setting.Value = value
+		setting.Source = source
+		setting.DataType = dataType
 		return d.UpdateByName(name, setting)
 	} else if len(settings) > 1 {
 		return errors.New("can't update more than 1 setting: " + name)
@@ -159,29 +158,16 @@ func (d *SystemSettingsDAO) Transaction(fn func(tx *gorm.DB) error) error {
 
 // CreateWithTx create setting within transaction
 func (d *SystemSettingsDAO) CreateWithTx(tx *gorm.DB, setting *entity.SystemSettings) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-
-	setting.CreateTime = &now
-	setting.CreateDate = &nowDate
-	setting.UpdateTime = &now
-	setting.UpdateDate = &nowDate
-
 	return tx.Create(setting).Error
 }
 
 // UpdateByNameWithTx update setting within transaction
 func (d *SystemSettingsDAO) UpdateByNameWithTx(tx *gorm.DB, name string, setting *entity.SystemSettings) error {
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-
 	return tx.Model(&entity.SystemSettings{}).
 		Where("name = ?", name).
 		Updates(map[string]interface{}{
-			"value":       setting.Value,
-			"source":      setting.Source,
-			"data_type":   setting.DataType,
-			"update_time": now,
-			"update_date": nowDate,
+			"value":     setting.Value,
+			"source":    setting.Source,
+			"data_type": setting.DataType,
 		}).Error
 }

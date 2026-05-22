@@ -406,10 +406,35 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	return scanner.Err()
 }
 
-// Encode encodes a list of texts into embeddings
-func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+type volcengineEmbeddingResponse struct {
+	Created int64                   `json:"created"`
+	Data    volcengineEmbeddingData `json:"data"`
+	ID      string                  `json:"id"`
+	Model   string                  `json:"model"`
+	Object  string                  `json:"object"`
+	Usage   volcengineUsage         `json:"usage"`
+}
+
+type volcengineEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Object    string    `json:"object"`
+}
+
+type volcengineUsage struct {
+	PromptTokens        int                            `json:"prompt_tokens"`
+	TotalTokens         int                            `json:"total_tokens"`
+	PromptTokensDetails *volcenginePromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+type volcenginePromptTokensDetails struct {
+	ImageTokens int `json:"image_tokens"`
+	TextTokens  int `json:"text_tokens"`
+}
+
+// Embed embeds a list of texts into embeddings
+func (z *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	var region = "default"
@@ -419,7 +444,7 @@ func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APICon
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Embedding)
 
-	embeddings := make([][]float64, len(texts))
+	var embeddings []EmbeddingData
 
 	for i, text := range texts {
 
@@ -466,37 +491,108 @@ func (z *VolcEngine) Encode(modelName *string, texts []string, apiConfig *APICon
 			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
-		// Volcengine multimodal embedding response
-		type VolcengineEmbeddingResponse struct {
-			Data struct {
-				Embedding []float64 `json:"embedding"`
-				Object    string    `json:"object"`
-			} `json:"data"`
-		}
-
-		var result VolcengineEmbeddingResponse
-
-		if err = json.Unmarshal(body, &result); err != nil {
+		var parsed volcengineEmbeddingResponse
+		if err = json.Unmarshal(body, &parsed); err != nil {
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		if len(result.Data.Embedding) == 0 {
-			return nil, fmt.Errorf("empty embedding in response")
-		}
-
-		embeddings[i] = result.Data.Embedding
+		var embeddingData EmbeddingData
+		embeddingData.Index = i
+		embeddingData.Embedding = parsed.Data.Embedding
+		embeddings = append(embeddings, embeddingData)
 	}
 
 	return embeddings, nil
 }
 
-// Rerank calculates similarity scores between query and texts
-func (z *VolcEngine) Rerank(modelName *string, query string, texts []string, apiConfig *APIConfig) ([]float64, error) {
+// Rerank calculates similarity scores between query and documents
+func (z *VolcEngine) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
 }
 
-func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
+// TranscribeAudio transcribe audio
+func (o *VolcEngine) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *VolcEngine) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (o *VolcEngine) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *VolcEngine) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *VolcEngine) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *VolcEngine) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL := z.BaseURL[region]
+	if baseURL == "" {
+		baseURL = z.BaseURL["default"]
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("VolcEngine models API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var modelList DSModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	models := make([]string, 0, len(modelList.Models))
+	for _, model := range modelList.Models {
+		modelName := model.ID
+		if model.OwnedBy != "" {
+			modelName = model.ID + "@" + model.OwnedBy
+		}
+		models = append(models, modelName)
+	}
+
+	return models, nil
 }
 
 func (z *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -535,4 +631,12 @@ func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+func (z *VolcEngine) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *VolcEngine) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

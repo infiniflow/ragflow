@@ -24,7 +24,6 @@ from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.user_service import TenantService
-from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
 
 class LLMFactoriesService(CommonService):
@@ -183,6 +182,8 @@ class TenantLLMService(CommonService):
     def model_instance(cls, model_config: dict, lang="Chinese", **kwargs):
         if not model_config:
             raise LookupError("Model config is required")
+        from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
+
         kwargs.update({"provider": model_config["llm_factory"]})
         api_key = model_config.get("api_key_payload", model_config["api_key"])
         if model_config["model_type"] == LLMType.EMBEDDING.value:

@@ -17,7 +17,6 @@ import asyncio
 import base64
 import datetime
 import inspect
-import binascii
 import json
 import logging
 import re
@@ -39,6 +38,7 @@ from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
+from rag.utils.tts_cache import synthesize_with_cache
 
 class Graph:
     """
@@ -263,7 +263,7 @@ class Graph:
         keys = path.split('.')
         if not path:
             return value
-        for key in keys:
+        for key in keys[:-1]:
             if key not in cur or not isinstance(cur[key], dict):
                 cur[key] = {}
             cur = cur[key]
@@ -714,14 +714,7 @@ class Canvas(Graph):
         text = clean_tts_text(text)
         if not text:
             return None
-        bin = b""
-        try:
-            for chunk in tts_mdl.tts(text):
-                bin += chunk
-        except Exception as e:
-            logging.error(f"TTS failed: {e}, text={text!r}")
-            return None
-        return binascii.hexlify(bin).decode("utf-8")
+        return synthesize_with_cache(tts_mdl, text)
 
     def get_history(self, window_size):
         convs = []
