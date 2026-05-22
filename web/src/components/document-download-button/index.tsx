@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { IDocumentDownloadInfo } from '@/interfaces/database/chat';
-import { downloadFile } from '@/services/file-manager-service';
+import { downloadAgentFile } from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { Download, FileText } from 'lucide-react';
 import { useCallback } from 'react';
@@ -20,7 +20,7 @@ export function DocumentDownloadButton({
     try {
       const ext =
         downloadInfo.filename.split('.').pop()?.toLowerCase() || 'bin';
-      const response = await downloadFile({
+      const response = await downloadAgentFile({
         docId: downloadInfo.doc_id,
         ext,
       });
