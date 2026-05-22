@@ -1,0 +1,12 @@
+{
+  "name": "RAGcon",
+  "url": {
+    "default": "https://connect.ragcon.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "ragcon"
+}
