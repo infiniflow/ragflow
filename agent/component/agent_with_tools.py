@@ -37,7 +37,7 @@ from rag.prompts.generator import citation_plus, citation_prompt, full_question,
 from contextvars import ContextVar
 from enum import Enum
 
-# --- STATE TRACKER ---
+# --- NEW STATE TRACKER ---
 class ToolExecutionState(Enum):
     NOT_CALLED = 1
     SUCCESS = 2
@@ -88,16 +88,6 @@ class Agent(LLM, ToolBase):
     """
     component_name = "Agent"
 
-    @staticmethod
-    def _claims_tool_action(text: str) -> bool:
-        return bool(
-            re.search(
-                r"\b(i|we)\s+(searched|fetched|retrieved|queried|looked up|called)\b",
-                text,
-                re.IGNORECASE,
-            )
-        )
-
     def __init__(self, canvas, id, param: LLMParam):
         """
         Initialize the Agent component, bind available standard and MCP tools, 
@@ -139,33 +129,25 @@ class Agent(LLM, ToolBase):
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta, function_name=indexed_name))
                 self.tools[indexed_name] = MCPToolBinding(tool_call_session, tnm)
                 
+        # --- THE CONCURRENCY FIX & VALIDATION FUNNEL ---
         original_callback = partial(self._canvas.tool_use_callback, id)
         
+        # Helper to detect nested empty structures - Unwrapping descriptors)
         def _is_deeply_empty(data):
             if isinstance(data, (bool, int, float)):
                 return False
             if not data:
                 return True
+                
             if isinstance(data, dict):
-                # Unwrap output-descriptor dicts
-                non_internal_keys = {k for k in data if not str(k).startswith("_")}
-                if "value" in data and non_internal_keys <= {
-                    "name", "type", "value", "required", "description", "options"
-                }:
-                    return _is_deeply_empty(data.get("value"))
+                # Unwrap common tool descriptors first
+                for wrapper_key in ["value", "content", "data", "result", "results"]:
+                    if wrapper_key in data:
+                        return _is_deeply_empty(data[wrapper_key])
+                        
+                # If no wrappers, evaluate all values
+                return all(_is_deeply_empty(v) for v in data.values())
                 
-                # Protect file/image artifacts
-                artifacts = data.get("_ARTIFACTS")
-                if isinstance(artifacts, dict):
-                    artifacts = artifacts.get("value")
-                if artifacts:
-                    return False
-                
-                business_data = {k: v for k, v in data.items() if not str(k).startswith("_")}
-                if not business_data:
-                    return True
-                return all(_is_deeply_empty(v) for v in business_data.values())
-            
             if isinstance(data, (list, tuple)):
                 return all(_is_deeply_empty(v) for v in data)
             if isinstance(data, str):
@@ -173,25 +155,16 @@ class Agent(LLM, ToolBase):
             return False
         
         def tracking_callback(*args, **kwargs):
+            # Ignore internal system calls
             if args and args[0] in ("Multi-turn conversation optimization", "gen_citations"):
                 return original_callback(*args, **kwargs)
-            
-            # Check specific tool metadata for internal errors
-            tool_name = args[0] if args else kwargs.get("func_name")
-            tool_obj = self.tools.get(tool_name) if tool_name else None
-            tool_outputs = getattr(getattr(tool_obj, "_param", None), "outputs", None)
-            tool_failed = isinstance(tool_outputs, dict) and bool(
-                tool_outputs.get("_ERROR", {}).get("value")
-            )
                 
             output = args[2] if len(args) > 2 else kwargs.get("output", None)
             
             # 1. Evaluate THIS specific tool's output state
             this_tool_state = ToolExecutionState.SUCCESS # Default fallback
             
-            if tool_failed:
-                this_tool_state = ToolExecutionState.ERROR
-            elif output is None:
+            if output is None:
                 this_tool_state = ToolExecutionState.EMPTY_RESULT
             elif isinstance(output, dict):
                 if "_ERROR" in output:
@@ -202,27 +175,22 @@ class Agent(LLM, ToolBase):
                 if len(output) == 0 or _is_deeply_empty(output):
                     this_tool_state = ToolExecutionState.EMPTY_RESULT
             elif isinstance(output, str):
-                if "**ERROR**" in output:
+                if "**ERROR**" in output or "Unmatched input parameters" in output:
                     this_tool_state = ToolExecutionState.ERROR
                 elif not output.strip(): 
                     this_tool_state = ToolExecutionState.EMPTY_RESULT
                     
             # 2. MONOTONIC MERGE: Never let a lower-priority state erase a higher-priority one
             current_state = _tool_state_tracker.get()
-                        
+            
             if this_tool_state == ToolExecutionState.SUCCESS:
-                if current_state != ToolExecutionState.SUCCESS:
-                    logging.debug(f"Tool [{tool_name}] state transition: {current_state.name} -> SUCCESS")
                 _tool_state_tracker.set(ToolExecutionState.SUCCESS)
             elif this_tool_state == ToolExecutionState.ERROR and current_state != ToolExecutionState.SUCCESS:
-                logging.debug(f"Tool [{tool_name}] state transition: {current_state.name} -> ERROR")
                 _tool_state_tracker.set(ToolExecutionState.ERROR)
             elif this_tool_state == ToolExecutionState.EMPTY_RESULT and current_state == ToolExecutionState.NOT_CALLED:
-                logging.debug(f"Tool [{tool_name}] state transition: {current_state.name} -> EMPTY_RESULT")
                 _tool_state_tracker.set(ToolExecutionState.EMPTY_RESULT)
                         
             return original_callback(*args, **kwargs)
-            
         self.callback = tracking_callback
         self.toolcall_session = LLMToolPluginCallSession(self.tools, self.callback)
         
@@ -280,6 +248,7 @@ class Agent(LLM, ToolBase):
         self._param.function_name = self._id.split("-->")[-1]
         m = super().get_meta()
         if hasattr(self._param, "user_prompt") and self._param.user_prompt:
+            # Keep the JSON schema valid; user_prompt is a string field, not a schema node.
             m["function"]["parameters"]["properties"]["user_prompt"]["default"] = self._param.user_prompt
         return m
 
@@ -331,24 +300,31 @@ class Agent(LLM, ToolBase):
         """
         return asyncio.run(self._invoke_async(**kwargs))
 
+    
     def _get_tool_execution_state(self) -> ToolExecutionState:
         """
         Safely evaluate the execution state of the invoked tools.
+        Relies exclusively on the ContextVar populated by the tracking_callback 
+        to ensure we only evaluate current-invocation evidence.
         """
         return _tool_state_tracker.get()
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     async def _invoke_async(self, **kwargs):
+        """
+        Execute the primary asynchronous agent logic, including prompt formatting, tool invocation,
+        and applying state-aware trapdoors to override hallucinated actions.
+        """
         if self.check_if_canceled("Agent processing"):
             return
 
-        # STRICT RESET for this async context, retaining token to restore later 
+        # STRICT RESET for this async context, retaining token to restore later
         state_token = _tool_state_tracker.set(ToolExecutionState.NOT_CALLED)
 
         try:
-            local_user_msg = None
+            # Manage prompt scope locally instead of mutating shared instance parameters
+            usr_pmt = ""
             if kwargs.get("user_prompt"):
-                usr_pmt = ""
                 if kwargs.get("reasoning"):
                     usr_pmt += "\nREASONING:\n{}\n".format(kwargs["reasoning"])
                 if kwargs.get("context"):
@@ -357,23 +333,22 @@ class Agent(LLM, ToolBase):
                     usr_pmt += "\nQUERY:\n{}\n".format(str(kwargs["user_prompt"]))
                 else:
                     usr_pmt = str(kwargs["user_prompt"])
-                local_user_msg = {"role": "user", "content": usr_pmt}
 
             if not self.tools:
                 if self.check_if_canceled("Agent processing"):
                     return
-                # If no tools, inject locally without touching self._param
-                if local_user_msg and not self._param.prompts:
-                    self._param.prompts = [local_user_msg]
-                return await LLM._invoke_async(self, **kwargs)
+                
+                # Pass the enriched prompt down to the base LLM class locally
+                local_kwargs = kwargs.copy()
+                if usr_pmt:
+                    local_kwargs["user_prompt"] = usr_pmt
+                return await LLM._invoke_async(self, **local_kwargs)
 
             prompt, msg, user_defined_prompt = self._prepare_prompt_variables()
             
-            # Inject directly into the message array to avoid mutating shared state
-            if local_user_msg:
-                msg.append(local_user_msg)
-            elif self._param.prompts:
-                msg.extend(self._param.prompts)
+            # Inject the locally scoped prompt directly into the message payload
+            if usr_pmt:
+                msg.append({"role": "user", "content": usr_pmt})
 
             output_schema = self._get_output_schema()
 
@@ -386,39 +361,39 @@ class Agent(LLM, ToolBase):
                 self.set_output("content", partial(self.stream_output_with_tools_async, prompt, deepcopy(msg), user_defined_prompt))
                 return
 
+            msg = self._fit_messages(prompt, msg)
+            
+            # TIGHTENED SAFETY PROMPT
             safety_prompt = (
                 "SYSTEM WARNING: You are bound to strict tool validation. "
                 "ONLY if you attempt to use a tool and it fails or returns no context, "
                 "you MUST NOT invent an answer. You must reply EXACTLY with 'ACTION_NOT_PERFORMED'. "
                 "If you are answering a greeting or non-tool query, answer normally."
             )
-            prompt += "\n" + safety_prompt
+            self._append_system_prompt(msg, safety_prompt)
 
             schema_prompt = ""
             if output_schema:
                 schema = json.dumps(output_schema, ensure_ascii=False, indent=2)
                 schema_prompt = structured_output_prompt(schema)
-                prompt += "\n" + schema_prompt
-
-            msg = self._fit_messages(prompt, msg)
+                self._append_system_prompt(msg, schema_prompt)
 
             ans = await self._generate_async(msg)
             
             # LAYER 2: ASYNC-SAFE TRAPDOOR
             current_tool_state = self._get_tool_execution_state()
             
-            if current_tool_state == ToolExecutionState.EMPTY_RESULT or (
-                current_tool_state == ToolExecutionState.NOT_CALLED
-                and self._claims_tool_action(ans)
-            ):
-                logging.info("Trapdoor triggered: Legitimate empty retrieval or fake action claim, overriding LLM.")
+            if current_tool_state == ToolExecutionState.EMPTY_RESULT:
+                logging.info("Trapdoor triggered: Legitimate empty retrieval, overriding LLM.")
                 ans = "ACTION_NOT_PERFORMED"
                 
                 # 1. ALWAYS broadcast the sentinel to the standard text channel
+                # This ensures the business status is available to the system/UI.
                 self.set_output("content", ans)
                 
                 if output_schema:
                     # 2. Send an empty dict to the structured channel 
+                    # This maintains the contract for rigid downstream components.
                     self.set_output("structured", {})
                     return {}
                     
@@ -454,10 +429,11 @@ class Agent(LLM, ToolBase):
             return ans
             
         finally:
+            # Restore parent context token
             _tool_state_tracker.reset(state_token)
 
     async def stream_output_with_tools_async(self, prompt, msg, user_defined_prompt={}):
-        # STRICT RESET with token retention 
+        # STRICT RESET with token retention
         state_token = _tool_state_tracker.set(ToolExecutionState.NOT_CALLED)
         
         try:
@@ -467,21 +443,21 @@ class Agent(LLM, ToolBase):
                 self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer() - st)
                 msg = [*msg[:-1], {"role": "user", "content": user_request}]
 
+            msg = self._fit_messages(prompt, msg)
+
             safety_prompt = (
                 "SYSTEM WARNING: You are bound to strict tool validation. "
                 "ONLY if you attempt to use a tool and it fails or returns no context, "
                 "you MUST NOT invent an answer. You must reply EXACTLY with 'ACTION_NOT_PERFORMED'. "
                 "If you are answering a greeting or non-tool query, answer normally."
             )
-            prompt += "\n" + safety_prompt
+            self._append_system_prompt(msg, safety_prompt)
 
             need2cite = self._param.cite and self._canvas.get_reference()["chunks"] and self._id.find("-->") < 0
             cited = False
             if need2cite and len(msg) < 7:
-                prompt += "\n" + citation_prompt()
+                self._append_system_prompt(msg, citation_prompt())
                 cited = True
-
-            msg = self._fit_messages(prompt, msg)
 
             answer = ""
             trapdoor_fired = False
@@ -491,13 +467,9 @@ class Agent(LLM, ToolBase):
                     return
                     
                 # THE STREAMING TRAPDOOR (In-Loop)
-                current_tool_state = self._get_tool_execution_state()
-                if current_tool_state == ToolExecutionState.EMPTY_RESULT or (
-                    current_tool_state == ToolExecutionState.NOT_CALLED
-                    and self._claims_tool_action(answer + delta)
-                ):
+                if self._get_tool_execution_state() == ToolExecutionState.EMPTY_RESULT:
                     if not trapdoor_fired:
-                        logging.info("Trapdoor triggered during stream: Empty tool outputs or fake claim.")
+                        logging.info("Trapdoor triggered during stream: Empty tool outputs.")
                         yield "ACTION_NOT_PERFORMED"
                         answer = "ACTION_NOT_PERFORMED"
                         self.set_output("content", answer)
@@ -520,12 +492,8 @@ class Agent(LLM, ToolBase):
                 answer += delta
 
             # THE STREAMING TRAPDOOR (Zero-Delta Catch)
-            current_tool_state = self._get_tool_execution_state()
-            if not trapdoor_fired and (
-                current_tool_state == ToolExecutionState.EMPTY_RESULT or 
-                (current_tool_state == ToolExecutionState.NOT_CALLED and self._claims_tool_action(answer))
-            ):
-                logging.info("Trapdoor triggered after stream (zero-delta): Empty tool outputs or fake claim.")
+            if not trapdoor_fired and self._get_tool_execution_state() == ToolExecutionState.EMPTY_RESULT:
+                logging.info("Trapdoor triggered after stream (zero-delta): Empty tool outputs.")
                 yield "ACTION_NOT_PERFORMED"
                 answer = "ACTION_NOT_PERFORMED"
                 self.set_output("content", answer)
@@ -547,13 +515,9 @@ class Agent(LLM, ToolBase):
                     return
                     
                 # Citation loop protection
-                current_tool_state = self._get_tool_execution_state()
-                if current_tool_state == ToolExecutionState.EMPTY_RESULT or (
-                    current_tool_state == ToolExecutionState.NOT_CALLED
-                    and self._claims_tool_action(cited_answer + delta)
-                ):
+                if self._get_tool_execution_state() == ToolExecutionState.EMPTY_RESULT:
                     if not trapdoor_fired:
-                        logging.info("Trapdoor triggered during citations stream: Empty tool outputs or fake claim.")
+                        logging.info("Trapdoor triggered during citations stream: Empty tool outputs.")
                         yield "ACTION_NOT_PERFORMED"
                         cited_answer = "ACTION_NOT_PERFORMED"
                         self.set_output("content", cited_answer)
@@ -564,12 +528,8 @@ class Agent(LLM, ToolBase):
                 cited_answer += delta
 
             # Zero-Delta Catch for citations
-            current_tool_state = self._get_tool_execution_state()
-            if not trapdoor_fired and (
-                current_tool_state == ToolExecutionState.EMPTY_RESULT or 
-                (current_tool_state == ToolExecutionState.NOT_CALLED and self._claims_tool_action(cited_answer))
-            ):
-                logging.info("Trapdoor triggered after citations stream (zero-delta): Empty tool outputs or fake claim.")
+            if not trapdoor_fired and self._get_tool_execution_state() == ToolExecutionState.EMPTY_RESULT:
+                logging.info("Trapdoor triggered after citations stream (zero-delta): Empty tool outputs.")
                 yield "ACTION_NOT_PERFORMED"
                 cited_answer = "ACTION_NOT_PERFORMED"
                 self.set_output("content", cited_answer)
@@ -584,6 +544,7 @@ class Agent(LLM, ToolBase):
             self.set_output("content", cited_answer)
             
         finally:
+            # Restore parent context token
             _tool_state_tracker.reset(state_token)
 
     async def _gen_citations_async(self, text):
