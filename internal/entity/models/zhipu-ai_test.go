@@ -16,27 +16,34 @@ func TestZhipuAIOCRFileSendsLayoutParsingRequest(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/layout_parsing" {
-			t.Fatalf("path = %s, want /layout_parsing", r.URL.Path)
+			t.Errorf("path = %s, want /layout_parsing", r.URL.Path)
+			return
 		}
 		if r.Method != http.MethodPost {
-			t.Fatalf("method = %s, want POST", r.Method)
+			t.Errorf("method = %s, want POST", r.Method)
+			return
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer "+apiKey {
-			t.Fatalf("Authorization = %q", got)
+			t.Errorf("Authorization = %q", got)
+			return
 		}
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
-			t.Fatalf("Content-Type = %q", got)
+			t.Errorf("Content-Type = %q", got)
+			return
 		}
 
 		var req map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			return
 		}
 		if req["model"] != modelName {
-			t.Fatalf("model = %q, want %q", req["model"], modelName)
+			t.Errorf("model = %q, want %q", req["model"], modelName)
+			return
 		}
 		if req["file"] != fileURL {
-			t.Fatalf("file = %q, want %q", req["file"], fileURL)
+			t.Errorf("file = %q, want %q", req["file"], fileURL)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -62,10 +69,37 @@ func TestZhipuAIOCRFileEncodesContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			return
 		}
-		if req["file"] != "c2FtcGxlIGltYWdlIGJ5dGVz" {
-			t.Fatalf("file = %q, want raw base64 content", req["file"])
+		if !strings.HasPrefix(req["file"], "data:text/plain; charset=utf-8;base64,") {
+			t.Errorf("file = %q, want base64 data URL", req["file"])
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"md_results": "ok"})
+	}))
+	defer server.Close()
+
+	model := NewZhipuAIModel(map[string]string{"default": server.URL}, URLSuffix{OCR: "layout_parsing"})
+	if _, err := model.OCRFile(&modelName, content, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
+		t.Fatalf("OCRFile returned error: %v", err)
+	}
+}
+
+func TestZhipuAIOCRFileDetectsPDFContent(t *testing.T) {
+	apiKey := "test-key"
+	modelName := "glm-ocr"
+	content := []byte("%PDF-1.7 sample")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		if !strings.HasPrefix(req["file"], "data:application/pdf;base64,") {
+			t.Errorf("file = %q, want PDF data URL", req["file"])
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"md_results": "ok"})
 	}))

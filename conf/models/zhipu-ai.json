@@ -10,6 +10,8 @@
     "embedding": "embeddings",
     "rerank": "rerank",
     "ocr": "layout_parsing",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech",
     "files": "files",
     "models": "models"
   },

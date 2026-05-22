@@ -3,10 +3,13 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"strings"
 	"time"
@@ -531,9 +534,103 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 	return &rerankResponse, nil
 }
 
+type openRouterTranscriptionResponse struct {
+	Text string `json:"text"`
+}
+
+func openRouterAudioFormat(file string, asrConfig *ASRConfig) string {
+	if asrConfig != nil && asrConfig.Params != nil {
+		if format, ok := asrConfig.Params["format"]; ok && format != nil {
+			if value := strings.TrimPrefix(fmt.Sprint(format), "."); value != "" {
+				return value
+			}
+		}
+	}
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(file)), ".")
+	if ext == "" {
+		return "wav"
+	}
+	return ext
+}
+
 // TranscribeAudio transcribe audio
 func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("OpenRouter API key is missing")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+	if o.URLSuffix.ASR == "" {
+		return nil, fmt.Errorf("OpenRouter ASR url suffix is missing")
+	}
+
+	audio, err := os.ReadFile(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read audio file: %w", err)
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input_audio": map[string]interface{}{
+			"data":   base64.StdEncoding.EncodeToString(audio),
+			"format": openRouterAudioFormat(*file, asrConfig),
+		},
+	}
+
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+			switch key {
+			case "format", "model", "input_audio":
+				continue
+			}
+			reqBody[key] = value
+		}
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(o.BaseURL[region], "/"), o.URLSuffix.ASR)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenRouter ASR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var result openRouterTranscriptionResponse
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse transcription response: %w", err)
+	}
+
+	return &ASRResponse{Text: result.Text}, nil
 }
 
 func (z *OpenRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
@@ -652,7 +749,7 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s : %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
