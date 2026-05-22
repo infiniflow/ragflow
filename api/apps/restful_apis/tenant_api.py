@@ -179,6 +179,13 @@ async def set_account_role(tenant_id, user_id):
 
     try:
         UserService.update_user(user_id, {"account_role": account_role})
+        logging.info(
+            "Account role changed: user_id=%s new_role=%s changed_by=%s tenant_id=%s",
+            user_id,
+            account_role,
+            current_user.id,
+            tenant_id,
+        )
         return get_json_result(data=True)
     except Exception as exc:
         return server_error_response(exc)
