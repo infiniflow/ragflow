@@ -5,7 +5,9 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
   },
   "class": "groq",
   "models": [
@@ -52,6 +54,13 @@
       ]
     },
     {
+      "name": "openai/gpt-oss-20b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
       "name": "meta-llama/llama-4-scout-17b-16e-instruct",
       "max_tokens": 131072,
       "model_types": [
@@ -63,6 +72,30 @@
       "max_tokens": 131072,
       "model_types": [
         "chat"
+      ]
+    },
+    {
+      "name": "canopylabs/orpheus-v1-english",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "canopylabs/orpheus-arabic-saudi",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "whisper-large-v3-turbo",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "whisper-large-v3",
+      "model_types": [
+        "asr"
       ]
     }
   ]

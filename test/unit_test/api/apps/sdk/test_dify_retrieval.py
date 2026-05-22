@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for retrieval in api/apps/sdk/dify_retrieval.py.
+"""Regression tests for retrieval in api/apps/restful_apis/dify_retrieval_api.py.
 
 Issue #15027: cross-tenant knowledge-base access via POST /api/v1/dify/retrieval.
 The handler authenticated the caller via @apikey_required (resolving
@@ -84,7 +84,7 @@ class _FakeKGRetriever:
 
 
 def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=None):
-    """Load dify_retrieval.py with minimum stubs to exercise the retrieval handler."""
+    """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
     _stub(
         monkeypatch,
         "api.utils.api_utils",
@@ -148,7 +148,7 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
     monkeypatch.setitem(sys.modules, "quart", quart_stub)
 
     repo_root = Path(__file__).resolve().parents[5]
-    module_path = repo_root / "api" / "apps" / "sdk" / "dify_retrieval.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "dify_retrieval_api.py"
     spec = importlib.util.spec_from_file_location("test_dify_retrieval_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _PassthroughManager()

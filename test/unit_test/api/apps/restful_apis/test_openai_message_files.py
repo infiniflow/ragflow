@@ -60,6 +60,7 @@ def _load_openai_api(monkeypatch):
         return f"file-uuid-{uuid_counter['n']}"
 
     _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
+    _stub(monkeypatch, "api.db.services.conversation_service", ConversationService=SimpleNamespace(), structure_answer=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.dialog_service", DialogService=SimpleNamespace(), async_chat=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace())
     _stub(monkeypatch, "api.db.services.file_service", FileService=SimpleNamespace(put_blob=_put_blob))
@@ -150,6 +151,21 @@ class TestResolveMessageFiles:
         module, _ = _load_openai_api(monkeypatch)
         with pytest.raises(ValueError, match="not valid base64"):
             module._resolve_message_files([{"blob": "not!base64!", "display_name": "a.txt"}])
+
+    def test_malformed_data_uri_raises(self, monkeypatch):
+        """A `data:` prefix without a comma separator must be rejected, not
+        silently treated as an empty blob."""
+        module, _ = _load_openai_api(monkeypatch)
+        with pytest.raises(ValueError, match="malformed data URI"):
+            module._resolve_message_files([{"blob": "data:image/png;base64", "display_name": "a.png"}])
+
+    def test_oversized_blob_raises(self, monkeypatch):
+        """A decoded blob larger than the configured cap is rejected."""
+        module, _ = _load_openai_api(monkeypatch)
+        monkeypatch.setattr(module, "MAX_INLINE_FILE_BYTES", 8)
+        blob = base64.b64encode(b"way more than eight bytes").decode()
+        with pytest.raises(ValueError, match="exceeds"):
+            module._resolve_message_files([{"blob": blob, "display_name": "big.bin"}])
 
     def test_entry_without_blob_or_id_raises(self, monkeypatch):
         module, _ = _load_openai_api(monkeypatch)
