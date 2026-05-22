@@ -16,14 +16,15 @@
 
 """Unit tests for composite storage image ID parsing."""
 
-from io import BytesIO
 from functools import partial
 
+import pytest
 from PIL import Image
 
 from rag.utils import base64_image
 
 
+@pytest.mark.p2
 class TestParseStorageCompositeId:
     """Tests for parse_storage_composite_id."""
 
@@ -49,6 +50,7 @@ class TestParseStorageCompositeId:
         assert base64_image.parse_storage_composite_id("") is None
 
 
+@pytest.mark.p2
 class TestId2Image:
     """Tests for id2image loading via composite IDs."""
 

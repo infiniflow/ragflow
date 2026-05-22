@@ -125,6 +125,7 @@ def id2image(image_id: str | None, storage_get_func: partial):
         return
     parsed = parse_storage_composite_id(image_id)
     if not parsed:
+        logging.debug("Invalid image_id composite format: %s", image_id)
         return
     bkt, nm = parsed
     try:
