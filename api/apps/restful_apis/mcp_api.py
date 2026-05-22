@@ -300,18 +300,15 @@ async def test_mcp(mcp_id: str) -> Response:
     url = req.get("url", "")
     if not url:
         return get_data_error_result(message="Invalid MCP url.")
-    try:
-        hostname, resolved_ip = assert_url_is_safe(url)
-    except ValueError as exc:
-        return get_data_error_result(message=str(exc))
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
         return get_data_error_result(message="Unsupported MCP server type.")
 
-    mcp_server_record = MCPServerService.get_or_none(id=mcp_id, tenant_id=current_user.id)
-    if mcp_server_record is None:
-        return get_data_error_result(message=f"Cannot find MCP server {mcp_id} for user {current_user.id}")
+    try:
+        hostname, resolved_ip = assert_url_is_safe(url)
+    except ValueError as exc:
+        return get_data_error_result(message=str(exc))
 
     timeout = get_float(req, "timeout", 10)
     headers = safe_json_parse(req.get("headers", {}))

@@ -18,6 +18,7 @@ import importlib.util
 import inspect
 import json
 import sys
+from contextlib import nullcontext
 from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -693,6 +694,8 @@ def test_detail_download_success_and_exception(monkeypatch):
 @pytest.mark.p2
 def test_test_mcp_route_matrix_unit(monkeypatch):
     module = _load_mcp_api(monkeypatch)
+    monkeypatch.setattr(module, "assert_url_is_safe", lambda _url: ("a", "93.184.216.34"))
+    monkeypatch.setattr(module, "pin_dns_global", lambda *_args, **_kwargs: nullcontext())
 
     _set_request_json(monkeypatch, module, {"url": "", "server_type": "sse"})
     res = _run(module.test_mcp("mcp-1"))
