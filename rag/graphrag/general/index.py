@@ -16,7 +16,6 @@
 import asyncio
 import json
 import logging
-import os
 
 import networkx as nx
 
@@ -464,16 +463,23 @@ async def run_graphrag_for_kb(
             union_nodes.update(set(sg.nodes()))
 
             try:
-                new_graph = await _run_with_retry(
-                    f"merge_subgraph doc:{doc_id}",
-                    lambda: merge_subgraph(
+                async def merge_subgraph_attempt():
+                    current_graph = await get_graph(tenant_id, kb_id)
+                    if current_graph and doc_id in current_graph.graph.get("source_id", []):
+                        callback(msg=f"[GraphRAG] merge_subgraph doc:{doc_id} already merged, skipping retry.")
+                        return current_graph
+                    return await merge_subgraph(
                         tenant_id,
                         kb_id,
                         doc_id,
                         sg,
                         embedding_model,
                         callback,
-                    ),
+                    )
+
+                new_graph = await _run_with_retry(
+                    f"merge_subgraph doc:{doc_id}",
+                    merge_subgraph_attempt,
                     attempts=merge_retry_attempts,
                     timeout_seconds=merge_timeout_seconds,
                     backoff_seconds=retry_backoff_seconds,
