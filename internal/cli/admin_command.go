@@ -1289,16 +1289,16 @@ func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("GET", "/admin/ingestors", "admin", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop token: %w", err)
+		return nil, fmt.Errorf("failed to list ingestors: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to list ingestors: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("list ingestors failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1324,16 +1324,16 @@ func (c *RAGFlowClient) AdminIngestCommand(cmd *Command) (ResponseIf, error) {
 
 	resp, err := c.HTTPClient.Request("POST", "/admin/ingestion", "admin", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop token: %w", err)
+		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop token: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("drop token failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
@@ -1343,4 +1343,39 @@ func (c *RAGFlowClient) AdminIngestCommand(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 
+}
+
+func (c *RAGFlowClient) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	ingestorName, ok := cmd.Params["ingestor_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("ingestor_name not provided")
+	}
+	payload := map[string]interface{}{
+		"ingestor_name": ingestorName,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/admin/ingestors", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to shutdown ingestor: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to shutdown ingestor: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("shutdown ingestor failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
 }

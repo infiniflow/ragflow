@@ -189,6 +189,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListAdminIngestors(cmd)
 	case "admin_ingest_command":
 		return c.AdminIngestCommand(cmd)
+	case "admin_shutdown_ingestor_command":
+		return c.AdminShutdownIngestor(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

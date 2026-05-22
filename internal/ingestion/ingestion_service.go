@@ -37,6 +37,9 @@ type Ingestor struct {
 	// Runtime state
 	currentTasks map[string]*TaskContext
 	tasksMu      sync.RWMutex
+
+	// Shutdown channel - receive on this to trigger graceful shutdown
+	ShutdownCh chan struct{}
 }
 
 type TaskContext struct {
@@ -61,6 +64,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		supportedDocTypes: supportedTypes,
 		version:           "1.0.0",
 		currentTasks:      make(map[string]*TaskContext),
+		ShutdownCh:        make(chan struct{}, 1),
 	}
 }
 
@@ -235,6 +239,16 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 	}
 
 	common.Info(fmt.Sprintf("Received task: %s, task_type=%s", task.TaskId, task.TaskType))
+
+	// If the admin sends a "shutdown" task, initiate graceful shutdown
+	if task.TaskType == "shutdown" {
+		common.Info(fmt.Sprintf("Shutdown task received, initiating graceful shutdown of ingestor %s", e.id))
+		select {
+		case e.ShutdownCh <- struct{}{}:
+		default:
+		}
+		return
+	}
 
 	// Check if there is an available slot
 	e.tasksMu.RLock()

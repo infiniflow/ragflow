@@ -1286,6 +1286,27 @@ func (h *Handler) ListIngestors(c *gin.Context) {
 	success(c, ingestors, "Get all tasks")
 }
 
+type ShutdownIngestorRequest struct {
+	IngestorID string `json:"ingestor_name" binding:"required"`
+}
+
+func (h *Handler) ShutdownIngestor(c *gin.Context) {
+	var req ShutdownIngestorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri is required", 400)
+		return
+	}
+
+	taskID := common.GenerateUUID()
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:   taskID,
+		TaskType: "shutdown",
+		Config:   "",
+	})
+
+	success(c, gin.H{"task_id": taskID}, "Shutdown ingestor")
+}
+
 // Reports handle heartbeat reports from servers
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage

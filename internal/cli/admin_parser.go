@@ -1551,10 +1551,19 @@ func (p *Parser) parseAdminStartupCommand() (*Command, error) {
 
 func (p *Parser) parseAdminShutdownCommand() (*Command, error) {
 	p.nextToken() // consume SHUTDOWN
-	if p.curToken.Type != TokenService {
-		return nil, fmt.Errorf("expected SERVICE")
+
+	switch p.curToken.Type {
+	case TokenService:
+		return p.parseAdminShutdownServiceCommand()
+	case TokenIngestor:
+		return p.parseAdminShutdownIngestorCommand()
+	default:
+		return nil, fmt.Errorf("expected SERVICE or INGESTOR")
 	}
-	p.nextToken()
+}
+
+func (p *Parser) parseAdminShutdownServiceCommand() (*Command, error) {
+	p.nextToken() // consume SERVICE
 
 	serviceNum, err := p.parseNumber()
 	if err != nil {
@@ -1563,6 +1572,25 @@ func (p *Parser) parseAdminShutdownCommand() (*Command, error) {
 
 	cmd := NewCommand("shutdown_service")
 	cmd.Params["number"] = serviceNum
+
+	p.nextToken()
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminShutdownIngestorCommand() (*Command, error) {
+	p.nextToken() // consume INGESTOR
+
+	ingestorName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("admin_shutdown_ingestor_command")
+	cmd.Params["ingestor_name"] = ingestorName
 
 	p.nextToken()
 	// Semicolon is optional for UNSET TOKEN

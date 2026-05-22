@@ -166,10 +166,15 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-	sig := <-quit
 
-	common.Info("Received signal", zap.String("signal", sig.String()))
-	common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", name))
+	// Wait for either an OS signal or a shutdown command from the admin
+	select {
+	case sig := <-quit:
+		common.Info("Received signal", zap.String("signal", sig.String()))
+		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", name))
+	case <-ingestor.ShutdownCh:
+		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", name))
+	}
 
 	// Create context with timeout for graceful shutdown
 	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)

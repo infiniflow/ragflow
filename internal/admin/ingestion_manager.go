@@ -19,7 +19,6 @@ package admin
 import (
 	"context"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -105,7 +104,7 @@ func (s *IngestionManager) Action(stream common.IngestionManager_ActionServer) e
 	var ingestionServerID string
 	var state *IngestionState
 
-	log.Println("New ingestion_server connection")
+	common.Info("New ingestion_server connection")
 
 	// Start receive goroutine
 	recvErr := make(chan error, 1)
@@ -253,7 +252,7 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 		}
 		s.mu.Unlock()
 
-		common.Info(fmt.Sprintf("Heartbeat from %s", ingestorID))
+		common.Debug(fmt.Sprintf("Heartbeat from %s", ingestorID))
 	}
 }
 
