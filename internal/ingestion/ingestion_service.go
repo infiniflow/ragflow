@@ -82,7 +82,7 @@ func (e *Ingestor) Connect(serverAddr string) error {
 	common.Info(fmt.Sprintf("Ingestor %s connected to admin", e.id))
 
 	// 1. Send registration message
-	if err := e.sendRegister(); err != nil {
+	if err = e.sendRegister(); err != nil {
 		return err
 	}
 
