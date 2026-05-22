@@ -123,6 +123,10 @@ func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 		})
 	}
 
+	// Get all tasks from memory
+
+	// Merge two tasks together and find the differences
+
 	return result, nil
 }
 

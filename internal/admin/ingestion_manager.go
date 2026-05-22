@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/common"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 )
 
 type IngestionManager struct {
@@ -34,7 +35,9 @@ type IngestionManager struct {
 	mu sync.RWMutex
 
 	// Registered ingestion servers
-	ingestionServers map[string]*IngestionState
+	ingestionServers map[string]*IngestionState // ingestor id -> ingestor id
+
+	taskStates map[string]*TaskState // task_id -> task state
 
 	// In-memory task queue
 	taskQueue chan *pendingTask
@@ -48,6 +51,17 @@ type IngestionManager struct {
 	cancel context.CancelFunc
 }
 
+type TaskState struct {
+	taskID                 string // same as task_id in database
+	status                 string // created, assigned, processing, completed, failed
+	comeFrom               string // api server id
+	assignTo               string // ingestor id
+	lastUpdate             time.Time
+	startTime              time.Time
+	estimatedRemainingTime time.Duration // estimated cost in seconds to complete the task
+	errorMessage           string
+}
+
 type IngestionState struct {
 	ID            string
 	Info          *common.RegisterInfo
@@ -55,6 +69,7 @@ type IngestionState struct {
 	CurrentTasks  map[string]bool // task_id -> whether the task is currently running
 	Stream        common.IngestionManager_ActionServer
 	Status        string // active, draining
+	Address       string
 }
 
 type pendingTask struct {
@@ -167,14 +182,25 @@ func (s *IngestionManager) handleRegister(
 		return
 	}
 
-	*ingestionServerID = msg.IngestionServerId
+	peer, ok := peer.FromContext(stream.Context())
+	if !ok {
+		stream.Send(&common.AdminMessage{
+			MessageType:  "ERROR",
+			ErrorMessage: "peer not found in context",
+		})
+		return
+	}
+	clientAddr := peer.Addr.String()
+
+	*ingestionServerID = msg.IngestorId
 	*state = &IngestionState{
-		ID:            msg.IngestionServerId,
+		ID:            msg.IngestorId,
 		Info:          msg.RegisterInfo,
 		LastHeartbeat: time.Now(),
 		CurrentTasks:  make(map[string]bool),
 		Stream:        stream,
 		Status:        "active",
+		Address:       clientAddr,
 	}
 
 	s.mu.Lock()
@@ -202,14 +228,28 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 	state.LastHeartbeat = time.Now()
 
 	if msg.HeartbeatInfo != nil {
-		// Update current task list
-		newTasks := make(map[string]bool)
-		for _, tid := range msg.HeartbeatInfo.CurrentTaskIds {
-			newTasks[tid] = true
-		}
-		state.CurrentTasks = newTasks
 
-		common.Info(fmt.Sprintf("Heartbeat from %s: %d active tasks", ingestorID, len(newTasks)))
+		lastUpdateTime := time.Now()
+		s.mu.Lock()
+		s.ingestionServers[msg.IngestorId].LastHeartbeat = lastUpdateTime
+
+		for _, ingestorTaskState := range msg.HeartbeatInfo.TaskStates {
+			localTaskState := s.taskStates[ingestorTaskState.TaskId]
+			localTaskState.estimatedRemainingTime = time.Duration(ingestorTaskState.EstimatedRemainingTimeSeconds)
+			localTaskState.lastUpdate = lastUpdateTime
+			localTaskState.status = ingestorTaskState.Status
+			localTaskState.errorMessage = ingestorTaskState.ErrorMessage
+			localTaskState.assignTo = msg.IngestorId
+		}
+		s.mu.Unlock()
+		// Update current task list
+		//newTasks := make(map[string]bool)
+		//for _, tid := range msg.HeartbeatInfo.TaskStates {
+		//	newTasks[tid] = true
+		//}
+		//state.CurrentTasks = newTasks
+
+		common.Info(fmt.Sprintf("Heartbeat from %s:", ingestorID))
 	}
 }
 
@@ -269,6 +309,18 @@ func (s *IngestionManager) dispatchLoop() {
 			go s.tryAssign(pending.Task)
 		}
 	}
+}
+
+func (s *IngestionManager) SelectIngestor() *IngestionState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, state := range s.ingestionServers {
+		if state.Status == "active" && len(state.CurrentTasks) < int(state.Info.MaxConcurrency) {
+			return state
+		}
+	}
+	return nil
 }
 
 // tryAssign repeatedly tries to find an available ingestor and assign the task.

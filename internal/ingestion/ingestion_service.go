@@ -2,10 +2,14 @@ package ingestion
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"math"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/shirou/gopsutil/v3/process"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -14,6 +18,7 @@ import (
 
 type Ingestor struct {
 	id     string
+	name   string
 	client common.IngestionManagerClient
 	stream common.IngestionManager_ActionClient
 	ctx    context.Context
@@ -31,17 +36,21 @@ type Ingestor struct {
 }
 
 type TaskContext struct {
-	Task       *common.TaskAssignment
-	Status     string // running, completed, failed
-	StartTime  time.Time
-	Progress   int32
-	CancelFunc context.CancelFunc
+	Task                   *common.TaskAssignment
+	Status                 string // PENDING, RUNNING, COMPLETED, FAILED, CANCELLING, CANCELLED
+	StartTime              time.Time
+	estimatedRemainingTime time.Duration // estimated cost in seconds to complete the task
+	Progress               int32
+	ErrorMessage           string
+	CancelFunc             context.CancelFunc
 }
 
-func NewIngestor(id string, maxConcurrency int32, supportedTypes []string) *Ingestor {
+func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
 	ctx, cancel := context.WithCancel(context.Background())
+	id := common.GenerateUUID()
 	return &Ingestor{
 		id:                id,
+		name:              name,
 		ctx:               ctx,
 		cancel:            cancel,
 		maxConcurrency:    maxConcurrency,
@@ -70,7 +79,7 @@ func (e *Ingestor) Connect(serverAddr string) error {
 	}
 	e.stream = stream
 
-	log.Printf("Executor %s connected to admin", e.id)
+	common.Info(fmt.Sprintf("Ingestor %s connected to admin", e.id))
 
 	// 1. Send registration message
 	if err := e.sendRegister(); err != nil {
@@ -88,12 +97,13 @@ func (e *Ingestor) Connect(serverAddr string) error {
 
 func (e *Ingestor) sendRegister() error {
 	msg := &common.IngestionMessage{
-		IngestionServerId: e.id,
-		MessageType:       "REGISTER",
+		IngestorId:  e.id,
+		MessageType: "REGISTER",
 		RegisterInfo: &common.RegisterInfo{
 			MaxConcurrency:    e.maxConcurrency,
 			SupportedDocTypes: e.supportedDocTypes,
 			Version:           e.version,
+			Name:              e.name,
 		},
 	}
 	return e.stream.Send(msg)
@@ -107,13 +117,48 @@ func (e *Ingestor) sendHeartbeat() error {
 	}
 	e.tasksMu.RUnlock()
 
+	taskStates := make([]*common.TaskState, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		taskCtx := e.currentTasks[taskID]
+		taskStates = append(taskStates, &common.TaskState{
+			TaskId:                        taskID,
+			Status:                        taskCtx.Status,
+			EstimatedRemainingTimeSeconds: int64(taskCtx.estimatedRemainingTime),
+			ErrorMessage:                  taskCtx.ErrorMessage,
+		})
+	}
+
+	var pid = int64(os.Getpid())
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var cpuPercent float64
+	cpuPercent, err = p.Percent(100 * time.Millisecond)
+	if err != nil {
+		cpuPercent = math.NaN()
+		common.Info(fmt.Sprintf("Fail to read CPU usage: %v", err))
+	}
+
+	RssUsage := math.NaN()
+	VmsUsage := math.NaN()
+	memInfo, err := p.MemoryInfo()
+	if err == nil {
+		RssUsage = float64(memInfo.RSS)
+		VmsUsage = float64(memInfo.VMS)
+	} else {
+		common.Info(fmt.Sprintf("Fail to read memory usage: %v", err))
+	}
 	msg := &common.IngestionMessage{
-		IngestionServerId: e.id,
-		MessageType:       "HEARTBEAT",
+		IngestorId:  e.id,
+		MessageType: "HEARTBEAT",
 		HeartbeatInfo: &common.HeartbeatInfo{
-			CurrentTaskIds: taskIDs,
-			CurrentLoad:    int32(len(taskIDs)),
-			Timestamp:      time.Now().Unix(),
+			TaskStates: taskStates,
+			CpuUsage:   float32(cpuPercent),
+			VmsUsage:   float32(VmsUsage),
+			RssUsage:   float32(RssUsage),
+			ProcessId:  pid,
 		},
 	}
 	return e.stream.Send(msg)
@@ -121,8 +166,8 @@ func (e *Ingestor) sendHeartbeat() error {
 
 func (e *Ingestor) sendTaskResult(taskID, status, resultURL, errorMsg string) error {
 	msg := &common.IngestionMessage{
-		IngestionServerId: e.id,
-		MessageType:       "TASK_RESULT",
+		IngestorId:  e.id,
+		MessageType: "TASK_RESULT",
 		TaskResult: &common.TaskResult{
 			TaskId:       taskID,
 			Status:       status,
@@ -135,8 +180,8 @@ func (e *Ingestor) sendTaskResult(taskID, status, resultURL, errorMsg string) er
 
 func (e *Ingestor) sendTaskProgress(taskID string, progress int32, info string) error {
 	msg := &common.IngestionMessage{
-		IngestionServerId: e.id,
-		MessageType:       "TASK_PROGRESS",
+		IngestorId:  e.id,
+		MessageType: "TASK_PROGRESS",
 		TaskProgress: &common.TaskProgress{
 			TaskId:   taskID,
 			Progress: progress,
