@@ -13,10 +13,96 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import uuid
+import asyncio
 import hashlib
-import pytest
-from common.misc_utils import get_uuid, download_img, hash_str2int, convert_bytes
+import sys
+import types
+import uuid
+from contextlib import contextmanager
+from unittest.mock import patch
+
+from common import ssrf_guard
+from common.misc_utils import convert_bytes, download_img, get_uuid, hash_str2int
+
+
+class _Hdr:
+    def __init__(self, mapping: dict[str, str]):
+        self._m = {k.lower(): v for k, v in mapping.items()}
+
+    def get(self, key: str, default=None):
+        return self._m.get(key.lower(), default)
+
+
+class _MockStreamResp:
+    def __init__(self, status_code: int, *, location: str | None = None, body: bytes = b""):
+        self.status_code = status_code
+        hdrs: dict[str, str] = {}
+        if location is not None:
+            hdrs["Location"] = location
+        if body:
+            hdrs.setdefault("Content-Type", "image/jpeg")
+        self.headers = _Hdr(hdrs)
+        self._body = body
+
+    async def aclose(self):
+        return None
+
+    async def aiter_bytes(self):
+        if self._body:
+            yield self._body
+
+
+class _FakeStreamCtx:
+    def __init__(self, resp: _MockStreamResp):
+        self._resp = resp
+
+    async def __aenter__(self):
+        return self._resp
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+
+class _FakeAsyncClient:
+    def __init__(self, responses: list[_MockStreamResp]):
+        self._responses = responses
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    def stream(self, method, url, headers=None):
+        if not self._responses:
+            return _FakeStreamCtx(_MockStreamResp(404))
+        return _FakeStreamCtx(self._responses.pop(0))
+
+
+@contextmanager
+def _fake_httpx_sys_modules(client):
+    """Minimal ``httpx`` stub so ``download_img`` can be exercised without real httpx."""
+    saved = sys.modules.get("httpx")
+    fake = types.ModuleType("httpx")
+
+    class _Timeout:
+        def __init__(self, *_a, **_kw):
+            pass
+
+    fake.Timeout = _Timeout
+
+    def _AsyncClient(*_a, **_kw):
+        return client
+
+    fake.AsyncClient = _AsyncClient
+    sys.modules["httpx"] = fake
+    try:
+        yield
+    finally:
+        if saved is not None:
+            sys.modules["httpx"] = saved
+        else:
+            sys.modules.pop("httpx", None)
 
 
 class TestGetUuid:
@@ -92,16 +178,68 @@ class TestGetUuid:
 class TestDownloadImg:
     """Test cases for download_img function"""
 
-    @pytest.mark.asyncio
-    async def test_empty_url_returns_empty_string(self):
+    def test_empty_url_returns_empty_string(self):
         """Test that empty URL returns empty string"""
-        result = await download_img("")
+        result = asyncio.run(download_img(""))
         assert result == ""
 
-    @pytest.mark.asyncio
-    async def test_none_url_returns_empty_string(self):
+    def test_none_url_returns_empty_string(self):
         """Test that None URL returns empty string"""
-        result = await download_img(None)
+        result = asyncio.run(download_img(None))
+        assert result == ""
+
+    def test_loopback_url_blocked(self):
+        """OAuth avatar fetch must not call loopback (SSRF regression)."""
+        result = asyncio.run(download_img("http://127.0.0.1/avatar.png"))
+        assert result == ""
+
+    def test_metadata_ip_blocked(self):
+        """Link-local / cloud metadata ranges are non-global and must be rejected."""
+        result = asyncio.run(download_img("http://169.254.169.254/latest/meta-data/"))
+        assert result == ""
+
+    def test_disallowed_scheme_blocked(self):
+        result = asyncio.run(download_img("file:///etc/passwd"))
+        assert result == ""
+
+    def test_redirect_to_loopback_blocked(self):
+        """Redirect from an allowed host to loopback must be rejected (SSRF)."""
+        from urllib.parse import urlparse
+
+        real_assert = ssrf_guard.assert_url_is_safe
+
+        def selective_assert(url: str, **kwargs):
+            host = urlparse(url).hostname or ""
+            if host in ("127.0.0.1", "localhost", "169.254.169.254"):
+                return real_assert(url, **kwargs)
+            return ("public-avatar.test", "8.8.8.8")
+
+        client = _FakeAsyncClient([_MockStreamResp(302, location="http://127.0.0.1/next")])
+
+        with (
+            patch.object(ssrf_guard, "assert_url_is_safe", side_effect=selective_assert),
+            _fake_httpx_sys_modules(client),
+        ):
+            result = asyncio.run(download_img("http://public-avatar.test/start.png"))
+        assert result == ""
+
+    def test_redirect_too_many_hops_blocked(self):
+        """Excessive redirect chains must return empty without hanging."""
+        import common.misc_utils as misc_utils
+
+        hops = [
+            _MockStreamResp(302, location="http://h.example/1"),
+            _MockStreamResp(302, location="http://h.example/2"),
+            _MockStreamResp(302, location="http://h.example/3"),
+        ]
+        client = _FakeAsyncClient(hops)
+
+        with (
+            patch.object(misc_utils, "_OAUTH_AVATAR_MAX_REDIRECTS", 2),
+            patch.object(ssrf_guard, "assert_url_is_safe", return_value=("h.example", "8.8.8.8")),
+            _fake_httpx_sys_modules(client),
+        ):
+            result = asyncio.run(misc_utils.download_img("http://h.example/start"))
         assert result == ""
 
 
