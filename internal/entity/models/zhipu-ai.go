@@ -801,12 +801,135 @@ func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string
 }
 
 // AudioSpeech convert text to audio
-func (o *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	reqBody, url, err := z.buildTTSRequest(modelName, audioContent, apiConfig, ttsConfig, false)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ZhipuAI TTS API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	return &TTSResponse{Audio: body}, nil
 }
 
 func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	reqBody, url, err := z.buildTTSRequest(modelName, audioContent, apiConfig, ttsConfig, true)
+	if err != nil {
+		return err
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("ZhipuAI stream TTS API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := string(buf[:n])
+			if errSend := sender(&chunk, nil); errSend != nil {
+				return errSend
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("error reading ZhipuAI binary audio stream: %w", err)
+		}
+	}
+	return nil
+}
+
+func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, stream bool) (map[string]interface{}, string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, "", fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, "", fmt.Errorf("model name is required")
+	}
+	if audioContent == nil || *audioContent == "" {
+		return nil, "", fmt.Errorf("audio content is empty")
+	}
+	if z.URLSuffix.TTS == "" {
+		return nil, "", fmt.Errorf("zhipu-ai: TTS URL suffix is not configured")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, "", fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
+	}
+
+	reqBody := map[string]interface{}{
+		"model":  *modelName,
+		"input":  *audioContent,
+		"stream": stream,
+	}
+	if ttsConfig != nil {
+		for key, value := range ttsConfig.Params {
+			switch key {
+			case "model", "input", "stream", "response_format":
+				continue
+			}
+			reqBody[key] = value
+		}
+		if ttsConfig.Format != "" {
+			reqBody["response_format"] = ttsConfig.Format
+		}
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimLeft(z.URLSuffix.TTS, "/"))
+	return reqBody, url, nil
 }
 
 // OCRFile OCR file
