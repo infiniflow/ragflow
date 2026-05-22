@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/signal"
 	"ragflow/internal/ingestion"
+	"ragflow/internal/service/nlp"
+	"ragflow/internal/tokenizer"
 	"syscall"
 	"time"
 
@@ -31,10 +33,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
-	"ragflow/internal/server/local"
-	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
-	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
@@ -138,9 +137,6 @@ func main() {
 	if err := server.InitVariables(cache.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
-
-	// Initialize admin status (default: unavailable=1)
-	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
 	tokenizerCfg := &tokenizer.PoolConfig{

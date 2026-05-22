@@ -36,7 +36,7 @@ type IngestionManager struct {
 	mu sync.RWMutex
 
 	// Registered ingestion servers
-	ingestionServers map[string]*IngestionState // ingestor id -> ingestor id
+	ingestionServers map[string]*IngestorState // ingestor id -> ingestor id
 
 	taskStates map[string]*TaskState // task_id -> task state
 
@@ -63,7 +63,7 @@ type TaskState struct {
 	errorMessage           string
 }
 
-type IngestionState struct {
+type IngestorState struct {
 	ID            string
 	Info          *common.RegisterInfo
 	LastHeartbeat time.Time
@@ -71,6 +71,10 @@ type IngestionState struct {
 	Stream        common.IngestionManager_ActionServer
 	Status        string // active, draining
 	Address       string
+	ProcessID     int64
+	cpuUsage      float64
+	vmsUsage      float64
+	rssUsage      float64
 }
 
 type pendingTask struct {
@@ -88,7 +92,7 @@ func NewAdminServer() *IngestionManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	ingestionManager = &IngestionManager{
 		taskStates:       make(map[string]*TaskState),
-		ingestionServers: make(map[string]*IngestionState),
+		ingestionServers: make(map[string]*IngestorState),
 		taskQueue:        make(chan *pendingTask, 10000),
 		slotFreed:        make(chan struct{}, 100),
 		ctx:              ctx,
@@ -102,7 +106,7 @@ func NewAdminServer() *IngestionManager {
 // Action handles the bidirectional streaming RPC from ingestion servers
 func (s *IngestionManager) Action(stream common.IngestionManager_ActionServer) error {
 	var ingestionServerID string
-	var state *IngestionState
+	var state *IngestorState
 
 	common.Info("New ingestion_server connection")
 
@@ -149,7 +153,7 @@ func (s *IngestionManager) handleMessage(
 	stream common.IngestionManager_ActionServer,
 	msg *common.IngestionMessage,
 	ingestionServerID *string,
-	state **IngestionState,
+	state **IngestorState,
 ) {
 	switch msg.MessageType {
 	case "REGISTER":
@@ -177,7 +181,7 @@ func (s *IngestionManager) handleRegister(
 	stream common.IngestionManager_ActionServer,
 	msg *common.IngestionMessage,
 	ingestionServerID *string,
-	state **IngestionState,
+	state **IngestorState,
 ) {
 	if msg.RegisterInfo == nil {
 		stream.Send(&common.AdminMessage{
@@ -198,7 +202,7 @@ func (s *IngestionManager) handleRegister(
 	clientAddr := peer.Addr.String()
 
 	*ingestionServerID = msg.IngestorId
-	*state = &IngestionState{
+	*state = &IngestorState{
 		ID:            msg.IngestorId,
 		Info:          msg.RegisterInfo,
 		LastHeartbeat: time.Now(),
@@ -225,7 +229,7 @@ func (s *IngestionManager) handleRegister(
 		*ingestionServerID, msg.RegisterInfo.MaxConcurrency, msg.RegisterInfo.SupportedDocTypes))
 }
 
-func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
+func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingestorID string, state *IngestorState) {
 	if state == nil {
 		return
 	}
@@ -236,11 +240,16 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 
 		lastUpdateTime := time.Now()
 		s.mu.Lock()
-		s.ingestionServers[msg.IngestorId].LastHeartbeat = lastUpdateTime
-		if s.ingestionServers[msg.IngestorId].Status == "timeout" {
-			s.ingestionServers[msg.IngestorId].Status = "active"
+		ingestorState := s.ingestionServers[msg.IngestorId]
+		ingestorState.LastHeartbeat = lastUpdateTime
+		if ingestorState.Status == "timeout" {
+			ingestorState.Status = "active"
 			common.Info(fmt.Sprintf("Ingestor %s recovered from timeout, status set to active", msg.IngestorId))
 		}
+		ingestorState.ProcessID = msg.HeartbeatInfo.ProcessId
+		ingestorState.cpuUsage = float64(msg.HeartbeatInfo.CpuUsage)
+		ingestorState.vmsUsage = float64(msg.HeartbeatInfo.VmsUsage) / 1024 / 1024 // in MB
+		ingestorState.rssUsage = float64(msg.HeartbeatInfo.RssUsage) / 1024 / 1024 // in MB
 
 		for _, ingestorTaskState := range msg.HeartbeatInfo.TaskStates {
 			localTaskState := s.taskStates[ingestorTaskState.TaskId]
@@ -256,7 +265,7 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 	}
 }
 
-func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
+func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingestorID string, state *IngestorState) {
 	if msg.TaskResult == nil {
 		return
 	}
@@ -276,7 +285,7 @@ func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingest
 	}
 }
 
-func (s *IngestionManager) handleTaskProgress(msg *common.IngestionMessage, ingestorID string, state *IngestionState) {
+func (s *IngestionManager) handleTaskProgress(msg *common.IngestionMessage, ingestorID string, state *IngestorState) {
 	if msg.TaskProgress == nil {
 		return
 	}
@@ -345,7 +354,7 @@ func (s *IngestionManager) checkHeartbeats() {
 	}
 }
 
-func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *IngestionState {
+func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *IngestorState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -389,7 +398,7 @@ func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 	}
 }
 
-func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *IngestionState) {
+func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *IngestorState) {
 	s.mu.Lock()
 	state.CurrentTasks[task.TaskId] = true
 	s.mu.Unlock()
@@ -447,6 +456,10 @@ func (s *IngestionManager) ListIngestors() ([]map[string]interface{}, error) {
 			"last_heartbeat": state.LastHeartbeat,
 			"task_count":     taskCount,
 			"status":         state.Status,
+			"cpu_usage":      state.cpuUsage,
+			"rss_usage":      state.rssUsage,
+			"vms_usage":      state.vmsUsage,
+			"process_id":     state.ProcessID,
 		})
 	}
 	return result, nil
