@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -141,6 +142,71 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 	}
 }
 
+func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+		}
+		if r.URL.Path != "/audio/transcriptions" {
+			t.Errorf("path=%s, want /audio/transcriptions", r.URL.Path)
+		}
+		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+			t.Errorf("Accept=%q, want text/event-stream", got)
+		}
+		if err := r.ParseMultipartForm(1024 * 1024); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+			http.Error(w, "bad multipart", http.StatusBadRequest)
+			return
+		}
+		if got := r.FormValue("stream"); got != "true" {
+			t.Errorf("stream=%q, want true", got)
+		}
+		if got := r.FormValue("model"); got != "gpt-4o-mini-transcribe" {
+			t.Errorf("model=%q, want gpt-4o-mini-transcribe", got)
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = w.Write([]byte("data: {\"type\":\"transcript.text.delta\",\"delta\":\"hello\"}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: {\"type\":\"transcript.text.delta\",\"delta\":\" world\"}\n\n"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("data: {\"type\":\"transcript.text.done\",\"text\":\"hello world\"}\n\n"))
+	}))
+	defer srv.Close()
+
+	audioPath := t.TempDir() + "/sample.wav"
+	if err := os.WriteFile(audioPath, []byte("audio-bytes"), 0600); err != nil {
+		t.Fatalf("write audio fixture: %v", err)
+	}
+
+	apiKey := "test-key"
+	model := "gpt-4o-mini-transcribe"
+	var chunks []string
+	err := newOpenAIForTest(srv.URL).TranscribeAudioWithSender(
+		&model,
+		&audioPath,
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		func(content, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("TranscribeAudioWithSender: %v", err)
+	}
+	if got := strings.Join(chunks, ""); got != "hello world[DONE]" {
+		t.Fatalf("streamed text=%q, want hello world[DONE]", got)
+	}
+}
+
 func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -237,19 +303,112 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 	}
 }
 
-func TestOpenAIAudioSpeechWithSenderUnsupported(t *testing.T) {
+func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+		}
+		if r.URL.Path != "/audio/speech" {
+			t.Errorf("path=%s, want /audio/speech", r.URL.Path)
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if body["model"] != "tts-1" {
+			t.Errorf("model=%v, want tts-1", body["model"])
+		}
+		if body["input"] != "hello" {
+			t.Errorf("input=%v, want hello", body["input"])
+		}
+		if body["voice"] != "alloy" {
+			t.Errorf("voice=%v, want alloy", body["voice"])
+		}
+		if body["stream_format"] != "audio" {
+			t.Errorf("stream_format=%v, want audio", body["stream_format"])
+		}
+
+		flusher, _ := w.(http.Flusher)
+		_, _ = w.Write([]byte("audio-"))
+		if flusher != nil {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("bytes"))
+	}))
+	defer srv.Close()
+
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
 
-	err := newOpenAIForTest("http://unused").AudioSpeechWithSender(
+	var chunks []string
+	err := newOpenAIForTest(srv.URL).AudioSpeechWithSender(
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},
 		&TTSConfig{Params: map[string]interface{}{"voice": "alloy"}},
-		func(*string, *string) error { return nil },
+		func(content, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		},
 	)
-	if err == nil || !strings.Contains(err.Error(), "streaming TTS not implemented") {
-		t.Fatalf("err=%v, want streaming TTS not implemented", err)
+	if err != nil {
+		t.Fatalf("AudioSpeechWithSender: %v", err)
+	}
+	if got := strings.Join(chunks, ""); got != "audio-bytes" {
+		t.Fatalf("streamed audio=%q, want audio-bytes", got)
+	}
+}
+
+func TestOpenAIAudioSpeechWithSenderStreamsSSEAudioDeltas(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+			t.Errorf("Accept=%q, want text/event-stream", got)
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if body["stream_format"] != "sse" {
+			t.Errorf("stream_format=%v, want sse", body["stream_format"])
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		chunk := base64.StdEncoding.EncodeToString([]byte("audio-bytes"))
+		_, _ = w.Write([]byte("data: {\"type\":\"speech.audio.delta\",\"audio\":\"" + chunk + "\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"speech.audio.done\"}\n\n"))
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "gpt-4o-mini-tts"
+	input := "hello"
+	var chunks []string
+	err := newOpenAIForTest(srv.URL).AudioSpeechWithSender(
+		&model,
+		&input,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Params: map[string]interface{}{
+			"voice":         "alloy",
+			"stream_format": "sse",
+		}},
+		func(content, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("AudioSpeechWithSender: %v", err)
+	}
+	if got := strings.Join(chunks, ""); got != "audio-bytes" {
+		t.Fatalf("streamed audio=%q, want audio-bytes", got)
 	}
 }
