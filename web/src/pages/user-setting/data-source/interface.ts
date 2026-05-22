@@ -1,5 +1,5 @@
 import { RunningStatus } from '@/constants/knowledge';
-import { DataSourceKey } from './contant';
+import { DataSourceKey } from './constant';
 
 export interface IDataSorceInfo {
   id: DataSourceKey;
@@ -28,20 +28,20 @@ export interface IDataSourceBase {
 
 export interface IDataSourceLog {
   connector_id: string;
+  docs_removed_from_index?: number;
   error_count: number;
   error_msg: string;
   id: string;
   kb_id: string;
   kb_name: string;
-  name: string;
   new_docs_indexed: number;
-  poll_range_end: null | string;
-  poll_range_start: null | string;
-  reindex: string;
-  source: DataSourceKey;
+  prune_freq?: number;
+  refresh_freq?: number;
   status: RunningStatus;
-  tenant_id: string;
-  timeout_secs: number;
+  task_type?: string;
+  time_started?: string | null;
+  total_docs_indexed?: number;
+  update_date: string;
 }
 
 interface IDataSourceInfoItem {

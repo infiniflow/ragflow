@@ -1,10 +1,10 @@
 {
   "name": "XunFei",
   "url": {
-    "default": "https://"
+    "default": "https://spark-api-open.xf-yun.com"
   },
   "url_suffix": {
-    "chat": "spark-api-open.xf-yun.com/v2/chat/completions"
+    "chat": "v2/chat/completions"
   },
   "class": "xunfei",
   "models": [

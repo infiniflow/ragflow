@@ -6,7 +6,9 @@
   "url_suffix": {
     "chat": "openai/v1/chat/completions",
     "models": "openai/v1/models",
-    "embedding": "openai/v1/embeddings"
+    "embedding": "openai/v1/embeddings",
+    "balance": "openapi/v1/billing/balance/detail",
+    "rerank": "openai/v1/rerank"
   },
   "class": "novita",
   "models": [
@@ -64,6 +66,13 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "baai/bge-reranker-v2-m3",
+      "max_tokens": 1024,
+      "model_types": [
+        "rerank"
       ]
     }
   ]

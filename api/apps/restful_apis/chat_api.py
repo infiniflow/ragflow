@@ -659,6 +659,7 @@ async def bulk_delete_chats():
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @login_required
 async def create_session(chat_id):
+    """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -675,7 +676,7 @@ async def create_session(chat_id):
             "dialog_id": chat_id,
             "name": name,
             "message": [{"role": "assistant", "content": dia.prompt_config.get("prologue", "")}],
-            "user_id": req.get("user_id", current_user.id),
+            "user_id": current_user.id,
             "reference": [],
         }
         ConversationService.save(**conv)
@@ -1055,6 +1056,7 @@ async def recommendation():
 @login_required
 @validate_request("messages")
 async def session_completion(chat_id_in_arg=""):
+    """Handle chat completion requests, streaming or non-streaming, scoped to the authenticated user."""
     req = await get_request_json()
     msg = []
     for m in req["messages"]:
@@ -1097,7 +1099,7 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, req.get("user_id", current_user.id))
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
             conv.message = deepcopy(req["messages"])
         else:
@@ -1121,12 +1123,14 @@ async def session_completion(chat_id_in_arg=""):
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
+            """Wrap a raw answer dict with session and chat identifiers."""
             formatted = structure_answer(conv, ans, message_id, session_id)
             if chat_id:
                 formatted["chat_id"] = chat_id
             return formatted
 
         async def stream():
+            """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
                 async for ans in async_chat(dia, msg, True, **req):

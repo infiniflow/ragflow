@@ -155,6 +155,12 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowAdminVersion(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
+	case "list_variables":
+		return c.ListVariables(cmd)
+	case "show_variable":
+		return c.ShowVariable(cmd)
+	case "set_variable":
+		return c.SetVariable(cmd)
 	case "list_user_datasets":
 		return c.ListUserDatasets(cmd)
 	case "list_agents":
@@ -308,12 +314,16 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.InsertMetadataFromFile(cmd)
 	case "update_chunk":
 		return c.UpdateChunk(cmd)
+	case "get_chunk":
+		return c.GetChunk(cmd)
 	case "set_meta":
 		return c.SetMeta(cmd)
 	case "rm_tags":
 		return c.RmTags(cmd)
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
+	case "list_metadata":
+		return c.ListMetadata(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

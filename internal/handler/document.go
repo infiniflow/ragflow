@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -241,15 +243,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			metaFields = make(map[string]interface{})
 		}
 
-		docs = append(docs, map[string]interface{}{
-			"id":          doc.ID,
-			"name":        doc.Name,
-			"size":        doc.Size,
-			"type":        doc.Type,
-			"status":      doc.Status,
-			"created_at":  doc.CreatedAt,
-			"meta_fields": metaFields,
-		})
+		docs = append(docs, mapDocumentListItem(doc, metaFields))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -260,6 +254,104 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"docs":  docs,
 		},
 	})
+}
+
+func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
+	item := map[string]interface{}{
+		"id":               doc.ID,
+		"dataset_id":       doc.KbID,
+		"name":             stringValue(doc.Name),
+		"thumbnail":        stringValue(doc.Thumbnail),
+		"size":             doc.Size,
+		"type":             doc.Type,
+		"created_by":       doc.CreatedBy,
+		"location":         stringValue(doc.Location),
+		"token_count":      doc.TokenNum,
+		"chunk_count":      doc.ChunkNum,
+		"progress":         doc.Progress,
+		"progress_msg":     stringValue(doc.ProgressMsg),
+		"process_begin_at": formatTimePtr(doc.ProcessBeginAt),
+		"process_duration": doc.ProcessDuration,
+		"suffix":           doc.Suffix,
+		"run":              mapRunStatus(doc.Run),
+		"status":           stringValue(doc.Status),
+		"chunk_method":     doc.ParserID,
+		"parser_id":        doc.ParserID,
+		"pipeline_id":      stringValue(doc.PipelineID),
+		"pipeline_name":    stringValue(doc.PipelineName),
+		"nickname":         stringValue(doc.Nickname),
+		"parser_config":    decodeJSONMap(string(doc.ParserConfig)),
+		"meta_fields":      metaFields,
+		"create_time":      int64(0),
+		"create_date":      "",
+		"update_time":      int64(0),
+		"update_date":      "",
+	}
+
+	if doc.CreateTime != nil {
+		item["create_time"] = *doc.CreateTime
+	}
+	if doc.CreateDate != nil {
+		item["create_date"] = doc.CreateDate.Format("2006-01-02 15:04:05")
+	}
+	if doc.UpdateTime != nil {
+		item["update_time"] = *doc.UpdateTime
+	}
+	if doc.UpdateDate != nil {
+		item["update_date"] = doc.UpdateDate.Format("2006-01-02 15:04:05")
+	}
+
+	return item
+}
+
+func decodeJSONMap(raw string) map[string]interface{} {
+	if strings.TrimSpace(raw) == "" {
+		return map[string]interface{}{}
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return map[string]interface{}{}
+	}
+
+	return data
+}
+
+func mapRunStatus(run *string) string {
+	if run == nil {
+		return "UNSTART"
+	}
+
+	switch strings.TrimSpace(*run) {
+	case "0":
+		return "UNSTART"
+	case "1":
+		return "RUNNING"
+	case "2":
+		return "CANCEL"
+	case "3":
+		return "DONE"
+	case "4":
+		return "FAIL"
+	default:
+		return strings.TrimSpace(*run)
+	}
+}
+
+func formatTimePtr(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+
+	return value.Format("2006-01-02 15:04:05")
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+
+	return *value
 }
 
 // GetDocumentsByAuthorID get documents by author ID

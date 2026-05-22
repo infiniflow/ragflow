@@ -52,6 +52,13 @@ from api.utils.reference_metadata_utils import (
 logger = logging.getLogger(__name__)
 
 
+def _get_sdk_authorization_token():
+    token = request.headers.get("Authorization", "").split()
+    if len(token) != 2:
+        return None
+    return token[1]
+
+
 @token_required
 async def create_agent_session(tenant_id, agent_id):
     req = await get_request_json()
@@ -147,10 +154,9 @@ async def delete_agent_session(tenant_id, agent_id):
 async def chatbot_completions(dialog_id):
     req = await get_request_json()
 
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -222,10 +228,9 @@ async def chatbot_completions(dialog_id):
 
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
 async def chatbots_inputs(dialog_id):
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -260,10 +265,9 @@ async def chatbots_inputs(dialog_id):
 async def agent_bot_completions(agent_id):
     req = await get_request_json()
 
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -346,10 +350,9 @@ async def agent_bot_completions(agent_id):
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
 async def begin_inputs(agent_id):
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -367,10 +370,9 @@ async def begin_inputs(agent_id):
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
 @validate_request("question", "kb_ids")
 async def ask_about_embedded():
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -406,10 +408,9 @@ async def ask_about_embedded():
 @manager.route("/searchbots/retrieval_test", methods=["POST"])  # noqa: F821
 @validate_request("kb_id", "question")
 async def retrieval_test_embedded():
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -549,10 +550,9 @@ async def retrieval_test_embedded():
 @manager.route("/searchbots/related_questions", methods=["POST"])  # noqa: F821
 @validate_request("question")
 async def related_questions_embedded():
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -597,10 +597,9 @@ Related search terms:
 
 @manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
 async def detail_share_embedded():
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
@@ -629,10 +628,9 @@ async def detail_share_embedded():
 @manager.route("/searchbots/mindmap", methods=["POST"])  # noqa: F821
 @validate_request("question", "kb_ids")
 async def mindmap():
-    token = request.headers.get("Authorization").split()
-    if len(token) != 2:
+    token = _get_sdk_authorization_token()
+    if not token:
         return get_error_data_result(message='Authorization is not valid!')
-    token = token[1]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')

@@ -98,6 +98,11 @@ class TaskStatus(StrEnum):
 VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
 
 
+class ConnectorTaskType(StrEnum):
+    SYNC = "sync"
+    PRUNE = "prune"
+
+
 class ParserType(StrEnum):
     PRESENTATION = "presentation"
     LAWS = "laws"

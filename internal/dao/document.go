@@ -86,15 +86,25 @@ func (dao *DocumentDAO) List(offset, limit int) ([]*entity.Document, int64, erro
 }
 
 // ListByKBID list documents by knowledge base ID
-func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.Document, int64, error) {
-	var documents []*entity.Document
+func (dao *DocumentDAO) ListByKBID(kbID string, offset, limit int) ([]*entity.DocumentListItem, int64, error) {
+	var documents []*entity.DocumentListItem
 	var total int64
 
 	if err := DB.Model(&entity.Document{}).Where("kb_id = ?", kbID).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	err := DB.Where("kb_id = ?", kbID).Offset(offset).Limit(limit).Find(&documents).Error
+	err := DB.Table("document").
+		Select(`document.*, user_canvas.title as pipeline_name, user.nickname`).
+		Joins("JOIN file2document ON file2document.document_id = document.id").
+		Joins("JOIN file ON file.id = file2document.file_id").
+		Joins("LEFT JOIN user_canvas ON document.pipeline_id = user_canvas.id").
+		Joins("LEFT JOIN user ON document.created_by = user.id").
+		Where("document.kb_id = ?", kbID).
+		Order("document.create_time DESC").
+		Offset(offset).
+		Limit(limit).
+		Scan(&documents).Error
 	return documents, total, err
 }
 

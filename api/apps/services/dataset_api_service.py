@@ -600,9 +600,8 @@ def aggregate_tags(dataset_ids: list[str], tenant_id: str):
 
     merged = {}
     for kb_tenant_id, kb_ids in dataset_ids_by_tenant.items():
-        for bucket in settings.retriever.all_tags(kb_tenant_id, kb_ids):
-            tag = bucket["value"]
-            merged[tag] = merged.get(tag, 0) + bucket["count"]
+        for tag, count in settings.retriever.all_tags(kb_tenant_id, kb_ids):
+            merged[tag] = merged.get(tag, 0) + count
 
     return True, [{"value": tag, "count": count} for tag, count in merged.items()]
 

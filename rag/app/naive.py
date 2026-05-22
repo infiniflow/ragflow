@@ -131,6 +131,19 @@ def by_mineru(
                 ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, mineru_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
+
+                # Closes #14869: when the tenant has an IMAGE2TEXT model
+                # configured, let the MinerU parser enrich image chunks with
+                # VLM-generated semantic descriptions (parity with deepdoc's
+                # VisionFigureParser). Best-effort — fall back silently if
+                # no vision model is available.
+                if "vision_model" not in kwargs:
+                    try:
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
+                        kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
+                    except Exception as vlm_err:
+                        logging.info(f"[MinerU] no IMAGE2TEXT model for tenant; skipping image VLM enhancement: {vlm_err}")
+
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
                     binary=binary,
@@ -786,6 +799,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     urls = set()
     url_res = []
 
+    lang = lang or "Chinese"
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 

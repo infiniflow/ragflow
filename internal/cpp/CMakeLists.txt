@@ -3,6 +3,40 @@ project(rag_tokenizer)
 
 set(CMAKE_CXX_STANDARD 23)
 
+# macOS dependency discovery — Homebrew installs headers and libs under a
+# prefix that is NOT on the compiler's default search path (Apple Silicon:
+# /opt/homebrew, Intel: /usr/local). Linux is left completely untouched:
+# the infinity_builder image already ships pcre2 + simde where the
+# toolchain finds them, so adding paths there risks shadowing them.
+if(APPLE)
+    execute_process(
+        COMMAND brew --prefix
+        OUTPUT_VARIABLE HOMEBREW_PREFIX
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE BREW_RC
+    )
+    if(BREW_RC EQUAL 0 AND HOMEBREW_PREFIX)
+        message(STATUS "macOS detected; Homebrew prefix: ${HOMEBREW_PREFIX}")
+        include_directories(SYSTEM "${HOMEBREW_PREFIX}/include")
+        link_directories("${HOMEBREW_PREFIX}/lib")
+    endif()
+endif()
+
+# Resolve libpcre2-8.
+#   - Linux: keep upstream's bare `libpcre2-8.a` token verbatim. The linker
+#     resolves it from its own default search path, which the
+#     infinity_builder image populates. find_library() does NOT see that
+#     path (pcre2 is built from source there), so calling it here would
+#     break the CI build that worked before.
+#   - macOS: the bare token fails (libpcre2-8.a is under the Homebrew
+#     prefix, off the default path), so resolve the full path explicitly.
+if(APPLE)
+    find_library(PCRE2_LIB NAMES pcre2-8 REQUIRED)
+else()
+    set(PCRE2_LIB libpcre2-8.a)
+endif()
+message(STATUS "PCRE2 library: ${PCRE2_LIB}")
+
 # Option to enable AddressSanitizer
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
 
@@ -88,7 +122,7 @@ add_executable(rag_tokenizer
         ${darts_src}
         ${re2_src})
 
-target_link_libraries(rag_tokenizer stdc++ m libpcre2-8.a)
+target_link_libraries(rag_tokenizer stdc++ m ${PCRE2_LIB})
 target_include_directories(rag_tokenizer PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_tokenizer PROPERTIES
         CXX_STANDARD 20
@@ -118,7 +152,7 @@ add_library(rag_tokenizer_c_api STATIC
         ${re2_src}
 )
 
-target_link_libraries(rag_tokenizer_c_api stdc++ libm.a libpcre2-8.a)
+target_link_libraries(rag_tokenizer_c_api stdc++ libm.a ${PCRE2_LIB})
 target_include_directories(rag_tokenizer_c_api PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_tokenizer_c_api PROPERTIES
         CXX_STANDARD 20
@@ -130,7 +164,7 @@ add_executable(rag_analyzer_c_test
         rag_analyzer_c_test.cpp
 )
 
-target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ libm.a libpcre2-8.a)
+target_link_libraries(rag_analyzer_c_test rag_tokenizer_c_api stdc++ libm.a ${PCRE2_LIB})
 target_include_directories(rag_analyzer_c_test PUBLIC "${CMAKE_SOURCE_DIR}")
 set_target_properties(rag_analyzer_c_test PROPERTIES
         CXX_STANDARD 20
