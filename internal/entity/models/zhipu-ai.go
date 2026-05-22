@@ -22,7 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"strings"
 	"time"
@@ -668,8 +671,129 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 }
 
 // TranscribeAudio transcribe audio
-func (o *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is required")
+	}
+	if z.URLSuffix.ASR == "" {
+		return nil, fmt.Errorf("zhipu-ai: ASR URL suffix is not configured")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimLeft(z.URLSuffix.ASR, "/"))
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("model", *modelName); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+	if err := writer.WriteField("stream", "false"); err != nil {
+		return nil, fmt.Errorf("failed to write stream field: %w", err)
+	}
+	if err := writeZhipuASRParams(writer, asrConfig); err != nil {
+		return nil, err
+	}
+
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	part, err := writer.CreateFormFile("file", filepath.Base(*file))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file: %w", err)
+	}
+	if _, err = io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", err)
+	}
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ZhipuAI ASR API error: %s, body: %s", resp.Status, string(respBody))
+	}
+
+	var result struct {
+		Text string `json:"text"`
+	}
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return &ASRResponse{Text: result.Text}, nil
+}
+
+func writeZhipuASRParams(writer *multipart.Writer, asrConfig *ASRConfig) error {
+	if asrConfig == nil || asrConfig.Params == nil {
+		return nil
+	}
+	for key, value := range asrConfig.Params {
+		switch key {
+		case "model", "stream", "file", "file_base64":
+			continue
+		}
+		if err := writeZhipuASRField(writer, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeZhipuASRField(writer *multipart.Writer, key string, value interface{}) error {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		for _, item := range v {
+			if err := writer.WriteField(key, item); err != nil {
+				return fmt.Errorf("failed to write field %s: %w", key, err)
+			}
+		}
+		return nil
+	case []interface{}:
+		for _, item := range v {
+			if err := writer.WriteField(key, fmt.Sprint(item)); err != nil {
+				return fmt.Errorf("failed to write field %s: %w", key, err)
+			}
+		}
+		return nil
+	default:
+		if err := writer.WriteField(key, fmt.Sprint(v)); err != nil {
+			return fmt.Errorf("failed to write field %s: %w", key, err)
+		}
+		return nil
+	}
 }
 
 func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {

@@ -9,6 +9,7 @@
     "async_result": "async-result",
     "embedding": "embeddings",
     "rerank": "rerank",
+    "asr": "audio/transcriptions",
     "files": "files",
     "models": "models"
   },
