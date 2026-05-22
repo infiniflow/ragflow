@@ -441,6 +441,16 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = json.dumps(v)
                         else:
                             d[k] = v
+                    elif k == "extra":
+                        # RAPTOR writes {"raptor_method": ...} as a dict; Infinity's
+                        # `extra` column is varchar so we serialize on the write path.
+                        # The read path (raptor_utils._as_extra_dict) already accepts
+                        # both dict and JSON-string. Other backends (OceanBase JSON
+                        # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
+                        if isinstance(v, dict):
+                            d[k] = json.dumps(v)
+                        else:
+                            d[k] = v if v else ""
                     elif k == "kb_id":
                         if isinstance(d[k], list):
                             d[k] = d[k][0]  # since d[k] is a list, but we need a str
