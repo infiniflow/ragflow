@@ -1395,6 +1395,15 @@ async def do_handle_task(task):
                         ],
                         "method": "light",
                         "batch_chunk_token_size": 4096,
+                        "retry_attempts": 2,
+                        "retry_backoff_seconds": 2.0,
+                        "retry_backoff_max_seconds": 60.0,
+                        "build_subgraph_timeout_per_chunk_seconds": 300,
+                        "build_subgraph_min_timeout_seconds": 600,
+                        "merge_timeout_seconds": 180,
+                        "resolution_timeout_seconds": 1800,
+                        "community_timeout_seconds": 1800,
+                        "lock_acquire_timeout_seconds": 600,
                     }
                 }
             )
