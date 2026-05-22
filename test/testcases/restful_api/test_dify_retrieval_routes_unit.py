@@ -290,7 +290,11 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
             }
 
     monkeypatch.setattr(module.settings, "kg_retriever", _DummyKgRetriever())
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(meta_fields={"origin": f"meta-{doc_id}"})))
+    monkeypatch.setattr(
+        module.DocumentService,
+        "get_by_ids",
+        lambda doc_ids, cols=None: [SimpleNamespace(id=doc_id, meta_fields={"origin": f"meta-{doc_id}"}) for doc_id in doc_ids],
+    )
     monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: [])
 
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))

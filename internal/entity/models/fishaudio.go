@@ -66,7 +66,6 @@ func (f *FishAudioModel) Rerank(modelName *string, query string, documents []str
 
 // TranscribeAudio transcribe audio
 func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("FishAudio API key is missing")
 	}
@@ -151,11 +150,7 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(
-			"FishAudio ASR error: %s - %s",
-			resp.Status,
-			string(respBody),
-		)
+		return nil, fmt.Errorf("FishAudio ASR error: %s - %s", resp.Status, string(respBody))
 	}
 
 	// result

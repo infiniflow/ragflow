@@ -89,6 +89,7 @@ from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
+from common.asyncio_utils import LoopLocalSemaphore
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 from rag.utils.table_es_metadata import (
@@ -142,11 +143,11 @@ CURRENT_TASKS = {}
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
-task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-chunk_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
-embed_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
-minio_limiter = asyncio.Semaphore(MAX_CONCURRENT_MINIO)
-kg_limiter = asyncio.Semaphore(2)
+task_limiter = LoopLocalSemaphore(MAX_CONCURRENT_TASKS)
+chunk_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
+embed_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = LoopLocalSemaphore(MAX_CONCURRENT_MINIO)
+kg_limiter = LoopLocalSemaphore(2)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
@@ -298,13 +299,14 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
+            task_language = task.get("language") or "Chinese"
             cks = await thread_pool_exec(
                 chunker.chunk,
                 task["name"],
                 binary=binary,
                 from_page=task["from_page"],
                 to_page=task["to_page"],
-                lang=task["language"],
+                lang=task_language,
                 callback=progress_callback,
                 kb_id=task["kb_id"],
                 parser_config=parser_config_for_chunk,
@@ -1285,7 +1287,9 @@ async def do_handle_task(task):
     task_to_page = task["to_page"]
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
-    task_language = task["language"]
+    task_language = task.get("language") or "Chinese"
+    if not task.get("language"):
+        logging.warning("Task %s has no language set, falling back to Chinese", task_id)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task['kb_parser_config'].get("llm_id") or task["llm_id"]
     task['llm_id'] = kb_task_llm_id

@@ -219,8 +219,8 @@ func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, ap
 //     actually produces a chain-of-thought:
 //
 //     "content": [
-//       {"type": "thinking", "thinking": [{"type": "text", "text": "..."}]},
-//       {"type": "text", "text": "The final answer is ..."}
+//     {"type": "thinking", "thinking": [{"type": "text", "text": "..."}]},
+//     {"type": "text", "text": "The final answer is ..."}
 //     ]
 //
 // The function concatenates the visible text parts into the assistant

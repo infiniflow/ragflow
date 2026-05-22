@@ -10,7 +10,7 @@
 **Install Python dependencies (including test dependencies):**
 
 ```bash
-uv sync --python 3.12 --only-group test --no-default-groups --frozen
+uv sync --python 3.13 --only-group test --no-default-groups --frozen
 
 ```
 
