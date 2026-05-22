@@ -59,9 +59,8 @@ MAX_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE = 8196
 DEFAULT_GRAPHRAG_RETRY_ATTEMPTS = 2
 DEFAULT_GRAPHRAG_RETRY_BACKOFF_SECONDS = 2.0
 DEFAULT_GRAPHRAG_RETRY_BACKOFF_MAX_SECONDS = 60.0
-DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_SECONDS = 0
-DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_PER_CHUNK_SECONDS = 600
-DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_MIN_TIMEOUT_SECONDS = 120
+DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_PER_CHUNK_SECONDS = 180
+DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_MIN_TIMEOUT_SECONDS = 600
 DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS = 180
 DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS = 1800
 DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS = 1800
@@ -100,6 +99,10 @@ def _bounded_float_config(config: dict, key: str, default: float, minimum: float
 
 def _batch_chunk_token_size_config(config: dict, key: str, default: int) -> int:
     return _bounded_int_config(config, key, default, MIN_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE, MAX_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
+
+
+def _select_extractor_type(graphrag_config: dict):
+    return graphrag_config.get("method", "light")
 
 
 def _select_extractor(graphrag_config: dict):
@@ -252,13 +255,6 @@ async def run_graphrag_for_kb(
     merge_retry_attempts = _bounded_int_config(graphrag_config, "merge_retry_attempts", retry_attempts, 1, 10)
     resolution_retry_attempts = _bounded_int_config(graphrag_config, "resolution_retry_attempts", retry_attempts, 1, 10)
     community_retry_attempts = _bounded_int_config(graphrag_config, "community_retry_attempts", retry_attempts, 1, 10)
-    build_subgraph_timeout_seconds = _bounded_int_config(
-        graphrag_config,
-        "build_subgraph_timeout_seconds",
-        DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_TIMEOUT_SECONDS,
-        0,
-        86400,
-    )
     build_subgraph_timeout_per_chunk_seconds = _bounded_int_config(
         graphrag_config,
         "build_subgraph_timeout_per_chunk_seconds",
@@ -295,8 +291,10 @@ async def run_graphrag_for_kb(
 
     doc_ids = list(dict.fromkeys(doc_ids))
     if not doc_ids:
-        callback(msg=f"[GraphRAG] kb:{kb_id} has no processable doc_id.")
+        callback(msg=f"[GraphRAG] dataset:{kb_id} has no processable doc_id.")
         return {"ok_docs": [], "failed_docs": [], "total_docs": 0, "total_chunks": 0, "seconds": 0.0}
+    else:
+        callback(msg=f"[GraphRAG] dataset:{kb_id} has {len(doc_ids)} documents to process.")
 
     def load_doc_chunks(doc_id: str) -> list[str]:
         from common.token_utils import num_tokens_from_string
@@ -315,6 +313,10 @@ async def run_graphrag_for_kb(
 
         callback(msg=f"[GraphRAG] chunk_list returned {len(raw_chunks)} raw chunks for doc:{doc_id}")
 
+        # For NER-based extractionm, no need to batch extract entity and relation
+        if _select_extractor_type(graphrag_config) == "ner":
+            return raw_chunks
+
         for d in raw_chunks:
             content = d["content_with_weight"]
             if num_tokens_from_string(current_chunk + content) < batch_chunk_token_size:
@@ -327,6 +329,7 @@ async def run_graphrag_for_kb(
         if current_chunk:
             chunks.append(current_chunk)
 
+        callback(msg=f"[GraphRAG] chunk_list combine {len(raw_chunks)} raw chunks to {len(chunks)} chunks for LLM extraction for doc:{doc_id}")
         return chunks
 
     total_chunks = 0
@@ -359,13 +362,13 @@ async def run_graphrag_for_kb(
                     callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
                     return
 
-                deadline = build_subgraph_timeout_seconds or max(
+                build_subgraph_timeout_seconds = max(
                     build_subgraph_min_timeout_seconds,
                     len(chunks) * build_subgraph_timeout_per_chunk_seconds,
                 )
                 label = f"build_subgraph doc:{doc_id}"
                 msg = f"[GraphRAG] {label}"
-                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s, attempts={build_subgraph_retry_attempts})")
+                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={build_subgraph_timeout_seconds}s, attempts={build_subgraph_retry_attempts})")
 
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
@@ -392,15 +395,15 @@ async def run_graphrag_for_kb(
                         label,
                         build_subgraph_attempt,
                         attempts=build_subgraph_retry_attempts,
-                        timeout_seconds=deadline,
+                        timeout_seconds=build_subgraph_timeout_seconds,
                         backoff_seconds=retry_backoff_seconds,
                         backoff_max_seconds=retry_backoff_max_seconds,
                         callback=callback,
                         task_id=task_id,
                     )
                 except asyncio.TimeoutError:
-                    failed_docs.append((doc_id, f"timeout after {deadline}s"))
-                    callback(msg=f"{msg} FAILED: timeout after {deadline}s")
+                    failed_docs.append((doc_id, f"timeout after {build_subgraph_timeout_seconds}s"))
+                    callback(msg=f"{msg} FAILED: timeout after {build_subgraph_timeout_seconds}s")
                     return
                 if sg:
                     subgraphs[doc_id] = sg
@@ -428,7 +431,7 @@ async def run_graphrag_for_kb(
         raise
 
     if total_chunks == 0 and not subgraphs:
-        callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
+        callback(msg=f"[GraphRAG] dataset:{kb_id} has no available chunks in all documents, skip.")
         return {"ok_docs": [], "failed_docs": [(doc_id, "no available chunks") for doc_id in doc_ids], "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled after document processing.", callback)
@@ -443,14 +446,14 @@ async def run_graphrag_for_kb(
     community_pending = with_community and not has_phase_marker(kb_id, PHASE_COMMUNITY)
 
     if not ok_docs and not resolution_pending and not community_pending:
-        callback(msg=f"[GraphRAG] kb:{kb_id} no subgraphs to merge and no phases pending, end.")
+        callback(msg=f"[GraphRAG] dataset:{kb_id} no subgraphs to merge and no phases pending, end.")
         now = asyncio.get_running_loop().time()
         return {"ok_docs": [], "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
     kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value="batch_merge", timeout=1200)
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring merge lock.", callback)
     await _acquire_lock(kb_lock, "merge lock", lock_acquire_timeout_seconds, callback, task_id)
-    callback(msg=f"[GraphRAG] kb:{kb_id} merge lock acquired")
+    callback(msg=f"[GraphRAG] dataset:{kb_id} merge lock acquired")
 
     try:
         _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before merging subgraphs.", callback)
@@ -497,16 +500,16 @@ async def run_graphrag_for_kb(
                 final_graph = new_graph
 
         if ok_docs and final_graph is None:
-            callback(msg=f"[GraphRAG] kb:{kb_id} merge finished (no in-memory graph returned).")
+            callback(msg=f"[GraphRAG] dataset:{kb_id} merge finished (no in-memory graph returned).")
         elif ok_docs:
-            callback(msg=f"[GraphRAG] kb:{kb_id} merge finished, graph ready.")
+            callback(msg=f"[GraphRAG] dataset:{kb_id} merge finished, graph ready.")
             # New content was merged into the global graph; any prior
             # resolution/community results are now stale and must be redone
             # on this or a future run. Clear phase markers accordingly.
             clear_phase_markers(kb_id)
             resolution_pending = with_resolution
             community_pending = with_community
-            callback(msg=f"[GraphRAG] kb:{kb_id} cleared phase markers after merge.")
+            callback(msg=f"[GraphRAG] dataset:{kb_id} cleared phase markers after merge.")
     finally:
         kb_lock.release()
 
@@ -517,14 +520,14 @@ async def run_graphrag_for_kb(
 
     if not resolution_pending and not community_pending:
         now = asyncio.get_running_loop().time()
-        callback(msg=f"[GraphRAG] kb:{kb_id} all requested phases already complete; nothing to do.")
+        callback(msg=f"[GraphRAG] dataset:{kb_id} all requested phases already complete; nothing to do.")
         return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before resolution/community extraction.", callback)
 
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring post-merge lock.", callback)
     await _acquire_lock(kb_lock, "post-merge lock", lock_acquire_timeout_seconds, callback, task_id)
-    callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
+    callback(msg=f"[GraphRAG] dataset:{kb_id} post-merge lock acquired for resolution/community")
 
     try:
         _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before resolution/community extraction.", callback)
@@ -534,10 +537,10 @@ async def run_graphrag_for_kb(
         if final_graph is None:
             final_graph = await get_graph(tenant_id, kb_id)
             if final_graph is None:
-                callback(msg=f"[GraphRAG] kb:{kb_id} no persisted graph found; cannot run resolution/community.")
+                callback(msg=f"[GraphRAG] dataset:{kb_id} no persisted graph found; cannot run resolution/community.")
                 now = asyncio.get_running_loop().time()
                 return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
-            callback(msg=f"[GraphRAG] kb:{kb_id} loaded persisted graph for resume.")
+            callback(msg=f"[GraphRAG] dataset:{kb_id} loaded persisted graph for resume.")
 
         subgraph_nodes = set()
         for sg in subgraphs.values():
@@ -578,7 +581,7 @@ async def run_graphrag_for_kb(
             )
             set_phase_marker(kb_id, PHASE_RESOLUTION)
         elif with_resolution:
-            callback(msg=f"[GraphRAG] kb:{kb_id} resolution already completed previously, skipping.")
+            callback(msg=f"[GraphRAG] dataset:{kb_id} resolution already completed previously, skipping.")
 
         if community_pending:
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before community extraction.", callback)
@@ -607,7 +610,7 @@ async def run_graphrag_for_kb(
             )
             set_phase_marker(kb_id, PHASE_COMMUNITY)
         elif with_community:
-            callback(msg=f"[GraphRAG] kb:{kb_id} community detection already completed previously, skipping.")
+            callback(msg=f"[GraphRAG] dataset:{kb_id} community detection already completed previously, skipping.")
     finally:
         kb_lock.release()
 
