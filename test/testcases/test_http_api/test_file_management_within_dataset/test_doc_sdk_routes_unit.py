@@ -505,11 +505,11 @@ class TestDocRoutesUnit:
         _patch_storage(monkeypatch, module, file_stream=b"")
         res = _run(module.download.__wrapped__("tenant-1", "ds-1", ""))
         assert res["message"] == "Specify document_id please."
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [])
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: False)
         res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert "do not own the dataset" in res["message"]
 
-        monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [1])
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
         monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
         res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1"))
         assert "not own the document" in res["message"]
@@ -608,6 +608,38 @@ class TestDocRoutesUnit:
         res = _run(module.parse.__wrapped__("tenant-1", "ds-1"))
         assert res["code"] == module.RetCode.DATA_ERROR
         assert "Duplicate document ids" in res["message"]
+
+    def test_sdk_routes_use_authenticated_user_for_dataset_access(self, monkeypatch):
+        module = _load_doc_module(monkeypatch)
+        access_calls = []
+
+        def _accessible(**kwargs):
+            access_calls.append(kwargs)
+            return False
+
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", _accessible)
+
+        res = _run(module.download.__wrapped__("tenant-1", "ds-1", "doc-1", authenticated_user_id="user-2"))
+        assert "do not own the dataset" in res["message"]
+
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
+        res = _run(module.parse.__wrapped__("tenant-1", "ds-1", authenticated_user_id="user-2"))
+        assert "don't own the dataset" in res["message"]
+
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
+        res = _run(module.stop_parsing.__wrapped__("tenant-1", "ds-1", authenticated_user_id="user-2"))
+        assert "don't own the dataset" in res["message"]
+
+        monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"dataset_ids": ["ds-1"], "question": "q"}))
+        res = _run(module.retrieval_test.__wrapped__("tenant-1", authenticated_user_id="user-2"))
+        assert "don't own the dataset ds-1" in res["message"]
+
+        assert access_calls == [
+            {"kb_id": "ds-1", "user_id": "user-2"},
+            {"kb_id": "ds-1", "user_id": "user-2"},
+            {"kb_id": "ds-1", "user_id": "user-2"},
+            {"kb_id": "ds-1", "user_id": "user-2"},
+        ]
 
     def test_stop_parsing_branches(self, monkeypatch):
         module = _load_doc_module(monkeypatch)

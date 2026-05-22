@@ -51,9 +51,13 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
+def _dataset_access_actor_id(tenant_id: str, authenticated_user_id: str | None = None) -> str:
+    return authenticated_user_id or tenant_id
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
-@login_required
-async def download(dataset_id, document_id):
+@token_required
+async def download(tenant_id, dataset_id, document_id, authenticated_user_id=None):
     """
     Download a document from a dataset.
     ---
@@ -91,6 +95,11 @@ async def download(dataset_id, document_id):
     """
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
+    if not KnowledgebaseService.accessible(
+        kb_id=dataset_id,
+        user_id=_dataset_access_actor_id(tenant_id, authenticated_user_id),
+    ):
+        return get_error_data_result(message=f"You do not own the dataset {dataset_id}.")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -171,7 +180,7 @@ async def download_document(document_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
-async def parse(tenant_id, dataset_id):
+async def parse(tenant_id, dataset_id, authenticated_user_id=None):
     """
     Start parsing documents into chunks.
     ---
@@ -208,7 +217,10 @@ async def parse(tenant_id, dataset_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+    if not KnowledgebaseService.accessible(
+        kb_id=dataset_id,
+        user_id=_dataset_access_actor_id(tenant_id, authenticated_user_id),
+    ):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
     if not req.get("document_ids"):
@@ -262,7 +274,7 @@ async def parse(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
-async def stop_parsing(tenant_id, dataset_id):
+async def stop_parsing(tenant_id, dataset_id, authenticated_user_id=None):
     """
     Stop parsing documents into chunks.
     ---
@@ -299,7 +311,10 @@ async def stop_parsing(tenant_id, dataset_id):
         schema:
           type: object
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+    if not KnowledgebaseService.accessible(
+        kb_id=dataset_id,
+        user_id=_dataset_access_actor_id(tenant_id, authenticated_user_id),
+    ):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     req = await get_request_json()
 
@@ -339,7 +354,7 @@ async def stop_parsing(tenant_id, dataset_id):
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @token_required
-async def retrieval_test(tenant_id):
+async def retrieval_test(tenant_id, authenticated_user_id=None):
     """
     Retrieve chunks based on a query.
     ---
@@ -426,8 +441,9 @@ async def retrieval_test(tenant_id):
     kb_ids = req["dataset_ids"]
     if not isinstance(kb_ids, list):
         return get_error_data_result("`dataset_ids` should be a list")
+    actor_id = _dataset_access_actor_id(tenant_id, authenticated_user_id)
     for id in kb_ids:
-        if not KnowledgebaseService.accessible(kb_id=id, user_id=tenant_id):
+        if not KnowledgebaseService.accessible(kb_id=id, user_id=actor_id):
             return get_error_data_result(f"You don't own the dataset {id}.")
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     embd_nms = list(set([TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]))  # remove vendor suffix for comparison

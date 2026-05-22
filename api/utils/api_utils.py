@@ -286,6 +286,8 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
 
 
 def token_required(func):
+    accepts_authenticated_user_id = "authenticated_user_id" in inspect.signature(func).parameters
+
     @wraps(func)
     async def wrapper(*args, **kwargs):
         # Validate the token (API Key)
@@ -334,6 +336,8 @@ def token_required(func):
                 tenants = UserTenantService.query(user_id=user[0].id)
                 if tenants:
                     kwargs["tenant_id"] = tenants[0].tenant_id
+                    if accepts_authenticated_user_id:
+                        kwargs["authenticated_user_id"] = user[0].id
                     result = func(*args, **kwargs)
                     if inspect.iscoroutine(result):
                         return await result
