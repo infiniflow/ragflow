@@ -1400,7 +1400,7 @@ async def do_handle_task(task):
                         "merge_timeout_seconds": 180,
                         "resolution_timeout_seconds": 1800,
                         "community_timeout_seconds": 1800,
-                        "lock_acquire_timeout_seconds": 0,
+                        "lock_acquire_timeout_seconds": 600,
                     }
                 }
             )

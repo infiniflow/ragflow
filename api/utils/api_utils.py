@@ -448,7 +448,7 @@ def get_parser_config(chunk_method, parser_config):
                 "merge_timeout_seconds": 180,
                 "resolution_timeout_seconds": 1800,
                 "community_timeout_seconds": 1800,
-                "lock_acquire_timeout_seconds": 0,
+                "lock_acquire_timeout_seconds": 600,
             },
             "parent_child": {
                 "use_parent_child": False,

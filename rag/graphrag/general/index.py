@@ -64,7 +64,7 @@ DEFAULT_GRAPHRAG_BUILD_SUBGRAPH_MIN_TIMEOUT_SECONDS = 600
 DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS = 180
 DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS = 1800
 DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS = 1800
-DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS = 0
+DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS = 600
 
 
 def _bounded_int_config(config: dict, key: str, default: int, minimum: int, maximum: int) -> int:
@@ -99,6 +99,13 @@ def _bounded_float_config(config: dict, key: str, default: float, minimum: float
 
 def _batch_chunk_token_size_config(config: dict, key: str, default: int) -> int:
     return _bounded_int_config(config, key, default, MIN_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE, MAX_GRAPHRAG_BATCH_CHUNK_TOKEN_SIZE)
+
+
+def _lock_acquire_timeout_config(config: dict) -> int:
+    value = _bounded_int_config(config, "lock_acquire_timeout_seconds", DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS, 0, 86400)
+    if value == 0:
+        return DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS
+    return value
 
 
 def _select_extractor_type(graphrag_config: dict):
@@ -174,11 +181,22 @@ async def _run_with_retry(
 
 
 async def _acquire_lock(lock: RedisDistributedLock, label: str, timeout_seconds: int, callback, task_id: str):
-    _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring {label}.", callback)
-    if timeout_seconds > 0:
-        await asyncio.wait_for(lock.spin_acquire(), timeout=timeout_seconds)
-    else:
-        await lock.spin_acquire()
+    if timeout_seconds <= 0:
+        timeout_seconds = DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while True:
+        _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring {label}.", callback)
+        if lock.acquire():
+            return
+
+        remaining_seconds = deadline - asyncio.get_running_loop().time()
+        if remaining_seconds <= 0:
+            msg = f"[GraphRAG] failed to acquire {label} after {timeout_seconds}s"
+            if callback:
+                callback(msg=msg)
+            raise asyncio.TimeoutError(msg)
+
+        await asyncio.sleep(min(10, remaining_seconds))
 
 
 async def load_subgraph_from_store(tenant_id: str, kb_id: str, doc_id: str):
@@ -272,7 +290,7 @@ async def run_graphrag_for_kb(
     merge_timeout_seconds = _bounded_int_config(graphrag_config, "merge_timeout_seconds", DEFAULT_GRAPHRAG_MERGE_TIMEOUT_SECONDS, 0, 86400)
     resolution_timeout_seconds = _bounded_int_config(graphrag_config, "resolution_timeout_seconds", DEFAULT_GRAPHRAG_RESOLUTION_TIMEOUT_SECONDS, 0, 86400)
     community_timeout_seconds = _bounded_int_config(graphrag_config, "community_timeout_seconds", DEFAULT_GRAPHRAG_COMMUNITY_TIMEOUT_SECONDS, 0, 86400)
-    lock_acquire_timeout_seconds = _bounded_int_config(graphrag_config, "lock_acquire_timeout_seconds", DEFAULT_GRAPHRAG_LOCK_ACQUIRE_TIMEOUT_SECONDS, 0, 86400)
+    lock_acquire_timeout_seconds = _lock_acquire_timeout_config(graphrag_config)
 
     if not doc_ids:
         logging.info(f"Fetching all docs for {kb_id}")
@@ -450,7 +468,7 @@ async def run_graphrag_for_kb(
         now = asyncio.get_running_loop().time()
         return {"ok_docs": [], "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
-    kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value="batch_merge", timeout=1200)
+    kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value=f"batch_merge:{task_id}", timeout=1200)
     _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before acquiring merge lock.", callback)
     await _acquire_lock(kb_lock, "merge lock", lock_acquire_timeout_seconds, callback, task_id)
     callback(msg=f"[GraphRAG] dataset:{kb_id} merge lock acquired")

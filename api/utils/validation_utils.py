@@ -375,7 +375,7 @@ class GraphragConfig(Base):
     merge_timeout_seconds: Annotated[int, Field(default=180, ge=0, le=86400)]
     resolution_timeout_seconds: Annotated[int, Field(default=1800, ge=0, le=86400)]
     community_timeout_seconds: Annotated[int, Field(default=1800, ge=0, le=86400)]
-    lock_acquire_timeout_seconds: Annotated[int, Field(default=0, ge=0, le=86400)]
+    lock_acquire_timeout_seconds: Annotated[int, Field(default=600, ge=0, le=86400)]
 
 
 class ParentChildConfig(Base):
