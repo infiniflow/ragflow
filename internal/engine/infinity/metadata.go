@@ -285,6 +285,7 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 }
 
 // DeleteMetadata deletes metadata from tenant's metadata table by condition
+// Returns the number of deleted documents.
 func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	tableName := buildMetadataTableName(tenantID)
 
@@ -339,6 +340,123 @@ func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[strin
 	}
 
 	return delResp.DeletedRows, nil
+}
+
+// DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields
+// The document itself remains, only the specified keys are deleted.
+func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
+	tableName := buildMetadataTableName(tenantID)
+	common.Info("InfinityConnection.DeleteMetadataKeys called", zap.String("tableName", tableName), zap.String("docID", docID), zap.Any("keys", keys))
+
+	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		return fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
+	}
+
+	// Build filter to find the document
+	escapedDocID := strings.ReplaceAll(docID, "'", "''")
+	escapedDatasetID := strings.ReplaceAll(datasetID, "'", "''")
+	filter := fmt.Sprintf("id = '%s' AND kb_id = '%s'", escapedDocID, escapedDatasetID)
+
+	// Query existing metadata to get current meta_fields
+	queryTable := table.Output([]string{"id", "kb_id", "meta_fields"}).Filter(filter).Limit(1).Offset(0)
+	result, err := queryTable.ToResult()
+	if err != nil {
+		return fmt.Errorf("failed to query existing metadata: %w", err)
+	}
+
+	qr, ok := result.(*infinity.QueryResult)
+	if !ok || qr == nil || len(qr.Data["id"]) == 0 {
+		return fmt.Errorf("document not found: %s", docID)
+	}
+
+	// Get existing meta_fields
+	var existingMetaFields map[string]interface{}
+	if metaFieldsData, exists := qr.Data["meta_fields"]; exists && len(metaFieldsData) > 0 {
+		if metaFieldsData[0] != nil {
+			switch v := metaFieldsData[0].(type) {
+			case string:
+				if err := json.Unmarshal([]byte(v), &existingMetaFields); err != nil {
+					existingMetaFields = make(map[string]interface{})
+				}
+			case map[string]interface{}:
+				existingMetaFields = v
+			}
+		}
+	}
+
+	if existingMetaFields == nil {
+		existingMetaFields = make(map[string]interface{})
+	}
+
+	// Build set of keys to remove
+	keysToRemove := make(map[string]bool)
+	for _, k := range keys {
+		keysToRemove[k] = true
+	}
+
+	// Check if any keys actually exist and would be removed
+	hasKeysToRemove := false
+	for k := range existingMetaFields {
+		if keysToRemove[k] {
+			hasKeysToRemove = true
+			break
+		}
+	}
+
+	if !hasKeysToRemove {
+		common.Info("No matching keys to delete from document", zap.String("docID", docID))
+		return nil
+	}
+
+	// Count remaining keys after deletion (keys that are NOT being removed)
+	remainingKeys := 0
+	for k := range existingMetaFields {
+		if !keysToRemove[k] {
+			remainingKeys++
+		}
+	}
+
+	// If no other keys would remain after deletion, delete the document directly
+	if remainingKeys == 0 {
+		common.Info("All metadata keys would be deleted, removing document from index", zap.String("docID", docID))
+
+		// Use existing DeleteMetadata method which handles the deletion properly
+		condition := map[string]interface{}{
+			"id":    docID,
+			"kb_id": datasetID,
+		}
+		_, err := e.DeleteMetadata(ctx, condition, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to delete document: %w", err)
+		}
+
+		common.Info("Successfully removed document with empty meta_fields", zap.String("docID", docID))
+		return nil
+	}
+
+	// Some keys will remain, so remove only the specified keys
+	for _, key := range keys {
+		delete(existingMetaFields, key)
+	}
+
+	// Update with the modified metadata
+	updatedFields := map[string]interface{}{
+		"meta_fields": utility.ConvertMapToJSONString(existingMetaFields),
+	}
+
+	_, err = table.Update(filter, updatedFields)
+	if err != nil {
+		return fmt.Errorf("failed to delete metadata keys: %w", err)
+	}
+
+	common.Info("InfinityConnection.DeleteMetadataKeys completed", zap.String("tableName", tableName), zap.String("docID", docID))
+	return nil
 }
 
 // DropMetadataStore drops a metadata table from Infinity

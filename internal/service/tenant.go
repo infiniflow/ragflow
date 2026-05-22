@@ -35,6 +35,7 @@ type TenantService struct {
 	modelDAO             *dao.TenantModelDAO
 	modelGroupDAO        *dao.TenantModelGroupDAO
 	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
+	kbDAO                *dao.KnowledgebaseDAO
 	docEngine            engine.DocEngine
 }
 
@@ -48,6 +49,7 @@ func NewTenantService() *TenantService {
 		modelDAO:             dao.NewTenantModelDAO(),
 		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
 		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
+		kbDAO:                dao.NewKnowledgebaseDAO(),
 		docEngine:            engine.Get(),
 	}
 }
@@ -265,8 +267,8 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	return result, nil
 }
 
-// CreateMetadataInDocEngine creates the document metadata table for a tenant
-func (s *TenantService) CreateMetadataInDocEngine(tenantID string) (common.ErrorCode, error) {
+// CreateMetadataStore creates the metadata store for a tenant
+func (s *TenantService) CreateMetadataStore(tenantID string) (common.ErrorCode, error) {
 	// Call document engine to create doc meta table
 	err := s.docEngine.CreateMetadataStore(context.Background(), tenantID)
 	if err != nil {
@@ -276,12 +278,74 @@ func (s *TenantService) CreateMetadataInDocEngine(tenantID string) (common.Error
 	return common.CodeSuccess, nil
 }
 
-// DeleteMetadataInDocEngine deletes the document metadata table for a tenant
-func (s *TenantService) DeleteMetadataInDocEngine(tenantID string) (common.ErrorCode, error) {
+// DeleteMetadataStore deletes the metadata store for a tenant
+func (s *TenantService) DeleteMetadataStore(tenantID string) (common.ErrorCode, error) {
 	// Call document engine to delete doc meta table
 	err := s.docEngine.DropMetadataStore(context.Background(), tenantID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete doc meta table: %w", err)
+	}
+
+	return common.CodeSuccess, nil
+}
+
+// CreateDatasetTableRequest represents the request for creating a dataset table
+type CreateDatasetTableRequest struct {
+	KBID       string `json:"kb_id" binding:"required"`
+	VectorSize int    `json:"vector_size" binding:"required"`
+	ParserID   string `json:"parser_id,omitempty"`
+}
+
+// CreateChunkStoreResponse represents the response for creating a chunk store
+type CreateChunkStoreResponse struct {
+	KBID       string `json:"kb_id"`
+	TableName  string `json:"table_name"`
+	VectorSize int    `json:"vector_size"`
+}
+
+// CreateChunkStore creates a chunk store in the document engine for a knowledge base
+func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
+	// Get KB to find tenant_id for building table name
+	kb, err := s.kbDAO.GetByID(req.KBID)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
+	}
+
+	// vector_size is required
+	vecSize := req.VectorSize
+	if vecSize <= 0 {
+		return nil, common.CodeDataError, fmt.Errorf("vector_size must be positive")
+	}
+
+	// Build table name prefix: ragflow_<tenant_id>
+	tableName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+
+	// Call document engine to create table
+	// Full table name will be built as "{tableName}_{kb_id}"
+	err = s.docEngine.CreateChunkStore(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
+	}
+
+	return &CreateChunkStoreResponse{
+		KBID:       req.KBID,
+		TableName:  tableName,
+		VectorSize: vecSize,
+	}, common.CodeSuccess, nil
+}
+
+// DeleteChunkStore deletes the chunk store in the document engine for a knowledge base
+func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) {
+	// Get KB to find tenant_id for building table name
+	kb, err := s.kbDAO.GetByID(kbID)
+	if err != nil {
+		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
+	}
+
+	// Call document engine to delete table
+	err = s.docEngine.DropChunkStore(context.Background(), fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}
 
 	return common.CodeSuccess, nil

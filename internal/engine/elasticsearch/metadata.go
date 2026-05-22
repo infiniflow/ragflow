@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -32,6 +33,17 @@ import (
 // CreateMetadataStore creates the document metadata index
 func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
+
+	// Check if index already exists
+	exists, err := e.indexExists(ctx, indexName)
+	if err != nil {
+		return fmt.Errorf("failed to check index existence: %w", err)
+	}
+	if exists {
+		return nil
+	}
+
+	// Index will be created with mapping from index template (ragflow_doc_meta_mapping)
 	req := esapi.IndicesCreateRequest{
 		Index: indexName,
 	}
@@ -41,12 +53,26 @@ func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID 
 	}
 	defer res.Body.Close()
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		bodyBytes, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	acknowledged, ok := result["acknowledged"].(bool)
+	if !ok || !acknowledged {
+		return fmt.Errorf("metadata index creation not acknowledged")
+	}
+
 	return nil
 }
 
 // InsertMetadata inserts documents into tenant's metadata index
+// If a document with the same id and kb_id already exists, it will be updated with the new value
 func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("Inserting metadata into Elasticsearch index", zap.String("index_name", indexName), zap.String("tenant_id", tenantID), zap.Int("doc_count", len(metadata)))
@@ -75,28 +101,31 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	// Build bulk request body
 	var buf bytes.Buffer
 	for _, doc := range metadata {
-		// Action line - index operation
-		action := map[string]interface{}{
+		docID, hasID := doc["id"]
+		kbID, hasKBID := doc["kb_id"]
+		if !hasID || !hasKBID {
+			common.Warn("Skipping metadata document without id or kb_id")
+			continue
+		}
+
+		// Action line: use json.Marshal to properly escape string values
+		action, err := json.Marshal(map[string]interface{}{
 			"index": map[string]interface{}{
 				"_index": indexName,
+				"_id":    fmt.Sprintf("%s_%v", docID, kbID),
 			},
-		}
-		actionBytes, err := json.Marshal(action)
+		})
 		if err != nil {
 			common.Error("Failed to marshal bulk action", err)
 			return nil, fmt.Errorf("failed to marshal bulk action: %w", err)
 		}
-		buf.Write(actionBytes)
+		buf.Write(action)
 		buf.WriteByte('\n')
 
-		// Document line - meta_fields is stored as-is (ES can handle nested objects)
-		docBytes, err := json.Marshal(doc)
-		if err != nil {
-			common.Error("Failed to marshal document", err)
-			return nil, fmt.Errorf("failed to marshal document: %w", err)
+		// Document line
+		if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
-		buf.Write(docBytes)
-		buf.WriteByte('\n')
 	}
 
 	// Execute bulk request
@@ -113,8 +142,9 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	defer res.Body.Close()
 
 	if res.IsError() {
-		common.Sugar.Errorw("Elasticsearch bulk request returned error", "status", res.Status())
-		return nil, fmt.Errorf("elasticsearch bulk request returned error: %s", res.Status())
+		bodyBytes, _ := io.ReadAll(res.Body)
+		common.Sugar.Errorw("Elasticsearch bulk request returned error", "status", res.Status(), "body", string(bodyBytes))
+		return nil, fmt.Errorf("elasticsearch bulk request returned error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
 
 	// Parse bulk response to check for errors
@@ -134,6 +164,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 }
 
 // UpdateMetadata updates document metadata in tenant's metadata index
+// The metaFields map will fully replace the existing meta_fields
 func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("Updating metadata in Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
@@ -198,6 +229,8 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 }
 
 // DeleteMetadata deletes metadata from tenant's metadata index by condition
+// The condition is a map used to build an ES query (e.g., map["kb_id"]="xxx")
+// Returns the number of deleted documents
 func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("Deleting metadata from Elasticsearch index", zap.String("index_name", indexName), zap.Any("condition", condition))
@@ -260,6 +293,198 @@ func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[
 
 	common.Info("Successfully deleted metadata", zap.String("index_name", indexName), zap.Int64("deleted_count", deleted))
 	return deleted, nil
+}
+
+// DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields
+// The document itself remains, only the specified keys are deleted.
+func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
+	indexName := buildMetadataIndexName(tenantID)
+	common.Info("Deleting metadata keys from Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID), zap.Any("keys", keys))
+
+	// Check if index exists
+	exists, err := e.indexExists(ctx, indexName)
+	if err != nil {
+		return fmt.Errorf("failed to check index existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("index '%s' does not exist", indexName)
+	}
+
+	// Build the document ID for query
+	docID = strings.ReplaceAll(docID, "'", "''")
+	datasetIDStr := strings.ReplaceAll(datasetID, "'", "''")
+
+	// Build query to find the document
+	query := map[string]interface{}{
+		"bool": map[string]interface{}{
+			"must": []map[string]interface{}{
+				{"term": map[string]interface{}{"id": docID}},
+				{"term": map[string]interface{}{"kb_id": datasetIDStr}},
+			},
+		},
+	}
+
+	// First, get the current meta_fields to check if it will be empty after deletion
+	getReq := map[string]interface{}{
+		"query": query,
+		"_source": []string{"meta_fields"},
+		"size": 1,
+	}
+
+	getBytes, err := json.Marshal(getReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal get request: %w", err)
+	}
+
+	// Use esapi.SearchRequest directly
+	getSearchReq := esapi.SearchRequest{
+		Index: []string{indexName},
+		Body:  bytes.NewReader(getBytes),
+	}
+
+	getRes, err := getSearchReq.Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("failed to get current metadata: %w", err)
+	}
+	defer getRes.Body.Close()
+
+	if getRes.IsError() {
+		return fmt.Errorf("elasticsearch get request returned error: %s", getRes.Status())
+	}
+
+	var getResult map[string]interface{}
+	if err := json.NewDecoder(getRes.Body).Decode(&getResult); err != nil {
+		return fmt.Errorf("failed to parse get response: %w", err)
+	}
+
+	hits, ok := getResult["hits"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid get response format")
+	}
+	hitsArray, ok := hits["hits"].([]interface{})
+	if !ok || len(hitsArray) == 0 {
+		return fmt.Errorf("document not found: %s", docID)
+	}
+
+	// Check current meta_fields
+	firstHit, ok := hitsArray[0].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid hit format")
+	}
+	source, ok := firstHit["_source"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid source format")
+	}
+	metaFieldsVal, hasMetaFields := source["meta_fields"]
+
+	var currentMetaFields map[string]interface{}
+	if hasMetaFields && metaFieldsVal != nil {
+		switch v := metaFieldsVal.(type) {
+		case map[string]interface{}:
+			currentMetaFields = v
+		case string:
+			json.Unmarshal([]byte(v), &currentMetaFields)
+		}
+	}
+
+	// If no current meta_fields or already empty, nothing to delete
+	if currentMetaFields == nil || len(currentMetaFields) == 0 {
+		common.Info("No metadata fields to delete from document", zap.String("docID", docID))
+		return nil
+	}
+
+	// Calculate which keys will be removed
+	keysToRemove := make(map[string]bool)
+	for _, k := range keys {
+		keysToRemove[k] = true
+	}
+
+	// Check if any keys actually exist and would be removed
+	hasKeysToRemove := false
+	for k := range currentMetaFields {
+		if keysToRemove[k] {
+			hasKeysToRemove = true
+			break
+		}
+	}
+
+	if !hasKeysToRemove {
+		common.Info("No matching keys to delete from document", zap.String("docID", docID))
+		return nil
+	}
+
+	// Count remaining keys after deletion (keys that are NOT being removed)
+	remainingKeys := 0
+	for k := range currentMetaFields {
+		if !keysToRemove[k] {
+			remainingKeys++
+		}
+	}
+
+	// If no other keys would remain after deletion, delete the document directly
+	if remainingKeys == 0 {
+		common.Info("All metadata keys would be deleted, removing document from index", zap.String("docID", docID))
+
+		// Build condition for deletion using docID and datasetID
+		condition := map[string]interface{}{
+			"id":    docID,
+			"kb_id": datasetIDStr,
+		}
+
+		// Use existing DeleteMetadata method which handles the deletion properly
+		_, err := e.DeleteMetadata(ctx, condition, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to delete document: %w", err)
+		}
+
+		common.Info("Successfully removed document with empty meta_fields", zap.String("docID", docID))
+		return nil
+	}
+
+	// Some keys will remain, so remove only the specified keys
+	keysParam := make([]string, len(keys))
+	for i, k := range keys {
+		keysParam[i] = k
+	}
+
+	// Build update script that removes keys from meta_fields map
+	scriptSource := "for(int i=0;i<params.keys.length;i++){if(ctx._source.meta_fields.containsKey(params.keys[i])){ctx._source.meta_fields.remove(params.keys[i])}}"
+
+	updateReq := map[string]interface{}{
+		"query": query,
+		"script": map[string]interface{}{
+			"source": scriptSource,
+			"params": map[string]interface{}{
+				"keys": keysParam,
+			},
+		},
+	}
+
+	updateBytes, err := json.Marshal(updateReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal update request: %w", err)
+	}
+
+	req := esapi.UpdateByQueryRequest{
+		Index: []string{indexName},
+		Body:  bytes.NewReader(updateBytes),
+	}
+
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		common.Error("Failed to execute update by query", err)
+		return fmt.Errorf("failed to execute update by query: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		common.Sugar.Errorw("Elasticsearch update by query returned error", "status", res.Status())
+		return fmt.Errorf("elasticsearch update by query returned error: %s", res.Status())
+	}
+
+	common.Info("Successfully deleted metadata keys in Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID))
+
+	return nil
 }
 
 // DropMetadataStore drops a metadata index from Elasticsearch
