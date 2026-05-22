@@ -392,6 +392,13 @@ class _DummyUser:
     def to_dict(self):
         return {"id": self.id, "email": self.email}
 
+    def to_safe_dict(self, *, for_self: bool = False):
+        _sensitive = {"password", "access_token", "email"}
+        result = {k: v for k, v in self.to_dict().items() if k not in _sensitive}
+        if for_self:
+            result["email"] = self.email
+        return result
+
 
 def _set_request_args(monkeypatch, module, args=None):
     monkeypatch.setattr(module, "request", SimpleNamespace(args=_Args(args or {})))
