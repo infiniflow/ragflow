@@ -281,6 +281,10 @@ export const useDeleteProviderInstance = () => {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.provider_name),
         });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.defaultModels(),
+        });
+
         message.success(t('message.deleted'));
       }
       return data;

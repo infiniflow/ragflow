@@ -18,7 +18,9 @@ export const useWarnEmptyModel = (
     if (
       showEmptyModelWarn &&
       !warnedRef.current &&
-      (isEmpty(embdId) || isEmpty(llmId))
+      (isEmpty(embdId) || isEmpty(llmId)) &&
+      typeof embdId === 'string' &&
+      typeof llmId === 'string'
     ) {
       warnedRef.current = true;
       Modal.warning({
