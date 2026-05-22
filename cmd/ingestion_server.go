@@ -17,10 +17,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"ragflow/internal/ingestion"
+	"syscall"
+	"time"
 
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
@@ -160,10 +164,18 @@ func main() {
 		common.Fatal("Failed to connect: %v", zap.Error(err))
 	}
 
-	ch := make(chan struct{})
-	<-ch
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	sig := <-quit
+
+	common.Info("Received signal", zap.String("signal", sig.String()))
+	common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", name))
+
+	// Create context with timeout for graceful shutdown
+	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	ingestor.Stop()
 
-	common.Info("Ingestion worker initialization complete")
+	common.Info(fmt.Sprintf("Ingestor %s shutdown complete", name))
 }

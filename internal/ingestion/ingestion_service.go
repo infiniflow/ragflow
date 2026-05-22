@@ -17,15 +17,15 @@ import (
 )
 
 type Ingestor struct {
-	id     string
-	name   string
+	id         string
+	name       string
 	serverAddr string
-	conn   *grpc.ClientConn
-	client common.IngestionManagerClient
-	stream common.IngestionManager_ActionClient
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	conn       *grpc.ClientConn
+	client     common.IngestionManagerClient
+	stream     common.IngestionManager_ActionClient
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
 
 	reconnectMu sync.Mutex
 
@@ -440,9 +440,9 @@ func (e *Ingestor) reconnect() {
 	go e.heartbeatLoop()
 }
 
-// Stop gracefully shuts down the executor
+// Stop gracefully shuts down the ingestor
 func (e *Ingestor) Stop() {
-	log.Printf("Stopping executor %s", e.id)
+	common.Info(fmt.Sprintf("Stopping ingestor %s", e.id))
 	e.cancel()
 
 	// Wait for all tasks to complete
@@ -454,9 +454,9 @@ func (e *Ingestor) Stop() {
 
 	select {
 	case <-done:
-		log.Printf("All tasks completed")
+		common.Info("All tasks completed")
 	case <-time.After(30 * time.Second):
-		log.Printf("Timeout waiting for tasks to complete")
+		common.Info("Timeout waiting for tasks to complete")
 	}
 
 	if e.stream != nil {
