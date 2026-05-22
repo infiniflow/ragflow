@@ -62,53 +62,6 @@ export function parseModelUuid(uuid: string): {
   return { modelName, factoryId };
 }
 
-// Get model_type from cached LLM list by llm_id (e.g., "modelName@factoryId")
-export function getModelTypeByLlmId(
-  llmId: string,
-  llmList?: Record<string, any> | null,
-): string {
-  if (!llmId) {
-    return 'chat';
-  }
-
-  const { modelName, factoryId } = parseModelUuid(llmId);
-
-  const resolvedList = llmList || getCachedLlmList();
-  if (!resolvedList) {
-    return 'chat';
-  }
-
-  for (const [provider, data] of Object.entries(resolvedList)) {
-    if (data.llm && Array.isArray(data.llm)) {
-      // /v1/llm/my_llms format: uses "type" instead of "model_type", "name" instead of "llm_name"
-      const model = data.llm.find(
-        (m: any) => m.name === modelName && provider === factoryId,
-      );
-      const modelType = model?.model_type || model?.type;
-      if (modelType) {
-        const types = Array.isArray(modelType) ? modelType : [modelType];
-        if (types.includes('chat')) return 'chat';
-        if (types.includes('image2text')) return 'image2text';
-        return types[0] || 'chat';
-      }
-    } else if (Array.isArray(data)) {
-      // /v1/llm/list format: uses "model_type" and "llm_name"
-      const model = data.find(
-        (m: any) => m.llm_name === modelName && m.fid === factoryId,
-      );
-      const modelType = model?.model_type || model?.type;
-      if (modelType) {
-        const types = Array.isArray(modelType) ? modelType : [modelType];
-        if (types.includes('chat')) return 'chat';
-        if (types.includes('image2text')) return 'image2text';
-        return types[0] || 'chat';
-      }
-    }
-  }
-
-  return 'chat';
-}
-
 // Model parameter to tenant parameter mapping
 type ModelParamMap = {
   [key: string]: string;

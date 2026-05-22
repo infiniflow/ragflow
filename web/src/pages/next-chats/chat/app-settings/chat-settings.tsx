@@ -5,13 +5,12 @@ import { Separator } from '@/components/ui/separator';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
-import { useFetchLlmList } from '@/hooks/use-llm-request';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
 } from '@/utils/form';
-import { getModelTypeByLlmId } from '@/utils/llm-util';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
@@ -32,7 +31,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const formSchema = useChatSettingSchema();
   const { data } = useFetchChat();
   const { updateChat, loading } = useUpdateChat();
-  const llmList = useFetchLlmList();
+  const findLlmByUuid = useFindLlmByUuid();
   const { id } = useParams();
   const { t } = useTranslation();
 
@@ -94,7 +93,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     if (nextValues.llm_id) {
       nextValues.llm_setting = {
         ...nextValues.llm_setting,
-        model_type: getModelTypeByLlmId(nextValues.llm_id, llmList),
+        model_type: findLlmByUuid(nextValues.llm_id)?.model_type || 'chat',
       };
     }
 
