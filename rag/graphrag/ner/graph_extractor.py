@@ -521,7 +521,7 @@ class GraphExtractor(Extractor):
         if self.callback:
             self.callback(
                 0.5 + 0.1 * len(out_results) / num_chunks,
-                msg=f"[spacy] Entities extraction of chunk {chunk_seq} "
+                msg=f"[spacy] Entities extraction of chunk {chunk_seq+1} "
                 f"{len(out_results)}/{num_chunks} done, "
                 f"{len(maybe_nodes)} nodes, {len(maybe_edges)} edges, "
                 f"{token_count} tokens.",
