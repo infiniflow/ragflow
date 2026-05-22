@@ -299,13 +299,14 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
+            task_language = task.get("language") or "Chinese"
             cks = await thread_pool_exec(
                 chunker.chunk,
                 task["name"],
                 binary=binary,
                 from_page=task["from_page"],
                 to_page=task["to_page"],
-                lang=task["language"],
+                lang=task_language,
                 callback=progress_callback,
                 kb_id=task["kb_id"],
                 parser_config=parser_config_for_chunk,
@@ -1286,7 +1287,9 @@ async def do_handle_task(task):
     task_to_page = task["to_page"]
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
-    task_language = task["language"]
+    task_language = task.get("language") or "Chinese"
+    if not task.get("language"):
+        logging.warning("Task %s has no language set, falling back to Chinese", task_id)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task['kb_parser_config'].get("llm_id") or task["llm_id"]
     task['llm_id'] = kb_task_llm_id
