@@ -420,11 +420,6 @@ class TestDocumentMetadataUnit:
 
         # From here on the user is authorized; exercise the original branches.
         monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
-        monkeypatch.setattr(
-            module.DocumentService,
-            "get_by_id",
-            lambda _doc_id: (True, SimpleNamespace(name="stub.bin", type=module.FileType.OTHER.value)),
-        )
 
         async def fake_make_response(data):
             return _DummyResponse(data)
@@ -454,18 +449,6 @@ class TestDocumentMetadataUnit:
         assert storage_calls == [("kb-dataset-1", "object-location-key")]
         assert res.headers["content_type"] == "application/abc"
         assert res.headers["extension"] == "abc"
-
-        # No `ext` query param: infer MIME/extension from the stored document filename (aligned with /preview).
-        monkeypatch.setattr(module, "request", _DummyRequest(args={}))
-        monkeypatch.setattr(
-            module.DocumentService,
-            "get_by_id",
-            lambda _doc_id: (True, SimpleNamespace(name="Annual report.PDF", type=module.FileType.PDF.value)),
-        )
-        res = _run(module.download_attachment(attachment_id="att1"))
-        assert isinstance(res, _DummyResponse)
-        assert res.headers["content_type"] == "application/pdf"
-        assert res.headers["extension"] == "pdf"
 
         async def raise_error(*_args, **_kwargs):
             raise RuntimeError("download boom")

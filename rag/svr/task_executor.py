@@ -299,13 +299,14 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
+            task_language = task.get("language") or "Chinese"
             cks = await thread_pool_exec(
                 chunker.chunk,
                 task["name"],
                 binary=binary,
                 from_page=task["from_page"],
                 to_page=task["to_page"],
-                lang=task["language"],
+                lang=task_language,
                 callback=progress_callback,
                 kb_id=task["kb_id"],
                 parser_config=parser_config_for_chunk,
@@ -1286,7 +1287,9 @@ async def do_handle_task(task):
     task_to_page = task["to_page"]
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
-    task_language = task["language"]
+    task_language = task.get("language") or "Chinese"
+    if not task.get("language"):
+        logging.warning("Task %s has no language set, falling back to Chinese", task_id)
     doc_task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     kb_task_llm_id = task['kb_parser_config'].get("llm_id") or task["llm_id"]
     task['llm_id'] = kb_task_llm_id
@@ -1392,6 +1395,15 @@ async def do_handle_task(task):
                         ],
                         "method": "light",
                         "batch_chunk_token_size": 4096,
+                        "retry_attempts": 2,
+                        "retry_backoff_seconds": 2.0,
+                        "retry_backoff_max_seconds": 60.0,
+                        "build_subgraph_timeout_per_chunk_seconds": 300,
+                        "build_subgraph_min_timeout_seconds": 600,
+                        "merge_timeout_seconds": 180,
+                        "resolution_timeout_seconds": 1800,
+                        "community_timeout_seconds": 1800,
+                        "lock_acquire_timeout_seconds": 600,
                     }
                 }
             )
