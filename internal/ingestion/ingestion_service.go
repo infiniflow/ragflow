@@ -16,6 +16,10 @@ import (
 	"ragflow/internal/common"
 )
 
+type taskWrapper struct {
+	task *common.TaskAssignment
+}
+
 type Ingestor struct {
 	id         string
 	name       string
@@ -25,8 +29,6 @@ type Ingestor struct {
 	stream     common.IngestionManager_ActionClient
 	ctx        context.Context
 	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-
 	reconnectMu sync.Mutex
 
 	// Configuration
@@ -40,6 +42,11 @@ type Ingestor struct {
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
+
+	// Worker pool
+	taskChan  chan *common.TaskAssignment
+	workerWg  sync.WaitGroup
+	startOnce sync.Once
 }
 
 type TaskContext struct {
@@ -64,6 +71,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		supportedDocTypes: supportedTypes,
 		version:           "1.0.0",
 		currentTasks:      make(map[string]*TaskContext),
+		taskChan:          make(chan *common.TaskAssignment, maxConcurrency*2),
 		ShutdownCh:        make(chan struct{}, 1),
 	}
 }
@@ -250,37 +258,57 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 		return
 	}
 
-	// Check if there is an available slot
-	e.tasksMu.RLock()
-	runningCount := len(e.currentTasks)
-	e.tasksMu.RUnlock()
+	// Ensure worker pool is started on first task
+	e.startWorkerPool()
 
-	if runningCount >= int(e.maxConcurrency) {
+	// Push to task channel; if full, reject the task (backpressure)
+	select {
+	case e.taskChan <- task:
+		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.TaskId, len(e.taskChan), cap(e.taskChan)))
+	default:
 		common.Info(fmt.Sprintf("No available slot for task %s, rejecting", task.TaskId))
-		// Could send a rejection message for admin to re-assign
-		return
 	}
+}
 
-	// Create task context
-	taskCtx, cancel := context.WithCancel(e.ctx)
-	taskContext := &TaskContext{
-		Task:       task,
-		Status:     "running",
-		StartTime:  time.Now(),
-		CancelFunc: cancel,
+func (e *Ingestor) startWorkerPool() {
+	e.startOnce.Do(func() {
+		for i := int32(0); i < e.maxConcurrency; i++ {
+			e.workerWg.Add(1)
+			go e.workerLoop(i)
+		}
+		common.Info(fmt.Sprintf("Worker pool started with %d workers", e.maxConcurrency))
+	})
+}
+
+func (e *Ingestor) workerLoop(id int32) {
+	defer e.workerWg.Done()
+	common.Info(fmt.Sprintf("Worker %d started", id))
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case task := <-e.taskChan:
+			// Create task context
+			taskCtx, cancel := context.WithCancel(e.ctx)
+			taskContext := &TaskContext{
+				Task:       task,
+				Status:     "running",
+				StartTime:  time.Now(),
+				CancelFunc: cancel,
+			}
+
+			// Register task
+			e.tasksMu.Lock()
+			e.currentTasks[task.TaskId] = taskContext
+			e.tasksMu.Unlock()
+
+			// Execute the task (synchronously within worker)
+			e.executeTask(taskCtx, taskContext)
+		}
 	}
-
-	e.tasksMu.Lock()
-	e.currentTasks[task.TaskId] = taskContext
-	e.tasksMu.Unlock()
-
-	// Start task execution
-	e.wg.Add(1)
-	go e.executeTask(taskCtx, taskContext)
 }
 
 func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
-	defer e.wg.Done()
 	defer func() {
 		e.tasksMu.Lock()
 		delete(e.currentTasks, taskCtx.Task.TaskId)
@@ -474,19 +502,9 @@ func (e *Ingestor) Stop() {
 	common.Info(fmt.Sprintf("Stopping ingestor %s", e.id))
 	e.cancel()
 
-	// Wait for all tasks to complete
-	done := make(chan struct{})
-	go func() {
-		e.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		common.Info("All tasks completed")
-	case <-time.After(30 * time.Second):
-		common.Info("Timeout waiting for tasks to complete")
-	}
+	// Wait for all workers to finish (they exit on ctx.Done())
+	e.workerWg.Wait()
+	common.Info("All tasks completed")
 
 	if e.stream != nil {
 		e.stream.CloseSend()
