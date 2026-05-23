@@ -136,21 +136,34 @@ func (e *Ingestor) sendRegister() error {
 
 func (e *Ingestor) sendHeartbeat() error {
 	e.tasksMu.RLock()
-	taskIDs := make([]string, 0, len(e.currentTasks))
-	for tid := range e.currentTasks {
-		taskIDs = append(taskIDs, tid)
+
+	cutoff := time.Now().Add(-10 * time.Minute)
+	var toDeleteTask []string
+	taskStates := make([]*common.TaskState, 0, len(e.currentTasks))
+
+	for tid, tc := range e.currentTasks {
+		// Check if task is in a terminal state and expired beyond 10 minutes
+		if (tc.Status == "CANCELED" || tc.Status == "COMPLETED" || tc.Status == "REJECTED") &&
+			!tc.EndTime.IsZero() && tc.EndTime.Before(cutoff) {
+			toDeleteTask = append(toDeleteTask, tid)
+		} else {
+			taskStates = append(taskStates, &common.TaskState{
+				TaskId:                        tid,
+				Status:                        tc.Status,
+				EstimatedRemainingTimeSeconds: int64(tc.estimatedRemainingTime),
+				ErrorMessage:                  tc.ErrorMessage,
+			})
+		}
 	}
 	e.tasksMu.RUnlock()
 
-	taskStates := make([]*common.TaskState, 0, len(taskIDs))
-	for _, taskID := range taskIDs {
-		taskCtx := e.currentTasks[taskID]
-		taskStates = append(taskStates, &common.TaskState{
-			TaskId:                        taskID,
-			Status:                        taskCtx.Status,
-			EstimatedRemainingTimeSeconds: int64(taskCtx.estimatedRemainingTime),
-			ErrorMessage:                  taskCtx.ErrorMessage,
-		})
+	// Delete expired terminal tasks from currentTasks
+	if len(toDeleteTask) > 0 {
+		e.tasksMu.Lock()
+		for _, id := range toDeleteTask {
+			delete(e.currentTasks, id)
+		}
+		e.tasksMu.Unlock()
 	}
 
 	var pid = int64(os.Getpid())
@@ -179,8 +192,9 @@ func (e *Ingestor) sendHeartbeat() error {
 		IngestorId:  e.id,
 		MessageType: "HEARTBEAT",
 		HeartbeatInfo: &common.HeartbeatInfo{
-			TaskStates: taskStates,
-			CpuUsage:   float32(cpuPercent),
+			TaskStates:    taskStates,
+			DeleteTaskIds: toDeleteTask,
+			CpuUsage:      float32(cpuPercent),
 			VmsUsage:   float32(VmsUsage),
 			RssUsage:   float32(RssUsage),
 			ProcessId:  pid,

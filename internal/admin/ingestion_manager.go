@@ -67,7 +67,6 @@ type IngestorState struct {
 	ID            string
 	Info          *common.RegisterInfo
 	LastHeartbeat time.Time
-	CurrentTasks  map[string]bool // task_id -> whether the task is currently running
 	Stream        common.IngestionManager_ActionServer
 	Status        string // active, draining
 	Address       string
@@ -218,7 +217,6 @@ func (s *IngestionManager) handleRegister(
 		ID:            msg.IngestorId,
 		Info:          msg.RegisterInfo,
 		LastHeartbeat: time.Now().Truncate(time.Second),
-		CurrentTasks:  make(map[string]bool),
 		Stream:        stream,
 		Status:        "active",
 		Address:       clientAddr,
@@ -267,6 +265,11 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 		ingestorState.vmsUsage = float64(msg.HeartbeatInfo.VmsUsage) / 1024 / 1024 // in MB
 		ingestorState.rssUsage = float64(msg.HeartbeatInfo.RssUsage) / 1024 / 1024 // in MB
 
+		// Delete expired terminal tasks from currentTasks
+		for _, taskID := range msg.HeartbeatInfo.DeleteTaskIds {
+			delete(s.taskStates, taskID)
+		}
+
 		for _, ingestorTaskState := range msg.HeartbeatInfo.TaskStates {
 			localTaskState := s.taskStates[ingestorTaskState.TaskId]
 			localTaskState.estimatedRemainingTime = time.Duration(ingestorTaskState.EstimatedRemainingTimeSeconds)
@@ -288,11 +291,6 @@ func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingest
 
 	result := msg.TaskResult
 	common.Info(fmt.Sprintf("Task result from %s: task=%s, status=%s", ingestorID, result.TaskId, result.Status))
-
-	// Remove from the ingestion_server's current task list
-	if state != nil {
-		delete(state.CurrentTasks, result.TaskId)
-	}
 
 	// Signal that a slot may have freed up for pending tasks
 	select {
@@ -375,8 +373,7 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 	defer s.mu.Unlock()
 
 	for _, ingestor := range s.ingestionServers {
-		if ingestor.Status == "active" && len(ingestor.CurrentTasks) < int(ingestor.Info.MaxConcurrency) {
-
+		if ingestor.Status == "active" {
 			s.taskStates[task.TaskId] = &TaskState{
 				taskID:     task.TaskId,
 				status:     "DISPATCHED",
@@ -427,19 +424,12 @@ func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 }
 
 func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *IngestorState) {
-	s.mu.Lock()
-	state.CurrentTasks[task.TaskId] = true
-	s.mu.Unlock()
-
 	err := state.Stream.Send(&common.AdminMessage{
 		MessageType:    "TASK_ASSIGNMENT",
 		TaskAssignment: task,
 	})
 	if err != nil {
 		common.Info(fmt.Sprintf("Failed to assign task %s to ingestor %s: %v", task.TaskId, state.ID, err))
-		s.mu.Lock()
-		delete(state.CurrentTasks, task.TaskId)
-		s.mu.Unlock()
 		// Re-queue the task
 		s.taskQueue <- &pendingTask{Task: task, CreatedAt: time.Now().Truncate(time.Second)}
 		return
