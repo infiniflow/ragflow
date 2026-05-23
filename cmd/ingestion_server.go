@@ -157,7 +157,7 @@ func main() {
 	// Connect to the admin server
 	serverAddress := fmt.Sprintf("%s:%d", config.Admin.Host, config.Admin.IngestionManagerPort)
 	if err := ingestor.Connect(serverAddress); err != nil {
-		common.Fatal("Failed to connect: %v", zap.Error(err))
+		common.Fatal(fmt.Sprintf("Error: %s", err.Error()))
 	}
 
 	quit := make(chan os.Signal, 1)

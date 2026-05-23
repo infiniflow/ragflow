@@ -21,14 +21,14 @@ type taskWrapper struct {
 }
 
 type Ingestor struct {
-	id         string
-	name       string
-	serverAddr string
-	conn       *grpc.ClientConn
-	client     common.IngestionManagerClient
-	stream     common.IngestionManager_ActionClient
-	ctx        context.Context
-	cancel     context.CancelFunc
+	id          string
+	name        string
+	serverAddr  string
+	conn        *grpc.ClientConn
+	client      common.IngestionManagerClient
+	stream      common.IngestionManager_ActionClient
+	ctx         context.Context
+	cancel      context.CancelFunc
 	reconnectMu sync.Mutex
 
 	// Configuration
@@ -85,7 +85,7 @@ func (e *Ingestor) Connect(serverAddr string) error {
 		grpc.WithTimeout(5*time.Second),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("fail to connect admin server: %s", err.Error())
 	}
 	e.conn = conn
 
@@ -104,6 +104,9 @@ func (e *Ingestor) Connect(serverAddr string) error {
 	if err = e.sendRegister(); err != nil {
 		return err
 	}
+
+	// Ensure worker pool is started on first task
+	e.startWorkerPool()
 
 	// 2. Start receive loop
 	go e.receiveLoop()
@@ -257,9 +260,6 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 		}
 		return
 	}
-
-	// Ensure worker pool is started on first task
-	e.startWorkerPool()
 
 	// Push to task channel; if full, reject the task (backpressure)
 	select {
