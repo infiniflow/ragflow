@@ -38,10 +38,11 @@ message RegisterInfo {
 
 message HeartbeatInfo {
   repeated TaskState task_states = 1;
-  float cpu_usage = 2; // percentage
-  float vms_usage = 3; // absolute value
-  float rss_usage = 4; // absolute value
-  int64 process_id = 5; // pid
+  repeated string delete_task_ids = 2;
+  float cpu_usage = 3; // percentage
+  float vms_usage = 4; // absolute value
+  float rss_usage = 5; // absolute value
+  int64 process_id = 6; // pid
 }
 
 message TaskState {

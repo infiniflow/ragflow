@@ -44,19 +44,21 @@ type Ingestor struct {
 	ShutdownCh chan struct{}
 
 	// Worker pool
-	taskChan  chan *common.TaskAssignment
+	taskChan  chan *TaskContext
 	workerWg  sync.WaitGroup
 	startOnce sync.Once
 }
 
 type TaskContext struct {
+	Ctx                    context.Context
+	CancelFunc             context.CancelFunc
 	Task                   *common.TaskAssignment
 	Status                 string // PENDING, RUNNING, COMPLETED, FAILED, CANCELLING, CANCELLED
 	StartTime              time.Time
+	EndTime                time.Time
 	estimatedRemainingTime time.Duration // estimated cost in seconds to complete the task
 	Progress               int32
 	ErrorMessage           string
-	CancelFunc             context.CancelFunc
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
@@ -71,7 +73,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		supportedDocTypes: supportedTypes,
 		version:           "1.0.0",
 		currentTasks:      make(map[string]*TaskContext),
-		taskChan:          make(chan *common.TaskAssignment, maxConcurrency*2),
+		taskChan:          make(chan *TaskContext, maxConcurrency*2),
 		ShutdownCh:        make(chan struct{}, 1),
 	}
 }
@@ -102,6 +104,7 @@ func (e *Ingestor) Connect(serverAddr string) error {
 
 	// 1. Send registration message
 	if err = e.sendRegister(); err != nil {
+		conn.Close()
 		return err
 	}
 
@@ -231,6 +234,11 @@ func (e *Ingestor) receiveLoop() {
 		case "TASK_ASSIGNMENT":
 			e.handleTaskAssignment(msg.TaskAssignment)
 
+		case "TASK_CANCEL":
+			if msg.TaskCancellation != nil {
+				e.handleCancelTask(msg.TaskCancellation.TaskId)
+			}
+
 		case "ACK":
 			common.Info(fmt.Sprintf("Received ACK: task=%s, success=%v, msg=%s",
 				msg.AckInfo.TaskId, msg.AckInfo.Success, msg.AckInfo.Message))
@@ -261,13 +269,48 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 		return
 	}
 
+	// Construct TaskContext with a cancellable context
+	ctx, cancel := context.WithCancel(e.ctx)
+	taskCtx := &TaskContext{
+		Ctx:        ctx,
+		CancelFunc: cancel,
+		Task:       task,
+		Status:     "QUEUED",
+	}
+
+	// Register in currentTasks immediately so heartbeat sees PENDING state
+	e.tasksMu.Lock()
+	e.currentTasks[task.TaskId] = taskCtx
+	e.tasksMu.Unlock()
+
+	common.Info("wait for 20 seconds")
 	// Push to task channel; if full, reject the task (backpressure)
 	select {
-	case e.taskChan <- task:
+	case e.taskChan <- taskCtx:
 		common.Info(fmt.Sprintf("Task %s queued (channel: %d/%d)", task.TaskId, len(e.taskChan), cap(e.taskChan)))
 	default:
 		common.Info(fmt.Sprintf("No available slot for task %s, rejecting", task.TaskId))
+		//e.tasksMu.Lock()
+		//delete(e.currentTasks, task.TaskId)
+		//e.tasksMu.Unlock()
+		taskCtx.Status = "REJECTED"
+		taskCtx.EndTime = time.Now()
+		e.sendTaskResult(taskCtx.Task.TaskId, "REJECTED", "", "task rejected before execution")
 	}
+}
+
+func (e *Ingestor) handleCancelTask(taskID string) {
+	e.tasksMu.Lock()
+	taskCtx, exists := e.currentTasks[taskID]
+	e.tasksMu.Unlock()
+
+	if !exists {
+		common.Info(fmt.Sprintf("Cancel request for unknown task %s, ignoring", taskID))
+		return
+	}
+
+	common.Info(fmt.Sprintf("Cancelling task %s (current status: %s)", taskID, taskCtx.Status))
+	taskCtx.CancelFunc()
 }
 
 func (e *Ingestor) startWorkerPool() {
@@ -287,34 +330,39 @@ func (e *Ingestor) workerLoop(id int32) {
 		select {
 		case <-e.ctx.Done():
 			return
-		case task := <-e.taskChan:
-			// Create task context
-			taskCtx, cancel := context.WithCancel(e.ctx)
-			taskContext := &TaskContext{
-				Task:       task,
-				Status:     "running",
-				StartTime:  time.Now(),
-				CancelFunc: cancel,
+		case taskCtx := <-e.taskChan:
+			// Skip tasks that were canceled while queued
+			select {
+			case <-taskCtx.Ctx.Done():
+				common.Info(fmt.Sprintf("Task %s was cancelled while queued, skipping", taskCtx.Task.TaskId))
+				taskCtx.Status = "CANCELED"
+				taskCtx.EndTime = time.Now()
+				//e.tasksMu.Lock()
+				//delete(e.currentTasks, taskCtx.Task.TaskId)
+				//e.tasksMu.Unlock()
+				e.sendTaskResult(taskCtx.Task.TaskId, "CANCELED", "", "task cancelled before execution")
+				continue
+			default:
 			}
 
-			// Register task
-			e.tasksMu.Lock()
-			e.currentTasks[task.TaskId] = taskContext
-			e.tasksMu.Unlock()
+			// Mark as RUNNING
+			taskCtx.Status = "RUNNING"
+			taskCtx.StartTime = time.Now()
 
 			// Execute the task (synchronously within worker)
-			e.executeTask(taskCtx, taskContext)
+			e.executeTask(taskCtx)
 		}
 	}
 }
 
-func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
+func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	defer func() {
-		e.tasksMu.Lock()
-		delete(e.currentTasks, taskCtx.Task.TaskId)
-		e.tasksMu.Unlock()
+		//e.tasksMu.Lock()
+		//delete(e.currentTasks, taskCtx.Task.TaskId)
+		//e.tasksMu.Unlock()
 	}()
 
+	ctx := taskCtx.Ctx
 	task := taskCtx.Task
 	common.Info(fmt.Sprintf("Starting task %s", task.TaskId))
 
@@ -325,7 +373,9 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 		case <-ctx.Done():
 			// Task canceled
 			common.Info(fmt.Sprintf("Task %s cancelled", task.TaskId))
-			e.sendTaskResult(task.TaskId, "CANCELLED", "", "task cancelled")
+			taskCtx.Status = "CANCELED"
+			taskCtx.EndTime = time.Now()
+			e.sendTaskResult(task.TaskId, "CANCELED", "", "task cancelled")
 			return
 		case <-time.After(500 * time.Millisecond):
 			// Simulate progress update
@@ -337,6 +387,9 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 
 	// Simulate subtask splitting and execution (demonstration)
 	e.executeWithSubTasks(task)
+
+	taskCtx.Status = "COMPLETED"
+	taskCtx.EndTime = time.Now()
 
 	// Task completed
 	resultURL := "http://storage.example.com/results/" + task.TaskId + ".json"

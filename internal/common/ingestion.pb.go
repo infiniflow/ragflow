@@ -252,10 +252,11 @@ func (x *RegisterInfo) GetName() string {
 type HeartbeatInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskStates    []*TaskState           `protobuf:"bytes,1,rep,name=task_states,json=taskStates,proto3" json:"task_states,omitempty"`
-	CpuUsage      float32                `protobuf:"fixed32,2,opt,name=cpu_usage,json=cpuUsage,proto3" json:"cpu_usage,omitempty"`   // percentage
-	VmsUsage      float32                `protobuf:"fixed32,3,opt,name=vms_usage,json=vmsUsage,proto3" json:"vms_usage,omitempty"`   // absolute value
-	RssUsage      float32                `protobuf:"fixed32,4,opt,name=rss_usage,json=rssUsage,proto3" json:"rss_usage,omitempty"`   // absolute value
-	ProcessId     int64                  `protobuf:"varint,5,opt,name=process_id,json=processId,proto3" json:"process_id,omitempty"` // pid
+	DeleteTaskIds []string               `protobuf:"bytes,2,rep,name=delete_task_ids,json=deleteTaskIds,proto3" json:"delete_task_ids,omitempty"`
+	CpuUsage      float32                `protobuf:"fixed32,3,opt,name=cpu_usage,json=cpuUsage,proto3" json:"cpu_usage,omitempty"`   // percentage
+	VmsUsage      float32                `protobuf:"fixed32,4,opt,name=vms_usage,json=vmsUsage,proto3" json:"vms_usage,omitempty"`   // absolute value
+	RssUsage      float32                `protobuf:"fixed32,5,opt,name=rss_usage,json=rssUsage,proto3" json:"rss_usage,omitempty"`   // absolute value
+	ProcessId     int64                  `protobuf:"varint,6,opt,name=process_id,json=processId,proto3" json:"process_id,omitempty"` // pid
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -293,6 +294,13 @@ func (*HeartbeatInfo) Descriptor() ([]byte, []int) {
 func (x *HeartbeatInfo) GetTaskStates() []*TaskState {
 	if x != nil {
 		return x.TaskStates
+	}
+	return nil
+}
+
+func (x *HeartbeatInfo) GetDeleteTaskIds() []string {
+	if x != nil {
+		return x.DeleteTaskIds
 	}
 	return nil
 }
@@ -725,15 +733,16 @@ const file_internal_proto_ingestion_proto_rawDesc = "" +
 	"\x0fmax_concurrency\x18\x01 \x01(\x05R\x0emaxConcurrency\x12.\n" +
 	"\x13supported_doc_types\x18\x02 \x03(\tR\x11supportedDocTypes\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12\x12\n" +
-	"\x04name\x18\x04 \x01(\tR\x04name\"\xb9\x01\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\"\xe1\x01\n" +
 	"\rHeartbeatInfo\x122\n" +
 	"\vtask_states\x18\x01 \x03(\v2\x11.common.TaskStateR\n" +
-	"taskStates\x12\x1b\n" +
-	"\tcpu_usage\x18\x02 \x01(\x02R\bcpuUsage\x12\x1b\n" +
-	"\tvms_usage\x18\x03 \x01(\x02R\bvmsUsage\x12\x1b\n" +
-	"\trss_usage\x18\x04 \x01(\x02R\brssUsage\x12\x1d\n" +
+	"taskStates\x12&\n" +
+	"\x0fdelete_task_ids\x18\x02 \x03(\tR\rdeleteTaskIds\x12\x1b\n" +
+	"\tcpu_usage\x18\x03 \x01(\x02R\bcpuUsage\x12\x1b\n" +
+	"\tvms_usage\x18\x04 \x01(\x02R\bvmsUsage\x12\x1b\n" +
+	"\trss_usage\x18\x05 \x01(\x02R\brssUsage\x12\x1d\n" +
 	"\n" +
-	"process_id\x18\x05 \x01(\x03R\tprocessId\"\xaa\x01\n" +
+	"process_id\x18\x06 \x01(\x03R\tprocessId\"\xaa\x01\n" +
 	"\tTaskState\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +

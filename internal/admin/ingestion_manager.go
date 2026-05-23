@@ -217,7 +217,7 @@ func (s *IngestionManager) handleRegister(
 	*state = &IngestorState{
 		ID:            msg.IngestorId,
 		Info:          msg.RegisterInfo,
-		LastHeartbeat: time.Now(),
+		LastHeartbeat: time.Now().Truncate(time.Second),
 		CurrentTasks:  make(map[string]bool),
 		Stream:        stream,
 		Status:        "active",
@@ -250,11 +250,11 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 		return
 	}
 
-	state.LastHeartbeat = time.Now()
+	state.LastHeartbeat = time.Now().Truncate(time.Second)
 
 	if msg.HeartbeatInfo != nil {
 
-		lastUpdateTime := time.Now()
+		lastUpdateTime := time.Now().Truncate(time.Second)
 		s.mu.Lock()
 		ingestorState := s.ingestionServers[msg.IngestorId]
 		ingestorState.LastHeartbeat = lastUpdateTime
@@ -315,7 +315,7 @@ func (s *IngestionManager) handleTaskProgress(msg *common.IngestionMessage, inge
 func (s *IngestionManager) SubmitTask(task *common.TaskAssignment) {
 	s.taskQueue <- &pendingTask{
 		Task:      task,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().Truncate(time.Second),
 	}
 	common.Info(fmt.Sprintf("Task %s submitted to queue", task.TaskId))
 
@@ -359,7 +359,7 @@ func (s *IngestionManager) checkHeartbeats() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now()
+	now := time.Now().Truncate(time.Second)
 	for id, state := range s.ingestionServers {
 		if now.Sub(state.LastHeartbeat) > heartbeatTimeout {
 			if state.Status != "timeout" {
@@ -379,7 +379,7 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 
 			s.taskStates[task.TaskId] = &TaskState{
 				taskID:     task.TaskId,
-				status:     "dispatched",
+				status:     "DISPATCHED",
 				comeFrom:   "CLI",
 				startTime:  nil,
 				lastUpdate: time.Now().Truncate(time.Second),
@@ -441,7 +441,7 @@ func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *
 		delete(state.CurrentTasks, task.TaskId)
 		s.mu.Unlock()
 		// Re-queue the task
-		s.taskQueue <- &pendingTask{Task: task, CreatedAt: time.Now()}
+		s.taskQueue <- &pendingTask{Task: task, CreatedAt: time.Now().Truncate(time.Second)}
 		return
 	}
 	common.Info(fmt.Sprintf("Assigned task %s to ingestion_server %s", task.TaskId, state.ID))
