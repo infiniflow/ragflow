@@ -1319,7 +1319,8 @@ func (c *RAGFlowClient) AdminIngestCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("uri not provided")
 	}
 	payload := map[string]interface{}{
-		"uri": fileURI,
+		"uri":  fileURI,
+		"from": "CLI",
 	}
 
 	resp, err := c.HTTPClient.Request("POST", "/admin/ingestion", "admin", nil, payload)

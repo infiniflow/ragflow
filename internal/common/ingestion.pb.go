@@ -398,6 +398,7 @@ type TaskAssignment struct {
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	TaskType      string                 `protobuf:"bytes,2,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
 	Config        string                 `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
+	ComeFrom      string                 `protobuf:"bytes,4,opt,name=come_from,json=comeFrom,proto3" json:"come_from,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -449,6 +450,13 @@ func (x *TaskAssignment) GetTaskType() string {
 func (x *TaskAssignment) GetConfig() string {
 	if x != nil {
 		return x.Config
+	}
+	return ""
+}
+
+func (x *TaskAssignment) GetComeFrom() string {
+	if x != nil {
+		return x.ComeFrom
 	}
 	return ""
 }
@@ -730,11 +738,12 @@ const file_internal_proto_ingestion_proto_rawDesc = "" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
 	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12G\n" +
-	" estimated_remaining_time_seconds\x18\x04 \x01(\x03R\x1destimatedRemainingTimeSeconds\"^\n" +
+	" estimated_remaining_time_seconds\x18\x04 \x01(\x03R\x1destimatedRemainingTimeSeconds\"{\n" +
 	"\x0eTaskAssignment\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
 	"\ttask_type\x18\x02 \x01(\tR\btaskType\x12\x16\n" +
-	"\x06config\x18\x03 \x01(\tR\x06config\"C\n" +
+	"\x06config\x18\x03 \x01(\tR\x06config\x12\x1b\n" +
+	"\tcome_from\x18\x04 \x01(\tR\bcomeFrom\"C\n" +
 	"\x10TaskCancellation\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
 	"\x06config\x18\x02 \x01(\tR\x06config\"\x81\x01\n" +

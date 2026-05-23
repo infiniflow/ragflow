@@ -98,36 +98,38 @@ func (s *Service) Logout(user interface{}) error {
 // ListTasks
 func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 
-	tasks, err := s.taskDAO.GetAllTasks()
+	//tasks, err := s.taskDAO.GetAllTasks()
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//var result []map[string]interface{}
+	//for _, task := range tasks {
+	//	// task.ChunkIDs is a string, delimiter is space, count the word count
+	//	ChunkCount := strings.Count(*task.ChunkIDs, " ")
+	//	result = append(result, map[string]interface{}{
+	//		"id":          task.ID,
+	//		"task_type":   task.TaskType,
+	//		"document_id": task.DocID,
+	//		"chunk_count": ChunkCount,
+	//		"from_page":   task.FromPage,
+	//		"to_page":     task.ToPage,
+	//		"priority":    task.Priority,
+	//		"duration":    task.ProcessDuration,
+	//		"progress":    task.Progress,
+	//		//"message":     *task.ProgressMsg,
+	//		"retry_count": task.RetryCount,
+	//		"digest":      task.Digest,
+	//	})
+	//}
+
+	ingestionMgr := GetIngestionManager()
+	ingestionTasks, err := ingestionMgr.ListIngestionTasks()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fail to list ingestion tasks")
 	}
 
-	var result []map[string]interface{}
-	for _, task := range tasks {
-		// task.ChunkIDs is a string, delimiter is space, count the word count
-		ChunkCount := strings.Count(*task.ChunkIDs, " ")
-		result = append(result, map[string]interface{}{
-			"id":          task.ID,
-			"task_type":   task.TaskType,
-			"document_id": task.DocID,
-			"chunk_count": ChunkCount,
-			"from_page":   task.FromPage,
-			"to_page":     task.ToPage,
-			"priority":    task.Priority,
-			"duration":    task.ProcessDuration,
-			"progress":    task.Progress,
-			//"message":     *task.ProgressMsg,
-			"retry_count": task.RetryCount,
-			"digest":      task.Digest,
-		})
-	}
-
-	// Get all tasks from memory
-
-	// Merge two tasks together and find the differences
-
-	return result, nil
+	return ingestionTasks, nil
 }
 
 // GetUserByToken get user by access token

@@ -55,6 +55,7 @@ message TaskAssignment {
   string task_id = 1;
   string task_type = 2;
   string config = 3;
+  string come_from = 4;
 }
 
 message TaskCancellation {

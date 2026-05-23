@@ -58,7 +58,7 @@ type TaskState struct {
 	comeFrom               string // api server id
 	assignTo               string // ingestor id
 	lastUpdate             time.Time
-	startTime              time.Time
+	startTime              *time.Time
 	estimatedRemainingTime time.Duration // estimated cost in seconds to complete the task
 	errorMessage           string
 }
@@ -111,12 +111,12 @@ func (s *IngestionManager) Action(stream common.IngestionManager_ActionServer) e
 	common.Info("New ingestion_server connection")
 
 	// Start receive goroutine
-	recvErr := make(chan error, 1)
+	receiveErrorCH := make(chan error, 1)
 	go func() {
 		for {
 			msg, err := stream.Recv()
 			if err != nil {
-				recvErr <- err
+				receiveErrorCH <- err
 				return
 			}
 			s.handleMessage(stream, msg, &ingestionServerID, &state)
@@ -138,12 +138,12 @@ func (s *IngestionManager) Action(stream common.IngestionManager_ActionServer) e
 	}()
 
 	select {
-	case err := <-recvErr:
+	case err := <-receiveErrorCH:
 		// Connection dropped, clean up
 		s.cleanupIngestionServer(ingestionServerID)
 		return err
 	case <-sendDone:
-		// Stream context cancelled (client disconnect or server shutdown)
+		// Stream context canceled (client disconnect or server shutdown)
 		s.cleanupIngestionServer(ingestionServerID)
 		return nil
 	}
@@ -170,10 +170,14 @@ func (s *IngestionManager) handleMessage(
 
 	default:
 		common.Info(fmt.Sprintf("Unknown message type: %s", msg.MessageType))
-		stream.Send(&common.AdminMessage{
+		err := stream.Send(&common.AdminMessage{
 			MessageType:  "ERROR",
 			ErrorMessage: "unknown message type",
 		})
+		if err != nil {
+			common.Error("Fail to send unknown message", err)
+			return
+		}
 	}
 }
 
@@ -184,22 +188,30 @@ func (s *IngestionManager) handleRegister(
 	state **IngestorState,
 ) {
 	if msg.RegisterInfo == nil {
-		stream.Send(&common.AdminMessage{
+		err := stream.Send(&common.AdminMessage{
 			MessageType:  "ERROR",
 			ErrorMessage: "missing register info",
 		})
+		if err != nil {
+			common.Error("Fail to send missing register info", err)
+			return
+		}
 		return
 	}
 
-	peer, ok := peer.FromContext(stream.Context())
+	peerHost, ok := peer.FromContext(stream.Context())
 	if !ok {
-		stream.Send(&common.AdminMessage{
+		err := stream.Send(&common.AdminMessage{
 			MessageType:  "ERROR",
 			ErrorMessage: "peer not found in context",
 		})
+		if err != nil {
+			common.Error("Fail to send 'peer not found' message", err)
+			return
+		}
 		return
 	}
-	clientAddr := peer.Addr.String()
+	clientAddr := peerHost.Addr.String()
 
 	*ingestionServerID = msg.IngestorId
 	*state = &IngestorState{
@@ -216,7 +228,7 @@ func (s *IngestionManager) handleRegister(
 	s.ingestionServers[*ingestionServerID] = *state
 	s.mu.Unlock()
 
-	stream.Send(&common.AdminMessage{
+	err := stream.Send(&common.AdminMessage{
 		MessageType: "ACK",
 		AckInfo: &common.AckInfo{
 			TaskId:  "",
@@ -224,6 +236,10 @@ func (s *IngestionManager) handleRegister(
 			Message: "registered successfully",
 		},
 	})
+	if err != nil {
+		common.Error("Fail to send ACK message", err)
+		return
+	}
 
 	common.Info(fmt.Sprintf("Ingestor %s registered, max_concurrency=%d, supported_types=%v",
 		*ingestionServerID, msg.RegisterInfo.MaxConcurrency, msg.RegisterInfo.SupportedDocTypes))
@@ -365,7 +381,8 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 				taskID:     task.TaskId,
 				status:     "dispatched",
 				comeFrom:   "CLI",
-				lastUpdate: time.Now(),
+				startTime:  nil,
+				lastUpdate: time.Now().Truncate(time.Second),
 				assignTo:   ingestor.ID,
 			}
 
@@ -385,6 +402,17 @@ func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 			s.assignToIngestor(task, target)
 			return
 		}
+
+		// Receives a task, change the states
+		s.mu.Lock()
+		s.taskStates[task.TaskId] = &TaskState{
+			taskID:     task.TaskId,
+			status:     "pending",
+			comeFrom:   task.ComeFrom,
+			lastUpdate: time.Now().Truncate(time.Second),
+			startTime:  nil,
+		}
+		s.mu.Unlock()
 
 		// No ingestor available, wait for a slot to free up
 		select {
@@ -462,6 +490,29 @@ func (s *IngestionManager) ListIngestors() ([]map[string]interface{}, error) {
 			"process_id":     state.ProcessID,
 		})
 	}
+	return result, nil
+}
+
+func (s *IngestionManager) ListIngestionTasks() ([]map[string]interface{}, error) {
+
+	var result []map[string]interface{}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index, taskState := range s.taskStates {
+		common.Info(fmt.Sprintf("Task %s: %s", index, taskState.taskID))
+		result = append(result, map[string]interface{}{
+			"id":          taskState.taskID,
+			"status":      taskState.status,
+			"from":        taskState.comeFrom,
+			"assign_to":   taskState.assignTo,
+			"last_update": taskState.lastUpdate,
+			"start_time":  taskState.startTime,
+			"ETA":         taskState.estimatedRemainingTime,
+			"error":       taskState.errorMessage,
+		})
+	}
+
 	return result, nil
 }
 

@@ -1258,6 +1258,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 
 type IngestionRequest struct {
 	FileURI string `json:"uri" binding:"required"`
+	From    string `json:"from" binding:"required"`
 }
 
 func (h *Handler) Ingestion(c *gin.Context) {
@@ -1272,6 +1273,7 @@ func (h *Handler) Ingestion(c *gin.Context) {
 		TaskId:   taskID,
 		TaskType: "ingestion",
 		Config:   req.FileURI,
+		ComeFrom: req.From,
 	})
 
 	success(c, gin.H{"task_id": taskID}, "Send task for ingestion successfully")

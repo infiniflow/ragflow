@@ -295,7 +295,7 @@ func (e *Ingestor) executeTask(ctx context.Context, taskCtx *TaskContext) {
 	for progress := int32(0); progress <= 100; progress += 10 {
 		select {
 		case <-ctx.Done():
-			// Task cancelled
+			// Task canceled
 			common.Info(fmt.Sprintf("Task %s cancelled", task.TaskId))
 			e.sendTaskResult(task.TaskId, "CANCELLED", "", "task cancelled")
 			return
