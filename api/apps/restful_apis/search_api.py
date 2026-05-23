@@ -16,6 +16,7 @@
 
 import json
 import logging
+from numbers import Real
 
 from quart import Response, request
 from api.db.services.dialog_service import async_ask
@@ -29,6 +30,12 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+
+
+def _full_text_weight(vector_similarity_weight):
+    if isinstance(vector_similarity_weight, Real):
+        return 1 - vector_similarity_weight
+    return None
 
 
 @manager.route("/searches", methods=["POST"])  # noqa: F821
@@ -158,6 +165,16 @@ async def update(search_id):
         if not isinstance(new_config, dict):
             return get_data_error_result(message="search_config must be a JSON object")
         req["search_config"] = {**current_config, **new_config}
+        logging.debug(
+            "Search update weight: search_id=%s user_id=%s "
+            "incoming_vector_similarity_weight=%s stored_vector_similarity_weight=%s "
+            "stored_full_text_weight=%s",
+            search_id,
+            current_user.id,
+            new_config.get("vector_similarity_weight"),
+            req["search_config"].get("vector_similarity_weight"),
+            _full_text_weight(req["search_config"].get("vector_similarity_weight", 0.3)),
+        )
 
         for field in ("search_id", "tenant_id", "created_by", "update_time", "id"):
             req.pop(field, None)
@@ -209,6 +226,14 @@ async def completion(search_id):
         return get_data_error_result(message=f"Cannot find search {search_id}")
 
     search_config = search_app.get("search_config", {})
+    logging.debug(
+        "Search completion loaded weight: search_id=%s user_id=%s "
+        "stored_vector_similarity_weight=%s stored_full_text_weight=%s",
+        search_id,
+        uid,
+        search_config.get("vector_similarity_weight", 0.3),
+        _full_text_weight(search_config.get("vector_similarity_weight", 0.3)),
+    )
     kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
     if not kb_ids:
         return get_data_error_result(message="`kb_ids` is required.")
@@ -216,7 +241,7 @@ async def completion(search_id):
     async def stream():
         nonlocal req, uid, kb_ids, search_config
         try:
-            async for ans in async_ask(req["question"], kb_ids, uid, search_config=search_config):
+            async for ans in async_ask(req["question"], kb_ids, uid, search_config=search_config, search_id=search_id):
                 yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
         except Exception as ex:
             yield "data:" + json.dumps(
