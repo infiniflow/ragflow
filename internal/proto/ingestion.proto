@@ -64,8 +64,7 @@ message TaskAssignment {
 message TaskResult {
   string task_id = 1;
   string status = 2;  // COMPLETED, FAILED, CANCELLED
-  string result_url = 3;
-  string error_message = 4;
+  string error_message = 3;
 }
 
 message TaskProgress {

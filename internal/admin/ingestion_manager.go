@@ -298,7 +298,7 @@ func (s *IngestionManager) handleTaskResult(msg *common.IngestionMessage, ingest
 	}
 
 	result := msg.TaskResult
-	common.Info(fmt.Sprintf("Task result from %s: task=%s, status=%s", ingestorID, result.TaskId, result.Status))
+	common.Info(fmt.Sprintf("Task result from %s: task=%s, status=%s, message=%s", ingestorID, result.TaskId, result.Status, result.ErrorMessage))
 
 	// Signal that a slot may have freed up for pending tasks
 	select {

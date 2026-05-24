@@ -489,8 +489,7 @@ type TaskResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"` // COMPLETED, FAILED, CANCELLED
-	ResultUrl     string                 `protobuf:"bytes,3,opt,name=result_url,json=resultUrl,proto3" json:"result_url,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -535,13 +534,6 @@ func (x *TaskResult) GetTaskId() string {
 func (x *TaskResult) GetStatus() string {
 	if x != nil {
 		return x.Status
-	}
-	return ""
-}
-
-func (x *TaskResult) GetResultUrl() string {
-	if x != nil {
-		return x.ResultUrl
 	}
 	return ""
 }
@@ -720,14 +712,12 @@ const file_internal_proto_ingestion_proto_rawDesc = "" +
 	"\x06config\x18\x03 \x01(\tR\x06config\x12\x1b\n" +
 	"\tcome_from\x18\x04 \x01(\tR\bcomeFrom\x12\x1f\n" +
 	"\vassigned_to\x18\x05 \x01(\tR\n" +
-	"assignedTo\"\x81\x01\n" +
+	"assignedTo\"b\n" +
 	"\n" +
 	"TaskResult\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +
-	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1d\n" +
-	"\n" +
-	"result_url\x18\x03 \x01(\tR\tresultUrl\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"W\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"W\n" +
 	"\fTaskProgress\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1a\n" +
 	"\bprogress\x18\x02 \x01(\x05R\bprogress\x12\x12\n" +

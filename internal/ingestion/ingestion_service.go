@@ -205,14 +205,13 @@ func (e *Ingestor) sendHeartbeat() error {
 	return e.stream.Send(msg)
 }
 
-func (e *Ingestor) sendTaskResult(taskID, status, resultURL, errorMsg string) error {
+func (e *Ingestor) sendTaskResult(taskID, status, errorMsg string) error {
 	msg := &common.IngestionMessage{
 		IngestorId:  e.id,
 		MessageType: "TASK_RESULT",
 		TaskResult: &common.TaskResult{
 			TaskId:       taskID,
 			Status:       status,
-			ResultUrl:    resultURL,
 			ErrorMessage: errorMsg,
 		},
 	}
@@ -311,7 +310,7 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 		//e.tasksMu.Unlock()
 		taskCtx.Status = "REJECTED"
 		taskCtx.EndTime = time.Now()
-		e.sendTaskResult(taskCtx.Task.TaskId, "REJECTED", "", "task rejected before execution")
+		e.sendTaskResult(taskCtx.Task.TaskId, "REJECTED", "task rejected before execution")
 	}
 }
 
@@ -365,7 +364,7 @@ func (e *Ingestor) workerLoop(id int32) {
 				//e.tasksMu.Lock()
 				//delete(e.currentTasks, taskCtx.Task.TaskId)
 				//e.tasksMu.Unlock()
-				e.sendTaskResult(taskCtx.Task.TaskId, "CANCELED", "", "task cancelled before execution")
+				e.sendTaskResult(taskCtx.Task.TaskId, "CANCELED", "task cancelled before execution")
 				continue
 			default:
 			}
@@ -400,7 +399,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 			common.Info(fmt.Sprintf("Task %s cancelled", task.TaskId))
 			taskCtx.Status = "CANCELED"
 			taskCtx.EndTime = time.Now()
-			e.sendTaskResult(task.TaskId, "CANCELED", "", "task cancelled")
+			e.sendTaskResult(task.TaskId, "CANCELED", "task cancelled")
 			return
 		case <-time.After(5000 * time.Millisecond):
 			// Simulate progress update
@@ -419,8 +418,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	time.Sleep(time.Second * 10)
 
 	// Task completed
-	resultURL := "http://storage.example.com/results/" + task.TaskId + ".json"
-	e.sendTaskResult(task.TaskId, "COMPLETED", resultURL, "")
+	e.sendTaskResult(task.TaskId, "COMPLETED", "")
 	common.Info(fmt.Sprintf("Task %s completed", task.TaskId))
 }
 
