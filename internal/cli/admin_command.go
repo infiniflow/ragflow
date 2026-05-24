@@ -1286,7 +1286,6 @@ func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
-
 	resp, err := c.HTTPClient.Request("GET", "/admin/ingestors", "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ingestors: %w", err)
@@ -1299,6 +1298,32 @@ func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("list ingestors failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+func (c *RAGFlowClient) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/admin/ingestion/tasks", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list admin tasks: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list admin tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list admin tasks failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

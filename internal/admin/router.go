@@ -137,9 +137,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
 
-			protected.POST("/ingestion", r.handler.Ingestion)
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
+			protected.POST("/ingestion", r.handler.Ingestion)
+			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		}
 	}
 

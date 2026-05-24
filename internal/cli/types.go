@@ -160,6 +160,7 @@ const (
 	TokenIngest
 	TokenIngestor
 	TokenIngestors
+	TokenIngestion
 	TokenLog
 	TokenLevel
 	TokenDebug
