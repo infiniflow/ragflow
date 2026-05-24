@@ -24,9 +24,8 @@ message IngestionMessage {
 message AdminMessage {
   string message_type = 1;  // TASK_ASSIGNMENT, ACK, PONG, RECONNECT
   TaskAssignment task_assignment = 2;
-  TaskCancellation task_cancellation = 3;
-  AckInfo ack_info = 4;
-  string error_message = 5;
+  AckInfo ack_info = 3;
+  string error_message = 4;
 }
 
 message RegisterInfo {
@@ -50,6 +49,8 @@ message TaskState {
   string status = 2;  // PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
   string error_message = 3;
   int64 estimated_remaining_time_seconds = 4;
+  string come_from = 5;
+  int64 start_time = 6;
 }
 
 message TaskAssignment {
@@ -57,11 +58,7 @@ message TaskAssignment {
   string task_type = 2;
   string config = 3;
   string come_from = 4;
-}
-
-message TaskCancellation {
-  string task_id = 1;
-  string config = 2;
+  string assigned_to = 5;
 }
 
 message TaskResult {

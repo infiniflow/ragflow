@@ -157,9 +157,10 @@ const (
 	TokenURL
 	TokenTask
 	TokenTasks
-	TokenIngest
 	TokenIngestor
 	TokenIngestors
+	TokenStart
+	TokenStop
 	TokenIngestion
 	TokenLog
 	TokenLevel

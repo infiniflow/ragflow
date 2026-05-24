@@ -1256,27 +1256,48 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
 }
 
-type IngestionRequest struct {
+type StartIngestionTaskRequest struct {
 	FileURI string `json:"uri" binding:"required"`
 	From    string `json:"from" binding:"required"`
 }
 
-func (h *Handler) Ingestion(c *gin.Context) {
-	var req IngestionRequest
+func (h *Handler) StartIngestionTask(c *gin.Context) {
+	var req StartIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "file uri is required", 400)
+		errorResponse(c, "file uri and from is required", 400)
 		return
 	}
 
 	taskID := common.GenerateUUID()
 	ingestionManager.SubmitTask(&common.TaskAssignment{
 		TaskId:   taskID,
-		TaskType: "ingestion",
+		TaskType: "start_ingestion_task",
 		Config:   req.FileURI,
 		ComeFrom: req.From,
 	})
 
 	success(c, gin.H{"task_id": taskID}, "Send task for ingestion successfully")
+}
+
+type StopIngestionTaskRequest struct {
+	TaskID string `json:"task_id" binding:"required"`
+	From   string `json:"from" binding:"required"`
+}
+
+func (h *Handler) StopIngestionTask(c *gin.Context) {
+	var req StopIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "task id and from is required", 400)
+		return
+	}
+
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:   req.TaskID,
+		TaskType: "cancel_ingestion_task",
+		ComeFrom: req.From,
+	})
+
+	success(c, gin.H{"task_id": req.TaskID}, "Cancel task successfully")
 }
 
 func (h *Handler) ListIngestors(c *gin.Context) {
@@ -1301,12 +1322,12 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 
 	taskID := common.GenerateUUID()
 	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:   taskID,
-		TaskType: "shutdown",
-		Config:   "",
+		TaskId:     taskID,
+		TaskType:   "shutdown_ingestor",
+		AssignedTo: req.IngestorID,
 	})
 
-	success(c, gin.H{"task_id": taskID}, "Shutdown ingestor")
+	success(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
 }
 
 // Reports handle heartbeat reports from servers

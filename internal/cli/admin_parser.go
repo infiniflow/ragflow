@@ -1637,14 +1637,52 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminAdminCommand() (*Command, error) {
-	p.nextToken() // consume ADMIN
-	switch p.curToken.Type {
-	case TokenIngest:
-		return p.parseAdminIngestCommand()
-	default:
-		return nil, fmt.Errorf("invalid admin command: %s", p.curToken.Value)
+func (p *Parser) parseStartIngestion() (*Command, error) {
+	p.nextToken() // consume Start
+
+	if p.curToken.Type != TokenIngestion {
+		return nil, fmt.Errorf("expect INGESTION")
 	}
+	p.nextToken() // consume Ingest
+
+	uri, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("admin_start_ingestion_command")
+	cmd.Params["uri"] = uri
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseStopIngestion() (*Command, error) {
+	p.nextToken() // consume Stop
+
+	if p.curToken.Type != TokenIngestion {
+		return nil, fmt.Errorf("expect INGESTION")
+	}
+	p.nextToken() // consume Ingest
+
+	taskID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("admin_stop_ingestion_command")
+	cmd.Params["task_id"] = taskID
+	p.nextToken()
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseAdminIngestCommand() (*Command, error) {

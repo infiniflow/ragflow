@@ -272,6 +272,14 @@ func (s *IngestionManager) handleHeartbeat(msg *common.IngestionMessage, ingesto
 
 		for _, ingestorTaskState := range msg.HeartbeatInfo.TaskStates {
 			localTaskState := s.taskStates[ingestorTaskState.TaskId]
+			if localTaskState == nil {
+				startTime := time.Unix(0, ingestorTaskState.StartTime)
+				localTaskState = &TaskState{
+					taskID:    ingestorTaskState.TaskId,
+					comeFrom:  ingestorTaskState.ComeFrom,
+					startTime: &startTime,
+				}
+			}
 			localTaskState.estimatedRemainingTime = time.Duration(ingestorTaskState.EstimatedRemainingTimeSeconds)
 			localTaskState.lastUpdate = lastUpdateTime
 			localTaskState.status = ingestorTaskState.Status
@@ -332,7 +340,7 @@ func (s *IngestionManager) dispatchLoop() {
 		case <-s.ctx.Done():
 			return
 		case pending := <-s.taskQueue:
-			go s.tryAssign(pending.Task)
+			s.tryAssign(pending.Task) // synchronous to make sure: 1. start task, then 2. cancel task
 		}
 	}
 }
@@ -372,20 +380,30 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, ingestor := range s.ingestionServers {
-		if ingestor.Status == "active" {
-			s.taskStates[task.TaskId] = &TaskState{
-				taskID:     task.TaskId,
-				status:     "DISPATCHED",
-				comeFrom:   "CLI",
-				startTime:  nil,
-				lastUpdate: time.Now().Truncate(time.Second),
-				assignTo:   ingestor.ID,
+	switch task.TaskType {
+	case "start_ingestion_task":
+		for _, ingestor := range s.ingestionServers {
+			if ingestor.Status == "active" {
+				s.taskStates[task.TaskId] = &TaskState{
+					taskID:     task.TaskId,
+					status:     "DISPATCHED",
+					comeFrom:   "CLI",
+					startTime:  nil,
+					lastUpdate: time.Now().Truncate(time.Second),
+					assignTo:   ingestor.ID,
+				}
+				return ingestor
 			}
-
-			return ingestor
 		}
+	case "cancel_ingestion_task":
+		taskState := s.taskStates[task.TaskId]
+		if taskState != nil && taskState.status != "COMPLETED" {
+			return s.ingestionServers[taskState.assignTo]
+		}
+	case "shutdown_ingestor":
+		return s.ingestionServers[task.AssignedTo]
 	}
+
 	return nil
 }
 
@@ -396,20 +414,26 @@ func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 
 		target := s.SelectIngestorForTask(task)
 		if target != nil {
+			task.AssignedTo = target.ID
 			s.assignToIngestor(task, target)
 			return
 		}
 
-		// Receives a task, change the states
-		s.mu.Lock()
-		s.taskStates[task.TaskId] = &TaskState{
-			taskID:     task.TaskId,
-			status:     "pending",
-			comeFrom:   task.ComeFrom,
-			lastUpdate: time.Now().Truncate(time.Second),
-			startTime:  nil,
+		if task.TaskType == "start_ingestion_task" {
+			// Receives a start ingestion task, save and change the states
+			s.mu.Lock()
+			s.taskStates[task.TaskId] = &TaskState{
+				taskID:     task.TaskId,
+				status:     "pending",
+				comeFrom:   task.ComeFrom,
+				lastUpdate: time.Now().Truncate(time.Second),
+				startTime:  nil,
+			}
+			s.mu.Unlock()
+		} else {
+			// shutdown ingestor or cancel task
+			return
 		}
-		s.mu.Unlock()
 
 		// No ingestor available, wait for a slot to free up
 		select {

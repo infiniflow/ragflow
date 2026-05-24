@@ -152,6 +152,8 @@ func (e *Ingestor) sendHeartbeat() error {
 				Status:                        tc.Status,
 				EstimatedRemainingTimeSeconds: int64(tc.estimatedRemainingTime),
 				ErrorMessage:                  tc.ErrorMessage,
+				StartTime:                     tc.StartTime.UnixNano(),
+				ComeFrom:                      tc.Task.ComeFrom,
 			})
 		}
 	}
@@ -195,9 +197,9 @@ func (e *Ingestor) sendHeartbeat() error {
 			TaskStates:    taskStates,
 			DeleteTaskIds: toDeleteTask,
 			CpuUsage:      float32(cpuPercent),
-			VmsUsage:   float32(VmsUsage),
-			RssUsage:   float32(RssUsage),
-			ProcessId:  pid,
+			VmsUsage:      float32(VmsUsage),
+			RssUsage:      float32(RssUsage),
+			ProcessId:     pid,
 		},
 	}
 	return e.stream.Send(msg)
@@ -248,11 +250,6 @@ func (e *Ingestor) receiveLoop() {
 		case "TASK_ASSIGNMENT":
 			e.handleTaskAssignment(msg.TaskAssignment)
 
-		case "TASK_CANCEL":
-			if msg.TaskCancellation != nil {
-				e.handleCancelTask(msg.TaskCancellation.TaskId)
-			}
-
 		case "ACK":
 			common.Info(fmt.Sprintf("Received ACK: task=%s, success=%v, msg=%s",
 				msg.AckInfo.TaskId, msg.AckInfo.Success, msg.AckInfo.Message))
@@ -273,13 +270,17 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 
 	common.Info(fmt.Sprintf("Received task: %s, task_type=%s", task.TaskId, task.TaskType))
 
-	// If the admin sends a "shutdown" task, initiate graceful shutdown
-	if task.TaskType == "shutdown" {
-		common.Info(fmt.Sprintf("Shutdown task received, initiating graceful shutdown of ingestor %s", e.id))
-		select {
-		case e.ShutdownCh <- struct{}{}:
-		default:
+	switch task.TaskType {
+	case "shutdown_ingestor":
+		if e.id == task.AssignedTo {
+			e.handleShutdownIngestor()
+			return
 		}
+
+		common.Error("unmatched ingestor id", fmt.Errorf("attempt to shutdown ingestor: %s, current ingestor: %s, mismatched", task.AssignedTo, e.id))
+		return
+	case "stop_ingestion_task":
+		e.handleCancelTask(task.AssignedTo)
 		return
 	}
 
@@ -325,6 +326,15 @@ func (e *Ingestor) handleCancelTask(taskID string) {
 
 	common.Info(fmt.Sprintf("Cancelling task %s (current status: %s)", taskID, taskCtx.Status))
 	taskCtx.CancelFunc()
+}
+
+func (e *Ingestor) handleShutdownIngestor() {
+	common.Info(fmt.Sprintf("Shutdown task received, initiating graceful shutdown of ingestor %s", e.id))
+	select {
+	case e.ShutdownCh <- struct{}{}:
+	default:
+	}
+	return
 }
 
 func (e *Ingestor) startWorkerPool() {
