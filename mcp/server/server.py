@@ -93,6 +93,13 @@ class RAGFlowConnector:
         res = await client.get(url=self.api_url + path, params=params, headers={"Authorization": f"Bearer {api_key}"})
         return res
 
+    async def _delete(self, path, json=None, api_key: str = ""):
+        if not api_key:
+            return None
+        client = await self._get_client()
+        res = await client.delete(url=self.api_url + path, json=json, headers={"Authorization": f"Bearer {api_key}"})
+        return res
+
     def _is_cache_valid(self, ts):
         return time.time() < ts
 
@@ -365,6 +372,118 @@ class RAGFlowConnector:
 
         return mapped
 
+    # ─────────────────────────────────────────────────────────────
+    # AGENT CHAT METHODS (feat: add-agent-chat-mcp-tools)
+    # Ref: RAGFlow v0.25.5 /api/v1/agents/* endpoints
+    # ─────────────────────────────────────────────────────────────
+
+    async def list_agents(
+        self, *, api_key: str, page: int = 1, page_size: int = 30, name: str = "", agent_id: str = ""
+    ) -> list[dict]:
+        """List all workflow agents. GET /api/v1/agents"""
+        params = {"page": page, "page_size": page_size, "orderby": "update_time", "desc": True}
+        if name:
+            params["title"] = name
+        if agent_id:
+            params["id"] = agent_id
+        res = await self._get("/agents", params=params, api_key=api_key)
+        if res is None or res.status_code != 200:
+            return []
+        r = res.json()
+        data = r.get("data", [])
+        if isinstance(data, dict):
+            return data.get("list", data.get("data", []))
+        return data if isinstance(data, list) else []
+
+    async def list_sessions(
+        self, *, api_key: str, agent_id: str, page: int = 1, page_size: int = 30, session_id: str = ""
+    ) -> list[dict]:
+        """List all sessions for an agent. GET /api/v1/agents/{agent_id}/sessions"""
+        params = {"page": page, "page_size": page_size, "orderby": "create_time", "desc": True, "dsl": "false"}
+        if session_id:
+            params["id"] = session_id
+        res = await self._get(f"/agents/{agent_id}/sessions", params=params, api_key=api_key)
+        if res is None or res.status_code != 200:
+            return []
+        r = res.json()
+        data = r.get("data", [])
+        if isinstance(data, dict):
+            return data.get("list", data.get("data", []))
+        return data if isinstance(data, list) else []
+
+    async def create_session(self, *, api_key: str, agent_id: str) -> dict:
+        """Create a new session for an agent. POST /api/v1/agents/{agent_id}/sessions"""
+        res = await self._post(f"/agents/{agent_id}/sessions", json={}, api_key=api_key)
+        if res is None or res.status_code != 200:
+            return {}
+        r = res.json()
+        return r.get("data", r)
+
+    async def send_message(
+        self, *, api_key: str, agent_id: str, query: str, session_id: str | None = None,
+        stream: bool = False, inputs: dict | None = None,
+    ) -> dict:
+        """
+        Send message to an agent. POST /api/v1/agents/chat/completions
+        Non-streaming response (code=0):
+          {"code":0,"data":{"data":{"content":"..."},"message_id":"...","session_id":"..."}}
+        """
+        payload: dict[str, Any] = {"agent_id": agent_id, "query": query, "stream": stream}
+        if session_id:
+            payload["session_id"] = session_id
+        if inputs:
+            payload["inputs"] = inputs
+        res = await self._post("/agents/chat/completions", json=payload, api_key=api_key)
+        if res is None or res.status_code != 200:
+            return {}
+        r = res.json()
+        if r.get("code") != 0:
+            raise Exception([types.TextContent(type="text", text=f"RAGFlow error {r.get('code')}: {r.get('message', 'Unknown')}")])
+        return r.get("data", r)
+
+    async def send_message_simple(
+        self, *, api_key: str, agent_id: str, query: str, session_id: str | None = None,
+    ) -> tuple[str, str]:
+        """
+        Convenient wrapper: returns (content_text, session_id).
+        Handles the nested "data.data.content" response shape from RAGFlow v0.25.5.
+        """
+        result = await self.send_message(api_key=api_key, agent_id=agent_id, query=query, session_id=session_id, stream=False)
+        data = result.get("data", {})
+        content = (
+            data.get("data", {}).get("content", "")
+            or data.get("content", "")
+            or ""
+        )
+        returned_sid = result.get("session_id") or data.get("session_id") or session_id or ""
+        return content, returned_sid
+
+    async def generate_recommendations(self, *, api_key: str, question: str) -> list[str]:
+        """
+        Generate recommended questions. POST /api/v1/chat/recommendation
+        Response: {"code":0,"data":["Q1","Q2",...]}
+        """
+        res = await self._post("/chat/recommendation", json={"question": question}, api_key=api_key)
+        if res is None or res.status_code != 200:
+            return []
+        r = res.json()
+        if r.get("code") != 0:
+            raise Exception([types.TextContent(type="text", text=f"Recommendation error: {r.get('message', 'Unknown')}")])
+        data = r.get("data", [])
+        return data if isinstance(data, list) else []
+
+    async def delete_sessions(
+        self, *, api_key: str, agent_id: str, session_ids: list[str] | None = None, delete_all: bool = False,
+    ) -> dict:
+        """Delete sessions. DELETE /api/v1/agents/{agent_id}/sessions"""
+        payload: dict[str, Any] = {"delete_all": delete_all}
+        if session_ids:
+            payload["ids"] = session_ids
+        res = await self._delete(f"/agents/{agent_id}/sessions", json=payload, api_key=api_key)
+        if res is None:
+            return {}
+        return res.json()
+
 
 class RAGFlowCtx:
     def __init__(self, connector: RAGFlowConnector):
@@ -528,6 +647,96 @@ async def list_tools(*, connector: RAGFlowConnector, api_key: str) -> list[types
                 "required": ["question"],
             },
         ),
+        # ── Agent Chat tools (feat: add-agent-chat-mcp-tools) ────
+        types.Tool(
+            name="ragflow_list_agents",
+            description="List all RAGFlow workflow agents. Returns id, title, description, create_time, update_time for each agent. "
+            "Use this to discover available agents and find the agent_id needed for send_message or list_sessions. "
+            "Supports optional filtering by name (fuzzy match) or exact agent_id.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "description": "Page number (default: 1)", "default": 1},
+                    "page_size": {"type": "integer", "description": "Results per page (default: 30, max: 100)", "default": 30},
+                    "name": {"type": "string", "description": "Filter by agent name (fuzzy match, case-insensitive)."},
+                    "agent_id": {"type": "string", "description": "Filter by exact agent ID."},
+                },
+            },
+        ),
+        types.Tool(
+            name="ragflow_list_sessions",
+            description="List all conversation sessions for a specific RAGFlow workflow agent. "
+            "Each Session represents a complete multi-turn conversation with shared context. "
+            "Use this to review conversation history or locate a specific session_id for continued dialogue.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "string", "description": "The workflow agent ID (required)."},
+                    "page": {"type": "integer", "description": "Page number (default: 1)", "default": 1},
+                    "page_size": {"type": "integer", "description": "Results per page (default: 30)", "default": 30},
+                },
+                "required": ["agent_id"],
+            },
+        ),
+        types.Tool(
+            name="ragflow_create_session",
+            description="Create a new conversation session for a RAGFlow workflow agent. "
+            "Returns a session_id that must be passed to send_message to maintain multi-turn context continuity. "
+            "If session_id is omitted when calling send_message, a session is auto-created but the session_id is not returned to the caller.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "string", "description": "The workflow agent ID (required)."},
+                },
+                "required": ["agent_id"],
+            },
+        ),
+        types.Tool(
+            name="ragflow_send_message",
+            description="Send a message to a RAGFlow workflow agent and receive its response. "
+            "This is the core tool for '问策' (strategy discussion) and '问数' (data query) workflows. "
+            "Supports multi-turn conversation when session_id is provided. "
+            "Without session_id, each call starts a fresh conversation with no memory of previous messages. "
+            "The response content is returned as a plain text string.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "string", "description": "The workflow agent ID (required)."},
+                    "query": {"type": "string", "description": "The user's question or message (required)."},
+                    "session_id": {"type": "string", "description": "Session ID for multi-turn conversation. Omit to start a new session."},
+                    "inputs": {"type": "object", "description": "Optional workflow input parameters (key-value pairs)."},
+                },
+                "required": ["agent_id", "query"],
+            },
+        ),
+        types.Tool(
+            name="ragflow_generate_recommendations",
+            description="Generate 5-10 recommended follow-up questions based on the user's original question. "
+            "Use this to suggest next queries and improve conversational UX. "
+            "Powered by RAGFlow's LLM to generate contextually relevant suggestions.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string", "description": "The original user question to generate recommendations from (required)."},
+                },
+                "required": ["question"],
+            },
+        ),
+        types.Tool(
+            name="ragflow_delete_sessions",
+            description="Delete one or more conversation sessions for a RAGFlow workflow agent. "
+            "Use with caution — deleted sessions cannot be recovered. "
+            "Set delete_all=true to remove ALL sessions for the agent (nuclear option).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "string", "description": "The workflow agent ID (required)."},
+                    "session_ids": {"type": "array", "items": {"type": "string"}, "description": "List of session IDs to delete."},
+                    "delete_all": {"type": "boolean", "description": "Delete ALL sessions for this agent (default: false). Use with extreme caution!", "default": False},
+                },
+                "required": ["agent_id"],
+            },
+        ),
     ]
 
 
@@ -540,34 +749,88 @@ async def call_tool(
     connector: RAGFlowConnector,
     api_key: str,
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    if name == "ragflow_retrieval":
-        document_ids = arguments.get("document_ids", [])
-        dataset_ids = arguments.get("dataset_ids", [])
-        question = arguments.get("question", "")
-        page = arguments.get("page", 1)
-        page_size = arguments.get("page_size", 10)
-        similarity_threshold = arguments.get("similarity_threshold", 0.2)
-        vector_similarity_weight = arguments.get("vector_similarity_weight", 0.3)
-        keyword = arguments.get("keyword", False)
-        top_k = arguments.get("top_k", 1024)
-        rerank_id = arguments.get("rerank_id")
-        force_refresh = arguments.get("force_refresh", False)
+    try:
+        if name == "ragflow_retrieval":
+            document_ids = arguments.get("document_ids", [])
+            dataset_ids = arguments.get("dataset_ids", [])
+            question = arguments.get("question", "")
+            page = arguments.get("page", 1)
+            page_size = arguments.get("page_size", 10)
+            similarity_threshold = arguments.get("similarity_threshold", 0.2)
+            vector_similarity_weight = arguments.get("vector_similarity_weight", 0.3)
+            keyword = arguments.get("keyword", False)
+            top_k = arguments.get("top_k", 1024)
+            rerank_id = arguments.get("rerank_id")
+            force_refresh = arguments.get("force_refresh", False)
 
-        return await connector.retrieval(
-            api_key=api_key,
-            dataset_ids=dataset_ids,
-            document_ids=document_ids,
-            question=question,
-            page=page,
-            page_size=page_size,
-            similarity_threshold=similarity_threshold,
-            vector_similarity_weight=vector_similarity_weight,
-            keyword=keyword,
-            top_k=top_k,
-            rerank_id=rerank_id,
-            force_refresh=force_refresh,
-        )
-    raise ValueError(f"Tool not found: {name}")
+            return await connector.retrieval(
+                api_key=api_key,
+                dataset_ids=dataset_ids,
+                document_ids=document_ids,
+                question=question,
+                page=page,
+                page_size=page_size,
+                similarity_threshold=similarity_threshold,
+                vector_similarity_weight=vector_similarity_weight,
+                keyword=keyword,
+                top_k=top_k,
+                rerank_id=rerank_id,
+                force_refresh=force_refresh,
+            )
+
+        # ── Agent Chat tools (feat: add-agent-chat-mcp-tools) ────
+        elif name == "ragflow_list_agents":
+            agents = await connector.list_agents(
+                api_key=api_key,
+                page=arguments.get("page", 1),
+                page_size=arguments.get("page_size", 30),
+                name=arguments.get("name", ""),
+                agent_id=arguments.get("agent_id", ""),
+            )
+            return [types.TextContent(type="text", text=json.dumps(agents, ensure_ascii=False, indent=2))]
+
+        elif name == "ragflow_list_sessions":
+            sessions = await connector.list_sessions(
+                api_key=api_key,
+                agent_id=arguments["agent_id"],
+                page=arguments.get("page", 1),
+                page_size=arguments.get("page_size", 30),
+            )
+            return [types.TextContent(type="text", text=json.dumps(sessions, ensure_ascii=False, indent=2))]
+
+        elif name == "ragflow_create_session":
+            result = await connector.create_session(api_key=api_key, agent_id=arguments["agent_id"])
+            return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+
+        elif name == "ragflow_send_message":
+            content, session_id = await connector.send_message_simple(
+                api_key=api_key,
+                agent_id=arguments["agent_id"],
+                query=arguments["query"],
+                session_id=arguments.get("session_id"),
+            )
+            response = {"content": content, "session_id": session_id}
+            return [types.TextContent(type="text", text=json.dumps(response, ensure_ascii=False, indent=2))]
+
+        elif name == "ragflow_generate_recommendations":
+            questions = await connector.generate_recommendations(api_key=api_key, question=arguments["question"])
+            text = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions)) if questions else "No recommendations generated."
+            return [types.TextContent(type="text", text=text)]
+
+        elif name == "ragflow_delete_sessions":
+            result = await connector.delete_sessions(
+                api_key=api_key,
+                agent_id=arguments["agent_id"],
+                session_ids=arguments.get("session_ids"),
+                delete_all=arguments.get("delete_all", False),
+            )
+            return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
+
+        raise ValueError(f"Tool not found: {name}")
+
+    except Exception as e:
+        logging.exception("Tool call failed")
+        return [types.TextContent(type="text", text=f"Error: {str(e)}")]
 
 
 def create_starlette_app():
