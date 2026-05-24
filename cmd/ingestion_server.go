@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/ingestion"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 	"syscall"
 	"time"
 
@@ -162,6 +163,18 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+
+	// Print all configuration settings
+	server.PrintAll()
+	common.Info("\n    ____                      __  _\n" +
+		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
+		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +
+		" _/ // / / / /_/ /  __(__  ) /_/ / /_/ / / / /  (__  )  __/ /   | |/ /  __/ /\n" +
+		"/___/_/ /_/\\__, /\\___/____/\\__/_/\\____/_/ /_/  /____/\\___/_/    |___/\\___/_/\n" +
+		"          /____/\n")
+
+	// Print RAGFlow version
+	common.Info(fmt.Sprintf("RAGFlow admin version: %s", utility.GetRAGFlowVersion()))
 
 	// Wait for either an OS signal or a shutdown command from the admin
 	select {

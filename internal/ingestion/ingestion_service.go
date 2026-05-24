@@ -279,8 +279,8 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 
 		common.Error("unmatched ingestor id", fmt.Errorf("attempt to shutdown ingestor: %s, current ingestor: %s, mismatched", task.AssignedTo, e.id))
 		return
-	case "stop_ingestion_task":
-		e.handleCancelTask(task.AssignedTo)
+	case "cancel_ingestion_task":
+		e.handleCancelTask(task.TaskId)
 		return
 	}
 
@@ -298,7 +298,8 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 	e.currentTasks[task.TaskId] = taskCtx
 	e.tasksMu.Unlock()
 
-	common.Info("wait for 20 seconds")
+	common.Info("wait for 10 seconds")
+	time.Sleep(time.Second * 10)
 	// Push to task channel; if full, reject the task (backpressure)
 	select {
 	case e.taskChan <- taskCtx:
@@ -401,7 +402,7 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 			taskCtx.EndTime = time.Now()
 			e.sendTaskResult(task.TaskId, "CANCELED", "", "task cancelled")
 			return
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(5000 * time.Millisecond):
 			// Simulate progress update
 			taskCtx.Progress = progress
 			e.sendTaskProgress(task.TaskId, progress, "processing...")
@@ -414,6 +415,8 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 
 	taskCtx.Status = "COMPLETED"
 	taskCtx.EndTime = time.Now()
+
+	time.Sleep(time.Second * 10)
 
 	// Task completed
 	resultURL := "http://storage.example.com/results/" + task.TaskId + ".json"

@@ -340,7 +340,7 @@ func (s *IngestionManager) dispatchLoop() {
 		case <-s.ctx.Done():
 			return
 		case pending := <-s.taskQueue:
-			s.tryAssign(pending.Task) // synchronous to make sure: 1. start task, then 2. cancel task
+			go s.tryAssign(pending.Task)
 		}
 	}
 }
@@ -397,9 +397,20 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 		}
 	case "cancel_ingestion_task":
 		taskState := s.taskStates[task.TaskId]
-		if taskState != nil && taskState.status != "COMPLETED" {
-			return s.ingestionServers[taskState.assignTo]
+		if taskState != nil {
+			switch taskState.status {
+			case "COMPLETED":
+				return nil
+			case "DISPATCHED":
+				{
+					taskState.status = "CANCELING"
+					return s.ingestionServers[taskState.assignTo]
+				}
+			default:
+				return s.ingestionServers[taskState.assignTo]
+			}
 		}
+
 	case "shutdown_ingestor":
 		return s.ingestionServers[task.AssignedTo]
 	}
@@ -432,6 +443,7 @@ func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 			s.mu.Unlock()
 		} else {
 			// shutdown ingestor or cancel task
+			common.Info("Task is completed, canceled, or ingestor is shutdown")
 			return
 		}
 
@@ -474,6 +486,17 @@ func (s *IngestionManager) cleanupIngestionServer(ingestorID string) {
 	if _, exists := s.ingestionServers[ingestorID]; exists {
 		delete(s.ingestionServers, ingestorID)
 		common.Info(fmt.Sprintf("Ingestor %s cleaned up", ingestorID))
+
+		// Clean the tasks handled by this ingestor
+		var tasksToDelete []string
+		for _, taskState := range s.taskStates {
+			if taskState.assignTo == ingestorID {
+				tasksToDelete = append(tasksToDelete, taskState.taskID)
+			}
+		}
+		for _, taskID := range tasksToDelete {
+			delete(s.taskStates, taskID)
+		}
 	}
 }
 
