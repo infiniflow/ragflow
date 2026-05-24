@@ -94,6 +94,7 @@ class RAGFlowConnector:
         return res
 
     async def _delete(self, path, json=None, api_key: str = ""):
+        """Send an authenticated DELETE request to the RAGFlow API."""
         if not api_key:
             return None
         client = await self._get_client()
