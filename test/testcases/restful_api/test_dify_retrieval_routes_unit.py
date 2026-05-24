@@ -242,7 +242,7 @@ def _load_dify_retrieval_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     module_name = "test_dify_retrieval_routes_unit_module"
-    module_path = repo_root / "api" / "apps" / "sdk" / "dify_retrieval.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "dify_retrieval_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -290,7 +290,11 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
             }
 
     monkeypatch.setattr(module.settings, "kg_retriever", _DummyKgRetriever())
-    monkeypatch.setattr(module.DocumentService, "get_by_id", lambda doc_id: (True, SimpleNamespace(meta_fields={"origin": f"meta-{doc_id}"})))
+    monkeypatch.setattr(
+        module.DocumentService,
+        "get_by_ids",
+        lambda doc_ids, cols=None: [SimpleNamespace(id=doc_id, meta_fields={"origin": f"meta-{doc_id}"}) for doc_id in doc_ids],
+    )
     monkeypatch.setattr(module, "label_question", lambda *_args, **_kwargs: [])
 
     res = _run(inspect.unwrap(module.retrieval)("tenant-1"))

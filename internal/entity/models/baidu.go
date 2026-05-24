@@ -774,7 +774,7 @@ func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (b *BaiduModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf(b.Name() + "no such method")
+	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
@@ -783,13 +783,13 @@ func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 func (z *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("no such method", z.Name())
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (z *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("no such method", z.Name())
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (z *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("no such method", z.Name())
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

@@ -1525,7 +1525,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         yield ("marker", "</think>", state)
 
 
-async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
+async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -1561,6 +1561,21 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
         )
 
+    vector_similarity_weight = search_config.get("vector_similarity_weight", 0.3)
+    try:
+        full_text_weight = 1 - vector_similarity_weight
+    except TypeError:
+        full_text_weight = None
+    logger.debug(
+        "Search async_ask retrieval weight: search_id=%s tenant_id=%s kb_count=%s "
+        "vector_similarity_weight=%s full_text_weight=%s",
+        search_id,
+        tenant_id,
+        len(kb_ids),
+        vector_similarity_weight,
+        full_text_weight,
+    )
+
     kbinfos = await retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
@@ -1569,12 +1584,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         page=1,
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.1),
-        vector_similarity_weight=search_config.get("vector_similarity_weight", 0.3),
+        vector_similarity_weight=vector_similarity_weight,
         top=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        trace_id=search_id,
     )
     if include_reference_metadata:
         logging.debug(

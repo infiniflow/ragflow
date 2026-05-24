@@ -55,35 +55,35 @@ func (p *PaddleOCRModel) Name() string {
 }
 
 func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 type paddleSubmitResponse struct {
@@ -276,25 +276,25 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 }
 
 func (p *PaddleOCRModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

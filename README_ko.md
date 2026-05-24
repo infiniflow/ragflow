@@ -297,7 +297,7 @@ docker build --platform linux/amd64 \
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.12 # install RAGFlow dependent python modules
+   uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 download_deps.py
    pre-commit install
    ```
