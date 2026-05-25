@@ -776,6 +776,25 @@ class Markdown(MarkdownParser):
         return None
 
     def load_images_from_urls(self, urls, cache=None):
+        """Load images referenced by ``urls`` into RGB ``PIL.Image`` objects.
+
+        Remote (``http``/``https``) URLs are fetched through
+        ``_fetch_remote_image_response`` so every request is SSRF-validated;
+        only ``200`` responses with an ``image/*`` content type are decoded.
+        Local paths are opened directly when the file exists. Each URL is
+        resolved at most once: results (including failures, stored as ``None``)
+        are memoized in ``cache`` and reused on later calls.
+
+        Args:
+            urls: Iterable of image URLs or local file paths.
+            cache: Optional ``{url: image_or_None}`` mapping reused and updated
+                across calls. A new dict is created when omitted.
+
+        Returns:
+            A ``(images, cache)`` tuple where ``images`` is the list of
+            successfully loaded ``PIL.Image`` objects and ``cache`` is the
+            updated memoization mapping.
+        """
         from pathlib import Path
 
         cache = cache or {}
