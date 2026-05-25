@@ -1235,7 +1235,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, **req):
+        async for ans in async_chat(dia, msg, False, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
