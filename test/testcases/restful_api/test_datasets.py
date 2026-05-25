@@ -15,6 +15,7 @@
 #
 
 import pytest
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from configs import DATASET_NAME_LIMIT
 
 
@@ -86,6 +87,345 @@ def test_dataset_create_name_validation(rest_client, clear_datasets, name, expec
     payload = res.json()
     assert payload["code"] == 101, payload
     assert expected_fragment in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_create_name_and_case_insensitive_contract(rest_client, clear_datasets):
+    name = "CaseInsensitive"
+
+    first_res = rest_client.post("/datasets", json={"name": name.upper()})
+    assert first_res.status_code == 200
+    first_payload = first_res.json()
+    assert first_payload["code"] == 0, first_payload
+    assert first_payload["data"]["name"] == name.upper(), first_payload
+
+    second_res = rest_client.post("/datasets", json={"name": name.lower()})
+    assert second_res.status_code == 200
+    second_payload = second_res.json()
+    assert second_payload["code"] == 0, second_payload
+    assert second_payload["data"]["name"] == f"{name.lower()}(1)", second_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_avatar_and_description_contract(rest_client, clear_datasets):
+    avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgN6J1tQAAAAASUVORK5CYII="
+    payload = {
+        "name": "dataset_avatar_description",
+        "avatar": avatar,
+        "description": "description",
+    }
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    assert body["data"]["avatar"] == avatar, body
+    assert body["data"]["description"] == "description", body
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, chunk_method",
+    [
+        ("naive", "naive"),
+        ("book", "book"),
+        ("email", "email"),
+        ("laws", "laws"),
+        ("manual", "manual"),
+        ("one", "one"),
+        ("paper", "paper"),
+        ("picture", "picture"),
+        ("presentation", "presentation"),
+        ("qa", "qa"),
+        ("table", "table"),
+        ("tag", "tag"),
+    ],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+)
+def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
+    res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 0, payload
+    assert payload["data"]["chunk_method"] == chunk_method, payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, permission",
+    [
+        ("me", "me"),
+        ("team", "team"),
+    ],
+    ids=["me", "team"],
+)
+def test_dataset_create_permission_contract(rest_client, clear_datasets, name, permission):
+    res = rest_client.post("/datasets", json={"name": name, "permission": permission})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 0, payload
+    assert payload["data"]["permission"] == permission, payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, embedding_model",
+    [
+        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin"),
+        ("tenant_zhipu", "embedding-3@ZHIPU-AI"),
+    ],
+    ids=["builtin_baai", "tenant_zhipu"],
+)
+def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, name, embedding_model):
+    res = rest_client.post("/datasets", json={"name": name, "embedding_model": embedding_model})
+    assert res.status_code == 200
+    payload = res.json()
+    if embedding_model == "embedding-3@ZHIPU-AI" and payload["code"] == 102:
+        pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {payload}")
+    assert payload["code"] == 0, payload
+    assert payload["data"]["embedding_model"] == embedding_model, payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, embedding_model, expected_fragment",
+    [
+        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-env1.5@ ", "Both model_name and provider must be non-empty strings"),
+    ],
+    ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+)
+def test_dataset_create_embedding_model_format_contract(rest_client, clear_datasets, name, embedding_model, expected_fragment):
+    res = rest_client.post("/datasets", json={"name": name, "embedding_model": embedding_model})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 101, payload
+    assert expected_fragment in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, clear_datasets):
+    payload = {
+        "name": "test_parser_config_missing_fields",
+        "parser_config": {"chunk_token_num": 1024},
+    }
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    parser_config = body["data"]["parser_config"]
+    assert "raptor" in parser_config, body
+    assert "graphrag" in parser_config, body
+    assert parser_config["raptor"]["use_raptor"] is False, body
+    assert parser_config["graphrag"]["use_graphrag"] is False, body
+    assert parser_config["chunk_token_num"] == 1024, body
+
+
+@pytest.mark.p3
+def test_dataset_create_1k_contract(rest_client, clear_datasets):
+    for i in range(1_000):
+        res = rest_client.post("/datasets", json={"name": f"dataset_{i}"})
+        assert res.status_code == 200, (i, res.text)
+        payload = res.json()
+        assert payload["code"] == 0, (i, payload)
+
+
+@pytest.mark.p3
+def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
+    count = 100
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(rest_client.post, "/datasets", json={"name": f"dataset_{i}"}) for i in range(count)]
+        responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    for index, future in enumerate(futures):
+        res = future.result()
+        assert res.status_code == 200, (index, res.text)
+        payload = res.json()
+        assert payload["code"] == 0, (index, payload)
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, parser_config",
+    [
+        ("auto_keywords_min", {"auto_keywords": 0}),
+        ("auto_keywords_mid", {"auto_keywords": 16}),
+        ("auto_keywords_max", {"auto_keywords": 32}),
+        ("auto_questions_min", {"auto_questions": 0}),
+        ("auto_questions_mid", {"auto_questions": 5}),
+        ("auto_questions_max", {"auto_questions": 10}),
+        ("chunk_token_num_min", {"chunk_token_num": 1}),
+        ("chunk_token_num_mid", {"chunk_token_num": 1024}),
+        ("chunk_token_num_max", {"chunk_token_num": 2048}),
+        ("delimiter", {"delimiter": "\n"}),
+        ("delimiter_space", {"delimiter": " "}),
+        ("html4excel_true", {"html4excel": True}),
+        ("html4excel_false", {"html4excel": False}),
+        ("layout_recognize_DeepDOC", {"layout_recognize": "DeepDOC"}),
+        ("layout_recognize_navie", {"layout_recognize": "Plain Text"}),
+        ("tag_kb_ids", {"tag_kb_ids": ["1", "2"]}),
+        ("topn_tags_min", {"topn_tags": 1}),
+        ("topn_tags_mid", {"topn_tags": 5}),
+        ("topn_tags_max", {"topn_tags": 10}),
+        ("filename_embd_weight_min", {"filename_embd_weight": 0.1}),
+        ("filename_embd_weight_mid", {"filename_embd_weight": 0.5}),
+        ("filename_embd_weight_max", {"filename_embd_weight": 1.0}),
+        ("task_page_size_min", {"task_page_size": 1}),
+        ("task_page_size_None", {"task_page_size": None}),
+        ("pages", {"pages": [[1, 100]]}),
+        ("pages_none", {"pages": None}),
+        ("graphrag_true", {"graphrag": {"use_graphrag": True}}),
+        ("graphrag_false", {"graphrag": {"use_graphrag": False}}),
+        ("graphrag_entity_types", {"graphrag": {"entity_types": ["age", "sex", "height", "weight"]}}),
+        ("graphrag_method_general", {"graphrag": {"method": "general"}}),
+        ("graphrag_method_light", {"graphrag": {"method": "light"}}),
+        ("graphrag_community_true", {"graphrag": {"community": True}}),
+        ("graphrag_community_false", {"graphrag": {"community": False}}),
+        ("graphrag_resolution_true", {"graphrag": {"resolution": True}}),
+        ("graphrag_resolution_false", {"graphrag": {"resolution": False}}),
+        ("raptor_true", {"raptor": {"use_raptor": True}}),
+        ("raptor_false", {"raptor": {"use_raptor": False}}),
+        ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
+        ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+        ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
+        ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
+        ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
+        ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
+        ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+        ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
+        ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
+        ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
+        ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+        ("parent_child_true", {"parent_child": {"use_parent_child": True}}),
+        ("parent_child_false", {"parent_child": {"use_parent_child": False}}),
+        ("parent_child_delimiter", {"parent_child": {"children_delimiter": "\n\n"}}),
+        ("parent_child_delimiter_custom", {"parent_child": {"use_parent_child": True, "children_delimiter": "。"}}),
+    ],
+    ids=[
+        "auto_keywords_min",
+        "auto_keywords_mid",
+        "auto_keywords_max",
+        "auto_questions_min",
+        "auto_questions_mid",
+        "auto_questions_max",
+        "chunk_token_num_min",
+        "chunk_token_num_mid",
+        "chunk_token_num_max",
+        "delimiter",
+        "delimiter_space",
+        "html4excel_true",
+        "html4excel_false",
+        "layout_recognize_DeepDOC",
+        "layout_recognize_navie",
+        "tag_kb_ids",
+        "topn_tags_min",
+        "topn_tags_mid",
+        "topn_tags_max",
+        "filename_embd_weight_min",
+        "filename_embd_weight_mid",
+        "filename_embd_weight_max",
+        "task_page_size_min",
+        "task_page_size_None",
+        "pages",
+        "pages_none",
+        "graphrag_true",
+        "graphrag_false",
+        "graphrag_entity_types",
+        "graphrag_method_general",
+        "graphrag_method_light",
+        "graphrag_community_true",
+        "graphrag_community_false",
+        "graphrag_resolution_true",
+        "graphrag_resolution_false",
+        "raptor_true",
+        "raptor_false",
+        "raptor_prompt",
+        "raptor_max_token_min",
+        "raptor_max_token_mid",
+        "raptor_max_token_max",
+        "raptor_threshold_min",
+        "raptor_threshold_mid",
+        "raptor_threshold_max",
+        "raptor_max_cluster_min",
+        "raptor_max_cluster_mid",
+        "raptor_max_cluster_max",
+        "raptor_random_seed_min",
+        "parent_child_true",
+        "parent_child_false",
+        "parent_child_delimiter",
+        "parent_child_delimiter_custom",
+    ],
+)
+def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
+    payload = {"name": name, "parser_config": parser_config}
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    actual_parser_config = body["data"]["parser_config"]
+    for key, expected_value in parser_config.items():
+        if isinstance(expected_value, dict):
+            for nested_key, nested_expected in expected_value.items():
+                assert actual_parser_config[key][nested_key] == nested_expected, body
+        else:
+            assert actual_parser_config[key] == expected_value, body
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "name, parser_config, expected_raptor, expected_graphrag",
+    [
+        ("test_parser_config_only_raptor", {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}, True, False),
+        ("test_parser_config_only_graphrag", {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}, False, True),
+        (
+            "test_parser_config_both_fields",
+            {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}},
+            True,
+            True,
+        ),
+    ],
+    ids=["only_raptor", "only_graphrag", "both_fields"],
+)
+def test_dataset_create_parser_config_bugfix_contract(
+    rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag
+):
+    res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    actual_parser_config = body["data"]["parser_config"]
+    assert "raptor" in actual_parser_config, body
+    assert "graphrag" in actual_parser_config, body
+    assert actual_parser_config["raptor"]["use_raptor"] is expected_raptor, body
+    assert actual_parser_config["graphrag"]["use_graphrag"] is expected_graphrag, body
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "chunk_method",
+    ["qa", "manual", "paper", "book", "laws", "presentation"],
+    ids=["qa", "manual", "paper", "book", "laws", "presentation"],
+)
+def test_dataset_create_parser_config_different_chunk_methods_contract(rest_client, clear_datasets, chunk_method):
+    payload = {
+        "name": f"test_parser_config_{chunk_method}",
+        "chunk_method": chunk_method,
+        "parser_config": {"chunk_token_num": 512},
+    }
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    parser_config = body["data"]["parser_config"]
+    assert parser_config["chunk_token_num"] == 512, body
+    assert "raptor" in parser_config, body
+    assert "graphrag" in parser_config, body
+    assert parser_config["raptor"]["use_raptor"] is False, body
+    assert parser_config["graphrag"]["use_graphrag"] is False, body
 
 
 @pytest.mark.p2
