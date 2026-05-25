@@ -404,6 +404,7 @@ def test_dataset_create_parser_config_bugfix_contract(
     assert "graphrag" in actual_parser_config, body
     assert actual_parser_config["raptor"]["use_raptor"] is expected_raptor, body
     assert actual_parser_config["graphrag"]["use_graphrag"] is expected_graphrag, body
+    assert actual_parser_config["chunk_token_num"] == 1024, body
 
 
 @pytest.mark.p2
