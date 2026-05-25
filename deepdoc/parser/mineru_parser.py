@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 import numpy as np
 import pdfplumber
@@ -644,52 +644,143 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
-    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
+    def _normalize_output_type(self, output: dict[str, object]) -> MinerUContentType | None:
+        raw_type = str(output.get("type", "") or "").strip().lower()
+        try:
+            return MinerUContentType(raw_type)
+        except ValueError:
+            self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
+            return None
+
+    @staticmethod
+    def _normalize_text_lines(values: Sequence[object] | None) -> list[str]:
+        """Normalize MinerU caption/footnote arrays into non-empty strings."""
+        lines = []
+        for value in values or []:
+            text = str(value or "").strip()
+            if text:
+                lines.append(text)
+        return lines
+
+    def _build_image_texts(self, output: dict[str, object], *, keep_placeholder: bool = False) -> list[str]:
+        """Build searchable text lines for a MinerU image block."""
+        image_caption = output.get("image_caption")
+        image_footnote = output.get("image_footnote")
+        texts = self._normalize_text_lines(image_caption if isinstance(image_caption, list) else None)
+        texts.extend(self._normalize_text_lines(image_footnote if isinstance(image_footnote, list) else None))
+        vlm_description = str(output.get("vlm_description") or "").strip()
+        if vlm_description:
+            texts.append(vlm_description)
+        if texts or not keep_placeholder:
+            return texts
+        return [""]
+
+    def _build_table_text(self, output: dict[str, object]) -> str:
+        """Build searchable HTML/text payload for a MinerU table block."""
+        table_caption = output.get("table_caption")
+        table_footnote = output.get("table_footnote")
+        parts = [str(output.get("table_body") or "").strip()]
+        parts.extend(self._normalize_text_lines(table_caption if isinstance(table_caption, list) else None))
+        parts.extend(self._normalize_text_lines(table_footnote if isinstance(table_footnote, list) else None))
+        return "\n".join(part for part in parts if part) or "FAILED TO PARSE TABLE"
+
+    def _load_image_from_path(self, image_path: str | None) -> Optional[Image.Image]:
+        if not image_path:
+            return None
+        try:
+            with Image.open(image_path) as image:
+                image.load()
+                return image.copy()
+        except Exception as exc:
+            self.logger.warning(f"[MinerU] Failed to load image '{image_path}': {exc}")
+            return None
+
+    def _resolve_output_image(self, output: dict[str, object], position_tag: str, path_keys: tuple[str, ...]) -> Optional[Image.Image]:
+        for key in path_keys:
+            image = self._load_image_from_path(str(output.get(key) or ""))
+            if image is not None:
+                return image
+
+        if not position_tag:
+            return None
+        try:
+            return self.crop(position_tag, 1)
+        except Exception as exc:
+            self.logger.warning(f"[MinerU] Failed to crop media fallback image: {exc}")
+            return None
+
+    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = True):
         sections = []
+        parse_method = (parse_method or "raw").lower()
         for output in outputs:
-            match output.get("type"):
+            output_type = self._normalize_output_type(output)
+            if output_type is None:
+                continue
+            if output_type in {MinerUContentType.DISCARDED, MinerUContentType.HEADER, MinerUContentType.FOOTER, MinerUContentType.PAGE_NUMBER}:
+                continue
+            # Non-paper chunkers consume media through _transfer_to_media_blocks; keeping
+            # them in sections would create duplicate caption/text chunks.
+            if parse_method != "paper" and (output_type == MinerUContentType.IMAGE or (output_type == MinerUContentType.TABLE and table_enable)):
+                continue
+
+            match output_type:
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
-                    section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
-                    if not section.strip():
-                        section = "FAILED TO PARSE TABLE"
+                    section = self._build_table_text(output)
                 case MinerUContentType.IMAGE:
-                    section = "".join(output.get("image_caption", [])) + "\n" + "".join(output.get("image_footnote", []))
-                    # If a vision model enriched this image with a semantic
-                    # description (see _enhance_images_with_vlm), embed it in
-                    # the chunk so it becomes searchable / retrievable.
-                    vlm_description = (output.get("vlm_description") or "").strip()
-                    if vlm_description:
-                        section = (section.strip("\n") + "\n" + vlm_description).strip("\n") if section.strip() else vlm_description
+                    section = "\n".join(self._build_image_texts(output))
                 case MinerUContentType.EQUATION:
                     section = output.get("text", "")
                 case MinerUContentType.CODE:
-                    section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
+                    code_caption = output.get("code_caption")
+                    section = str(output.get("code_body") or "") + "\n".join(self._normalize_text_lines(code_caption if isinstance(code_caption, list) else None))
                 case MinerUContentType.LIST:
-                    section = "\n".join(output.get("list_items", []))
-                case MinerUContentType.HEADER | MinerUContentType.FOOTER | MinerUContentType.PAGE_NUMBER | MinerUContentType.DISCARDED:
-                    continue
-                case _:
-                    self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
-                    continue
+                    list_items = output.get("list_items")
+                    section = "\n".join(self._normalize_text_lines(list_items if isinstance(list_items, list) else None))
 
-            if not table_enable:
-                section = self._sanitize_section_text(section)
+            section = self._sanitize_section_text(str(section or ""))
             if not section:
                 self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
                 continue
 
+            position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""
             if section and parse_method in {"manual", "pipeline"}:
-                sections.append((section, output["type"], self._line_tag(output)))
+                sections.append((section, output_type.value, position_tag))
             elif section and parse_method == "paper":
-                sections.append((section + self._line_tag(output), output["type"]))
+                sections.append((section + position_tag, output_type.value))
             else:
-                sections.append((section, self._line_tag(output)))
+                sections.append((section, position_tag))
         return sections
 
-    def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
-        return []
+    def _transfer_to_media_blocks(self, outputs: list[dict[str, Any]], table_enable: bool = True):
+        tables = []
+        for output in outputs:
+            output_type = self._normalize_output_type(output)
+            if output_type not in {MinerUContentType.TABLE, MinerUContentType.IMAGE}:
+                continue
+
+            position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""
+            positions = [
+                (pages[-1], left, right, top, bottom)
+                for pages, left, right, top, bottom in self.extract_positions(position_tag)
+                if pages
+            ] or [(0, 0.0, 0.0, 0.0, 0.0)]
+
+            if output_type == MinerUContentType.TABLE:
+                if not table_enable:
+                    continue
+                table_text = self._build_table_text(output)
+                table_image = self._resolve_output_image(output, position_tag, ("table_img_path", "img_path"))
+                tables.append(((table_image, table_text), positions))
+                continue
+
+            if output_type == MinerUContentType.IMAGE:
+                image = self._resolve_output_image(output, position_tag, ("img_path", "table_img_path"))
+                image_texts = self._build_image_texts(output, keep_placeholder=True)
+                tables.append(((image, image_texts), positions))
+
+        return tables
 
     def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
         """Generate semantic descriptions for image blocks via the tenant's
@@ -697,6 +788,9 @@ class MinerUParser(RAGFlowPdfParser):
         IMAGE block with a readable img_path gets a ``vlm_description``
         field that ``_transfer_to_sections`` then folds into the chunk
         text — closing issue #14869.
+
+        ``_transfer_to_media_blocks`` also reuses the same description when building
+        MinerU image media chunks.
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from rag.app.picture import vision_llm_chunk
@@ -815,7 +909,7 @@ class MinerUParser(RAGFlowPdfParser):
                 except Exception as e:
                     self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 
-            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_tables(outputs)
+            return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_media_blocks(outputs, enable_table)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:

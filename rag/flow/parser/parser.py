@@ -393,7 +393,7 @@ class Parser(ProcessBase):
             ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
-            lines, _ = pdf_parser.parse_pdf(
+            lines, mineru_media_blocks = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
@@ -416,6 +416,21 @@ class Parser(ProcessBase):
                 image = pdf_parser.crop(poss, 1)
                 if image is not None:
                     box["image"] = image
+                bboxes.append(box)
+
+            for (img, html_or_caption), positions in mineru_media_blocks or []:
+                box = {"layout_type": "table" if not isinstance(html_or_caption, list) else "figure"}
+                if isinstance(html_or_caption, str):
+                    box["text"] = html_or_caption
+                elif isinstance(html_or_caption, list):
+                    box["text"] = "\n".join(str(text) for text in html_or_caption if str(text).strip())
+                if img is not None:
+                    box["image"] = img
+                if positions:
+                    try:
+                        box["positions"] = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
+                    except Exception:
+                        pass
                 bboxes.append(box)
 
         elif parse_method.lower() == "docling":
