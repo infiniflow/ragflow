@@ -4082,6 +4082,7 @@ The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. 
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
+
   - `"messages"`: `list[object]`
   - `"question"`: `string`
   - `"stream"`: `boolean`
@@ -4144,7 +4145,7 @@ curl --request POST \
 - `"llm_id"`: (*Body Parameter*), `string`
   Optional model override when a specific chat model should be used for this request.
 - `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
-  When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history.
+  When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 
 #### Response
 
