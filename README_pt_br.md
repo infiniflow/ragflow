@@ -153,6 +153,7 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 - RAM >= 16 GB
 - Disco >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário apenas se você pretende usar o recurso de executor de código (sandbox) do RAGFlow.
 
 > [!TIP]

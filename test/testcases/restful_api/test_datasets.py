@@ -15,7 +15,10 @@
 #
 
 import pytest
-from configs import DATASET_NAME_LIMIT
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
+from test.testcases.utils import encode_avatar
+from test.testcases.utils.file_utils import create_image_file
 
 
 @pytest.mark.p1
@@ -86,6 +89,666 @@ def test_dataset_create_name_validation(rest_client, clear_datasets, name, expec
     payload = res.json()
     assert payload["code"] == 101, payload
     assert expected_fragment in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_create_name_and_case_insensitive_contract(rest_client, clear_datasets):
+    name = "CaseInsensitive"
+
+    first_res = rest_client.post("/datasets", json={"name": name.upper()})
+    assert first_res.status_code == 200
+    first_payload = first_res.json()
+    assert first_payload["code"] == 0, first_payload
+    assert first_payload["data"]["name"] == name.upper(), first_payload
+
+    second_res = rest_client.post("/datasets", json={"name": name.lower()})
+    assert second_res.status_code == 200
+    second_payload = second_res.json()
+    assert second_payload["code"] == 0, second_payload
+    assert second_payload["data"]["name"] == f"{name.lower()}(1)", second_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_avatar_and_description_contract(rest_client, clear_datasets):
+    avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBgN6J1tQAAAAASUVORK5CYII="
+    payload = {
+        "name": "dataset_avatar_description",
+        "avatar": avatar,
+        "description": "description",
+    }
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    assert body["data"]["avatar"] == avatar, body
+    assert body["data"]["description"] == "description", body
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, chunk_method",
+    [
+        ("naive", "naive"),
+        ("book", "book"),
+        ("email", "email"),
+        ("laws", "laws"),
+        ("manual", "manual"),
+        ("one", "one"),
+        ("paper", "paper"),
+        ("picture", "picture"),
+        ("presentation", "presentation"),
+        ("qa", "qa"),
+        ("table", "table"),
+        ("tag", "tag"),
+    ],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+)
+def test_dataset_create_chunk_method_contract(rest_client, clear_datasets, name, chunk_method):
+    res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 0, payload
+    assert payload["data"]["chunk_method"] == chunk_method, payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, permission",
+    [
+        ("me", "me"),
+        ("team", "team"),
+    ],
+    ids=["me", "team"],
+)
+def test_dataset_create_permission_contract(rest_client, clear_datasets, name, permission):
+    res = rest_client.post("/datasets", json={"name": name, "permission": permission})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 0, payload
+    assert payload["data"]["permission"] == permission, payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail",
+    [
+        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
+        ("tenant_zhipu", "embedding-3@ZHIPU-AI", 0, "embedding-3@ZHIPU-AI", None, True),
+        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
+        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
+        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Unsupported model: <unknown@ZHIPU-AI>", False),
+        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Unsupported model: <embedding-3@unknown>", False),
+        (
+            "tenant_no_auth_default_tenant_llm",
+            "text-embedding-v3@Tongyi-Qianwen",
+            102,
+            None,
+            "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>",
+            False,
+        ),
+        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Unauthorized model: <text-embedding-3-small@OpenAI>", False),
+    ],
+    ids=[
+        "builtin_baai",
+        "tenant_zhipu",
+        "embedding_model_unset",
+        "embedding_model_none",
+        "unknown_llm_name",
+        "unknown_llm_factory",
+        "tenant_no_auth_default_tenant_llm",
+        "tenant_no_auth",
+    ],
+)
+def test_dataset_create_embedding_model_contract(
+    rest_client, clear_datasets, name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail
+):
+    req = {"name": name}
+    if embedding_model != "__UNSET__":
+        req["embedding_model"] = embedding_model
+    res = rest_client.post("/datasets", json=req)
+    assert res.status_code == 200
+    payload = res.json()
+    if unauthorized_is_xfail and payload["code"] == 102:
+        pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {payload}")
+    assert payload["code"] == expected_code, payload
+    if expected_embedding_model is not None:
+        assert payload["data"]["embedding_model"] == expected_embedding_model, payload
+    if expected_message is not None:
+        assert payload["message"] == expected_message, payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, embedding_model, expected_fragment",
+    [
+        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-env1.5@ ", "Both model_name and provider must be non-empty strings"),
+    ],
+    ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+)
+def test_dataset_create_embedding_model_format_contract(rest_client, clear_datasets, name, embedding_model, expected_fragment):
+    res = rest_client.post("/datasets", json={"name": name, "embedding_model": embedding_model})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 101, payload
+    assert expected_fragment in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, clear_datasets):
+    payload = {
+        "name": "test_parser_config_missing_fields",
+        "parser_config": {"chunk_token_num": 1024},
+    }
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    parser_config = body["data"]["parser_config"]
+    assert "raptor" in parser_config, body
+    assert "graphrag" in parser_config, body
+    assert parser_config["raptor"]["use_raptor"] is False, body
+    assert parser_config["graphrag"]["use_graphrag"] is False, body
+    assert parser_config["chunk_token_num"] == 1024, body
+
+
+@pytest.mark.p3
+def test_dataset_create_1k_contract(rest_client, clear_datasets):
+    for i in range(1_000):
+        res = rest_client.post("/datasets", json={"name": f"dataset_{i}"})
+        assert res.status_code == 200, (i, res.text)
+        payload = res.json()
+        assert payload["code"] == 0, (i, payload)
+
+
+@pytest.mark.p3
+def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
+    count = 100
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(rest_client.post, "/datasets", json={"name": f"dataset_{i}"}) for i in range(count)]
+        responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    for index, future in enumerate(futures):
+        res = future.result()
+        assert res.status_code == 200, (index, res.text)
+        payload = res.json()
+        assert payload["code"] == 0, (index, payload)
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, parser_config",
+    [
+        ("auto_keywords_min", {"auto_keywords": 0}),
+        ("auto_keywords_mid", {"auto_keywords": 16}),
+        ("auto_keywords_max", {"auto_keywords": 32}),
+        ("auto_questions_min", {"auto_questions": 0}),
+        ("auto_questions_mid", {"auto_questions": 5}),
+        ("auto_questions_max", {"auto_questions": 10}),
+        ("chunk_token_num_min", {"chunk_token_num": 1}),
+        ("chunk_token_num_mid", {"chunk_token_num": 1024}),
+        ("chunk_token_num_max", {"chunk_token_num": 2048}),
+        ("delimiter", {"delimiter": "\n"}),
+        ("delimiter_space", {"delimiter": " "}),
+        ("html4excel_true", {"html4excel": True}),
+        ("html4excel_false", {"html4excel": False}),
+        ("layout_recognize_DeepDOC", {"layout_recognize": "DeepDOC"}),
+        ("layout_recognize_navie", {"layout_recognize": "Plain Text"}),
+        ("tag_kb_ids", {"tag_kb_ids": ["1", "2"]}),
+        ("topn_tags_min", {"topn_tags": 1}),
+        ("topn_tags_mid", {"topn_tags": 5}),
+        ("topn_tags_max", {"topn_tags": 10}),
+        ("filename_embd_weight_min", {"filename_embd_weight": 0.1}),
+        ("filename_embd_weight_mid", {"filename_embd_weight": 0.5}),
+        ("filename_embd_weight_max", {"filename_embd_weight": 1.0}),
+        ("task_page_size_min", {"task_page_size": 1}),
+        ("task_page_size_None", {"task_page_size": None}),
+        ("pages", {"pages": [[1, 100]]}),
+        ("pages_none", {"pages": None}),
+        ("graphrag_true", {"graphrag": {"use_graphrag": True}}),
+        ("graphrag_false", {"graphrag": {"use_graphrag": False}}),
+        ("graphrag_entity_types", {"graphrag": {"entity_types": ["age", "sex", "height", "weight"]}}),
+        ("graphrag_method_general", {"graphrag": {"method": "general"}}),
+        ("graphrag_method_light", {"graphrag": {"method": "light"}}),
+        ("graphrag_community_true", {"graphrag": {"community": True}}),
+        ("graphrag_community_false", {"graphrag": {"community": False}}),
+        ("graphrag_resolution_true", {"graphrag": {"resolution": True}}),
+        ("graphrag_resolution_false", {"graphrag": {"resolution": False}}),
+        ("raptor_true", {"raptor": {"use_raptor": True}}),
+        ("raptor_false", {"raptor": {"use_raptor": False}}),
+        ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
+        ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+        ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
+        ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
+        ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
+        ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
+        ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+        ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
+        ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
+        ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
+        ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+        ("parent_child_true", {"parent_child": {"use_parent_child": True}}),
+        ("parent_child_false", {"parent_child": {"use_parent_child": False}}),
+        ("parent_child_delimiter", {"parent_child": {"children_delimiter": "\n\n"}}),
+        ("parent_child_delimiter_custom", {"parent_child": {"use_parent_child": True, "children_delimiter": "。"}}),
+    ],
+    ids=[
+        "auto_keywords_min",
+        "auto_keywords_mid",
+        "auto_keywords_max",
+        "auto_questions_min",
+        "auto_questions_mid",
+        "auto_questions_max",
+        "chunk_token_num_min",
+        "chunk_token_num_mid",
+        "chunk_token_num_max",
+        "delimiter",
+        "delimiter_space",
+        "html4excel_true",
+        "html4excel_false",
+        "layout_recognize_DeepDOC",
+        "layout_recognize_navie",
+        "tag_kb_ids",
+        "topn_tags_min",
+        "topn_tags_mid",
+        "topn_tags_max",
+        "filename_embd_weight_min",
+        "filename_embd_weight_mid",
+        "filename_embd_weight_max",
+        "task_page_size_min",
+        "task_page_size_None",
+        "pages",
+        "pages_none",
+        "graphrag_true",
+        "graphrag_false",
+        "graphrag_entity_types",
+        "graphrag_method_general",
+        "graphrag_method_light",
+        "graphrag_community_true",
+        "graphrag_community_false",
+        "graphrag_resolution_true",
+        "graphrag_resolution_false",
+        "raptor_true",
+        "raptor_false",
+        "raptor_prompt",
+        "raptor_max_token_min",
+        "raptor_max_token_mid",
+        "raptor_max_token_max",
+        "raptor_threshold_min",
+        "raptor_threshold_mid",
+        "raptor_threshold_max",
+        "raptor_max_cluster_min",
+        "raptor_max_cluster_mid",
+        "raptor_max_cluster_max",
+        "raptor_random_seed_min",
+        "parent_child_true",
+        "parent_child_false",
+        "parent_child_delimiter",
+        "parent_child_delimiter_custom",
+    ],
+)
+def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
+    payload = {"name": name, "parser_config": parser_config}
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    actual_parser_config = body["data"]["parser_config"]
+    for key, expected_value in parser_config.items():
+        if isinstance(expected_value, dict):
+            for nested_key, nested_expected in expected_value.items():
+                assert actual_parser_config[key][nested_key] == nested_expected, body
+        else:
+            assert actual_parser_config[key] == expected_value, body
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "name, parser_config, expected_raptor, expected_graphrag",
+    [
+        ("test_parser_config_only_raptor", {"chunk_token_num": 1024, "raptor": {"use_raptor": True}}, True, False),
+        ("test_parser_config_only_graphrag", {"chunk_token_num": 1024, "graphrag": {"use_graphrag": True}}, False, True),
+        (
+            "test_parser_config_both_fields",
+            {"chunk_token_num": 1024, "raptor": {"use_raptor": True}, "graphrag": {"use_graphrag": True}},
+            True,
+            True,
+        ),
+    ],
+    ids=["only_raptor", "only_graphrag", "both_fields"],
+)
+def test_dataset_create_parser_config_bugfix_contract(
+    rest_client, clear_datasets, name, parser_config, expected_raptor, expected_graphrag
+):
+    res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    actual_parser_config = body["data"]["parser_config"]
+    assert "raptor" in actual_parser_config, body
+    assert "graphrag" in actual_parser_config, body
+    assert actual_parser_config["raptor"]["use_raptor"] is expected_raptor, body
+    assert actual_parser_config["graphrag"]["use_graphrag"] is expected_graphrag, body
+    assert actual_parser_config["chunk_token_num"] == 1024, body
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "chunk_method",
+    ["qa", "manual", "paper", "book", "laws", "presentation"],
+    ids=["qa", "manual", "paper", "book", "laws", "presentation"],
+)
+def test_dataset_create_parser_config_different_chunk_methods_contract(rest_client, clear_datasets, chunk_method):
+    payload = {
+        "name": f"test_parser_config_{chunk_method}",
+        "chunk_method": chunk_method,
+        "parser_config": {"chunk_token_num": 512},
+    }
+    res = rest_client.post("/datasets", json=payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    parser_config = body["data"]["parser_config"]
+    assert parser_config["chunk_token_num"] == 512, body
+    assert "raptor" in parser_config, body
+    assert "graphrag" in parser_config, body
+    assert parser_config["raptor"]["use_raptor"] is False, body
+    assert parser_config["graphrag"]["use_graphrag"] is False, body
+def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
+    invalid_cases = [
+        ("", "String should have at least 1 character"),
+        (" ", "String should have at least 1 character"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
+        (0, "Input should be a valid string"),
+        (None, "Input should be a valid string"),
+    ]
+    for name, expected_message in invalid_cases:
+        res = rest_client.post("/datasets", json={"name": name})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+    create_res = rest_client.post("/datasets", json={"name": "duplicated_name"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+
+    duplicate_res = rest_client.post("/datasets", json={"name": "duplicated_name"})
+    assert duplicate_res.status_code == 200
+    duplicate_payload = duplicate_res.json()
+    assert duplicate_payload["code"] == 0, duplicate_payload
+    assert duplicate_payload["data"]["name"] == "duplicated_name(1)", duplicate_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_content_type_and_payload_bad_contract(rest_client):
+    bad_content_type = "text/xml"
+    bad_content_type_res = rest_client.post(
+        "/datasets",
+        data='{"name": "bad_content_type"}',
+        headers={"Content-Type": bad_content_type},
+    )
+    assert bad_content_type_res.status_code == 200
+    bad_content_type_payload = bad_content_type_res.json()
+    assert bad_content_type_payload["code"] == 101, bad_content_type_payload
+    assert f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"], bad_content_type_payload
+
+    malformed_json_res = rest_client.post("/datasets", data="a")
+    assert malformed_json_res.status_code == 200
+    malformed_json_payload = malformed_json_res.json()
+    assert malformed_json_payload["code"] == 101, malformed_json_payload
+    assert "Malformed JSON syntax: Missing commas/brackets or invalid encoding" in malformed_json_payload["message"], malformed_json_payload
+
+    invalid_payload_type_res = rest_client.post("/datasets", data='"a"')
+    assert invalid_payload_type_res.status_code == 200
+    invalid_payload_type_payload = invalid_payload_type_res.json()
+    assert invalid_payload_type_payload["code"] == 101, invalid_payload_type_payload
+    assert "Invalid request payload: expected object, got str" in invalid_payload_type_payload["message"], invalid_payload_type_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
+    exceed_res = rest_client.post(
+        "/datasets",
+        json={"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536},
+    )
+    assert exceed_res.status_code == 200
+    exceed_payload = exceed_res.json()
+    assert exceed_payload["code"] == 101, exceed_payload
+    assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
+
+    image_path = create_image_file(tmp_path / "ragflow_test.png")
+    encoded_avatar = encode_avatar(image_path)
+    invalid_prefix_cases = [
+        ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+        ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
+    ]
+    for name, prefix, expected_message in invalid_prefix_cases:
+        res = rest_client.post(
+            "/datasets",
+            json={"name": name, "avatar": f"{prefix}{encoded_avatar}"},
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+    unset_res = rest_client.post("/datasets", json={"name": "avatar_unset"})
+    assert unset_res.status_code == 200
+    unset_payload = unset_res.json()
+    assert unset_payload["code"] == 0, unset_payload
+    assert unset_payload["data"]["avatar"] is None, unset_payload
+
+    none_res = rest_client.post("/datasets", json={"name": "avatar_none", "avatar": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+    assert none_payload["data"]["avatar"] is None, none_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_description_contract(rest_client, clear_datasets):
+    exceeds_limit_res = rest_client.post(
+        "/datasets",
+        json={"name": "description_exceeds_limit_length", "description": "a" * 65536},
+    )
+    assert exceeds_limit_res.status_code == 200
+    exceeds_limit_payload = exceeds_limit_res.json()
+    assert exceeds_limit_payload["code"] == 101, exceeds_limit_payload
+    assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
+
+    unset_res = rest_client.post("/datasets", json={"name": "description_unset"})
+    assert unset_res.status_code == 200
+    unset_payload = unset_res.json()
+    assert unset_payload["code"] == 0, unset_payload
+    assert unset_payload["data"]["description"] is None, unset_payload
+
+    none_res = rest_client.post("/datasets", json={"name": "description_none", "description": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+    assert none_payload["data"]["description"] is None, none_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_datasets):
+    permission_invalid_cases = [
+        ("empty", ""),
+        ("unknown", "unknown"),
+        ("type_error", []),
+        ("me_upercase", "ME"),
+        ("team_upercase", "TEAM"),
+        ("whitespace", " ME "),
+    ]
+    for name, permission in permission_invalid_cases:
+        res = rest_client.post("/datasets", json={"name": name, "permission": permission})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert "Input should be 'me' or 'team'" in payload["message"], payload
+
+    permission_none_res = rest_client.post("/datasets", json={"name": "permission_none", "permission": None})
+    assert permission_none_res.status_code == 200
+    permission_none_payload = permission_none_res.json()
+    assert permission_none_payload["code"] == 101, permission_none_payload
+    assert "Input should be 'me' or 'team'" in permission_none_payload["message"], permission_none_payload
+
+    permission_unset_res = rest_client.post("/datasets", json={"name": "permission_unset"})
+    assert permission_unset_res.status_code == 200
+    permission_unset_payload = permission_unset_res.json()
+    assert permission_unset_payload["code"] == 0, permission_unset_payload
+    assert permission_unset_payload["data"]["permission"] == "me", permission_unset_payload
+
+    chunk_method_invalid_cases = [
+        ("chunk_empty", ""),
+        ("chunk_unknown", "unknown"),
+        ("chunk_type_error", []),
+    ]
+    expected_chunk_message = (
+        "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', "
+        "'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
+    )
+    for name, chunk_method in chunk_method_invalid_cases:
+        res = rest_client.post("/datasets", json={"name": name, "chunk_method": chunk_method})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_chunk_message in payload["message"], payload
+
+    chunk_method_none_res = rest_client.post("/datasets", json={"name": "chunk_method_none", "chunk_method": None})
+    assert chunk_method_none_res.status_code == 200
+    chunk_method_none_payload = chunk_method_none_res.json()
+    assert chunk_method_none_payload["code"] == 101, chunk_method_none_payload
+    assert expected_chunk_message in chunk_method_none_payload["message"], chunk_method_none_payload
+
+    chunk_method_unset_res = rest_client.post("/datasets", json={"name": "chunk_method_unset"})
+    assert chunk_method_unset_res.status_code == 200
+    chunk_method_unset_payload = chunk_method_unset_res.json()
+    assert chunk_method_unset_payload["code"] == 0, chunk_method_unset_payload
+    assert chunk_method_unset_payload["data"]["chunk_method"] == "naive", chunk_method_unset_payload
+
+
+@pytest.mark.p2
+def test_dataset_create_parser_config_invalid_contract(rest_client, clear_datasets):
+    invalid_cases = [
+        ("auto_keywords_min_limit", {"auto_keywords": -1}, "Input should be greater than or equal to 0"),
+        ("auto_keywords_max_limit", {"auto_keywords": 33}, "Input should be less than or equal to 32"),
+        ("auto_keywords_float_not_allowed", {"auto_keywords": 3.14}, "Input should be a valid integer"),
+        ("auto_keywords_type_invalid", {"auto_keywords": "string"}, "Input should be a valid integer"),
+        ("auto_questions_min_limit", {"auto_questions": -1}, "Input should be greater than or equal to 0"),
+        ("auto_questions_max_limit", {"auto_questions": 11}, "Input should be less than or equal to 10"),
+        ("auto_questions_float_not_allowed", {"auto_questions": 3.14}, "Input should be a valid integer"),
+        ("auto_questions_type_invalid", {"auto_questions": "string"}, "Input should be a valid integer"),
+        ("chunk_token_num_min_limit", {"chunk_token_num": 0}, "Input should be greater than or equal to 1"),
+        ("chunk_token_num_max_limit", {"chunk_token_num": 2049}, "Input should be less than or equal to 2048"),
+        ("chunk_token_num_float_not_allowed", {"chunk_token_num": 3.14}, "Input should be a valid integer"),
+        ("chunk_token_num_type_invalid", {"chunk_token_num": "string"}, "Input should be a valid integer"),
+        ("delimiter_empty", {"delimiter": ""}, "String should have at least 1 character"),
+        ("html4excel_type_invalid", {"html4excel": "string"}, "Input should be a valid boolean"),
+        ("tag_kb_ids_not_list", {"tag_kb_ids": "1,2"}, "Input should be a valid list"),
+        ("tag_kb_ids_int_in_list", {"tag_kb_ids": [1, 2]}, "Input should be a valid string"),
+        ("topn_tags_min_limit", {"topn_tags": 0}, "Input should be greater than or equal to 1"),
+        ("topn_tags_max_limit", {"topn_tags": 11}, "Input should be less than or equal to 10"),
+        ("topn_tags_float_not_allowed", {"topn_tags": 3.14}, "Input should be a valid integer"),
+        ("topn_tags_type_invalid", {"topn_tags": "string"}, "Input should be a valid integer"),
+        ("filename_embd_weight_min_limit", {"filename_embd_weight": -1}, "Input should be greater than or equal to 0"),
+        ("filename_embd_weight_max_limit", {"filename_embd_weight": 1.1}, "Input should be less than or equal to 1"),
+        ("filename_embd_weight_type_invalid", {"filename_embd_weight": "string"}, "Input should be a valid number"),
+        ("task_page_size_min_limit", {"task_page_size": 0}, "Input should be greater than or equal to 1"),
+        ("task_page_size_float_not_allowed", {"task_page_size": 3.14}, "Input should be a valid integer"),
+        ("task_page_size_type_invalid", {"task_page_size": "string"}, "Input should be a valid integer"),
+        ("pages_not_list", {"pages": "1,2"}, "Input should be a valid list"),
+        ("pages_not_list_in_list", {"pages": ["1,2"]}, "Input should be a valid list"),
+        ("pages_not_int_list", {"pages": [["string1", "string2"]]}, "Input should be a valid integer"),
+        ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
+        ("graphrag_entity_types_not_list", {"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
+        ("graphrag_entity_types_not_str_in_list", {"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
+        ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+        ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
+        ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
+        ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
+        ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
+        ("raptor_prompt_empty", {"raptor": {"prompt": ""}}, "String should have at least 1 character"),
+        ("raptor_prompt_space", {"raptor": {"prompt": " "}}, "String should have at least 1 character"),
+        ("raptor_max_token_min_limit", {"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
+        ("raptor_max_token_max_limit", {"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
+        ("raptor_max_token_float_not_allowed", {"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
+        ("raptor_max_token_type_invalid", {"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
+        ("raptor_threshold_min_limit", {"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
+        ("raptor_threshold_max_limit", {"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
+        ("raptor_threshold_type_invalid", {"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+        ("raptor_max_cluster_min_limit", {"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
+        ("raptor_max_cluster_max_limit", {"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
+        ("raptor_max_cluster_float_not_allowed", {"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
+        ("raptor_max_cluster_type_invalid", {"raptor": {"max_cluster": "string"}}, "Input should be a valid integer"),
+        ("raptor_random_seed_min_limit", {"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
+        ("raptor_random_seed_float_not_allowed", {"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
+        ("raptor_random_seed_type_invalid", {"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
+        ("parser_config_type_invalid", {"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
+        ("parent_child_type_invalid", {"parent_child": {"use_parent_child": "string"}}, "Input should be a valid boolean"),
+        ("parent_child_delimiter_empty", {"parent_child": {"children_delimiter": ""}}, "String should have at least 1 character"),
+    ]
+    for name, parser_config, expected_message in invalid_cases:
+        res = rest_client.post("/datasets", json={"name": name, "parser_config": parser_config})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_create_parser_config_defaults_and_extra_fields_contract(rest_client, clear_datasets):
+    empty_res = rest_client.post("/datasets", json={"name": "parser_config_empty", "parser_config": {}})
+    assert empty_res.status_code == 200
+    empty_payload = empty_res.json()
+    assert empty_payload["code"] == 0, empty_payload
+
+    unset_res = rest_client.post("/datasets", json={"name": "parser_config_unset"})
+    assert unset_res.status_code == 200
+    unset_payload = unset_res.json()
+    assert unset_payload["code"] == 0, unset_payload
+
+    none_res = rest_client.post("/datasets", json={"name": "parser_config_none", "parser_config": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+
+    empty_parser_config = empty_payload["data"]["parser_config"]
+    unset_parser_config = unset_payload["data"]["parser_config"]
+    none_parser_config = none_payload["data"]["parser_config"]
+    assert empty_parser_config == unset_parser_config == none_parser_config
+    for key in DEFAULT_PARSER_CONFIG:
+        assert key in empty_parser_config, empty_payload
+
+    unsupported_field_payloads = [
+        {"name": "id", "id": "id"},
+        {"name": "tenant_id", "tenant_id": "e57c1966f99211efb41e9e45646e0111"},
+        {"name": "created_by", "created_by": "created_by"},
+        {"name": "create_date", "create_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
+        {"name": "create_time", "create_time": 1741671443322},
+        {"name": "update_date", "update_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
+        {"name": "update_time", "update_time": 1741671443339},
+        {"name": "document_count", "document_count": 1},
+        {"name": "chunk_count", "chunk_count": 1},
+        {"name": "token_num", "token_num": 1},
+        {"name": "status", "status": "1"},
+        {"name": "pagerank", "pagerank": 50},
+        {"name": "unknown_field", "unknown_field": "unknown_field"},
+    ]
+    for payload_data in unsupported_field_payloads:
+        res = rest_client.post("/datasets", json=payload_data)
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert "Extra inputs are not permitted" in payload["message"], payload
 
 
 @pytest.mark.p2
