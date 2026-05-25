@@ -6905,7 +6905,7 @@ Failure:
 
 ### Download attachment
 
-**GET** `/api/v1/agents/{attachment_id}/download`
+**GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
 :::caution DEPRECATED
 The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Please use this endpoint instead.
@@ -6916,7 +6916,7 @@ Downloads a runtime attachment previously uploaded for use in the agent system.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents/{attachment_id}/download`
+- URL: `/api/v1/agents/attachments/{attachment_id}/download`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query parameter:
@@ -6926,7 +6926,7 @@ Downloads a runtime attachment previously uploaded for use in the agent system.
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/agents/{attachment_id}/download?ext=pdf' \
+     --url 'http://{address}/api/v1/agents/attachments/{attachment_id}/download?ext=pdf' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_attachment.pdf
 ```

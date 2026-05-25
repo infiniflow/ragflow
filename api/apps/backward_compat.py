@@ -37,8 +37,8 @@ Deprecated APIs and their replacements:
 - GET /api/v1/file/* -> GET /api/v1/files*
 - POST /api/v1/file/* -> POST /api/v1/files*
 - GET /api/v1/document/get/{doc_id} -> GET /api/v1/documents/{doc_id}/preview
-- GET /api/v1/document/download/{doc_id} -> GET /api/v1/agents/{doc_id}/download
-- GET /v1/document/download/{attachment_id} -> GET /api/v1/agents/{attachment_id}/download
+- GET /api/v1/document/download/{doc_id} -> GET /api/v1/agents/attachments/{doc_id}/download
+- GET /v1/document/download/{attachment_id} -> GET /api/v1/agents/attachments/{attachment_id}/download
 - GET /v1/system/healthz -> GET /api/v1/system/healthz
 - POST /api/v1/sessions/related_questions -> POST /api/v1/chat/recommandation
 - PUT (chunk update) -> PATCH (chunk update)
@@ -606,14 +606,14 @@ async def deprecated_document_get(doc_id):
 @login_required
 async def deprecated_document_download(doc_id):
     """
-    Deprecated: Use GET /api/v1/agents/{attachment_id}/download instead.
+    Deprecated: Use GET /api/v1/agents/attachments/{attachment_id}/download instead.
 
     Old path: GET /api/v1/document/download/{doc_id}
-    New path: GET /api/v1/agents/{doc_id}/download
+    New path: GET /api/v1/agents/attachments/{doc_id}/download
     """
     logging.warning(
         "API endpoint /api/v1/document/download/%s is deprecated. "
-        "Please use /api/v1/agents/%s/download instead.",
+        "Please use /api/v1/agents/attachments/%s/download instead.",
         doc_id, doc_id,
     )
     return await agent_api.download_attachment(attachment_id=doc_id)
@@ -626,11 +626,11 @@ async def document_download_v1(attachment_id):
     Compatibility alias for document download under /v1.
 
     Old path: GET /v1/document/download/{attachment_id}
-    New path: GET /api/v1/agents/{attachment_id}/download
+    New path: GET /api/v1/agents/attachments/{attachment_id}/download
     """
     logging.warning(
         "API endpoint /v1/document/download/%s is deprecated. "
-        "Please use /api/v1/agents/%s/download instead.",
+        "Please use /api/v1/agents/attachments/%s/download instead.",
         attachment_id, attachment_id,
     )
     return await agent_api.download_attachment(attachment_id=attachment_id)
