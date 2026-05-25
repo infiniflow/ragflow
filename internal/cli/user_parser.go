@@ -3159,8 +3159,10 @@ func (p *Parser) parseParseCommand() (*Command, error) {
 		return p.parseParseDataset()
 	case TokenWith:
 		return p.parseModelParseCommand()
-	default:
+	case TokenDocument:
 		return p.parseParseDocs()
+	default:
+		return nil, fmt.Errorf("expected DATASET, WITH, or DOCUMENT")
 	}
 }
 
@@ -3194,31 +3196,32 @@ func (p *Parser) parseParseDataset() (*Command, error) {
 }
 
 func (p *Parser) parseParseDocs() (*Command, error) {
-	documentNames, err := p.parseQuotedString()
+	p.nextToken() // consume document
+
+	documentsStr, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	p.nextToken()
-	if p.curToken.Type != TokenOf {
-		return nil, fmt.Errorf("expected OF")
-	}
-	p.nextToken()
-	if p.curToken.Type != TokenDataset {
-		return nil, fmt.Errorf("expected DATASET")
+	if p.curToken.Type != TokenFrom {
+		return nil, fmt.Errorf("expected FROM")
 	}
 	p.nextToken()
 
-	datasetName, err := p.parseQuotedString()
+	datasetID, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
-
-	cmd := NewCommand("parse_dataset_docs")
-	cmd.Params["document_names"] = documentNames
-	cmd.Params["dataset_name"] = datasetName
-
 	p.nextToken()
+
+	cmd := NewCommand("parse_documents_user_command")
+
+	documents := strings.Split(documentsStr, " ")
+
+	cmd.Params["documents"] = documents
+	cmd.Params["dataset_id"] = datasetID
+
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()

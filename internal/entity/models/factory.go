@@ -99,6 +99,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAstraflowModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
+	case "hunyuan":
+		return NewHunyuanModel(baseURL, urlSuffix), nil
 	case "tokenpony":
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "novita":
@@ -133,6 +135,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGPUStackModel(baseURL, urlSuffix), nil
 	case "n1n":
 		return NewN1NModel(baseURL, urlSuffix), nil
+	case "paddleocr_local":
+		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

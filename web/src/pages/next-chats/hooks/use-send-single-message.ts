@@ -80,6 +80,7 @@ export function useSendSingleMessage({
           reasoning: enableThinking,
           internet: enableInternet,
           ...params,
+          pass_all_history_messages: true,
         },
         controller,
       );
