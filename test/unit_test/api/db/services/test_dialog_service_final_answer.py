@@ -407,10 +407,11 @@ def test_async_chat_langfuse_uses_start_observation(monkeypatch):
     retriever = _StubRetriever()
 
     monkeypatch.setattr(
-        dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat"
+        dialog_service, "get_model_type_by_name",
+        lambda _tid, _llm_id: ["chat"]
     )
     monkeypatch.setattr(
-        dialog_service.TenantLLMService, "get_model_config",
+        dialog_service, "get_model_config_from_provider_instance",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(
@@ -476,10 +477,11 @@ def test_async_chat_continues_when_langfuse_observation_start_fails(monkeypatch)
     retriever = _StubRetriever()
 
     monkeypatch.setattr(
-        dialog_service.TenantLLMService, "llm_id2llm_type", lambda _llm_id: "chat"
+        dialog_service, "get_model_type_by_name",
+        lambda _tid, _llm_id: ["chat"]
     )
     monkeypatch.setattr(
-        dialog_service.TenantLLMService, "get_model_config",
+        dialog_service, "get_model_config_from_provider_instance",
         lambda _tid, _type, _llm_id: _LLM_CONFIG,
     )
     monkeypatch.setattr(

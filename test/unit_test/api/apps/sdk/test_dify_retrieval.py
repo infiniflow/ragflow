@@ -31,6 +31,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+
 
 class _PassthroughManager:
     def route(self, *_args, **_kwargs):
@@ -123,6 +125,7 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
         get_model_config_by_id=lambda *_a, **_k: {},
         get_model_config_by_type_and_name=lambda *_a, **_k: {},
         get_tenant_default_model_by_type=lambda *_a, **_k: {},
+        get_model_config_from_provider_instance=lambda *_a, **_k: {},
     )
 
     _stub(
