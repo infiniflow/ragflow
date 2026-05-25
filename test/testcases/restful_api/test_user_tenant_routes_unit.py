@@ -1501,13 +1501,19 @@ def _load_chat_routes_unit_module(monkeypatch):
     })
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
-    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
-    tenant_llm_service_mod.TenantLLMService = type('TenantLLMService', (), {
-        'split_model_name_and_factory': staticmethod(lambda model: (model.split('@', 1)[0], model.split('@', 1)[1] if '@' in model else None)),
-        'query': staticmethod(lambda **_kwargs: [SimpleNamespace(id='llm-1')]),
-        'get_api_key': staticmethod(lambda *_args, **_kwargs: SimpleNamespace(id=1)),
-    })
-    monkeypatch.setitem(sys.modules, "api.db.services.tenant_llm_service", tenant_llm_service_mod)
+    tenant_model_provider_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_provider_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+    tenant_model_provider_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
+    def _split_model_name(model_name):
+        parts = model_name.split("@")
+        if len(parts) == 1:
+            return parts[0], "", ""
+        elif len(parts) == 2:
+            return parts[0], "default", parts[1]
+        else:
+            return parts[0], parts[1], parts[2]
+    tenant_model_provider_mod.split_model_name = staticmethod(_split_model_name)
+    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_provider_mod)
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
     llm_service_mod.LLMBundle = lambda *_args, **_kwargs: None
@@ -1518,7 +1524,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 

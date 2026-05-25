@@ -26,7 +26,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.db.joint_services.tenant_model_service import (
-    get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key
+    get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 )
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -34,7 +34,6 @@ from api.db.services.dialog_service import DialogService, async_chat, gen_mindma
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
     check_duplicate_ids,
@@ -239,7 +238,7 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
             return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
-    embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]
+    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
     if len(set(embd_ids)) > 1:
         return f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}'
 

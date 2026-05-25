@@ -782,7 +782,7 @@ def _load_chat_routes_unit_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -1147,7 +1147,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
             "name": "chat-a",
             "icon": "icon.png",
             "dataset_ids": ["kb-1"],
-            "llm_id": "glm-4@ZHIPU-AI",
+            "llm_id": "glm-4@@CI@ZHIPU-AI",
             "llm_setting": {"temperature": 0.8},
             "prompt_config": {
                 "system": "Answer with {knowledge}",
@@ -1158,7 +1158,7 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
             "vector_similarity_weight": 0.25,
         },
     )
-    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@ZHIPU-AI")))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4@@CIZHIPU-AI")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
@@ -1166,30 +1166,11 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
 
     def _split_model_name_and_factory(model_name):
         return {
-            "glm-4@ZHIPU-AI": ("glm-4", "ZHIPU-AI"),
-            "custom-reranker@OpenAI": ("custom-reranker", "OpenAI"),
+            "glm-4@ZHIPU-AI": ("glm-4", "default", "ZHIPU-AI"),
+            "custom-reranker@OpenAI": ("custom-reranker", "default", "OpenAI"),
         }.get(model_name, (model_name, None))
 
-    def _query(**kwargs):
-        query_calls.append(kwargs)
-        if kwargs == {
-            "tenant_id": "tenant-1",
-            "llm_name": "glm-4",
-            "llm_factory": "ZHIPU-AI",
-            "model_type": "chat",
-        }:
-            return [SimpleNamespace(id="llm-1")]
-        if kwargs == {
-            "tenant_id": "tenant-1",
-            "llm_name": "custom-reranker",
-            "llm_factory": "OpenAI",
-            "model_type": "rerank",
-        }:
-            return [SimpleNamespace(id="rerank-1")]
-        return []
-
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", _split_model_name_and_factory)
-    monkeypatch.setattr(module.TenantLLMService, "query", _query)
+    monkeypatch.setattr(module, "split_model_name", _split_model_name_and_factory)
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1216,7 +1197,7 @@ def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(m
     _set_route_unit_request_json(monkeypatch, module, {"name": "chat-a"})
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
-    monkeypatch.setattr(module.TenantLLMService, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
+    monkeypatch.setattr(module, "get_api_key", lambda *_args, **_kwargs: SimpleNamespace(id=1))
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1258,8 +1239,7 @@ def test_chat_create_uses_direct_chat_fields_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+    monkeypatch.setattr(module, "split_model_name", lambda model: (model.split("@")[0],"default", "factory"))
 
     def _save(**kwargs):
         saved.update(kwargs)
@@ -1403,8 +1383,7 @@ def test_patch_chat_drops_response_only_fields_before_update_unit(monkeypatch):
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+    monkeypatch.setattr(module, "split_model_name", lambda model: (model.split("@")[0],"default", "factory"))
 
     def _update(_chat_id, req):
         updated.update(req)
@@ -1473,8 +1452,7 @@ def test_update_chat_allows_knowledge_placeholder_without_sources_unit(monkeypat
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
     monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
-    monkeypatch.setattr(module.TenantLLMService, "split_model_name_and_factory", lambda model: (model.split("@")[0], "factory"))
-    monkeypatch.setattr(module.TenantLLMService, "query", lambda **_kwargs: [SimpleNamespace(id="llm-1")])
+    monkeypatch.setattr(module, "split_model_name", lambda model: (model.split("@")[0], "default", "factory"))
     updated = {}
 
     def _update(_chat_id, payload):
@@ -1530,35 +1508,35 @@ def test_chat_create_avatar_contract(rest_client, clear_chats, tmp_path):
 def test_chat_create_llm_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
-        ("default llm", {}, 0, "", "glm-4-flash@ZHIPU-AI", {}),
+        ("default llm", {}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {}),
         ("explicit llm_id", {"llm_id": "glm-4"}, 0, "", "glm-4", {}),
         ("unknown llm_id", {"llm_id": "unknown"}, 102, "`llm_id` unknown doesn't exist", None, None),
-        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 0}),
-        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 1}),
-        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": -1}),
-        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 10}),
-        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": "a"}),
-        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 0}),
-        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 1}),
-        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": -1}),
-        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 10}),
-        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": "a"}),
-        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 0}),
-        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 1}),
-        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": -1}),
-        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 10}),
-        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": "a"}),
-        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 0}),
-        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 1}),
-        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": -1}),
-        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 10}),
-        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": "a"}),
-        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 0}),
-        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 1024}),
-        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": -1}),
-        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 10}),
-        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": "a"}),
-        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"unknown": "unknown"}),
+        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 0}),
+        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 1}),
+        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": -1}),
+        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 10}),
+        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": "a"}),
+        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 0}),
+        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 1}),
+        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": -1}),
+        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 10}),
+        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": "a"}),
+        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 0}),
+        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 1}),
+        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": -1}),
+        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 10}),
+        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": "a"}),
+        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 0}),
+        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 1}),
+        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": -1}),
+        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 10}),
+        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": "a"}),
+        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 0}),
+        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 1024}),
+        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": -1}),
+        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 10}),
+        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": "a"}),
+        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"unknown": "unknown"}),
     ]
 
     for index, (scenario_name, extra_payload, expected_code, expected_message, expected_llm_id, expected_llm_setting) in enumerate(cases, start=1):
@@ -1797,35 +1775,35 @@ def test_chat_update_avatar_contract(rest_client, clear_chats, ensure_parsed_doc
 def test_chat_update_llm_contract(rest_client, clear_chats, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
-        ("default llm", {}, 0, "", "glm-4-flash@ZHIPU-AI", {}),
+        ("default llm", {}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {}),
         ("explicit llm_id", {"llm_id": "glm-4"}, 0, "", "glm-4", {}),
         ("unknown llm_id", {"llm_id": "unknown"}, 102, "`llm_id` unknown doesn't exist", None, None),
-        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 0}),
-        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 1}),
-        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": -1}),
-        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": 10}),
-        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"temperature": "a"}),
-        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 0}),
-        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 1}),
-        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": -1}),
-        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": 10}),
-        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"top_p": "a"}),
-        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 0}),
-        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 1}),
-        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": -1}),
-        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": 10}),
-        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"presence_penalty": "a"}),
-        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 0}),
-        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 1}),
-        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": -1}),
-        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": 10}),
-        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"frequency_penalty": "a"}),
-        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 0}),
-        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 1024}),
-        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": -1}),
-        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": 10}),
-        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"max_token": "a"}),
-        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@ZHIPU-AI", {"unknown": "unknown"}),
+        ("temperature zero", {"llm_setting": {"temperature": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 0}),
+        ("temperature one", {"llm_setting": {"temperature": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 1}),
+        ("temperature negative one", {"llm_setting": {"temperature": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": -1}),
+        ("temperature ten", {"llm_setting": {"temperature": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": 10}),
+        ("temperature string", {"llm_setting": {"temperature": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"temperature": "a"}),
+        ("top_p zero", {"llm_setting": {"top_p": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 0}),
+        ("top_p one", {"llm_setting": {"top_p": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 1}),
+        ("top_p negative one", {"llm_setting": {"top_p": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": -1}),
+        ("top_p ten", {"llm_setting": {"top_p": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": 10}),
+        ("top_p string", {"llm_setting": {"top_p": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"top_p": "a"}),
+        ("presence_penalty zero", {"llm_setting": {"presence_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 0}),
+        ("presence_penalty one", {"llm_setting": {"presence_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 1}),
+        ("presence_penalty negative one", {"llm_setting": {"presence_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": -1}),
+        ("presence_penalty ten", {"llm_setting": {"presence_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": 10}),
+        ("presence_penalty string", {"llm_setting": {"presence_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"presence_penalty": "a"}),
+        ("frequency_penalty zero", {"llm_setting": {"frequency_penalty": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 0}),
+        ("frequency_penalty one", {"llm_setting": {"frequency_penalty": 1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 1}),
+        ("frequency_penalty negative one", {"llm_setting": {"frequency_penalty": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": -1}),
+        ("frequency_penalty ten", {"llm_setting": {"frequency_penalty": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": 10}),
+        ("frequency_penalty string", {"llm_setting": {"frequency_penalty": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"frequency_penalty": "a"}),
+        ("max_token zero", {"llm_setting": {"max_token": 0}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 0}),
+        ("max_token 1024", {"llm_setting": {"max_token": 1024}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 1024}),
+        ("max_token negative one", {"llm_setting": {"max_token": -1}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": -1}),
+        ("max_token ten", {"llm_setting": {"max_token": 10}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": 10}),
+        ("max_token string", {"llm_setting": {"max_token": "a"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"max_token": "a"}),
+        ("unknown llm setting key", {"llm_setting": {"unknown": "unknown"}}, 0, "", "glm-4-flash@CI@ZHIPU-AI", {"unknown": "unknown"}),
     ]
 
     for index, (scenario_name, extra_payload, expected_code, expected_message, expected_llm_id, expected_llm_setting) in enumerate(cases, start=1):
