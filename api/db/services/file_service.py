@@ -455,7 +455,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None):
+    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, parser_config_override: dict | None = None):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -463,6 +463,13 @@ class FileService(CommonService):
         kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
 
         safe_parent_path = sanitize_path(parent_path)
+
+        # Merge parser_config_override with KB parser_config if provided
+        base_parser_config = kb.parser_config or {}
+        if parser_config_override and isinstance(parser_config_override, dict):
+            merged_parser_config = {**base_parser_config, **parser_config_override}
+        else:
+            merged_parser_config = base_parser_config
 
         err, files = [], []
         for file in file_objs:
@@ -529,7 +536,7 @@ class FileService(CommonService):
                     "kb_id": kb.id,
                     "parser_id": self.get_parser(filetype, filename, kb.parser_id),
                     "pipeline_id": kb.pipeline_id,
-                    "parser_config": kb.parser_config,
+                    "parser_config": merged_parser_config,
                     "created_by": user_id,
                     "type": filetype,
                     "name": filename,

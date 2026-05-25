@@ -435,6 +435,7 @@ class HuggingfaceRerank(Base):
 
         for i in range(0, len(texts), batch_size):
             try:
+                # Fix: Add request timeout
                 res = requests.post(
                     endpoint, headers={"Content-Type": "application/json"}, 
                     json={"query": query, "texts": texts[i:i+batch_size], "raw_scores": False, "truncate": True},

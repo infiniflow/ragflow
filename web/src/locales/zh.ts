@@ -818,6 +818,9 @@ export default {
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
 NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系，无需 LLM 参与提取过程，速度快且资源消耗低`,
+      graphRagBatchChunkTokenSize: '批量chunk token 大小',
+      graphRagBatchChunkTokenSizeTip:
+        '发送给 LLM 进行知识图谱实体和关系抽取时，每批文本块的 token 上限。NER 不适用。',
       resolution: '实体归一化',
       resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
       community: '社区报告生成',
@@ -1526,6 +1529,20 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      maxSteps: '最大步数',
+      headless: '无头模式',
+      enableDefaultExtensions: '启用默认扩展',
+      enableDefaultExtensionsTip:
+        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
+      chromiumSandbox: 'Chromium 沙箱',
+      chromiumSandboxTip:
+        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
+      persistSession: '持久化登录态',
+      persistSessionTip:
+        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
+      uploadSources: '上传来源',
+      uploadSourcesTip:
+        '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -1640,6 +1657,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
+      browser: 'Browser',
+      browserDescription:
+        '使用 Browser 自动执行浏览器任务。支持模型与提示词配置，上传来源支持文件 ID 与 URL，并可将下载文件保存到指定目录。',
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',

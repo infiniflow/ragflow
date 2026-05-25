@@ -89,7 +89,6 @@ type RetrievalTestResponse struct {
 }
 
 // RetrievalTest performs retrieval test for a given question against specified knowledge bases.
-// Corresponds to Python's api/apps/chunk_app.py:retrieval_test()
 //
 // Flow:
 //  1. Validate kbs permissions and embedding model
@@ -890,7 +889,7 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 		"id": req.ChunkID,
 	}
 
-	err = s.docEngine.UpdateDataset(ctx, condition, d, indexName, req.DatasetID)
+	err = s.docEngine.UpdateChunks(ctx, condition, d, indexName, req.DatasetID)
 	if err != nil {
 		return fmt.Errorf("failed to update chunk: %w", err)
 	}
@@ -970,7 +969,7 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
 	}
 
-	deletedCount, err := s.docEngine.Delete(ctx, condition, indexName, doc.KbID)
+	deletedCount, err := s.docEngine.DeleteChunks(ctx, condition, indexName, doc.KbID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete chunks: %w", err)
 	}

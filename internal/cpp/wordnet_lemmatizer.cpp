@@ -15,6 +15,7 @@
 #include "wordnet_lemmatizer.h"
 #include <fstream>
 #include <filesystem>
+#include <sstream>   // std::istringstream — implicit via <fstream> on libstdc++ (Linux), explicit on libc++ (macOS)
 
 namespace fs = std::filesystem;
 

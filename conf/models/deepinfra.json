@@ -1,0 +1,49 @@
+{
+  "name": "DeepInfra",
+  "url": {
+    "default": "https://api.deepinfra.com"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "models/list",
+    "balance": "payment/checklist",
+    "embedding": "v1/embeddings",
+    "tts": "v1/text-to-speech",
+    "asr": "v1/audio/transcriptions"
+  },
+  "class": "deepinfra",
+  "models": [
+    {
+      "name": "deepseek-ai/DeepSeek-V3.2",
+      "max_tokens": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Embedding-4B",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "hexgrad/Kokoro-82M",
+      "max_tokens": 16384,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "bosonai/HiggsAudioV2.5",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

@@ -356,3 +356,113 @@ RAGFlow(user)> list datasets;
 | 0           | naive        | 1              | embedding-2@ZHIPU-AI | 0abe79f9423311f1ad8d38a74640adcc | English  | ccc  | aaa      | me         | 2ba4881420fa11f19e9c38a74640adcc | 0         | 1777375201933 |
 +-------------+--------------+----------------+----------------------+----------------------------------+----------+------+----------+------------+----------------------------------+-----------+---------------+
 ```
+
+### 6.23 Text to Speech
+```
+RAGFlow(user)> tts with 'speech-2.8-hd@test@minimax' text 'He who desires but acts not, breeds pestilence.' play format 'wav' save './internal' param '{"voice_setting": {"voice_id": "English_radiant_girl", "speed": 1, "vol": 1, "pitch": 0}, "audio_setting": {"sample_rate": 32000, "bitrate": 128000, "format": "wav", "channel": 1}, "output_format": "hex"}'
+Saved to directory: /home/infiniflow/Documents/development/ragflow/internal/speech-2.8-hd_output.wav
+SUCCESS
+```
+
+### 6.24 Audio to Speech
+```
+RAGFlow(user)> asr with 'FunAudioLLM/SenseVoiceSmall@test@siliconflow' audio './internal/test.wav' param ''
++----------------------------------------------------------------------------------------------------------------------+
+| text                                                                                                                 |
++----------------------------------------------------------------------------------------------------------------------+
+| The examination and testimony of the experts enabled the commission to conclude that five shots may have been fired. |
++----------------------------------------------------------------------------------------------------------------------+
+```
+
+### 6.25 Optical Character Recognition\
+```
+RAGFlow(user)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/text.jpg'
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| text                                                                                                                                                                                                                                                             |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Parallel to these organizational innovations there were significant complementary technical innovations (e.g., improved methods of manufacturing cast-iron pipe and of coating interiors for pressure maintenance, and newer paving and construction material... |
++------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+```
+
+### 6.26 Chunk Management Commands
+
+- Create a chunk store with vector size
+```
+RAGFlow(user)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
+```
+
+- Insert data from JSON files
+```
+RAGFlow(user)> INSERT CHUNKS FROM FILE 'insert_kb.json'
+```
+
+- Update a chunk's content
+```
+RAGFlow(user)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
+```
+
+- Remove tags from a dataset
+```
+RAGFlow(user)> REMOVE TAGS 'tag1', 'tag2' FROM DATASET 'test'
+```
+
+- Remove specific chunks from a document
+```
+RAGFlow(user)> REMOVE CHUNKS '29cc4f6d7a5c6e7c' '0360e3d8519eab12' FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
+```
+
+- Remove all chunks from a document
+```
+RAGFlow(user)> REMOVE ALL CHUNKS FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
+```
+
+- Drop chunk store
+```
+RAGFlow(user)> DROP CHUNK STORE FOR DATASET 'test'
+```
+
+- Search chunks
+```
+RAGFlow(user)> SEARCH '曹操' ON DATASETS 'test'
+```
+
+- Get chunks
+```
+RAGFlow(user)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
+```
+
+### 6.27 Metadata Management Commands
+
+- Create metadata store
+```
+RAGFlow(user)> CREATE METADATA STORE
+```
+
+- Insert metadata from JSON files
+```
+RAGFlow(user)> INSERT METADATA FROM FILE 'insert_metadata.json'
+```
+- Set metadata for a document
+```
+RAGFlow(user)> SET METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' TO '{"author": ["John", "Tom"], "category": "tech"}';
+```
+
+- Delete metadata of a document
+```
+DELETE METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+```
+
+- Delete metadata keys of a document
+```
+DELETE METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' KEYS '["key1", "key2"]'     
+```
+
+- Drop metadata store
+```
+RAGFlow(user)> DROP METADATA STORE
+```
+
+- List metadata
+```
+RAGFlow(user)> LIST METADATA OF DATASET 'test' 'test2'
+```

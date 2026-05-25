@@ -222,18 +222,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 	case "PASSWORD":
 		return Token{Type: TokenPassword, Value: ident}
 	case "DATASET":
-		// Check if followed by TABLE for compound token
-		if strings.ToUpper(l.peekToken()) == "TABLE" {
-			// Skip whitespace to TABLE
-			for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
-				l.readChar()
-			}
-			// Skip past TABLE
-			for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' || l.ch == '-' || l.ch == '.' {
-				l.readChar()
-			}
-			return Token{Type: TokenDatasetTable, Value: "DATASET TABLE"}
-		}
 		return Token{Type: TokenDataset, Value: ident}
 	case "DATASETS":
 		return Token{Type: TokenDatasets, Value: ident}
@@ -327,6 +315,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenHigh, Value: ident}
 	case "MAX":
 		return Token{Type: TokenMax, Value: ident}
+	case "STORE":
+		return Token{Type: TokenStore, Value: ident}
 	case "STREAM":
 		return Token{Type: TokenStream, Value: ident}
 	case "LS":
@@ -349,6 +339,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenParser, Value: ident}
 	case "PIPELINE":
 		return Token{Type: TokenPipeline, Value: ident}
+	case "GET":
+		return Token{Type: TokenGet, Value: ident}
 	case "SEARCH":
 		return Token{Type: TokenSearch, Value: ident}
 	case "CURRENT":
@@ -375,6 +367,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDimension, Value: ident}
 	case "OCR":
 		return Token{Type: TokenOCR, Value: ident}
+	case "DOC_PARSE":
+		return Token{Type: TokenDocParse, Value: ident}
 	case "ASYNC":
 		return Token{Type: TokenAsync, Value: ident}
 	case "SYNC":
@@ -426,19 +420,45 @@ func (l *Lexer) lookupIdent(ident string) Token {
 	case "REMOVE":
 		return Token{Type: TokenRemove, Value: ident}
 	case "CHUNK":
+		// Check if followed by STORE for compound token
+		if strings.ToUpper(l.peekToken()) == "STORE" {
+			// Skip whitespace to STORE
+			for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
+				l.readChar()
+			}
+			// Skip past STORE
+			for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' || l.ch == '-' || l.ch == '.' {
+				l.readChar()
+			}
+			return Token{Type: TokenChunkStore, Value: "CHUNK STORE"}
+		}
 		return Token{Type: TokenChunk, Value: ident}
 	case "CHUNKS":
 		return Token{Type: TokenChunks, Value: ident}
 	case "DOCUMENT":
 		return Token{Type: TokenDocument, Value: ident}
+	case "DOCUMENTS":
+		return Token{Type: TokenDocuments, Value: ident}
 	case "TAGS":
 		return Token{Type: TokenTag, Value: ident}
 	case "REGION":
 		return Token{Type: TokenRegion, Value: ident}
 	case "URL":
 		return Token{Type: TokenURL, Value: ident}
+	case "TASK":
+		return Token{Type: TokenTask, Value: ident}
 	case "TASKS":
 		return Token{Type: TokenTasks, Value: ident}
+	case "START":
+		return Token{Type: TokenStart, Value: ident}
+	case "STOP":
+		return Token{Type: TokenStop, Value: ident}
+	case "INGESTOR":
+		return Token{Type: TokenIngestor, Value: ident}
+	case "INGESTORS":
+		return Token{Type: TokenIngestors, Value: ident}
+	case "INGESTION":
+		return Token{Type: TokenIngestion, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":
@@ -447,6 +467,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDebug, Value: ident}
 	case "INFO":
 		return Token{Type: TokenInfo, Value: ident}
+	case "IN":
+		return Token{Type: TokenIn, Value: ident}
 	case "WARN":
 		return Token{Type: TokenWarn, Value: ident}
 	case "ERROR":
@@ -455,6 +477,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFatal, Value: ident}
 	case "PANIC":
 		return Token{Type: TokenPanic, Value: ident}
+	case "PARAM":
+		return Token{Type: TokenParam, Value: ident}
+	case "PLAY":
+		return Token{Type: TokenPlay, Value: ident}
+	case "FORMAT":
+		return Token{Type: TokenFormat, Value: ident}
+	case "SAVE":
+		return Token{Type: TokenSave, Value: ident}
 	default:
 		return Token{Type: TokenIdentifier, Value: ident}
 	}
