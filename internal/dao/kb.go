@@ -17,15 +17,23 @@
 package dao
 
 import (
+	"errors"
 	"path"
 	"ragflow/internal/entity"
 
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
+
+// IsNotFoundErr returns true if the error indicates a record not found
+func IsNotFoundErr(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
 
 // NewKnowledgebaseDAO create knowledge base DAO
 func NewKnowledgebaseDAO() *KnowledgebaseDAO {
