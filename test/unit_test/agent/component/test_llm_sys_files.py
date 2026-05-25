@@ -16,7 +16,11 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from agent.component.llm import LLM
+
+pytestmark = pytest.mark.p1
 
 
 class _FakeCanvas:
