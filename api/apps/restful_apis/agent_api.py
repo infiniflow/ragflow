@@ -2269,7 +2269,7 @@ async def webhook_trace(agent_id: str):
         }
     )
 
-@manager.route("/agents/<attachment_id>/download", methods=["GET"])  # noqa: F821
+@manager.route("/agents/attachments/<attachment_id>/download", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def download_attachment(tenant_id=None, attachment_id=None):
