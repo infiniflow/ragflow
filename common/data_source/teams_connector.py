@@ -69,13 +69,18 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
             raise ConnectorMissingCredentialError("Microsoft Teams credentials are incomplete")
 
         authority = f"https://login.microsoftonline.com/{tenant_id}"
+        # Build the MSAL app once and reuse it across token acquisitions so its
+        # in-memory token cache is honored. Re-creating the app on every call
+        # (as the callback previously did) defeats the cache and triggers an
+        # Azure AD round-trip for each request.
+        app = msal.ConfidentialClientApplication(
+            client_id=client_id,
+            client_credential=client_secret,
+            authority=authority,
+        )
 
         def _acquire_token() -> dict[str, Any]:
-            app = msal.ConfidentialClientApplication(
-                client_id=client_id,
-                client_credential=client_secret,
-                authority=authority,
-            )
+            """Return a cached or freshly minted app-only Graph token."""
             token = app.acquire_token_for_client(scopes=GRAPH_SCOPES)
             if "access_token" not in token:
                 detail = token.get("error_description") or token.get("error") or token
@@ -108,6 +113,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
 
     @staticmethod
     def _prop(obj: Any, name: str) -> Any:
+        """Read a property by name, falling back to the OData ``properties`` dict."""
         value = getattr(obj, name, None)
         if value is None:
             value = getattr(obj, "properties", {}).get(name)
@@ -115,6 +121,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
 
     @staticmethod
     def _parse_dt(value: Any) -> datetime | None:
+        """Parse a Graph datetime (ISO string or datetime) into a tz-aware UTC datetime."""
         if value is None:
             return None
         if isinstance(value, datetime):
@@ -132,6 +139,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
 
     @classmethod
     def _message_body(cls, message: Any) -> tuple[str, str]:
+        """Return ``(content, content_type)`` from a message's ItemBody."""
         body = getattr(message, "body", None)
         if body is None:
             return "", "text"
@@ -152,6 +160,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
         channel_id: str,
         channel_name: str,
     ) -> Document:
+        """Flatten a post and its replies into a single blob-based Document."""
         thread = [message, *replies]
 
         contents = []
@@ -194,16 +203,21 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
         )
 
     def _iter_channel_messages(self):
-        """Yield (team, channel, message) tuples across all teams/channels."""
-        teams = self.graph_client.teams.get().execute_query()
+        """Yield (team_id, team_name, channel_id, channel_name, message) tuples.
+
+        Uses ``get_all()`` for every collection so Microsoft Graph's
+        ``@odata.nextLink`` pages are followed; ``get().execute_query()`` would
+        only return the first page and silently drop the rest on larger tenants.
+        """
+        teams = self.graph_client.teams.get_all().execute_query()
         for team in teams:
             team_id = str(team.id)
             team_name = self._prop(team, "displayName") or team_id
-            channels = team.channels.get().execute_query()
+            channels = team.channels.get_all().execute_query()
             for channel in channels:
                 channel_id = str(channel.id)
                 channel_name = self._prop(channel, "displayName") or channel_id
-                messages = channel.messages.get().execute_query()
+                messages = channel.messages.get_all().execute_query()
                 for message in messages:
                     yield team_id, team_name, channel_id, channel_name, message
 
@@ -212,6 +226,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
         start: SecondsSinceUnixEpoch,
         end: SecondsSinceUnixEpoch,
     ) -> Generator[Document | ConnectorFailure, None, None]:
+        """Yield a Document per in-window channel post, or a failure per error."""
         if self.graph_client is None:
             raise ConnectorMissingCredentialError("Microsoft Teams")
 
@@ -226,7 +241,7 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
                     if not (start < ts <= end):
                         continue
 
-                replies = list(message.replies.get().execute_query())
+                replies = list(message.replies.get_all().execute_query())
                 yield self._message_to_document(
                     message, replies, team_id, team_name, channel_id, channel_name
                 )

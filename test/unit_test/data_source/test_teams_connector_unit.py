@@ -55,6 +55,8 @@ def _load_teams_connector_module():
 teams_connector = _load_teams_connector_module()
 TeamsConnector = teams_connector.TeamsConnector
 
+pytestmark = pytest.mark.p2
+
 
 # --- fakes for the office365 fluent API ------------------------------------
 
@@ -72,6 +74,10 @@ class _Collection:
         self._items = items
 
     def get(self):
+        return _Query(self._items)
+
+    def get_all(self):
+        # The connector pages with get_all(); the fake returns every item at once.
         return _Query(self._items)
 
 
@@ -181,6 +187,28 @@ def test_fetch_without_credentials_raises():
     connector = TeamsConnector()
     with pytest.raises(teams_connector.ConnectorMissingCredentialError):
         list(connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint()))
+
+
+def test_validate_without_client_raises():
+    connector = TeamsConnector()
+    with pytest.raises(teams_connector.ConnectorMissingCredentialError):
+        connector.validate_connector_settings()
+
+
+def test_validate_maps_permission_error():
+    class _RaisingQuery:
+        def execute_query(self):
+            raise Exception("(403) Forbidden: insufficient privileges")
+
+    class _RaisingCollection:
+        def get(self):
+            return _RaisingQuery()
+
+    connector = TeamsConnector()
+    connector.graph_client = SimpleNamespace(teams=_RaisingCollection())
+
+    with pytest.raises(teams_connector.InsufficientPermissionsError):
+        connector.validate_connector_settings()
 
 
 # --- document generation ----------------------------------------------------
