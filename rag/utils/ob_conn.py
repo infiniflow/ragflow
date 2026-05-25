@@ -46,6 +46,7 @@ column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk ord
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
 column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chunk id")
 column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
+column_chunk_order_int = Column("chunk_order_int", Integer, nullable=True, comment="chunk order id for maintaining sequence")
 column_raptor_kwd = Column("raptor_kwd", String(256), nullable=True, comment="RAPTOR summary marker")
 column_raptor_layer_int = Column("raptor_layer_int", Integer, nullable=True, comment="RAPTOR summary layer")
 
@@ -96,6 +97,7 @@ column_definitions: list[Column] = [
     column_order_id,
     column_group_id,
     column_mom_id,
+    column_chunk_order_int,
 ]
 
 column_names: list[str] = [col.name for col in column_definitions]
@@ -132,6 +134,7 @@ FTS_COLUMNS_TKS: list[str] = [
 
 # Extra columns to add after table creation (for migration)
 EXTRA_COLUMNS: list[Column] = [
+    column_chunk_order_int,
     column_order_id,
     column_group_id,
     column_mom_id,
@@ -690,6 +693,8 @@ class OBConnection(OBConnectionBase):
             output_fields = ["id"] + output_fields
         if "_score" in output_fields:
             output_fields.remove("_score")
+        if "row_id()" in output_fields:
+            output_fields.remove("row_id()")
 
         if highlight_fields:
             for field in highlight_fields:
@@ -1015,6 +1020,8 @@ class OBConnection(OBConnectionBase):
                 orders: list[str] = []
                 if order_by:
                     for field, order in order_by.fields:
+                        if field not in column_types:
+                            continue
                         if isinstance(column_types[field], ARRAY):
                             f = field + "_sort"
                             fields_expr += f", array_avg({field}) AS {f}"
