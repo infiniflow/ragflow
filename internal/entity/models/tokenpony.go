@@ -28,12 +28,10 @@ import (
 	"time"
 )
 
-// AstraflowModel implements ModelDriver for Astraflow (UCloud
-// ModelVerse). Astraflow is a SaaS, OpenAI-compatible inference
-// gateway hosting Anthropic, OpenAI, Qwen, DeepSeek, Kimi, GLM,
-// MiniMax, and Gemini families behind a single Bearer-token API at
-// https://api-us-ca.umodelverse.ai/v1. Reference docs:
-// https://astraflow.ucloud.cn/reference/modelverse.
+// TokenPonyModel implements ModelDriver for TokenPony. TokenPony is a
+// SaaS, OpenAI-compatible inference gateway hosting Qwen, DeepSeek,
+// Kimi, GLM, MiniMax, and Hunyuan families behind a single Bearer-token
+// API at https://ragflow.vip-api.tokenpony.cn/v1.
 //
 // Wire shape matches the OpenAI convention exactly:
 //   - POST /v1/chat/completions with {model, messages, stream, ...}
@@ -45,19 +43,19 @@ import (
 // (OpenAI o-series shape), so the same handling as LongCat /
 // DeepSeek-R1 applies and there's no need for an inline <think>...
 // extractor like Novita's.
-type AstraflowModel struct {
+type TokenPonyModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
 }
 
-// NewAstraflowModel creates a new Astraflow model instance.
+// NewTokenPonyModel creates a new TokenPony model instance.
 //
 // Same transport convention as the other Go drivers in this package:
 // clone http.DefaultTransport to keep ProxyFromEnvironment, DialContext,
 // HTTP/2, and TLS defaults, and only override the connection-pool
 // fields. No client-level Timeout so SSE streams aren't capped mid-flight.
-func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *AstraflowModel {
+func NewTokenPonyModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenPonyModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
@@ -65,7 +63,7 @@ func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Astraflo
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
-	return &AstraflowModel{
+	return &TokenPonyModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
@@ -74,18 +72,18 @@ func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Astraflo
 	}
 }
 
-func (a *AstraflowModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAstraflowModel(baseURL, a.URLSuffix)
+func (a *TokenPonyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewTokenPonyModel(baseURL, a.URLSuffix)
 }
 
-func (a *AstraflowModel) Name() string {
-	return "astraflow"
+func (a *TokenPonyModel) Name() string {
+	return "tokenpony"
 }
 
-func (a *AstraflowModel) baseURLForRegion(region string) (string, error) {
+func (a *TokenPonyModel) baseURLForRegion(region string) (string, error) {
 	base, ok := a.BaseURL[region]
 	if !ok || base == "" {
-		return "", fmt.Errorf("astraflow: no base URL configured for region %q", region)
+		return "", fmt.Errorf("tokenpony: no base URL configured for region %q", region)
 	}
 	return strings.TrimSuffix(base, "/"), nil
 }
@@ -94,7 +92,7 @@ func (a *AstraflowModel) baseURLForRegion(region string) (string, error) {
 // full response. Forwards documented OpenAI-shaped parameters when the
 // caller supplies them; reasoning_content is surfaced separately so the
 // visible Answer is never polluted by chain-of-thought.
-func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (a *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -215,7 +213,7 @@ func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, 
 // forwards each delta through the supplied sender. Reasoning chunks go
 // to the sender's second argument, content chunks to the first; the
 // stream is terminated by either `[DONE]` or a delta with finish_reason.
-func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (a *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -316,14 +314,14 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 			// A malformed frame usually means a truncated event or an
 			// upstream incident. Surface it instead of silently producing
 			// partial output.
-			return fmt.Errorf("astraflow: invalid SSE event: %w", err)
+			return fmt.Errorf("tokenpony: invalid SSE event: %w", err)
 		}
 
-		// Astraflow can emit a terminal `{"error": ...}` frame when the
+		// TokenPony can emit a terminal `{"error": ...}` frame when the
 		// upstream model rejects mid-stream (rate limit, content policy).
 		// Surface it verbatim instead of falling through to "no choices".
 		if apiErr, ok := event["error"]; ok {
-			return fmt.Errorf("astraflow: upstream stream error: %v", apiErr)
+			return fmt.Errorf("tokenpony: upstream stream error: %v", apiErr)
 		}
 
 		choices, ok := event["choices"].([]interface{})
@@ -362,7 +360,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 	if !sawTerminal {
-		return fmt.Errorf("astraflow: stream ended before [DONE] or finish_reason")
+		return fmt.Errorf("tokenpony: stream ended before [DONE] or finish_reason")
 	}
 
 	endOfStream := "[DONE]"
@@ -375,7 +373,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 // ListModels returns the model ids visible to the API key by calling
 // /v1/models. Used by Add-Provider's connection check and by the UI's
 // model picker.
-func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -442,250 +440,54 @@ func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 // CheckConnection verifies the API key by calling ListModels. The /v1/models
 // endpoint is the documented lightweight way to validate credentials on
 // OpenAI-compatible gateways without burning chat-completion quota.
-func (a *AstraflowModel) CheckConnection(apiConfig *APIConfig) error {
+func (a *TokenPonyModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := a.ListModels(apiConfig)
 	return err
 }
 
-// Embed is reserved for a follow-up issue; the Astraflow factory tag
-// includes "TEXT EMBEDDING" but this initial driver only implements
-// chat, mirroring how Novita / TogetherAI / DeepInfra landed
-// method-by-method.
-func (a *AstraflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
-
-	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": texts,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Astraflow embedding API error: status %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	var parsedResponse struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		} `json:"data"`
-	}
-
-	if err = json.Unmarshal(body, &parsedResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if len(parsedResponse.Data) == 0 {
-		return nil, fmt.Errorf("Astraflow embedding response contains no data: %s", string(body))
-	}
-
-	var embeddings []EmbeddingData
-	for _, dataElem := range parsedResponse.Data {
-		embeddings = append(embeddings, EmbeddingData{
-			Embedding: dataElem.Embedding,
-			Index:     dataElem.Index,
-		})
-	}
-
-	return embeddings, nil
-}
-
-func (a *AstraflowModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Rerank)
-
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN != 0 {
-		topN = rerankConfig.TopN
-	}
-
-	reqBody := map[string]interface{}{
-		"model":     *modelName,
-		"query":     query,
-		"documents": documents,
-		"top_n":     topN,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Astraflow Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
-	}
-
-	var rerankResp struct {
-		Results []struct {
-			Index          int     `json:"index"`
-			RelevanceScore float64 `json:"relevance_score"`
-		} `json:"results"`
-	}
-
-	if err = json.Unmarshal(body, &rerankResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	var rerankResponse RerankResponse
-	for _, result := range rerankResp.Results {
-		rerankResult := RerankResult{
-			Index:          result.Index,
-			RelevanceScore: result.RelevanceScore,
-		}
-		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
-	}
-
-	return &rerankResponse, nil
-}
-
-func (a *AstraflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+// Embed is not implemented for TokenPony in this initial driver; the
+// factory entry only registers chat models. Mirrors how LongCat /
+// Astraflow landed chat-only.
+func (a *TokenPonyModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (a *TokenPonyModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (a *TokenPonyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *TokenPonyModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *TokenPonyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("Astraflow API key is missing")
-	}
-
-	if audioContent == nil || *audioContent == "" {
-		return nil, fmt.Errorf("text content is missing")
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.TTS)
-
-	reqBody := map[string]interface{}{
-		"model": *modelName,
-		"input": *audioContent,
-	}
-
-	if ttsConfig != nil && ttsConfig.Params != nil {
-		for key, value := range ttsConfig.Params {
-			reqBody[key] = value
-		}
-	}
-	if ttsConfig != nil && ttsConfig.Format != "" {
-		reqBody["format"] = ttsConfig.Format
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
-	}
-
-	return &TTSResponse{Audio: body}, nil
+func (a *TokenPonyModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (a *TokenPonyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (a *TokenPonyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (a *TokenPonyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (a *TokenPonyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (a *AstraflowModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (a *TokenPonyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
