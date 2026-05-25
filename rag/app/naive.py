@@ -20,6 +20,7 @@ import os
 from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
+from urllib.parse import urljoin
 from docx import Document
 from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.table import Table as DocxTable
@@ -41,6 +42,7 @@ from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 from rag.nlp import (
     concat_img,
     find_codec,
@@ -54,6 +56,10 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+
+# Maximum number of redirect hops to follow when fetching a remote image. Each
+# hop is independently SSRF-validated, so this also bounds the validation work.
+_MAX_IMAGE_REDIRECTS = 10
 
 
 def _is_short_header(text, max_tokens=50):
@@ -725,8 +731,51 @@ class Markdown(MarkdownParser):
 
         return urls
 
-    def load_images_from_urls(self, urls, cache=None):
+    def _fetch_remote_image_response(self, url):
+        """Fetch a remote image URL with SSRF protection.
+
+        The URL is validated against the allowlist (``assert_url_is_safe``) and
+        the resolved IP is DNS-pinned before connecting, closing the
+        TOCTOU/DNS-rebinding window. Redirects are followed manually so that
+        each hop is re-validated and a redirect to an internal address cannot
+        bypass the check (``allow_redirects`` defaults to ``True`` otherwise).
+
+        Returns the final ``requests.Response`` or ``None`` if the URL — or any
+        redirect target — is not safe to fetch.
+        """
         import requests
+
+        try:
+            hostname, ip = assert_url_is_safe(url)
+        except ValueError as e:
+            logging.warning(f"SSRF guard blocked image URL {url}: {e}")
+            return None
+
+        current_url = url
+        for _ in range(_MAX_IMAGE_REDIRECTS + 1):
+            with pin_dns(hostname, ip):
+                response = requests.get(current_url, stream=True, timeout=30, allow_redirects=False)
+
+            if response.status_code not in (301, 302, 303, 307, 308):
+                return response
+
+            location = response.headers.get("Location")
+            if not location:
+                return response  # broken redirect; caller treats non-200 as failure
+            response.close()
+
+            redirect_url = urljoin(current_url, location)
+            try:
+                hostname, ip = assert_url_is_safe(redirect_url)
+            except ValueError as e:
+                logging.warning(f"SSRF guard blocked image redirect to {redirect_url}: {e}")
+                return None
+            current_url = redirect_url
+
+        logging.warning(f"Exceeded {_MAX_IMAGE_REDIRECTS} redirects fetching image {url}")
+        return None
+
+    def load_images_from_urls(self, urls, cache=None):
         from pathlib import Path
 
         cache = cache or {}
@@ -739,8 +788,8 @@ class Markdown(MarkdownParser):
             img_obj = None
             try:
                 if url.startswith(("http://", "https://")):
-                    response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                    response = self._fetch_remote_image_response(url)
+                    if response is not None and response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
                         img_obj = Image.open(BytesIO(response.content)).convert("RGB")
                 else:
                     local_path = Path(url)
