@@ -52,6 +52,18 @@ def _dashscope_host_matches(hostname: str | None, expected: str) -> bool:
     return hostname == expected or hostname.endswith(f".{expected}")
 
 
+def _dashscope_native_api_url_from_parts(parsed) -> str | None:
+    if not parsed.hostname:
+        return None
+    netloc = parsed.hostname.lower().rstrip(".")
+    try:
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+    except ValueError:
+        pass
+    return urlunparse((parsed.scheme or "https", netloc, DASHSCOPE_NATIVE_API_PATH, "", "", ""))
+
+
 def _dashscope_endpoint_for_log(url: str | None) -> str | None:
     return dashscope_base_url_for_log(str(url)) if url else None
 
@@ -63,8 +75,10 @@ def dashscope_native_http_api_url(base_url: str | None) -> str | None:
     parsed = urlparse(u if "://" in u else f"https://{u}")
     safe = dashscope_base_url_for_log(u)
     if parsed.path.rstrip("/") == DASHSCOPE_NATIVE_API_PATH:
-        logger.debug("DashScope Tongyi-Qianwen embedding: using native API base as configured (%s)", safe)
-        return u
+        native_url = _dashscope_native_api_url_from_parts(parsed)
+        if native_url:
+            logger.debug("DashScope Tongyi-Qianwen embedding: using native API base as configured (%s)", dashscope_base_url_for_log(native_url))
+            return native_url
     if _dashscope_host_matches(parsed.hostname, DASHSCOPE_INTL_HOST):
         logger.info("DashScope Tongyi-Qianwen embedding: mapped configured base_url to intl native API (%s -> %s)", safe, DASHSCOPE_INTL_NATIVE_API_URL)
         return DASHSCOPE_INTL_NATIVE_API_URL

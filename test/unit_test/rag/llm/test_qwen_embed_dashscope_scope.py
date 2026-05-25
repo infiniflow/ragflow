@@ -130,6 +130,19 @@ def test_dashscope_native_http_api_url_uses_parsed_hostname_and_sanitized_logs(c
 
 
 @pytest.mark.p2
+def test_dashscope_native_http_api_url_normalizes_already_native_url(caplog):
+    caplog.set_level(logging.DEBUG, logger=dashscope_utils.__name__)
+
+    assert dashscope_utils.dashscope_native_http_api_url("https://user:secret@dashscope.aliyuncs.com/api/v1?token=sensitive") == dashscope_utils.DASHSCOPE_CN_NATIVE_API_URL
+
+    assert "using native API base as configured" in caplog.text
+    assert "user" not in caplog.text
+    assert "secret" not in caplog.text
+    assert "sensitive" not in caplog.text
+    assert "token=" not in caplog.text
+
+
+@pytest.mark.p2
 def test_dashscope_native_http_api_url_does_not_match_query_mentions(caplog):
     caplog.set_level(logging.WARNING, logger=dashscope_utils.__name__)
 
