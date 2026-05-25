@@ -1,5 +1,5 @@
 {
-  "name": "PaddleOCR_Local",
+  "name": "PaddleOCR",
   "url_suffix": {
     "ocr": "layout-parsing"
   },
