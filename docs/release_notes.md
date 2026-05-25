@@ -24,7 +24,7 @@ Released on May 20, 2026.
 - Introduces Redis-based caching for Text-to-Speech model outputs, eliminating redundant API calls for identical text to reduce latency and save provider quota. [#14851](https://github.com/infiniflow/ragflow/pull/14851)
 - Reduces server startup time by 5-9 seconds and saves roughly 200MB of memory by replacing heavy module-level imports with lazy runtime loading. [#14973](https://github.com/infiniflow/ragflow/pull/14973)
 - Optimizes the connector dashboard. [#14979](https://github.com/infiniflow/ragflow/pull/14979)
-- Bumps minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
+- Increases minimum supported Python version to 3.13. [#14767](https://github.com/infiniflow/ragflow/pull/14767)
 
 ### Bug fixes
 
@@ -38,8 +38,8 @@ Released on May 20, 2026.
 - Chat file attachment loss. [#13993](https://github.com/infiniflow/ragflow/pull/13993)
 - IMAP multi-address parsing [#15006](https://github.com/infiniflow/ragflow/pull/15006)
 - Langfuse token usage reporting. [#13294](https://github.com/infiniflow/ragflow/pull/13294)
-- Reranking robustness. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
-- Bumps nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
+- Enhances the stability and fault tolerance of the reranking module by implementing network timeouts, crash-prevention safeguards, and specific provider bug fixes. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
+- Increases minimum supported Nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
 
 ## v0.25.4
 
