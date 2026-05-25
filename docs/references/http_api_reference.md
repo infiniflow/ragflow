@@ -6905,18 +6905,18 @@ Failure:
 
 ### Download attachment
 
-**GET** `/api/v1/documents/{doc_id}/download`
+**GET** `/api/v1/agents/{attachment_id}/download`
 
 :::caution DEPRECATED
-The previous endpoint `GET /v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Please use this endpoint instead.
 :::
 
-Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
+Downloads a runtime attachment previously uploaded for use in the agent system.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/documents/{doc_id}/download`
+- URL: `/api/v1/agents/{attachment_id}/download`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query parameter:
@@ -6926,15 +6926,15 @@ Downloads a runtime attachment previously uploaded via the [Upload document](#up
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/documents/{doc_id}/download?ext=pdf' \
+     --url 'http://{address}/api/v1/agents/{attachment_id}/download?ext=pdf' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_attachment.pdf
 ```
 
 ##### Request parameters
 
-- `doc_id`: (*Path parameter*), `string`, *Required*
-  The document ID whose attachment should be downloaded.
+- `attachment_id`: (*Path parameter*), `string`, *Required*
+  The attachment ID whose file should be downloaded.
 - `ext`: (*Query parameter*), `string`, *Optional*
   A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
   - `"markdown"`
