@@ -1159,13 +1159,13 @@ async def session_completion(chat_id_in_arg=""):
                 )
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
             if not e:
-                return get_data_error_result(message=f"Chat with id: {chat_id} not found!")
+                return get_data_error_result(message="Chat not found!")
             if session_id:
                 e, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
                 if not e:
-                    return get_data_error_result(message=f"Session with id {session_id} not found!")
+                    return get_data_error_result(message="Session not found!")
                 if conv.dialog_id != chat_id:
-                    return get_data_error_result(message=f"Session with id {session_id} does not belong to this chat with id {chat_id}!")
+                    return get_data_error_result(message="Session does not belong to this chat!")
             else:
                 conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
