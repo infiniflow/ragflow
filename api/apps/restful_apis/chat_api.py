@@ -181,26 +181,25 @@ def _get_bool_request_flag(req, *names, default=False):
 
 
 def _normalize_completion_messages(req):
-    raw_messages = req.get("messages")
-    if raw_messages is None:
+    messages = req.get("messages")
+    if messages is None:
         question = req.get("question")
         if question is None:
             return None, get_data_error_result(
                 code=RetCode.ARGUMENT_ERROR,
-                message="required argument are missing: messages",
+                message="required argument is missing: messages or question",
             )
-        raw_messages = [{"role": "user", "content": question}]
+        messages = [{"role": "user", "content": question}]
         if req.get("files"):
-            raw_messages[-1]["files"] = req["files"]
+            messages[-1]["files"] = req["files"]
 
-    if not isinstance(raw_messages, list) or not raw_messages:
+    if not isinstance(messages, list) or not messages:
         return None, get_data_error_result(
             code=RetCode.ARGUMENT_ERROR,
             message="`messages` must be a non-empty list.",
         )
 
-    messages = []
-    for message in raw_messages:
+    for message in messages:
         if not isinstance(message, dict):
             return None, get_data_error_result(
                 code=RetCode.ARGUMENT_ERROR,
@@ -211,7 +210,6 @@ def _normalize_completion_messages(req):
                 code=RetCode.ARGUMENT_ERROR,
                 message="Every item in `messages` must include `role` and `content`.",
             )
-        messages.append(deepcopy(message))
 
     msg = []
     for m in messages:
@@ -233,11 +231,8 @@ def _normalize_completion_messages(req):
         )
     if not msg[-1].get("id"):
         msg[-1]["id"] = get_uuid()
-        for message in reversed(messages):
-            if message.get("role") == "user":
-                message["id"] = msg[-1]["id"]
-                break
 
+    # till now, message and msg are sharing the same copy
     return (messages, msg), None
 
 
@@ -1141,7 +1136,7 @@ async def session_completion(chat_id_in_arg=""):
     message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""
     chat_id = chat_id or chat_id_in_arg
-    session_id = req.pop("session_id", "") or ""
+    session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
     chat_model_config = {}
@@ -1164,16 +1159,17 @@ async def session_completion(chat_id_in_arg=""):
                 )
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)
             if not e:
-                return get_data_error_result(message="Chat not found!")
+                return get_data_error_result(message=f"Chat with id: {chat_id} not found!")
             if session_id:
                 e, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
                 if not e:
-                    return get_data_error_result(message="Session not found!")
+                    return get_data_error_result(message=f"Session with id {session_id} not found!")
                 if conv.dialog_id != chat_id:
-                    return get_data_error_result(message="Session does not belong to this chat!")
+                    return get_data_error_result(message=f"Session with id {session_id} does not belong to this chat with id {chat_id}!")
             else:
                 conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
+
             if pass_all_history_messages:
                 conv.message = deepcopy(request_messages)
                 msg = request_msg
