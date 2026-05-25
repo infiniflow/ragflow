@@ -370,7 +370,7 @@ type InsertChunksFromFileRequest struct {
 // @Security ApiKeyAuth
 // @Param request body InsertChunksFromFileRequest true "insert chunks request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/insert_from_file [post]
+// @Router /v1/tenant/insert_chunks_from_file [post]
 func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

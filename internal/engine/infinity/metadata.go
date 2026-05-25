@@ -382,6 +382,7 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 			switch v := metaFieldsData[0].(type) {
 			case string:
 				if err := json.Unmarshal([]byte(v), &existingMetaFields); err != nil {
+					common.Warn("Failed to parse meta_fields JSON", zap.String("docID", docID), zap.Error(err))
 					existingMetaFields = make(map[string]interface{})
 				}
 			case map[string]interface{}:

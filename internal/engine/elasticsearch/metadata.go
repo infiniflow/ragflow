@@ -383,7 +383,10 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 		case map[string]interface{}:
 			currentMetaFields = v
 		case string:
-			json.Unmarshal([]byte(v), &currentMetaFields)
+			if unmarshalErr := json.Unmarshal([]byte(v), &currentMetaFields); unmarshalErr != nil {
+				common.Warn("Failed to parse meta_fields JSON", zap.String("docID", docID), zap.Error(unmarshalErr))
+				currentMetaFields = make(map[string]interface{})
+			}
 		}
 	}
 

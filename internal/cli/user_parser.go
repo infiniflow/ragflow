@@ -3631,11 +3631,14 @@ func (p *Parser) parseDeleteMeta() (*Command, error) {
 	p.nextToken()
 	// KEYS is optional - if not provided, delete entire document metadata
 	if p.curToken.Type != TokenKeys {
-		// No KEYS keyword - just delete the document metadata
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
+			return cmd, nil
 		}
-		return cmd, nil
+		if p.curToken.Type == TokenEOF {
+			return cmd, nil
+		}
+		return nil, fmt.Errorf("expected KEYS or end of command after doc_id")
 	}
 
 	// Parse keys JSON array

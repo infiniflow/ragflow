@@ -152,13 +152,13 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 		buf.Write(action)
 		buf.WriteByte('\n')
 
-		// Document line: encode then restore
-		doc["kb_id"] = datasetID
-		if err := json.NewEncoder(&buf).Encode(doc); err != nil {
+		// Document line: work with a copy to avoid mutating the original
+		docCopy := copyFields(doc)
+		docCopy["kb_id"] = datasetID
+		if err := json.NewEncoder(&buf).Encode(docCopy); err != nil {
 			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
-		delete(doc, "kb_id") // restore original
-		}
+	}
 
 	// Execute bulk request with refresh="wait_for" (matches Python behavior)
 	req := esapi.BulkRequest{
@@ -307,7 +307,12 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
 		}
-		req.Do(ctx, e.client)
+		res, err := req.Do(ctx, e.client)
+		if err != nil {
+			common.Warn("Failed to remove feas field", zap.String("field", k), zap.Error(err))
+		} else {
+			res.Body.Close()
+		}
 	}
 
 	// Remove specific field if removeField is set
@@ -323,7 +328,12 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 			DocumentID: actualID,
 			Body:       bytes.NewReader(body),
 		}
-		req.Do(ctx, e.client)
+		res, err := req.Do(ctx, e.client)
+		if err != nil {
+			common.Warn("Failed to remove field", zap.String("field", removeField), zap.Error(err))
+		} else {
+			res.Body.Close()
+		}
 	}
 
 	// Remove specific values from array fields (removeDict)
@@ -349,7 +359,12 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 				DocumentID: actualID,
 				Body:       bytes.NewReader(body),
 			}
-			req.Do(ctx, e.client)
+			res, err := req.Do(ctx, e.client)
+			if err != nil {
+				common.Warn("Failed to remove dict fields", zap.Error(err))
+			} else {
+				res.Body.Close()
+			}
 		}
 	}
 
@@ -456,10 +471,7 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 		case int, float64:
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=%v;", k, val))
 		case []interface{}:
-			params[fmt.Sprintf("pp_%s", k)] = json.RawMessage(json.RawMessage{})
-			if data, err := json.Marshal(val); err == nil {
-				params[fmt.Sprintf("pp_%s", k)] = string(data)
-			}
+			params[fmt.Sprintf("pp_%s", k)] = val
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
 		}
 	}
@@ -539,9 +551,6 @@ func (e *elasticsearchEngine) DeleteChunks(ctx context.Context, condition map[st
 		return 0, nil
 	}
 
-	// Add kb_id to condition
-	condition["kb_id"] = datasetID
-
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
 	var filterClauses []map[string]interface{}
@@ -569,13 +578,17 @@ func (e *elasticsearchEngine) DeleteChunks(ctx context.Context, condition map[st
 		}
 	}
 
+	// Handle kb_id - add as term filter
+	if kbID, ok := condition["kb_id"].(string); ok && kbID != "" {
+		filterClauses = append(filterClauses, map[string]interface{}{
+			"term": map[string]interface{}{"kb_id": kbID},
+		})
+	}
+
 	// Add all other conditions as filters/must/must_not
 	for k, v := range condition {
-		if k == "id" {
+		if k == "id" || k == "kb_id" {
 			continue // Already handled above
-		}
-		if k == "kb_id" {
-			continue
 		}
 		if k == "exists" {
 			filterClauses = append(filterClauses, map[string]interface{}{
@@ -929,10 +942,14 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 				// Build boolean query for text match and filters
 				var boolQuery map[string]interface{}
+				matchingText := ""
+				if matchText != nil {
+					matchingText = matchText.MatchingText
+				}
 				if isSkillIndex {
-					boolQuery = buildSkillKeywordQuery(matchText.MatchingText, nil, textWeight)
+					boolQuery = buildSkillKeywordQuery(matchingText, nil, textWeight)
 				} else {
-					boolQuery = buildESKeywordQuery(matchText.MatchingText, nil, textWeight)
+					boolQuery = buildESKeywordQuery(matchingText, nil, textWeight)
 				}
 
 				// Add filter to bool query
@@ -1017,10 +1034,10 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 				common.Warn("Elasticsearch query failed", zap.String("index", fullIndexName), zap.Error(err))
 				continue
 			}
-			defer res.Body.Close()
 
 			if res.IsError() {
 				bodyBytes, err := io.ReadAll(res.Body)
+				res.Body.Close()
 				if err != nil {
 					common.Error("Elasticsearch failed to read error response body", err)
 				} else {
@@ -1032,9 +1049,12 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 			// Parse response
 			var esResp SearchResponse
 			if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+				res.Body.Close()
 				common.Warn("Elasticsearch failed to parse response", zap.String("index", fullIndexName), zap.Error(err))
 				continue
 			}
+
+			res.Body.Close()
 
 			// Convert to unified response
 			searchChunks := convertESResponse(&esResp, vectorFieldName)
