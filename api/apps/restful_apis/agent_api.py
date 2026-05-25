@@ -612,6 +612,7 @@ async def update_agent_tags(tenant_id, canvas_id):
 @add_tenant_id_to_kwargs
 async def create_agent(tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
+    req["canvas_type"] = req.get("canvas_type","")
     req["user_id"] = tenant_id
     req["canvas_category"] = req.get("canvas_category") or CanvasCategory.Agent
     req["release"] = bool(req.get("release", ""))
@@ -868,6 +869,7 @@ def delete_agent(agent_id, tenant_id):
 @_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
+    req["canvas_type"] = req.get("canvas_type","")
     req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is not None:
