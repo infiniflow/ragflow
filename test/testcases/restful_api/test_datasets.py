@@ -170,21 +170,51 @@ def test_dataset_create_permission_contract(rest_client, clear_datasets, name, p
 
 @pytest.mark.p2
 @pytest.mark.parametrize(
-    "name, embedding_model",
+    "name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail",
     [
-        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin"),
-        ("tenant_zhipu", "embedding-3@ZHIPU-AI"),
+        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
+        ("tenant_zhipu", "embedding-3@ZHIPU-AI", 0, "embedding-3@ZHIPU-AI", None, True),
+        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
+        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
+        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Unsupported model: <unknown@ZHIPU-AI>", False),
+        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Unsupported model: <embedding-3@unknown>", False),
+        (
+            "tenant_no_auth_default_tenant_llm",
+            "text-embedding-v3@Tongyi-Qianwen",
+            102,
+            None,
+            "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>",
+            False,
+        ),
+        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Unauthorized model: <text-embedding-3-small@OpenAI>", False),
     ],
-    ids=["builtin_baai", "tenant_zhipu"],
+    ids=[
+        "builtin_baai",
+        "tenant_zhipu",
+        "embedding_model_unset",
+        "embedding_model_none",
+        "unknown_llm_name",
+        "unknown_llm_factory",
+        "tenant_no_auth_default_tenant_llm",
+        "tenant_no_auth",
+    ],
 )
-def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, name, embedding_model):
-    res = rest_client.post("/datasets", json={"name": name, "embedding_model": embedding_model})
+def test_dataset_create_embedding_model_contract(
+    rest_client, clear_datasets, name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail
+):
+    req = {"name": name}
+    if embedding_model != "__UNSET__":
+        req["embedding_model"] = embedding_model
+    res = rest_client.post("/datasets", json=req)
     assert res.status_code == 200
     payload = res.json()
-    if embedding_model == "embedding-3@ZHIPU-AI" and payload["code"] == 102:
+    if unauthorized_is_xfail and payload["code"] == 102:
         pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {payload}")
-    assert payload["code"] == 0, payload
-    assert payload["data"]["embedding_model"] == embedding_model, payload
+    assert payload["code"] == expected_code, payload
+    if expected_embedding_model is not None:
+        assert payload["data"]["embedding_model"] == expected_embedding_model, payload
+    if expected_message is not None:
+        assert payload["message"] == expected_message, payload
 
 
 @pytest.mark.p2
@@ -546,37 +576,6 @@ def test_dataset_create_description_contract(rest_client, clear_datasets):
     none_payload = none_res.json()
     assert none_payload["code"] == 0, none_payload
     assert none_payload["data"]["description"] is None, none_payload
-
-
-@pytest.mark.p2
-def test_dataset_create_embedding_model_contract(rest_client, clear_datasets):
-    unset_res = rest_client.post("/datasets", json={"name": "embedding_model_unset"})
-    assert unset_res.status_code == 200
-    unset_payload = unset_res.json()
-    assert unset_payload["code"] == 0, unset_payload
-    assert unset_payload["data"]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", unset_payload
-
-    none_res = rest_client.post("/datasets", json={"name": "embedding_model_none", "embedding_model": None})
-    assert none_res.status_code == 200
-    none_payload = none_res.json()
-    assert none_payload["code"] == 0, none_payload
-    assert none_payload["data"]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", none_payload
-
-    invalid_cases = [
-        ("unknown_llm_name", "unknown@ZHIPU-AI"),
-        ("unknown_llm_factory", "embedding-3@unknown"),
-        ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen"),
-        ("tenant_no_auth", "text-embedding-3-small@OpenAI"),
-    ]
-    for name, embedding_model in invalid_cases:
-        res = rest_client.post("/datasets", json={"name": name, "embedding_model": embedding_model})
-        assert res.status_code == 200
-        payload = res.json()
-        assert payload["code"] == 102, payload
-        if "tenant_no_auth" in name:
-            assert payload["message"] == f"Unauthorized model: <{embedding_model}>", payload
-        else:
-            assert payload["message"] == f"Unsupported model: <{embedding_model}>", payload
 
 
 @pytest.mark.p2
