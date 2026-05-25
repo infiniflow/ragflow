@@ -18,11 +18,13 @@ package elasticsearch
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -30,9 +32,27 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
+
+var (
+	elasticsearchHighlightEmTagRE     = regexp.MustCompile(`<em>[^<>]+</em>`)
+	elasticsearchHighlightNewlineRE   = regexp.MustCompile(`[\r\n]`)
+	elasticsearchHighlightDelimiterRE = regexp.MustCompile(`[.?!;\n]`)
+	elasticsearchLetterRE             = regexp.MustCompile(`\pL`)
+	elasticsearchEnglishLetterRE      = regexp.MustCompile(`[A-Za-z]`)
+	elasticsearchCopiedStringFields   = map[string][]string{"docnm": {"docnm_kwd", "title_tks", "title_sm_tks"}, "content": {"content_with_weight", "content_ltks", "content_sm_ltks"}, "authors": {"authors_tks", "authors_sm_tks"}}
+	elasticsearchSplitStringFields    = []elasticsearchSplitStringField{{"important_keywords", "important_kwd", "important_tks", ","}, {"questions", "question_kwd", "question_tks", "\n"}}
+	elasticsearchFieldsNotSplit       = map[string]struct{}{"knowledge_graph_kwd": {}, "docnm_kwd": {}, "important_kwd": {}, "question_kwd": {}}
+	elasticsearchTextDefaultFields    = map[string]struct{}{"important_tks": {}, "question_tks": {}, "authors_tks": {}, "authors_sm_tks": {}, "title_tks": {}, "title_sm_tks": {}, "content_ltks": {}, "content_sm_ltks": {}}
+	elasticsearchArrayFields          = []string{"doc_type_kwd", "important_kwd", "important_tks", "question_tks", "question_kwd", "authors_tks", "authors_sm_tks", "title_tks", "title_sm_tks", "content_ltks", "content_sm_ltks", "tag_kwd"}
+)
+
+type elasticsearchSplitStringField struct {
+	source, keywordTarget, textTarget, separator string
+}
 
 // CreateChunkStore creates an index
 func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
@@ -502,10 +522,10 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 	// Execute update by query with refresh=true, slices=5, conflicts="proceed"
 	refreshTrue := true
 	req := esapi.UpdateByQueryRequest{
-		Index:    []string{indexName},
-		Body:     bytes.NewReader(bodyBytes),
-		Refresh:  &refreshTrue,
-		Slices:   5,
+		Index:     []string{indexName},
+		Body:      bytes.NewReader(bodyBytes),
+		Refresh:   &refreshTrue,
+		Slices:    5,
 		Conflicts: "proceed",
 	}
 
@@ -982,11 +1002,11 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 
 				knnQuery := map[string]interface{}{
 					"field":          vectorFieldName,
-					"query_vector":    vectorData,
-					"k":               k,
-					"num_candidates":  numCandidates,
-					"similarity":      similarity,
-					"boost":           vectorWeight,
+					"query_vector":   vectorData,
+					"k":              k,
+					"num_candidates": numCandidates,
+					"similarity":     similarity,
+					"boost":          vectorWeight,
 				}
 
 				queryBody["knn"] = knnQuery
@@ -1178,22 +1198,119 @@ func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID st
 	return nil, nil
 }
 
-// GetFields is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	common.Warn("GetFields not implemented for Elasticsearch")
-	return nil
+	return GetFields(chunks, fields)
 }
 
-// GetAggregation is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
-	common.Warn("GetAggregation not implemented for Elasticsearch")
-	return nil
+	tagCounts := make(map[string]int)
+	for _, chunk := range chunks {
+		value, ok := chunk[fieldName]
+		if !ok || value == nil {
+			continue
+		}
+
+		if valueStr, ok := value.(string); ok {
+			if valueStr == "" {
+				continue
+			}
+			separator := ","
+			if fieldName == "tag_kwd" && strings.Contains(valueStr, "###") {
+				separator = "###"
+			}
+			for _, tag := range strings.Split(valueStr, separator) {
+				countElasticsearchAggregationTag(tagCounts, tag)
+			}
+			continue
+		}
+
+		if valueList, ok := value.([]interface{}); ok {
+			for _, item := range valueList {
+				if itemStr, ok := item.(string); ok {
+					countElasticsearchAggregationTag(tagCounts, itemStr)
+				}
+			}
+		}
+	}
+
+	if len(tagCounts) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	tags := make([]string, 0, len(tagCounts))
+	for tag := range tagCounts {
+		tags = append(tags, tag)
+	}
+	slices.SortFunc(tags, func(a, b string) int {
+		if byCount := cmp.Compare(tagCounts[b], tagCounts[a]); byCount != 0 {
+			return byCount
+		}
+		return cmp.Compare(a, b)
+	})
+
+	result := make([]map[string]interface{}, len(tags))
+	for i, tag := range tags {
+		result[i] = map[string]interface{}{"key": tag, "count": tagCounts[tag]}
+	}
+
+	return result
 }
 
-// GetHighlight is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
-	common.Warn("GetHighlight not implemented for Elasticsearch")
-	return nil
+	result := make(map[string]string)
+	if len(keywords) == 0 {
+		return result
+	}
+
+	normalizedKeywords := normalizeElasticsearchHighlightKeywords(keywords)
+	englishPatterns := compileElasticsearchHighlightPatterns(normalizedKeywords)
+	nonEnglishPattern := compileElasticsearchNonEnglishHighlightPattern(normalizedKeywords)
+
+	for _, chunk := range chunks {
+		id, ok := elasticsearchChunkID(chunk)
+		if !ok {
+			continue
+		}
+
+		txt, ok := chunk[fieldName].(string)
+		if fieldName == "content_with_weight" && (!ok || txt == "") {
+			txt, ok = chunk["content"].(string)
+		}
+		if !ok || txt == "" {
+			continue
+		}
+
+		if elasticsearchHighlightEmTagRE.MatchString(txt) {
+			result[id] = txt
+			continue
+		}
+
+		txt = elasticsearchHighlightNewlineRE.ReplaceAllString(txt, " ")
+		segments := elasticsearchHighlightDelimiterRE.Split(txt, -1)
+
+		var highlightedSegments []string
+		for _, segment := range segments {
+			segmentToCheck := segment
+			if isMostlyEnglishElasticsearchSegment(segment) {
+				for _, pattern := range englishPatterns {
+					segmentToCheck = pattern.ReplaceAllString(segmentToCheck, "$1<em>$2</em>$3")
+				}
+			} else if nonEnglishPattern != nil {
+				segmentToCheck = nonEnglishPattern.ReplaceAllStringFunc(segmentToCheck, func(match string) string {
+					return "<em>" + match + "</em>"
+				})
+			}
+			if segmentToCheck != segment {
+				highlightedSegments = append(highlightedSegments, strings.TrimSpace(segmentToCheck))
+			}
+		}
+
+		if len(highlightedSegments) > 0 {
+			result[id] = strings.Join(highlightedSegments, "... ")
+		}
+	}
+
+	return result
 }
 
 // DropChunkStore deletes a chunk index
@@ -1816,10 +1933,18 @@ func AddMustNot(query map[string]interface{}, clauses ...map[string]interface{})
 	}
 }
 
-// GetDocIDs is not implemented for Elasticsearch
 func (e *elasticsearchEngine) GetDocIDs(chunks []map[string]interface{}) []string {
-	common.Warn("GetDocIDs not implemented for Elasticsearch")
-	return nil
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if id, ok := elasticsearchChunkID(chunk); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // equivalentConditionToStr converts a condition map to a filter string (for ES query_string)
@@ -1973,79 +2098,172 @@ func getChunkScore(chunk map[string]interface{}) float64 {
 
 // GetFields applies field mappings to chunks and returns a dict keyed by chunk ID.
 // This mirrors the Infinity GetFields function behavior.
+// GetFields intentionally mutates the maps in chunks: it copies derived string fields,
+// splits keyword fields, sets default empty values, converts hex arrays, renames ROW_ID
+// to row_id(), and ensures a fallback id is populated when only _id is present.
 func GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
 	result := make(map[string]map[string]interface{})
-	if len(chunks) == 0 {
-		return result
-	}
-
-	// If fields is provided, create a set for lookup
-	fieldSet := make(map[string]bool)
+	fieldSet := make(map[string]bool, len(fields))
 	for _, f := range fields {
 		fieldSet[f] = true
 	}
 
 	for _, chunk := range chunks {
-		// Apply field mappings
-		// docnm -> docnm_kwd, title_tks, title_sm_tks
-		if val, ok := chunk["docnm"].(string); ok {
-			chunk["docnm_kwd"] = val
-			chunk["title_tks"] = val
-			chunk["title_sm_tks"] = val
-		}
-
-		// important_keywords -> important_kwd (split by comma), important_tks
-		if val, ok := chunk["important_keywords"].(string); ok {
-			if val == "" {
-				chunk["important_kwd"] = []interface{}{}
-			} else {
-				parts := strings.Split(val, ",")
-				chunk["important_kwd"] = parts
-			}
-			chunk["important_tks"] = val
-		} else {
-			chunk["important_kwd"] = []interface{}{}
-			chunk["important_tks"] = []interface{}{}
-		}
-
-		// questions -> question_kwd (split by newline), question_tks
-		if val, ok := chunk["questions"].(string); ok {
-			if val == "" {
-				chunk["question_kwd"] = []interface{}{}
-			} else {
-				parts := strings.Split(val, "\n")
-				chunk["question_kwd"] = parts
-			}
-			chunk["question_tks"] = val
-		} else {
-			chunk["question_kwd"] = []interface{}{}
-			chunk["question_tks"] = []interface{}{}
-		}
-
-		// content -> content_with_weight, content_ltks, content_sm_ltks
-		if val, ok := chunk["content"].(string); ok {
-			chunk["content_with_weight"] = val
-			chunk["content_ltks"] = val
-			chunk["content_sm_ltks"] = val
-		}
-
-		// authors -> authors_tks, authors_sm_tks
-		if val, ok := chunk["authors"].(string); ok {
-			chunk["authors_tks"] = val
-			chunk["authors_sm_tks"] = val
-		}
-
-		// Build result map keyed by id
-		if id, ok := chunk["id"].(string); ok {
-			fieldMap := make(map[string]interface{})
-			for field, value := range chunk {
-				if len(fieldSet) == 0 || fieldSet[field] {
-					fieldMap[field] = value
+		for source, targets := range elasticsearchCopiedStringFields {
+			if val, ok := chunk[source].(string); ok {
+				for _, target := range targets {
+					chunk[target] = val
 				}
 			}
-			result[id] = fieldMap
 		}
+
+		for _, field := range elasticsearchSplitStringFields {
+			if val, ok := chunk[field.source].(string); ok {
+				chunk[field.keywordTarget] = splitStringsToInterfaces(val, field.separator)
+				chunk[field.textTarget] = val
+			} else {
+				chunk[field.keywordTarget] = []interface{}{}
+				chunk[field.textTarget] = ""
+			}
+		}
+
+		if val, ok := chunk["position_int"].(string); ok {
+			chunk["position_int"] = utility.ConvertHexToPositionIntArray(val)
+		}
+
+		for _, colName := range []string{"page_num_int", "top_int"} {
+			if val, ok := chunk[colName].(string); ok && val != "" {
+				chunk[colName] = utility.ConvertHexToIntArray(val)
+			}
+		}
+
+		for _, colName := range elasticsearchArrayFields {
+			val, ok := chunk[colName]
+			if !ok || val == nil {
+				chunk[colName] = defaultEmptyElasticsearchField(colName)
+				continue
+			}
+			if _, ok := elasticsearchFieldsNotSplit[colName]; ok {
+				continue
+			}
+			strVal, ok := val.(string)
+			if !ok {
+				continue
+			}
+			if strVal == "" {
+				chunk[colName] = defaultEmptyElasticsearchField(colName)
+				continue
+			}
+			if !strings.Contains(strVal, "###") {
+				continue
+			}
+
+			chunk[colName] = stringsToInterfaces(slices.DeleteFunc(strings.Split(strVal, "###"), func(p string) bool {
+				return p == ""
+			}))
+		}
+
+		if val, ok := chunk["ROW_ID"]; ok {
+			chunk["row_id()"] = val
+			delete(chunk, "ROW_ID")
+		}
+
+		id, ok := elasticsearchChunkID(chunk)
+		if !ok {
+			continue
+		}
+		if existingID, ok := chunk["id"].(string); !ok || existingID == "" {
+			chunk["id"] = id
+		}
+
+		fieldMap := make(map[string]interface{})
+		for field, value := range chunk {
+			if len(fieldSet) == 0 || fieldSet[field] {
+				fieldMap[field] = value
+			}
+		}
+		result[id] = fieldMap
 	}
 
 	return result
+}
+
+func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
+	if id, ok := chunk["id"].(string); ok && id != "" {
+		return id, true
+	}
+	if id, ok := chunk["_id"].(string); ok && id != "" {
+		return id, true
+	}
+	return "", false
+}
+
+func stringsToInterfaces(values []string) []interface{} {
+	result := make([]interface{}, len(values))
+	for i, value := range values {
+		result[i] = value
+	}
+	return result
+}
+
+func splitStringsToInterfaces(value, sep string) []interface{} {
+	if value == "" {
+		return []interface{}{}
+	}
+	return stringsToInterfaces(strings.Split(value, sep))
+}
+
+func defaultEmptyElasticsearchField(field string) interface{} {
+	if _, ok := elasticsearchTextDefaultFields[field]; ok {
+		return ""
+	}
+	return []interface{}{}
+}
+
+func countElasticsearchAggregationTag(counts map[string]int, tag string) {
+	if tag = strings.TrimSpace(tag); tag != "" {
+		counts[tag]++
+	}
+}
+
+func isMostlyEnglishElasticsearchSegment(segment string) bool {
+	totalCount := len(elasticsearchLetterRE.FindAllString(segment, -1))
+	return totalCount > 0 && float64(len(elasticsearchEnglishLetterRE.FindAllString(segment, -1)))/float64(totalCount) > 0.5
+}
+
+func compileElasticsearchHighlightPatterns(keywords []string) []*regexp.Regexp {
+	patterns := make([]*regexp.Regexp, 0, len(keywords))
+	for _, kw := range keywords {
+		patterns = append(patterns, regexp.MustCompile(`(?i)(^|[ .?/'\"\(\)!,:;-])(`+regexp.QuoteMeta(kw)+`)([ .?/'\"\(\)!,:;-]|$)`))
+	}
+	return patterns
+}
+
+func compileElasticsearchNonEnglishHighlightPattern(keywords []string) *regexp.Regexp {
+	if len(keywords) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(keywords))
+	for _, kw := range keywords {
+		parts = append(parts, regexp.QuoteMeta(kw))
+	}
+	return regexp.MustCompile(strings.Join(parts, "|"))
+}
+
+func normalizeElasticsearchHighlightKeywords(keywords []string) []string {
+	seen := make(map[string]struct{}, len(keywords))
+	normalized := make([]string, 0, len(keywords))
+	for _, kw := range keywords {
+		if kw == "" {
+			continue
+		}
+		if _, ok := seen[kw]; !ok {
+			seen[kw] = struct{}{}
+			normalized = append(normalized, kw)
+		}
+	}
+	slices.SortStableFunc(normalized, func(a, b string) int {
+		return cmp.Compare(len(b), len(a))
+	})
+	return normalized
 }
