@@ -103,8 +103,6 @@ def _load_dify_retrieval_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", deepdoc_parser_utils)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
 
-    tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
-
     class _MockModelConfig:
         def __init__(self, tenant_id, model_name):
             self.tenant_id = tenant_id
