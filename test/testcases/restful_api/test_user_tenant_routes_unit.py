@@ -445,7 +445,33 @@ def _load_user_app(monkeypatch):
     apps_auth_mod.get_auth_client = lambda _config: SimpleNamespace(
         get_authorization_url=lambda state: f"https://oauth.example/{state}"
     )
+
+    # Mirrors api/apps/auth/__init__.py:infer_channel_type — keep in sync.
+    def _infer_channel_type(config):
+        declared = str(config.get("type", "")).strip().lower()
+        if declared:
+            return declared
+        if config.get("issuer"):
+            return "oidc"
+        if config.get("host") and (config.get("bind_dn_template") or config.get("bind_user_dn")):
+            return "ldap"
+        return "oauth2"
+
+    apps_auth_mod.infer_channel_type = _infer_channel_type
     monkeypatch.setitem(sys.modules, "api.apps.auth", apps_auth_mod)
+
+    apps_auth_ldap_mod = ModuleType("api.apps.auth.ldap")
+
+    class _LDAPAuthError(Exception):
+        pass
+
+    class _LDAPClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    apps_auth_ldap_mod.LDAPAuthError = _LDAPAuthError
+    apps_auth_ldap_mod.LDAPClient = _LDAPClient
+    monkeypatch.setitem(sys.modules, "api.apps.auth.ldap", apps_auth_ldap_mod)
 
     db_mod = ModuleType("api.db")
     db_mod.FileType = SimpleNamespace(FOLDER=SimpleNamespace(value="folder"))

@@ -3715,6 +3715,18 @@ wheels = [
 ]
 
 [[package]]
+name = "ldap3"
+version = "2.9.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+dependencies = [
+    { name = "pyasn1" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/43/ac/96bd5464e3edbc61595d0d69989f5d9969ae411866427b2500a8e5b812c0/ldap3-2.9.1.tar.gz", hash = "sha256:f3e7fc4718e3f09dda568b57100095e0ce58633bcabbed8667ce3f8fbaa4229f" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/4e/f6/71d6ec9f18da0b2201287ce9db6afb1a1f637dedb3f0703409558981c723/ldap3-2.9.1-py2.py3-none-any.whl", hash = "sha256:5869596fc4948797020d3f03b7939da938778a0f9e2009f7a072ccf92b8e8d70" },
+]
+
+[[package]]
 name = "litellm"
 version = "1.82.6"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
@@ -9062,6 +9074,7 @@ dependencies = [
     { name = "jira" },
     { name = "json-repair" },
     { name = "langfuse" },
+    { name = "ldap3" },
     { name = "litellm" },
     { name = "mammoth" },
     { name = "markdown" },
@@ -9210,6 +9223,7 @@ requires-dist = [
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=4.0.1" },
+    { name = "ldap3", specifier = ">=2.9.1,<3.0.0" },
     { name = "litellm", specifier = "~=1.82.0,!=1.82.7,!=1.82.8" },
     { name = "mammoth", specifier = ">=1.11.0" },
     { name = "markdown", specifier = "==3.6" },

@@ -1,8 +1,9 @@
 import message from '@/components/ui/message';
-import { Authorization } from '@/constants/authorization';
+import { Authorization, Token, UserInfo } from '@/constants/authorization';
 import userService, {
   getLoginChannels,
   loginWithChannel,
+  loginWithLdap,
 } from '@/services/user-service';
 import {
   default as authorizationUtil,
@@ -26,6 +27,8 @@ export interface ILoginChannel {
   channel: string;
   display_name: string;
   icon: string;
+  type?: string;
+  form_login?: boolean;
 }
 
 export const useLoginChannels = () => {
@@ -46,6 +49,49 @@ export const useLoginWithChannel = () => {
     mutationFn: async (channel: string) => {
       loginWithChannel(channel);
       return Promise.resolve();
+    },
+  });
+
+  return { loading, login: mutateAsync };
+};
+
+export const useLoginWithLdap = () => {
+  const { saveSetting } = useSaveSetting(true);
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: ['loginWithLdap'],
+    mutationFn: async (params: {
+      channel: string;
+      username: string;
+      password: string;
+    }) => {
+      const { data: res = {}, response } = await loginWithLdap(params);
+      if (res.code === 0) {
+        const { data } = res;
+        const authorization = response.headers.get(Authorization);
+        const token = data?.access_token;
+        if (!authorization || !token) {
+          // Backend signalled success but the auth payload is incomplete;
+          // refuse to persist a half-authenticated state.
+          message.error(res.message || 'Invalid authentication response');
+          return 1;
+        }
+        saveSetting({ language: storage.getLanguage() });
+        const userInfo = {
+          avatar: data.avatar,
+          name: data.nickname,
+          email: data.email,
+        };
+        // Use computed keys from the auth constants so the storage keys
+        // match what authorizationUtil.getToken / removeAll look up.
+        authorizationUtil.setItems({
+          [Authorization]: authorization,
+          [UserInfo]: JSON.stringify(userInfo),
+          [Token]: token,
+        });
+      } else if (res.message) {
+        message.error(res.message);
+      }
+      return res.code;
     },
   });
 
