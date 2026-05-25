@@ -29,22 +29,11 @@ import (
 )
 
 // HunyuanModel implements ModelDriver for Tencent Hunyuan
-// (https://cloud.tencent.com/document/product/1729/111007). Hunyuan
-// exposes an OpenAI-API-compatible REST surface at
-// https://api.hunyuan.cloud.tencent.com/v1, serving the hunyuan-pro,
-// hunyuan-standard, hunyuan-standard-256K, hunyuan-lite, and
-// hunyuan-vision families.
-//
-// Wire shape matches the OpenAI convention exactly:
-//   - POST /v1/chat/completions with {model, messages, stream, ...}
-//   - GET  /v1/models for the catalog
-//   - Authorization: Bearer <api-key> on every call
-//   - SSE response with `data:` lines and a [DONE] terminator
-//
-// Reasoning models surface chain-of-thought in `reasoning_content`
-// (OpenAI o-series shape), so the same handling as LongCat /
-// DeepSeek-R1 applies and there's no need for an inline <think>...
-// extractor like Novita's.
+// To further enhance the user experience of large-scale model services, relevant features of Tencent Hunyuan Large Model
+// will be gradually migrated to TokenHub. Following the migration, the original platform will no longer introduce new model
+// capabilities and will cease to support the purchase of new model services. Model services already purchased by users may
+// continue to be used and will not be affected for the time being. If you wish to activate new model services or utilise additional
+// model capabilities, please visit TokenHub.
 type HunyuanModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
@@ -447,11 +436,75 @@ func (a *HunyuanModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Embed is not implemented. The Hunyuan factory tag is
-// "LLM,IMAGE2TEXT" — no embedding surface is registered, and Image2Text
-// is reserved for a follow-up issue.
 func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Hunyuan embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var parsedResponse struct {
+		Data []struct {
+			Embedding []float64 `json:"embedding"`
+			Index     int       `json:"index"`
+		} `json:"data"`
+	}
+
+	if err = json.Unmarshal(body, &parsedResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(parsedResponse.Data) == 0 {
+		return nil, fmt.Errorf("hunyuan embedding response contains no data: %s", string(body))
+	}
+
+	var embeddings []EmbeddingData
+	for _, dataElem := range parsedResponse.Data {
+		embeddings = append(embeddings, EmbeddingData{
+			Embedding: dataElem.Embedding,
+			Index:     dataElem.Index,
+		})
+	}
+
+	return embeddings, nil
 }
 
 func (a *HunyuanModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {

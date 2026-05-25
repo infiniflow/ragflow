@@ -222,7 +222,7 @@ export default {
   prompt: `${restAPIv1}/agents/prompts`,
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   getAttachmentFileDownload: (docId: string) =>
-    `${restAPIv1}/agents/${docId}/download`,
+    `${restAPIv1}/agents/attachments/${docId}/download`,
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
