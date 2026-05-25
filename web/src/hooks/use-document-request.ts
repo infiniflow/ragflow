@@ -69,9 +69,13 @@ export const useUploadNextDocument = () => {
     data,
     isPending: loading,
     mutateAsync,
-  } = useMutation<ResponseType<IDocumentInfo[]>, Error, File[]>({
+  } = useMutation<
+    ResponseType<IDocumentInfo[]>,
+    Error,
+    { fileList: File[]; parserConfig?: Record<string, any> }
+  >({
     mutationKey: [DocumentApiAction.UploadDocument],
-    mutationFn: async (fileList) => {
+    mutationFn: async ({ fileList, parserConfig }) => {
       if (!id) {
         return { code: 500, message: 'Dataset ID is required' };
       }
@@ -79,6 +83,9 @@ export const useUploadNextDocument = () => {
       fileList.forEach((file: any) => {
         formData.append('file', file);
       });
+      if (parserConfig) {
+        formData.append('parser_config', JSON.stringify(parserConfig));
+      }
 
       try {
         const ret = await uploadDocument(id, formData);
@@ -100,7 +107,13 @@ export const useUploadNextDocument = () => {
     },
   });
 
-  return { uploadDocument: mutateAsync, loading, data };
+  const upload = useCallback(
+    (fileList: File[], parserConfig?: Record<string, any>) =>
+      mutateAsync({ fileList, parserConfig }),
+    [mutateAsync],
+  );
+
+  return { uploadDocument: upload, loading, data };
 };
 
 export const useFetchDocumentList = (loop = true) => {
