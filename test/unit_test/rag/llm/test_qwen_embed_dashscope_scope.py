@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import threading
 
 import pytest
@@ -21,6 +22,7 @@ import pytest
 from rag.llm import dashscope_utils
 
 
+@pytest.mark.p2
 def test_dashscope_native_api_url_scope_restores_previous_endpoint(monkeypatch):
     original_url = "https://dashscope.aliyuncs.com/api/v1"
     custom_url = "https://dashscope-intl.aliyuncs.com/api/v1"
@@ -32,6 +34,7 @@ def test_dashscope_native_api_url_scope_restores_previous_endpoint(monkeypatch):
     assert dashscope_utils.dashscope.base_http_api_url == original_url
 
 
+@pytest.mark.p2
 def test_dashscope_default_scope_waits_for_custom_endpoint_to_restore(monkeypatch):
     original_url = "https://dashscope.aliyuncs.com/api/v1"
     custom_url = "https://dashscope-intl.aliyuncs.com/api/v1"
@@ -91,6 +94,46 @@ def test_dashscope_default_scope_waits_for_custom_endpoint_to_restore(monkeypatc
     assert dashscope_utils.dashscope.base_http_api_url == original_url
 
 
+@pytest.mark.p2
 def test_dashscope_text_embedding_call_rejects_unsupported_text_type():
     with pytest.raises(ValueError, match="unsupported DashScope embedding text_type"):
         dashscope_utils.dashscope_text_embedding_call(None, "text-embedding-v2", "query", "api-key", "invalid")
+
+
+@pytest.mark.p2
+def test_dashscope_native_api_url_scope_logs_sanitized_restore(monkeypatch, caplog):
+    original_url = "https://dashscope.aliyuncs.com/api/v1"
+    custom_url = "https://user:secret@dashscope-intl.aliyuncs.com/api/v1?token=sensitive"
+    monkeypatch.setattr(dashscope_utils.dashscope, "base_http_api_url", original_url, raising=False)
+    caplog.set_level(logging.DEBUG, logger=dashscope_utils.__name__)
+
+    with dashscope_utils.dashscope_native_api_url_scope(custom_url):
+        assert dashscope_utils.dashscope.base_http_api_url == custom_url
+
+    assert dashscope_utils.dashscope.base_http_api_url == original_url
+    assert "scope acquired" in caplog.text
+    assert "override restored" in caplog.text
+    assert "user" not in caplog.text
+    assert "secret" not in caplog.text
+    assert "sensitive" not in caplog.text
+
+
+@pytest.mark.p2
+def test_dashscope_native_http_api_url_uses_parsed_hostname_and_sanitized_logs(caplog):
+    caplog.set_level(logging.INFO, logger=dashscope_utils.__name__)
+
+    assert dashscope_utils.dashscope_native_http_api_url("https://user:secret@dashscope.aliyuncs.com/compatible-mode/v1?token=sensitive") == dashscope_utils.DASHSCOPE_CN_NATIVE_API_URL
+
+    assert "user" not in caplog.text
+    assert "secret" not in caplog.text
+    assert "sensitive" not in caplog.text
+
+
+@pytest.mark.p2
+def test_dashscope_native_http_api_url_does_not_match_query_mentions(caplog):
+    caplog.set_level(logging.WARNING, logger=dashscope_utils.__name__)
+
+    assert dashscope_utils.dashscope_native_http_api_url("https://example.test/proxy?target=dashscope.aliyuncs.com&token=sensitive") is None
+
+    assert "target=" not in caplog.text
+    assert "sensitive" not in caplog.text
