@@ -1071,7 +1071,7 @@ async def session_completion(chat_id_in_arg=""):
     message_id = msg[-1].get("id") if msg else None
     chat_id = req.pop("chat_id", "") or ""
     chat_id = chat_id or chat_id_in_arg
-    session_id = req.pop("session_id", "") or ""
+    session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
     chat_model_config = {}
