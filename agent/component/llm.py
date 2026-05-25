@@ -228,7 +228,10 @@ class LLM(ComponentBase):
     def _collect_sys_files(self) -> tuple[list[str], list[str]]:
         files = self._canvas.globals.get("sys.files") or []
         if not files:
+            logging.debug("[LLM] sys.files empty; skipping attachment injection")
             return [], []
+
+        logging.info("[LLM] sys.files present: count=%d", len(files))
 
         explicit = "{sys.files}" in (self._param.sys_prompt or "")
         if not explicit and isinstance(self._param.prompts, list):
@@ -237,17 +240,23 @@ class LLM(ComponentBase):
                     explicit = True
                     break
         if explicit:
+            logging.info("[LLM] prompt template references {sys.files}; skipping auto-injection (explicit=%s)", explicit)
             return [], []
 
         text_parts: list[str] = []
         image_data_uris: list[str] = []
         for f in files:
             if not isinstance(f, str):
+                logging.debug("[LLM] skipping non-str sys.files entry: type=%s", type(f).__name__)
                 continue
             if f.startswith("data:image/"):
                 image_data_uris.append(f)
             else:
                 text_parts.append(f)
+        logging.info(
+            "[LLM] sys.files split: text_parts=%d image_data_uris=%d (explicit=%s)",
+            len(text_parts), len(image_data_uris), explicit,
+        )
         return text_parts, image_data_uris
 
     def _prepare_prompt_variables(self):
