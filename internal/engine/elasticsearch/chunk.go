@@ -118,6 +118,8 @@ func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, da
 // InsertChunks inserts chunks into a chunk index
 // If a chunk with the same id + doc_id + kb_id already exists, it will be updated with the new value
 func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+	common.Info("ElasticsearchConnection.InsertChunks called", zap.String("index_name", baseName), zap.Int("chunkCount", len(chunks)))
+
 	if len(chunks) == 0 {
 		return []string{}, nil
 	}
@@ -192,14 +194,14 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 		// Could iterate through items to find specific errors if needed
 	}
 
-	common.Info("Successfully inserted chunks into Elasticsearch index", zap.String("index_name", baseName), zap.Int("doc_count", len(chunks)))
+	common.Info("ElasticsearchConnection.InsertChunks result", zap.String("index_name", baseName), zap.Int("count", len(chunks)))
 	return []string{}, nil
 }
 
 // UpdateChunks updates chunks by condition
 func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {
 	fullIndexName := baseName
-	common.Info("Updating chunks in Elasticsearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition), zap.Any("new_value", newValue))
+	common.Info("ElasticsearchConnection.UpdateChunks called", zap.String("index_name", fullIndexName), zap.Any("condition", condition), zap.Any("new_value", newValue))
 
 	if fullIndexName == "" {
 		return fmt.Errorf("index name cannot be empty")
@@ -229,6 +231,8 @@ func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[st
 
 // updateSingleChunk handles single document update (matches Python lines 350-398)
 func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
+	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
+
 	// First find the document by id field to get the actual _id
 	searchReq := map[string]interface{}{
 		"query": map[string]interface{}{
@@ -387,11 +391,14 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 		}
 	}
 
+	common.Debug("ElasticsearchConnection.updateSingleChunk completed", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
 	return nil
 }
 
 // updateChunksByQuery handles multi-document update
 func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
+	common.Debug("ElasticsearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
+
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
 	for k, v := range condition {
@@ -514,7 +521,7 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 		return fmt.Errorf("elasticsearch update by query error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
 
-	common.Info("Successfully updated chunks", zap.String("index_name", indexName))
+	common.Debug("ElasticsearchConnection.updateChunksByQuery completed", zap.String("indexName", indexName))
 	return nil
 }
 

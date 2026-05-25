@@ -75,7 +75,7 @@ func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID 
 // If a document with the same id and kb_id already exists, it will be updated with the new value
 func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
 	indexName := buildMetadataIndexName(tenantID)
-	common.Info("Inserting metadata into Elasticsearch index", zap.String("index_name", indexName), zap.String("tenant_id", tenantID), zap.Int("doc_count", len(metadata)))
+	common.Info("ElasticsearchConnection.InsertMetadata called", zap.String("index_name", indexName), zap.String("tenant_id", tenantID), zap.Int("doc_count", len(metadata)))
 
 	if len(metadata) == 0 {
 		return []string{}, nil
@@ -159,7 +159,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 		common.Warn("Bulk request had some errors")
 	}
 
-	common.Info("Successfully inserted metadata into Elasticsearch index", zap.String("index_name", indexName), zap.Int("doc_count", len(metadata)))
+	common.Info("ElasticsearchConnection.InsertMetadata result", zap.String("index_name", indexName), zap.Int("count", len(metadata)))
 	return []string{}, nil
 }
 
@@ -167,7 +167,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 // The metaFields map will fully replace the existing meta_fields
 func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
-	common.Info("Updating metadata in Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
+	common.Info("ElasticsearchConnection.UpdateMetadata called", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
 	// Check if index exists
 	exists, err := e.indexExists(ctx, indexName)
@@ -224,7 +224,7 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 		return fmt.Errorf("elasticsearch update by query returned error: %s", res.Status())
 	}
 
-	common.Info("Successfully updated metadata in Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID))
+	common.Info("ElasticsearchConnection.UpdateMetadata completes", zap.String("index_name", indexName), zap.String("docID", docID))
 	return nil
 }
 
@@ -233,7 +233,7 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 // Returns the number of deleted documents
 func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	indexName := buildMetadataIndexName(tenantID)
-	common.Info("Deleting metadata from Elasticsearch index", zap.String("index_name", indexName), zap.Any("condition", condition))
+	common.Info("ElasticsearchConnection.DeleteMetadata called", zap.String("index_name", indexName), zap.Any("condition", condition))
 
 	// Check if index exists
 	exists, err := e.indexExists(ctx, indexName)
@@ -291,7 +291,7 @@ func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[
 		deleted = int64(d)
 	}
 
-	common.Info("Successfully deleted metadata", zap.String("index_name", indexName), zap.Int64("deleted_count", deleted))
+	common.Info("ElasticsearchConnection.DeleteMetadata completes", zap.String("index_name", indexName), zap.Int64("deleted_count", deleted))
 	return deleted, nil
 }
 
@@ -299,7 +299,7 @@ func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[
 // The document itself remains, only the specified keys are deleted.
 func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
-	common.Info("Deleting metadata keys from Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID), zap.Any("keys", keys))
+	common.Info("ElasticsearchConnection.DeleteMetadataKeys called", zap.String("index_name", indexName), zap.String("docID", docID), zap.Any("keys", keys))
 
 	// Check if index exists
 	exists, err := e.indexExists(ctx, indexName)
@@ -485,7 +485,7 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 		return fmt.Errorf("elasticsearch update by query returned error: %s", res.Status())
 	}
 
-	common.Info("Successfully deleted metadata keys in Elasticsearch index", zap.String("index_name", indexName), zap.String("docID", docID))
+	common.Info("ElasticsearchConnection.DeleteMetadataKeys completes", zap.String("index_name", indexName), zap.String("docID", docID))
 
 	return nil
 }

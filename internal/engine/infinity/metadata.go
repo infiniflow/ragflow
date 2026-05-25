@@ -228,13 +228,23 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 			if metaFieldsData, exists := qr.Data["meta_fields"]; exists && len(metaFieldsData) > 0 {
 				existingMetaFieldsVal := metaFieldsData[0]
 
-				// Parse existing meta_fields if it's a string
+				// Parse existing meta_fields if it's a string or []uint8
 				var existingMetaFields map[string]interface{}
 				if existingMetaFieldsVal != nil {
 					switch v := existingMetaFieldsVal.(type) {
 					case string:
 						if err := json.Unmarshal([]byte(v), &existingMetaFields); err != nil {
 							common.Warn(fmt.Sprintf("Failed to parse existing meta_fields: %v", err))
+							existingMetaFields = make(map[string]interface{})
+						}
+					case []uint8:
+						// Handle raw bytes from Infinity - Infinity prefixes JSON with 4 bytes (likely length), skip them
+						decoded := v
+						if len(decoded) > 4 {
+							decoded = decoded[4:]
+						}
+						if err := json.Unmarshal(decoded, &existingMetaFields); err != nil {
+							common.Warn(fmt.Sprintf("Failed to parse existing meta_fields from []uint8: %v", err))
 							existingMetaFields = make(map[string]interface{})
 						}
 					case map[string]interface{}:
@@ -385,10 +395,24 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 					common.Warn("Failed to parse meta_fields JSON", zap.String("docID", docID), zap.Error(err))
 					existingMetaFields = make(map[string]interface{})
 				}
+			case []uint8:
+				// Handle raw bytes from Infinity - Infinity prefixes JSON with 4 bytes (likely length), skip them
+				decoded := v
+				if len(decoded) > 4 {
+					decoded = decoded[4:]
+				}
+				if err := json.Unmarshal(decoded, &existingMetaFields); err != nil {
+					common.Warn("Failed to parse meta_fields JSON from []uint8", zap.String("docID", docID), zap.String("err", err.Error()))
+					existingMetaFields = make(map[string]interface{})
+				}
 			case map[string]interface{}:
 				existingMetaFields = v
+			default:
+				common.Debug("meta_fields unexpected type", zap.String("type", fmt.Sprintf("%T", metaFieldsData[0])), zap.Any("value", metaFieldsData[0]))
 			}
 		}
+	} else {
+		common.Debug("meta_fields not found in qr.Data or empty", zap.Any("exists", exists))
 	}
 
 	if existingMetaFields == nil {
@@ -411,7 +435,7 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 	}
 
 	if !hasKeysToRemove {
-		common.Info("No matching keys to delete from document", zap.String("docID", docID))
+		common.Info("No matching keys to delete from document", zap.String("docID", docID), zap.Any("existingMetaFields", existingMetaFields), zap.Any("keys", keys))
 		return nil
 	}
 
