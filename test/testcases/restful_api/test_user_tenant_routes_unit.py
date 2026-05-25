@@ -1513,6 +1513,7 @@ def _load_chat_routes_unit_module(monkeypatch):
         else:
             return parts[0], parts[1], parts[2]
     tenant_model_provider_mod.split_model_name = staticmethod(_split_model_name)
+    tenant_model_provider_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_provider_mod)
 
     llm_service_mod = ModuleType("api.db.services.llm_service")
@@ -1522,11 +1523,6 @@ def _load_chat_routes_unit_module(monkeypatch):
     search_service_mod = ModuleType("api.db.services.search_service")
     search_service_mod.SearchService = SimpleNamespace()
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
-
-    tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
-    tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
-    monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.UserService = type('UserService', (), {})
