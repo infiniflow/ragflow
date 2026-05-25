@@ -26,8 +26,9 @@ import logging
 import time
 from functools import partial, wraps
 
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 import jwt
-from quart import Response, jsonify, request
+from quart import Response, jsonify, request, make_response
 
 from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
@@ -177,6 +178,7 @@ async def _run_workflow_session(
     canvas_category,
     return_trace,
     stream,
+    chat_template_kwargs=None,
 ):
     async def commit_runtime_replica():
         commit_ok = CanvasReplicaService.commit_after_run(
@@ -213,6 +215,14 @@ async def _run_workflow_session(
     final_ans = {}
     trace_items = []
     structured_output = {}
+    run_kwargs = {
+        "query": query,
+        "files": files,
+        "user_id": user_id,
+        "inputs": inputs,
+    }
+    if chat_template_kwargs is not None:
+        run_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
     async def persist_workflow_session():
         if not final_ans:
@@ -237,7 +247,7 @@ async def _run_workflow_session(
             nonlocal full_content, reference, final_ans, trace_items, structured_output
             done_sent = False
             try:
-                async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                async for ans in canvas.run(**run_kwargs):
                     ans["session_id"] = session_id
                     if ans.get("event") == "message":
                         full_content += ans.get("data", {}).get("content", "")
@@ -285,7 +295,7 @@ async def _run_workflow_session(
         return _build_sse_response(sse())
 
     try:
-        async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+        async for ans in canvas.run(**run_kwargs):
             ans["session_id"] = session_id
             if ans.get("event") == "message":
                 full_content += ans.get("data", {}).get("content", "")
@@ -1258,6 +1268,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
+            chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     if not session_id:
@@ -1404,6 +1415,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_category=canvas_category,
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
+            chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     return_trace = bool(req.get("return_trace", False))
@@ -2256,3 +2268,28 @@ async def webhook_trace(agent_id: str):
             "finished": finished,
         }
     )
+
+@manager.route("/agents/<attachment_id>/download", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def download_attachment(tenant_id=None, attachment_id=None):
+    """Stream a document's underlying file to the requesting user.
+
+    Mirrors the authorization model of the preview endpoint: the user must belong
+    to the tenant that owns the document's knowledge base. A denial returns the
+    same "Document not found!" response so the endpoint cannot be used to
+    enumerate doc ids across tenants.
+    """
+    try:
+        # Keep backward compatibility with older callers and unit tests that still
+        # pass `attachment_id` instead of the route parameter name.
+        ext = request.args.get("ext", "markdown")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        response = await make_response(data)
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)

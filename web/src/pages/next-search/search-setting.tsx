@@ -127,9 +127,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       search_config: {
         kb_ids: search_config?.kb_ids || [],
         vector_similarity_weight:
-          (search_config?.vector_similarity_weight
-            ? 1 - search_config?.vector_similarity_weight
-            : 0.3) || 0.3,
+          search_config?.vector_similarity_weight ?? 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
         similarity_threshold: search_config?.similarity_threshold || 0.2,
@@ -294,7 +292,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           ...other_config,
           reference_metadata: normalizedReferenceMetadata,
           chat_id: llm_setting.llm_id,
-          vector_similarity_weight: 1 - vector_similarity_weight,
+          vector_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
           llm_setting: { ...llmSetting },
         },
@@ -331,15 +329,9 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       >
         <Form {...formMethods}>
           <form
-            onSubmit={formMethods.handleSubmit(
-              (data) => {
-                console.log('Form submitted with data:', data);
-                onSubmit(data as unknown as IUpdateSearchProps);
-              },
-              (errors) => {
-                console.log('Validation errors:', errors);
-              },
-            )}
+            onSubmit={formMethods.handleSubmit((data) => {
+              onSubmit(data as unknown as IUpdateSearchProps);
+            })}
             className="space-y-6"
           >
             <AvatarNameDescription avatarField="avatar" />

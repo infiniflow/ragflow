@@ -314,7 +314,7 @@ async def retrieval(tenant_id):
 
         return jsonify({"records": records})
     except Exception as e:
-        if str(e).find("not_found") > 0:
+        if "not_found" in str(e):
             return build_error_result(
                 message='No chunk found! Check the chunk status please!',
                 code=RetCode.NOT_FOUND

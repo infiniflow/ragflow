@@ -541,7 +541,7 @@ async def retrieval_test_embedded():
     try:
         return await _retrieval()
     except Exception as e:
-        if str(e).find("not_found") > 0:
+        if "not_found" in str(e):
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
                                    code=RetCode.DATA_ERROR)
         return server_error_response(e)
