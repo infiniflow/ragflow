@@ -176,7 +176,7 @@ export const useImportEvaluationCases = (datasetId: string) => {
       }
       return response.data as { success_count: number; failure_count: number };
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { success_count: number; failure_count: number }) => {
       message.success(
         t('evaluation.importSuccess', {
           count: data?.success_count ?? 0,
@@ -193,8 +193,10 @@ export const useFetchEvaluationRuns = (datasetId?: string) => {
   return useQuery({
     queryKey: [EvaluationQueryKey.Runs, datasetId],
     enabled: !!datasetId,
-    refetchInterval: (query) => {
-      const runs = query.state.data?.runs as IEvaluationRun[] | undefined;
+    refetchInterval: (query: {
+      state: { data?: { runs?: IEvaluationRun[] } };
+    }) => {
+      const runs = query.state.data?.runs;
       if (runs?.some((r) => r.status === 'RUNNING')) {
         return 3000;
       }
@@ -259,10 +261,14 @@ export const useFetchEvaluationRunResults = (
   });
 };
 
-export const useFetchEvaluationRecommendations = (runId?: string) => {
+export const useFetchEvaluationRecommendations = (
+  runId?: string,
+  runStatus?: string,
+) => {
   return useQuery({
     queryKey: [EvaluationQueryKey.Recommendations, runId],
     enabled: !!runId,
+    refetchInterval: runStatus === 'RUNNING' ? 3000 : false,
     queryFn: async () => {
       const { data: response } =
         await evaluationService.getEvaluationRecommendations(runId);

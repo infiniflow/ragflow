@@ -66,7 +66,7 @@ export default function EvaluationDetailPage() {
     selectedRun?.status,
   );
   const { data: recommendationsData } =
-    useFetchEvaluationRecommendations(selectedRunId);
+    useFetchEvaluationRecommendations(selectedRunId, selectedRun?.status);
 
   const { visible: caseModalVisible, showModal: showCaseModal, hideModal: hideCaseModal } =
     useSetModalState();
@@ -139,7 +139,7 @@ export default function EvaluationDetailPage() {
     <div className="size-full flex flex-col px-5 py-8 gap-6 overflow-auto">
       <header className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link to={Routes.Evaluations}>
+          <Link to={Routes.Evaluations} aria-label={t('common.back')}>
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
