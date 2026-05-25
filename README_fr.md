@@ -150,6 +150,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 - RAM >= 16 Go
 - Disque >= 50 Go
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/) : Requis uniquement si vous souhaitez utiliser la fonctionnalité d'exécuteur de code (sandbox) de RAGFlow.
 
 > [!TIP]
