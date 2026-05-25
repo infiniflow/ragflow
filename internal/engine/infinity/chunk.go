@@ -1094,19 +1094,15 @@ func (e *infinityEngine) GetChunk(ctx context.Context, tableName, chunkID string
 		return nil, fmt.Errorf("Infinity client not initialized")
 	}
 
+	common.Info("Infinity get chunk start",
+		zap.String("chunkID", chunkID),
+		zap.String("tableName", tableName),
+		zap.Strings("datasetIDs", datasetIDs))
+
 	// Build list of table names to search
-	var tableNames []string
-	if strings.HasPrefix(tableName, "ragflow_doc_meta_") {
-		tableNames = []string{tableName}
-	} else {
-		// Search in tables like <tableName>_<dataset_id> for each datasetID
-		if len(datasetIDs) > 0 {
-			for _, datasetID := range datasetIDs {
-				tableNames = append(tableNames, fmt.Sprintf("%s_%s", tableName, datasetID))
-			}
-		}
-		// Also try the base tableName
-		tableNames = append(tableNames, tableName)
+	tableNames := make([]string, 0, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		tableNames = append(tableNames, fmt.Sprintf("%s_%s", tableName, datasetID))
 	}
 
 	// Try each table and collect results from all tables

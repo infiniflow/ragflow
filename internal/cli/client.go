@@ -314,12 +314,16 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.InsertMetadataFromFile(cmd)
 	case "update_chunk":
 		return c.UpdateChunk(cmd)
+	case "get_chunk":
+		return c.GetChunk(cmd)
 	case "set_meta":
 		return c.SetMeta(cmd)
 	case "rm_tags":
 		return c.RmTags(cmd)
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
+	case "list_metadata":
+		return c.ListMetadata(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

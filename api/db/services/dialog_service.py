@@ -54,12 +54,6 @@ from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
 
-def _resolve_reference_metadata(request_payload=None, config=None):
-    return resolve_reference_metadata_preferences(request_payload or {}, config)
-
-def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
-    enrich_chunks_with_document_metadata(chunks, metadata_fields)
-
 def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     if len(kb_ids or []) == 1:
         return kb_ids[0]
@@ -572,6 +566,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     check_llm_ts = timer()
 
     langfuse_tracer = None
+    langfuse_generation = None
     trace_context = {}
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
@@ -783,7 +778,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max_tokens - used_token_count)
 
     async def decorate_answer(answer):
-        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_tracer
+        nonlocal embd_mdl, prompt_config, knowledges, kwargs, kbinfos, prompt, retrieval_ts, questions, langfuse_generation
 
         refs = []
         ans = answer.split("</think>")
@@ -855,8 +850,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             f"  - Token speed: {int(tk_num / (generate_result_time_cost / 1000.0))}/s"
         )
 
-        # Add a condition check to call the end method only if langfuse_tracer exists
-        if langfuse_tracer and "langfuse_generation" in locals():
+        # Add a condition check to call the end method only if langfuse_generation exists
+        if langfuse_generation is not None:
             langfuse_output = "\n" + re.sub(r"^.*?(### Query:.*)", r"\1", prompt, flags=re.DOTALL)
             langfuse_output = {"time_elapsed:": re.sub(r"\n", "  \n", langfuse_output), "created_at": time.time()}
             langfuse_generation.update(
@@ -872,9 +867,18 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return {"answer": think + answer, "reference": refs, "prompt": re.sub(r"\n", "  \n", prompt), "created_at": time.time()}
 
     if langfuse_tracer:
-        langfuse_generation = langfuse_tracer.start_generation(
-            trace_context=trace_context, name="chat", model=llm_model_config["llm_name"], input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg}
-        )
+        try:
+            langfuse_generation = langfuse_tracer.start_observation(
+                as_type="generation",
+                trace_context=trace_context,
+                name="chat",
+                model=llm_model_config["llm_name"],
+                input={"prompt": prompt, "prompt4citation": prompt4citation, "messages": msg},
+            )
+        except Exception as e:  # noqa: BLE001 - tracing must not break chat flow
+            logger.warning("Langfuse start_observation failed; continuing without tracing: %s", e)
+            langfuse_tracer = None
+            langfuse_generation = None
 
     if stream:
         if llm_type == "chat":
@@ -1521,7 +1525,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         yield ("marker", "</think>", state)
 
 
-async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
+async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -1557,6 +1561,21 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(kb_ids),
         )
 
+    vector_similarity_weight = search_config.get("vector_similarity_weight", 0.3)
+    try:
+        full_text_weight = 1 - vector_similarity_weight
+    except TypeError:
+        full_text_weight = None
+    logger.debug(
+        "Search async_ask retrieval weight: search_id=%s tenant_id=%s kb_count=%s "
+        "vector_similarity_weight=%s full_text_weight=%s",
+        search_id,
+        tenant_id,
+        len(kb_ids),
+        vector_similarity_weight,
+        full_text_weight,
+    )
+
     kbinfos = await retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
@@ -1565,12 +1584,13 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         page=1,
         page_size=12,
         similarity_threshold=search_config.get("similarity_threshold", 0.1),
-        vector_similarity_weight=search_config.get("vector_similarity_weight", 0.3),
+        vector_similarity_weight=vector_similarity_weight,
         top=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
         aggs=True,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs),
+        trace_id=search_id,
     )
     if include_reference_metadata:
         logging.debug(

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -733,14 +734,180 @@ func (n *NovitaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	return embeddings, nil
 }
 
-// Rerank is not exposed by the Novita API.
-func (n *NovitaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+type novitaRerankResult struct {
+	Document struct {
+		Text string `json:"text"`
+	} `json:"document"`
+	Index          int     `json:"index"`
+	RelevanceScore float64 `json:"relevance_score"`
 }
 
-// Balance is not exposed by the Novita API.
+type novitaRerankResponse struct {
+	Results []novitaRerankResult `json:"results"`
+}
+
+// Rerank scores documents against the query using the Novita
+// /openai/v1/rerank endpoint and returns one RerankResult per scored
+// document in the API's ranking order. Caller may sort by Index to
+// recover original input order.
+func (n *NovitaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := n.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	if n.URLSuffix.Rerank == "" {
+		return nil, fmt.Errorf("novita: no rerank URL suffix configured")
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Rerank)
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+
+	reqBody := map[string]interface{}{
+		"model":     *modelName,
+		"query":     query,
+		"documents": documents,
+		"top_n":     topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Novita rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed novitaRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	seen := make([]bool, len(documents))
+	for _, item := range parsed.Results {
+		if item.Index < 0 || item.Index >= len(documents) {
+			return nil, fmt.Errorf("novita: rerank index %d out of range for %d inputs", item.Index, len(documents))
+		}
+		if seen[item.Index] {
+			return nil, fmt.Errorf("novita: duplicate rerank index %d in response", item.Index)
+		}
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          item.Index,
+			RelevanceScore: item.RelevanceScore,
+		})
+		seen[item.Index] = true
+	}
+
+	return &rerankResponse, nil
+}
+
+// Balance Get remaining credit
 func (n *NovitaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", n.BaseURL[region], n.URLSuffix.Balance)
+
+	// Build request body
+	reqBody := map[string]interface{}{}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	balanceInterface, exists := result["availableBalance"]
+	if !exists || balanceInterface == nil {
+		return nil, fmt.Errorf("missing 'availableBalance' in response. Raw body: %s", string(body))
+	}
+
+	balanceStr, ok := balanceInterface.(string)
+	if !ok {
+		return nil, fmt.Errorf("'availableBalance' is not a string. Raw body: %s", string(body))
+	}
+	balance, err := strconv.ParseFloat(balanceStr, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse 'availableBalance' as float: %w. Raw body: %s", err, string(body))
+	}
+
+	var response = map[string]interface{}{
+		"balance":  balance,
+		"currency": "USD",
+	}
+
+	return response, nil
 }
 
 func (n *NovitaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {

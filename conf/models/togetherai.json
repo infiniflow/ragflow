@@ -5,7 +5,11 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech"
   },
   "class": "together",
   "models": [
@@ -29,6 +33,47 @@
       "model_types": [
         "chat"
       ]
+    },
+    {
+      "name": "intfloat/multilingual-e5-large-instruct",
+      "max_tokens": 514,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "BAAI/bge-large-en-v1.5",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "BAAI/bge-base-en-v1.5",
+      "max_tokens": 512,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "mixedbread-ai/mxbai-rerank-large-v2",
+      "max_tokens": 16384,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v3",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "canopylabs/orpheus-3b-0.1-ft",
+      "model_types": [
+        "tts"
+      ]
     }
   ]
 }
+

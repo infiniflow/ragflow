@@ -41,7 +41,7 @@ def encrypt_password(password_plain: str) -> str:
             return base64.b64encode(encrypted_password).decode('utf-8')
     except Exception as exc:
         raise AuthException(
-            "Password encryption unavailable; install pycryptodomex (uv sync --python 3.12 --group test)."
+            "Password encryption unavailable; install pycryptodomex (uv sync --python 3.13 --group test)."
         ) from exc
     return crypt(password_plain)
 
