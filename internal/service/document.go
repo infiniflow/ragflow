@@ -386,6 +386,58 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 	return nil
 }
 
+// DeleteDocumentMetadata deletes metadata keys for a document in the document engine
+func (s *DocumentService) DeleteDocumentMetadata(docID string, keys []string) error {
+	// Get document to find kb_id
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return fmt.Errorf("document not found: %w", err)
+	}
+
+	// Get tenant ID
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Delete metadata using the document engine
+	err = s.docEngine.DeleteMetadataKeys(nil, docID, doc.KbID, keys, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to delete metadata: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteDocumentAllMetadata deletes all metadata for a document in the document engine
+func (s *DocumentService) DeleteDocumentAllMetadata(docID string) error {
+	// Get document to find kb_id
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return fmt.Errorf("document not found: %w", err)
+	}
+
+	// Get tenant ID
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Build condition to match the document
+	condition := map[string]interface{}{
+		"id":   docID,
+		"kb_id": doc.KbID,
+	}
+
+	// Delete entire document metadata
+	_, err = s.docEngine.DeleteMetadata(nil, condition, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to delete document metadata: %w", err)
+	}
+
+	return nil
+}
+
 // GetDocumentMetadataByID get metadata for a specific document
 func (s *DocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
 	// Get document to find kb_id

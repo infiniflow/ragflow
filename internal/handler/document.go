@@ -565,6 +565,124 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 	})
 }
 
+// DeleteMetaRequest represents the request for deleting document metadata
+type DeleteMetaRequest struct {
+	DocID string `json:"doc_id" binding:"required"`
+	Keys  string `json:"keys"` // optional - if provided, deletes specific keys; otherwise deletes entire document metadata
+}
+
+// DeleteMeta handles the delete metadata request for a document
+// If Keys is provided, deletes specific metadata keys; otherwise deletes entire document metadata
+// @Summary Delete Document Metadata
+// @Description Delete metadata keys or entire document metadata for a specific document
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body DeleteMetaRequest true "metadata keys to delete or empty to delete all"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/document/delete_meta [post]
+func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req DeleteMetaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.DocID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "doc_id is required",
+		})
+		return
+	}
+
+	// Authorization: user must be able to access the document's dataset.
+	doc, err := h.documentService.GetDocumentByID(req.DocID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "document not found",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(doc.KbID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	// If Keys is provided, parse and delete specific keys; otherwise delete entire document metadata
+	if req.Keys != "" {
+		// Parse keys JSON string - expected to be a list of key names to delete
+		var keys []string
+		if err := json.Unmarshal([]byte(req.Keys), &keys); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": "Json syntax error: " + err.Error(),
+			})
+			return
+		}
+
+		if keys == nil || len(keys) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": "keys list is required",
+			})
+			return
+		}
+
+		err := h.documentService.DeleteDocumentMetadata(req.DocID, keys)
+		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    1,
+					"message": errMsg,
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    1,
+					"message": "Failed to delete metadata: " + errMsg,
+				})
+			}
+			return
+		}
+	} else {
+		// Delete entire document metadata
+		err := h.documentService.DeleteDocumentAllMetadata(req.DocID)
+		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    1,
+					"message": errMsg,
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    1,
+					"message": "Failed to delete metadata: " + errMsg,
+				})
+			}
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    true,
+	})
+}
+
 type ParseDocumentRequest struct {
 	Documents []string `json:"documents" binding:"required"`
 }
