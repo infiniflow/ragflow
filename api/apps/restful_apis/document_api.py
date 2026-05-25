@@ -585,9 +585,25 @@ async def _upload_local_documents(kb, tenant_id):
             logging.error(msg)
             return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
 
+    # Parse optional parser_config overrides from form data
+    parser_config_override = None
+    raw_parser_config = form.get("parser_config")
+    if raw_parser_config:
+        try:
+            parsed = json.loads(raw_parser_config)
+            if isinstance(parsed, dict):
+                # Only allow known table column config keys to prevent arbitrary overrides
+                allowed_keys = {"table_column_mode", "table_column_roles"}
+                parser_config_override = {k: v for k, v in parsed.items() if k in allowed_keys}
+                if not parser_config_override:
+                    parser_config_override = None
+        except (json.JSONDecodeError, TypeError):
+            parser_config_override = None
+
     err, files = await thread_pool_exec(
         FileService.upload_document, kb, file_objs, tenant_id,
-        parent_path=form.get("parent_path")
+        parent_path=form.get("parent_path"),
+        parser_config_override=parser_config_override,
     )
     if err:
         msg = "\n".join(err)
