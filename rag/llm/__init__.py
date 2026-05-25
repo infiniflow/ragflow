@@ -41,6 +41,7 @@ class SupportedLiteLLMProvider(StrEnum):
     CometAPI = "CometAPI"
     SILICONFLOW = "SILICONFLOW"
     OpenRouter = "OpenRouter"
+    OrcaRouter = "OrcaRouter"
     StepFun = "StepFun"
     PPIO = "PPIO"
     PerfXCloud = "PerfXCloud"
@@ -73,6 +74,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.CometAPI: "https://api.cometapi.com/v1",
     SupportedLiteLLMProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
     SupportedLiteLLMProvider.OpenRouter: "https://openrouter.ai/api/v1",
+    SupportedLiteLLMProvider.OrcaRouter: "https://api.orcarouter.ai/v1",
     SupportedLiteLLMProvider.StepFun: "https://api.stepfun.com/v1",
     SupportedLiteLLMProvider.PPIO: "https://api.ppinfra.com/v3/openai",
     SupportedLiteLLMProvider.PerfXCloud: "https://cloud.perfxlab.cn/v1",
@@ -115,6 +117,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.CometAPI: "openai/",
     SupportedLiteLLMProvider.SILICONFLOW: "openai/",
     SupportedLiteLLMProvider.OpenRouter: "openai/",
+    SupportedLiteLLMProvider.OrcaRouter: "openai/",
     SupportedLiteLLMProvider.StepFun: "openai/",
     SupportedLiteLLMProvider.PPIO: "openai/",
     SupportedLiteLLMProvider.PerfXCloud: "openai/",

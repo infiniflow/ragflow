@@ -31,6 +31,7 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.TogetherAI]: 'https://docs.together.ai/docs/deployment-options',
   [LLMFactory.Replicate]: 'https://replicate.com/docs/topics/deployments',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/docs',
+  [LLMFactory.OrcaRouter]: 'https://docs.orcarouter.ai',
   [LLMFactory.HuggingFace]:
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
   [LLMFactory.GPUStack]: 'https://docs.gpustack.ai/latest/quickstart',
@@ -99,6 +100,7 @@ const OllamaModal = ({
       'tts',
     ]),
     [LLMFactory.OpenRouter]: buildModelTypeOptions(['chat', 'image2text']),
+    [LLMFactory.OrcaRouter]: buildModelTypeOptions(['chat', 'image2text']),
     Default: buildModelTypeOptions([
       'chat',
       'embedding',

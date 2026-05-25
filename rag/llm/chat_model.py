@@ -1308,6 +1308,7 @@ class LiteLLMBase(ABC):
         "CometAPI",
         "SILICONFLOW",
         "OpenRouter",
+        "OrcaRouter",
         "StepFun",
         "PPIO",
         "PerfXCloud",

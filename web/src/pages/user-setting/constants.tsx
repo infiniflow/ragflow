@@ -35,6 +35,7 @@ export const LocalLlmFactories = [
   LLMFactory.TogetherAI,
   LLMFactory.Replicate,
   LLMFactory.OpenRouter,
+  LLMFactory.OrcaRouter,
   LLMFactory.HuggingFace,
   LLMFactory.GPUStack,
   LLMFactory.ModelScope,

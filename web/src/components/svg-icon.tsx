@@ -84,6 +84,7 @@ const svgIcons = [
   LLMFactory.PaddleOCR,
   LLMFactory.N1n,
   // LLMFactory.DeerAPI,
+  LLMFactory.OrcaRouter,
   LLMFactory.Avian,
   LLMFactory.RAGcon,
 ];

@@ -1,0 +1,74 @@
+{
+  "name": "OrcaRouter",
+  "url": {
+    "default": "https://api.orcarouter.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "orcarouter",
+  "models": [
+    {
+      "name": "orcarouter/auto",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-5.5",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "anthropic/claude-opus-4.7",
+      "max_tokens": 200000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "google/gemini-3-flash-preview",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "grok/grok-4.3",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax/minimax-m2.7",
+      "max_tokens": 204800,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen/qwen3.6-flash",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}

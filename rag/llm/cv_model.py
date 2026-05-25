@@ -633,6 +633,15 @@ class OpenRouterCV(GptV4):
             self.extra_body["provider"] = provider_cfg
 
 
+class OrcaRouterCV(GptV4):
+    _FACTORY_NAME = "OrcaRouter"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.orcarouter.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.orcarouter.ai/v1"
+        super().__init__(key, model_name, lang, base_url, **kwargs)
+
+
 class LocalAICV(GptV4):
     _FACTORY_NAME = "LocalAI"
 
