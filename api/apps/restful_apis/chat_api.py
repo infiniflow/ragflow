@@ -187,7 +187,7 @@ def _normalize_completion_messages(req):
         if question is None:
             return None, get_data_error_result(
                 code=RetCode.ARGUMENT_ERROR,
-                message="required argument is missing: messages or question",
+                message="required argument are missing: messages",
             )
         messages = [{"role": "user", "content": question}]
         if req.get("files"):
