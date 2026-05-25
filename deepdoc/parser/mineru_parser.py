@@ -215,11 +215,11 @@ class MinerUParser(RAGFlowPdfParser):
         """
         if not section:
             return ""
+        section = html.unescape(section)
         # Preserve rough structure before dropping tags.
         section = re.sub(r"(?is)<\s*br\s*/?\s*>", "\n", section)
         section = re.sub(r"(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>", "\n", section)
         section = re.sub(r"(?is)<[^>]+>", "", section)
-        section = html.unescape(section)
         # Collapse whitespace while preserving line boundaries.
         section = re.sub(r"[ \t]+\n", "\n", section)
         section = re.sub(r"\n{3,}", "\n\n", section)
@@ -661,6 +661,7 @@ class MinerUParser(RAGFlowPdfParser):
 
             section = self._sanitize_section_text(section)
             if not section:
+                self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
                 continue
 
             if section and parse_method in {"manual", "pipeline"}:

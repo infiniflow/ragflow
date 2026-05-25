@@ -56,6 +56,16 @@ def _export_mcp_servers(mcp_ids: list[str]) -> dict | None:
     return {"mcpServers": exported_servers}
 
 
+def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple[str, str, str | None]:
+    if not isinstance(url, str) or not url:
+        return "", "", invalid_message
+    try:
+        hostname, resolved_ip = assert_url_is_safe(url)
+    except ValueError as exc:
+        return "", "", str(exc)
+    return hostname, resolved_ip, None
+
+
 @manager.route("/mcp/servers", methods=["GET"])  # noqa: F821
 @login_required
 async def list_mcp() -> Response:
@@ -120,8 +130,9 @@ async def create() -> Response:
         return get_data_error_result(message="Duplicated MCP server name.")
 
     url = req.get("url", "")
-    if not url:
-        return get_data_error_result(message="Invalid url.")
+    hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url)
+    if url_error:
+        return get_data_error_result(message=url_error)
 
     headers = safe_json_parse(req.get("headers", {}))
     req["headers"] = headers
@@ -139,7 +150,8 @@ async def create() -> Response:
             return get_data_error_result(message="Tenant not found.")
 
         mcp_server = MCPServer(id=server_name, name=server_name, url=url, server_type=server_type, variables=variables, headers=headers)
-        server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
+        with pin_dns_global(hostname, resolved_ip):
+            server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
         if err_message:
             return get_data_error_result(message=err_message)
 
@@ -172,8 +184,9 @@ async def update(mcp_id: str) -> Response:
     if server_name and len(server_name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
     url = req.get("url", mcp_server.url)
-    if not url:
-        return get_data_error_result(message="Invalid url.")
+    hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url)
+    if url_error:
+        return get_data_error_result(message=url_error)
 
     headers = safe_json_parse(req.get("headers", mcp_server.headers))
     req["headers"] = headers
@@ -188,7 +201,8 @@ async def update(mcp_id: str) -> Response:
         req["id"] = mcp_id
 
         mcp_server = MCPServer(id=server_name, name=server_name, url=url, server_type=server_type, variables=variables, headers=headers)
-        server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
+        with pin_dns_global(hostname, resolved_ip):
+            server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
         if err_message:
             return get_data_error_result(message=err_message)
 
@@ -245,6 +259,13 @@ async def import_multiple() -> Response:
             if not server_name or len(server_name.encode("utf-8")) > 255:
                 results.append({"server": server_name, "success": False, "message": f"Invalid MCP name or length is {len(server_name)} which is large than 255."})
                 continue
+            if config["type"] not in VALID_MCP_SERVER_TYPES:
+                results.append({"server": server_name, "success": False, "message": "Unsupported MCP server type."})
+                continue
+            hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(config["url"])
+            if url_error:
+                results.append({"server": server_name, "success": False, "message": url_error})
+                continue
 
             base_name = server_name
             new_name = base_name
@@ -269,7 +290,8 @@ async def import_multiple() -> Response:
             headers = {"authorization_token": config["authorization_token"]} if "authorization_token" in config else {}
             variables = {k: v for k, v in config.items() if k not in {"type", "url", "headers"}}
             mcp_server = MCPServer(id=new_name, name=new_name, url=config["url"], server_type=config["type"], variables=variables, headers=headers)
-            server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
+            with pin_dns_global(hostname, resolved_ip):
+                server_tools, err_message = await thread_pool_exec(get_mcp_tools, [mcp_server], timeout)
             if err_message:
                 results.append({"server": base_name, "success": False, "message": err_message})
                 continue
@@ -298,17 +320,16 @@ async def test_mcp(mcp_id: str) -> Response:
     req = await get_request_json()
 
     url = req.get("url", "")
-    if not url:
+    if not isinstance(url, str) or not url:
         return get_data_error_result(message="Invalid MCP url.")
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
         return get_data_error_result(message="Unsupported MCP server type.")
 
-    try:
-        hostname, resolved_ip = assert_url_is_safe(url)
-    except ValueError as exc:
-        return get_data_error_result(message=str(exc))
+    hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url, "Invalid MCP url.")
+    if url_error:
+        return get_data_error_result(message=url_error)
 
     timeout = get_float(req, "timeout", 10)
     headers = safe_json_parse(req.get("headers", {}))
