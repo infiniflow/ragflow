@@ -399,6 +399,8 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 		taskState := s.taskStates[task.TaskId]
 		if taskState != nil {
 			switch taskState.status {
+			case "CANCELED":
+			case "REJECTED":
 			case "COMPLETED":
 				return nil
 			case "DISPATCHED":
