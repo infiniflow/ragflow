@@ -1384,6 +1384,7 @@ def test_patch_chat_drops_response_only_fields_before_update_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: [SimpleNamespace(id="kb-1")])
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module, "split_model_name", lambda model: (model.split("@")[0],"default", "factory"))
+    monkeypatch.setattr(module, "get_api_key", lambda *args, **kwargs: SimpleNamespace(id=1))
 
     def _update(_chat_id, req):
         updated.update(req)
