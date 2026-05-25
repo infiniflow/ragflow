@@ -378,16 +378,30 @@ class RetryingPooledPostgresqlDatabase(_ConnectionLossRecoveryMixin, PooledPostg
 
     @staticmethod
     def _is_connection_loss(e):
-        # PostgreSQL specific error codes
-        # 57P01: admin_shutdown
-        # 57P02: crash_shutdown
-        # 57P03: cannot_connect_now
-        # 08006: connection_failure
-        # 08003: connection_does_not_exist
-        # 08000: connection_exception
-        error_messages = ['connection', 'server closed', 'connection refused',
-                        'no connection to the server', 'terminating connection']
-        return any(msg in str(e).lower() for msg in error_messages)
+        # PostgreSQL SQLSTATE codes for connection/termination failures:
+        #   08000 connection_exception, 08001 sqlclient_unable_to_establish_connection,
+        #   08003 connection_does_not_exist, 08004 rejected_sqlconnection,
+        #   08006 connection_failure, 57P01 admin_shutdown,
+        #   57P02 crash_shutdown, 57P03 cannot_connect_now
+        error_codes = {'08000', '08001', '08003', '08004', '08006',
+                       '57P01', '57P02', '57P03'}
+        # Match specific phrases only: a bare 'connection' token also matches
+        # unrelated errors (e.g. a constraint violation naming a "connection_id"
+        # column), which would wrongly trigger a retry / transaction abort.
+        error_messages = ['server closed', 'connection refused', 'connection reset',
+                          'connection timed out', 'connection already closed',
+                          'no connection to the server', 'could not connect',
+                          'terminating connection', 'ssl connection has been closed',
+                          'consuming input failed', 'eof detected']
+        # peewee re-wraps the driver error and exposes the original psycopg2
+        # exception (which carries the SQLSTATE) as ``e.orig``; the wrapper itself
+        # has no ``pgcode`` attribute.
+        pgcode = getattr(e, 'pgcode', None) or getattr(getattr(e, 'orig', None), 'pgcode', None)
+        return (
+            (pgcode in error_codes) or
+            any(msg in str(e).lower() for msg in error_messages) or
+            (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+        )
 
     def execute_sql(self, sql, params=None, commit=True):
         for attempt in range(self.max_retries + 1):

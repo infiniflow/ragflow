@@ -4,9 +4,10 @@ Tests for OceanBase Peewee ORM support.
 
 import pytest
 import peewee
-from peewee import OperationalError, ProgrammingError
+from peewee import OperationalError, ProgrammingError, InterfaceError
 from api.db.db_models import (
     RetryingPooledOceanBaseDatabase,
+    RetryingPooledPostgresqlDatabase,
     PooledDatabase,
     DatabaseLock,
     TextFieldType,
@@ -298,6 +299,65 @@ class TestConnectionLossRecovery:
             db.close()
         assert error is None, f"begin() should recover and complete, got {error!r}"
         assert len(db._in_use) == 0
+
+
+class _PgError(Exception):
+    """Stand-in for a psycopg2 error carrying a SQLSTATE in ``pgcode``."""
+
+    def __init__(self, msg, pgcode):
+        super().__init__(msg)
+        self.pgcode = pgcode
+
+
+class TestPostgresConnectionLossDetection:
+    """Regression tests for PostgreSQL connection-loss detection.
+
+    The previous predicate matched a bare ``'connection'`` substring, so any
+    error merely mentioning that word (e.g. a constraint violation on a
+    ``connection_id`` column) was misclassified as a connection loss and would
+    trigger a spurious retry / transaction abort.
+    """
+
+    _detect = staticmethod(RetryingPooledPostgresqlDatabase._is_connection_loss)
+
+    @pytest.mark.p1
+    @pytest.mark.parametrize("message", [
+        "server closed the connection unexpectedly",
+        "could not connect to server: Connection refused",
+        "terminating connection due to administrator command",
+        "SSL connection has been closed unexpectedly",
+        "connection reset by peer",
+    ])
+    def test_genuine_connection_loss_is_detected(self, message):
+        assert self._detect(OperationalError(message)) is True
+
+    @pytest.mark.p1
+    @pytest.mark.parametrize("message", [
+        'duplicate key value violates unique constraint "ix_doc_connection_id"',
+        "null value in column \"connection_id\" violates not-null constraint",
+        "column connection_state does not exist",
+    ])
+    def test_unrelated_error_mentioning_connection_is_not_a_loss(self, message):
+        # These contain the word "connection" but are not connection losses;
+        # the old bare-'connection' substring wrongly matched all of them.
+        assert self._detect(OperationalError(message)) is False
+
+    @pytest.mark.p1
+    def test_sqlstate_detected_via_peewee_orig(self):
+        # peewee stores the original driver exception (which carries the
+        # SQLSTATE) on ``.orig``; an opaque message must still be detected
+        # through the code, not the text.
+        wrapped = OperationalError(_PgError("backend crashed", "57P02"))
+        assert getattr(wrapped, "orig").pgcode == "57P02"
+        assert self._detect(wrapped) is True
+
+    @pytest.mark.p2
+    def test_interface_error_is_detected(self):
+        assert self._detect(InterfaceError("connection already closed")) is True
+
+    @pytest.mark.p2
+    def test_plain_programming_error_is_not_a_loss(self):
+        assert self._detect(ProgrammingError("syntax error at or near \"SELCT\"")) is False
 
 
 if __name__ == "__main__":
