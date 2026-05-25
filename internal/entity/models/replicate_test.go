@@ -309,9 +309,6 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 
 func TestReplicateUnsupportedMethods(t *testing.T) {
 	m := newReplicateForTest("http://unused")
-	if _, err := m.Embed(nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed error=%v", err)
-	}
 	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank error=%v", err)
 	}

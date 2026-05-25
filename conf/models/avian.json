@@ -1,0 +1,55 @@
+{
+  "name": "avian",
+  "url": {
+    "default": "https://api.avian.io"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models"
+  },
+  "class": "avian",
+  "models": [
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "max_tokens": 164000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "max_tokens": 164000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek/deepseek-v3.2",
+      "max_tokens": 164000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "moonshotai/kimi-k2.5",
+      "max_tokens": 131000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "z-ai/glm-5",
+      "max_tokens": 131000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimax/minimax-m2.5",
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
