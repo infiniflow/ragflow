@@ -55,6 +55,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
 
+			// Tasks
+			protected.GET("/tasks", r.handler.ListTasks)
+
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
 			protected.POST("/users", r.handler.CreateUser)
@@ -122,6 +125,24 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/license", r.handler.SetLicense)
 			protected.POST("/license/config", r.handler.UpdateLicenseConfig)
 			protected.GET("/license", r.handler.ShowLicense)
+			// Log level
+			protected.GET("/log_level", r.handler.GetLogLevel)
+			protected.PUT("/log_level", r.handler.SetLogLevel)
+
+			provider := protected.Group("/providers")
+			{
+				provider.GET("/", r.handler.ListProviders)
+				provider.GET("/:provider_name", r.handler.ShowProvider)
+				provider.GET("/:provider_name/models", r.handler.ListModels)
+				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
+			}
+
+			protected.GET("/ingestors", r.handler.ListIngestors)
+			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
+			protected.POST("/ingestion", r.handler.StartIngestionTask)  // start ingestion
+			protected.DELETE("/ingestion", r.handler.StopIngestionTask) // stop ingestion
+			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
 		}
 	}
 

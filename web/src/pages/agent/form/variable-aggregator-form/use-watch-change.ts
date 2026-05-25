@@ -7,7 +7,7 @@ export function useWatchFormChange(
   id?: string,
   form?: UseFormReturn<VariableAggregatorFormSchemaType>,
 ) {
-  let values = useWatch({ control: form?.control });
+  const values = useWatch({ control: form?.control });
   const { replaceNodeForm } = useGraphStore((state) => state);
 
   useEffect(() => {

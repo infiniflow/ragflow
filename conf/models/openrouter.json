@@ -1,0 +1,65 @@
+{
+  "name": "OpenRouter",
+  "url": {
+    "default": "https://openrouter.ai/api/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "rerank",
+    "balance": "credits",
+    "tts": "audio/speech",
+    "asr": "audio/transcriptions"
+  },
+  "class": "openrouter",
+  "models": [
+    {
+      "name": "google/gemma-4-31b-it",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.5",
+      "max_tokens": 196608,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "tencent/hy3-preview",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-audio-mini",
+      "max_tokens": 131072,
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "openai/whisper-large-v3",
+      "max_tokens": 131072,
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

@@ -18,11 +18,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"time"
-
-	"ragflow/internal/logger"
 
 	"go.uber.org/zap"
 )
@@ -96,18 +95,18 @@ func NewSynonym(redis RedisClient, resPath string, wordnetDir string) *Synonym {
 				}
 			}
 		} else {
-			logger.Warn("Failed to parse synonym.json", zap.Error(err))
+			common.Warn("Failed to parse synonym.json", zap.Error(err))
 		}
 	} else {
-		logger.Warn("Missing synonym.json", zap.Error(err))
+		common.Warn("Missing synonym.json", zap.Error(err))
 	}
 
 	if redis == nil {
-		logger.Warn("Realtime synonym is disabled, since no redis connection.")
+		common.Warn("Realtime synonym is disabled, since no redis connection.")
 	}
 
 	if len(s.dictionary) == 0 {
-		logger.Warn("Fail to load synonym")
+		common.Warn("Fail to load synonym")
 	}
 
 	s.load()

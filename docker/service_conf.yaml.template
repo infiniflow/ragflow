@@ -98,6 +98,7 @@ user_default_llm:
 #   secret: 'secret'
 #   tenant_id: 'tenant_id'
 #   container_name: 'container_name'
+#   cloud: 'public'  # Azure cloud: 'public', 'china', 'government', or 'germany'
 # The OSS object storage uses the MySQL configuration above by default. If you need to switch to another object storage service, please uncomment and configure the following parameters.
 # opendal:
 #   scheme: 'mysql'  # Storage type, such as s3, oss, azure, etc.

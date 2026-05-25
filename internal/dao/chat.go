@@ -229,3 +229,12 @@ func (dao *ChatDAO) GetAllDialogIDsByTenantID(tenantID string) ([]string, error)
 		Pluck("id", &dialogIDs).Error
 	return dialogIDs, err
 }
+
+// QueryByTenantIDAndID checks if a chat exists with given tenant_id and id
+// Reference: Python DialogService.query(tenant_id=tenant.tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+// Used for permission verification in get_chat API
+func (dao *ChatDAO) QueryByTenantIDAndID(tenantID string, chatID string, status string) ([]*entity.Chat, error) {
+	var chats []*entity.Chat
+	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, status).Find(&chats).Error
+	return chats, err
+}

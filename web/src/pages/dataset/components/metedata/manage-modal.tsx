@@ -597,6 +597,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           addDeleteValue={addDeleteValue}
           isEditField={isEditField || isAddValueMode}
           isAddValue={isAddValue || isAddValueMode}
+          isAddValueMode={isAddValueMode}
           isShowDescription={isShowDescription}
           isShowValueSwitch={isShowValueSwitch}
           isShowType={true}

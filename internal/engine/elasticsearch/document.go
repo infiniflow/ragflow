@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
@@ -58,7 +59,12 @@ func (e *elasticsearchEngine) IndexDocument(ctx context.Context, indexName, docI
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(body))
 	}
 
 	return nil
@@ -116,6 +122,11 @@ func (e *elasticsearchEngine) BulkIndex(ctx context.Context, indexName string, d
 	defer res.Body.Close()
 
 	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return nil, fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
@@ -188,6 +199,11 @@ func (e *elasticsearchEngine) GetDocument(ctx context.Context, indexName, docID 
 	}
 
 	if res.IsError() {
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return nil, fmt.Errorf("elasticsearch error: %s", reason)
+		}
 		return nil, fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
 
@@ -231,7 +247,12 @@ func (e *elasticsearchEngine) DeleteDocument(ctx context.Context, indexName, doc
 	}
 
 	if res.IsError() {
-		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
+		body, _ := io.ReadAll(res.Body)
+		reason := extractErrorReason(body)
+		if reason != "" {
+			return fmt.Errorf("elasticsearch error: %s", reason)
+		}
+		return fmt.Errorf("elasticsearch returned error: %s, body: %s", res.Status(), string(body))
 	}
 
 	return nil

@@ -55,7 +55,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
   --login-password
     Login password (encrypted client-side). Requires pycryptodomex in the test group.
   --allow-register
-    Attempt /user/register before login (best effort).
+    Attempt /users before login (best effort).
   --token-name
     Optional API token name for /system/new_token.
   --bootstrap-llm
@@ -70,7 +70,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
     Optional LLM API base URL.
     Env: RAGFLOW_LLM_API_BASE
   --set-tenant-info
-    Set tenant defaults via /user/set_tenant_info.
+    Set tenant defaults via /users/me/models.
   --tenant-llm-id
     Tenant chat model ID.
     Env: RAGFLOW_TENANT_LLM_ID
@@ -151,7 +151,7 @@ Model selection guidance
   - Chat model is tied to the chat assistant.
     Set during chat creation using --chat-payload:
 ```
-      {"name": "...", "llm": {"model_name": "<model_name>@<provider>"}}
+      {"name": "...", "llm_id": "<model_name>@<provider>", "llm_setting": {}}
 ```
     Or set tenant defaults via --set-tenant-info with --tenant-llm-id.
   - --model is required by the OpenAI-compatible endpoint but does not override
@@ -190,7 +190,7 @@ Example: chat benchmark creating dataset + upload + parse + chat (login + regist
     --document-path test/benchmark/test_docs/Doc2.pdf \
     --document-path test/benchmark/test_docs/Doc3.pdf \
     --chat-name "bench_chat" \
-    --chat-payload '{"name":"bench_chat","llm":{"model_name":"glm-4-flash@ZHIPU-AI"}}' \
+    --chat-payload '{"name":"bench_chat","llm_id":"glm-4-flash@ZHIPU-AI","llm_setting":{}}' \
     --message "What is the purpose of RAGFlow?" \
     --model "glm-4-flash@ZHIPU-AI"
 ```
@@ -251,7 +251,7 @@ These scripts create a dataset,
 upload/parse docs from test/benchmark/test_docs, run the benchmark, and clean up.
 The both script runs retrieval then chat on the same dataset, then deletes it.
 
-- Make sure to run ```uv sync --python 3.12 --group test ``` before running the commands.
+- Make sure to run ```uv sync --python 3.13 --group test ``` before running the commands.
 - It is also necessary to run these commands prior to initializing your containers if you plan on using the built-in embedded model: ```echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env``` 
   and ```echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env```
 

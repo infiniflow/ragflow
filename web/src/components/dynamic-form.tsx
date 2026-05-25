@@ -22,14 +22,7 @@ import EditTag from '@/components/edit-tag';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -118,10 +111,12 @@ interface DynamicFormProps<T extends FieldValues> {
 // Form ref interface
 export interface DynamicFormRef {
   submit: () => void;
+  isDirty: () => boolean;
   getValues: (name?: string) => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
+  watchDirty: (callback: (isDirty: boolean, values: any) => void) => () => void;
   updateFieldType: (fieldName: string, newType: FormFieldType) => void;
   onFieldUpdate: (
     fieldName: string,
@@ -354,7 +349,6 @@ export const RenderField = ({
   field: FormFieldConfig;
   labelClassName?: string;
 }) => {
-  const form = useFormContext();
   if (field.render) {
     if (field.type === FormFieldType.Custom && field.hideLabel) {
       return <div className="w-full">{field.render({})}</div>;
@@ -374,7 +368,9 @@ export const RenderField = ({
                 },
               }
             : fieldProps;
-          return field.render?.(finalFieldProps);
+          return (
+            <div className="w-full">{field.render?.(finalFieldProps)}</div>
+          );
         }}
       </RAGFlowFormItem>
     );
@@ -503,64 +499,38 @@ export const RenderField = ({
 
     case FormFieldType.Checkbox:
       return (
-        <FormField
-          control={form.control}
-          name={field.name as any}
-          render={({ field: formField }) => (
-            <FormItem
-              className={cn('flex items-center w-full', {
-                'flex-row items-center space-x-3 space-y-0': !field.horizontal,
-              })}
-            >
-              {field.label && !field.horizontal && (
-                <div className="space-y-1 leading-none">
-                  <FormLabel
-                    className={cn(
-                      'font-medium',
-                      labelClassName || field.labelClassName,
-                    )}
-                    tooltip={field.tooltip}
-                  >
-                    {field.label}{' '}
-                    {field.required && (
-                      <span className="text-destructive">*</span>
-                    )}
-                  </FormLabel>
-                </div>
-              )}
-              {field.label && field.horizontal && (
-                <div className="space-y-1 leading-none w-1/4">
-                  <FormLabel
-                    className={cn(
-                      'font-medium',
-                      labelClassName || field.labelClassName,
-                    )}
-                    tooltip={field.tooltip}
-                  >
-                    {field.label}{' '}
-                    {field.required && (
-                      <span className="text-destructive">*</span>
-                    )}
-                  </FormLabel>
-                </div>
-              )}
-              <FormControl>
-                <div className={cn({ 'w-full': field.horizontal })}>
-                  <Checkbox
-                    checked={formField.value}
-                    onCheckedChange={(checked) => {
-                      formField.onChange(checked);
-                      field.onChange?.(checked);
-                    }}
-                    disabled={field.disabled}
-                  />
-                </div>
-              </FormControl>
-
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (checked: boolean) => {
+                    fieldProps.onChange(checked);
+                    field.onChange?.(checked);
+                  },
+                }
+              : fieldProps;
+            return (
+              <div
+                className={cn('flex items-center', {
+                  'h-8': !field.horizontal,
+                  'w-full': field.horizontal,
+                })}
+              >
+                <Checkbox
+                  checked={Boolean(finalFieldProps.value)}
+                  onCheckedChange={(checked) =>
+                    finalFieldProps.onChange(Boolean(checked))
+                  }
+                  disabled={field.disabled}
+                />
+              </div>
+            );
+          }}
+        </RAGFlowFormItem>
       );
     case FormFieldType.Switch:
       return (
@@ -841,6 +811,7 @@ const DynamicForm = {
               onSubmit(filteredValues);
             })();
           },
+          isDirty: () => form.formState.isDirty,
           getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
@@ -857,6 +828,12 @@ const DynamicForm = {
               if (values && values[field] !== undefined) {
                 callback(values[field]);
               }
+            });
+            return unsubscribe;
+          },
+          watchDirty: (callback: (isDirty: boolean, values: any) => void) => {
+            const { unsubscribe } = form.watch((values: any) => {
+              callback(form.formState.isDirty, values);
             });
             return unsubscribe;
           },
@@ -956,7 +933,7 @@ const DynamicForm = {
         onClick={() => {
           (async () => {
             try {
-              let beValid = await form.trigger();
+              const beValid = await form.trigger();
               console.log('form valid', beValid, form);
               // if (beValid) {
               //   form.handleSubmit(async (values) => {

@@ -1,0 +1,560 @@
+{
+    "id": 35,
+    "title": {
+    "en": "Manual",
+    "de": "Handbuch",
+    "zh": "手册"
+    },
+    "description": {
+    "en": "This template segments parsed files by manual structure. Best for technical documents with clearly defined sections and operational guidance, such as product manuals, user guides, and installation instructions.",
+    "de": "Diese Vorlage segmentiert die geparste Datei anhand der Struktur eines Handbuchs. Sie eignet sich für Dokumente mit klar definierten Abschnitten und Handlungsanweisungen, wie Produkthandbücher, Benutzerhandbücher, Installationsanleitungen und technische Dokumentationen.",
+    "zh": "此模板将解析后的文件按手册结构进行切片，适用于具有清晰章节层级和操作说明的文档类型，如产品手册、用户指南、安装说明和技术文档。"
+    },
+    "canvas_type": "Ingestion Pipeline",
+    "canvas_category": "dataflow_canvas",
+        "dsl": {
+            "components": {
+                "File": {
+                    "downstream": [
+                        "Parser:HipSignsRhyme"
+                    ],
+                    "obj": {
+                        "component_name": "File",
+                        "params": {}
+                    },
+                    "upstream": []
+                },
+                "Parser:HipSignsRhyme": {
+                    "downstream": [
+                        "TitleChunker:NineInsectsFind"
+                    ],
+                    "obj": {
+                        "component_name": "Parser",
+                        "params": {
+                            "outputs": {
+                                "html": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "json": {
+                                    "type": "Array<object>",
+                                    "value": []
+                                },
+                                "markdown": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "setups": {
+                                "doc": {
+                                    "output_format": "json",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "doc"
+                                    ]
+                                },
+                                "docx": {
+                                    "flatten_media_to_text": false,
+                                    "output_format": "json",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "docx"
+                                    ],
+                                    "vlm": {}
+                                },
+                                "email": {
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
+                                    ],
+                                    "output_format": "text",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "eml",
+                                        "msg"
+                                    ]
+                                },
+                                "html": {
+                                    "output_format": "json",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "htm",
+                                        "html"
+                                    ]
+                                },
+                                "image": {
+                                    "output_format": "text",
+                                    "parse_method": "ocr",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "jpg",
+                                        "jpeg",
+                                        "png",
+                                        "gif"
+                                    ],
+                                    "system_prompt": ""
+                                },
+                                "markdown": {
+                                    "flatten_media_to_text": false,
+                                    "output_format": "json",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "md",
+                                        "markdown",
+                                        "mdx"
+                                    ],
+                                    "vlm": {}
+                                },
+                                "pdf": {
+                                    "flatten_media_to_text": false,
+                                    "output_format": "json",
+                                    "parse_method": "DeepDOC",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "pdf"
+                                    ],
+                                    "vlm": {}
+                                },
+                                "slides": {
+                                    "output_format": "json",
+                                    "parse_method": "DeepDOC",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "pptx",
+                                        "ppt"
+                                    ]
+                                },
+                                "spreadsheet": {
+                                    "flatten_media_to_text": false,
+                                    "output_format": "html",
+                                    "parse_method": "DeepDOC",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "xls",
+                                        "xlsx",
+                                        "csv"
+                                    ],
+                                    "vlm": {}
+                                },
+                                "text&code": {
+                                    "output_format": "json",
+                                    "preprocess": "main_content",
+                                    "suffix": [
+                                        "txt",
+                                        "py",
+                                        "js",
+                                        "java",
+                                        "c",
+                                        "cpp",
+                                        "h",
+                                        "php",
+                                        "go",
+                                        "ts",
+                                        "sh",
+                                        "cs",
+                                        "kt",
+                                        "sql"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "upstream": [
+                        "File"
+                    ]
+                },
+                "TitleChunker:NineInsectsFind": {
+                    "downstream": [
+                        "Tokenizer:FunnyBalloonsGrin"
+                    ],
+                    "obj": {
+                        "component_name": "TitleChunker",
+                        "params": {
+                            "hierarchy": 0,
+                            "include_heading_content": false,
+                            "levels": [
+                                [
+                                    "^#[^#]",
+                                    "^##[^#]",
+                                    "^###[^#]",
+                                    "^####[^#]"
+                                ],
+                                [
+                                    "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+(\u5206?\u7f16|\u90e8\u5206)",
+                                    "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0",
+                                    "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282",
+                                    "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u6761",
+                                    "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]"
+                                ],
+                                [
+                                    "\u7b2c[0-9]+\u7ae0",
+                                    "\u7b2c[0-9]+\u8282",
+                                    "[0-9]{1,2}[\\. \u3001]",
+                                    "[0-9]{1,2}\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])",
+                                    "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}"
+                                ],
+                                [
+                                    "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0",
+                                    "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282",
+                                    "[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[ \u3001]",
+                                    "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]",
+                                    "[\\(\uff08][0-9]{,2}[\\)\uff09]"
+                                ],
+                                [
+                                    "PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)",
+                                    "Chapter (I+V?|VI*|XI|IX|X)",
+                                    "Section [0-9]+",
+                                    "Article [0-9]+"
+                                ]
+                            ],
+                            "method": "group"
+                        }
+                    },
+                    "upstream": [
+                        "Parser:HipSignsRhyme"
+                    ]
+                },
+                "Tokenizer:FunnyBalloonsGrin": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Tokenizer",
+                        "params": {
+                            "fields": "text",
+                            "filename_embd_weight": 0.1,
+                            "outputs": {},
+                            "search_method": [
+                                "embedding",
+                                "full_text"
+                            ]
+                        }
+                    },
+                    "upstream": [
+                        "TitleChunker:NineInsectsFind"
+                    ]
+                }
+            },
+            "globals": {
+                "sys.history": []
+            },
+            "graph": {
+                "edges": [
+                    {
+                        "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+                        "source": "File",
+                        "sourceHandle": "start",
+                        "target": "Parser:HipSignsRhyme",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:NineInsectsFindend",
+                        "source": "Parser:HipSignsRhyme",
+                        "sourceHandle": "start",
+                        "target": "TitleChunker:NineInsectsFind",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "id": "xy-edge__TitleChunker:NineInsectsFindstart-Tokenizer:FunnyBalloonsGrinend",
+                        "source": "TitleChunker:NineInsectsFind",
+                        "sourceHandle": "start",
+                        "target": "Tokenizer:FunnyBalloonsGrin",
+                        "targetHandle": "end"
+                    }
+                ],
+                "nodes": [
+                    {
+                        "data": {
+                            "label": "File",
+                            "name": "File"
+                        },
+                        "id": "File",
+                        "measured": {
+                            "height": 50,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 50,
+                            "y": 200
+                        },
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "outputs": {
+                                    "html": {
+                                        "type": "string",
+                                        "value": ""
+                                    },
+                                    "json": {
+                                        "type": "Array<object>",
+                                        "value": []
+                                    },
+                                    "markdown": {
+                                        "type": "string",
+                                        "value": ""
+                                    },
+                                    "text": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "setups": [
+                                    {
+                                        "fileFormat": "pdf",
+                                        "flatten_media_to_text": false,
+                                        "output_format": "json",
+                                        "parse_method": "DeepDOC",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "spreadsheet",
+                                        "flatten_media_to_text": false,
+                                        "output_format": "html",
+                                        "parse_method": "DeepDOC",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "image",
+                                        "output_format": "text",
+                                        "parse_method": "ocr",
+                                        "preprocess": "main_content",
+                                        "system_prompt": ""
+                                    },
+                                    {
+                                        "fields": [
+                                            "from",
+                                            "to",
+                                            "cc",
+                                            "bcc",
+                                            "date",
+                                            "subject",
+                                            "body",
+                                            "attachments"
+                                        ],
+                                        "fileFormat": "email",
+                                        "output_format": "text",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "markdown",
+                                        "flatten_media_to_text": false,
+                                        "output_format": "json",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "text&code",
+                                        "output_format": "json",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "html",
+                                        "output_format": "json",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "doc",
+                                        "output_format": "json",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "docx",
+                                        "flatten_media_to_text": false,
+                                        "output_format": "json",
+                                        "preprocess": "main_content"
+                                    },
+                                    {
+                                        "fileFormat": "slides",
+                                        "output_format": "json",
+                                        "parse_method": "DeepDOC",
+                                        "preprocess": "main_content"
+                                    }
+                                ]
+                            },
+                            "label": "Parser",
+                            "name": "Parser_0"
+                        },
+                        "dragging": false,
+                        "id": "Parser:HipSignsRhyme",
+                        "measured": {
+                            "height": 57,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 316.99524094206413,
+                            "y": 195.39629819663406
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "parserNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "hierarchy": "0",
+                                "include_heading_content": false,
+                                "method": "group",
+                                "outputs": {
+                                    "chunks": {
+                                        "type": "Array<Object>",
+                                        "value": []
+                                    }
+                                },
+                                "rules": [
+                                    {
+                                        "levels": [
+                                            {
+                                                "expression": "^#[^#]"
+                                            },
+                                            {
+                                                "expression": "^##[^#]"
+                                            },
+                                            {
+                                                "expression": "^###[^#]"
+                                            },
+                                            {
+                                                "expression": "^####[^#]"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "levels": [
+                                            {
+                                                "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+(\u5206?\u7f16|\u90e8\u5206)"
+                                            },
+                                            {
+                                                "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0"
+                                            },
+                                            {
+                                                "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282"
+                                            },
+                                            {
+                                                "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u6761"
+                                            },
+                                            {
+                                                "expression": "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "levels": [
+                                            {
+                                                "expression": "\u7b2c[0-9]+\u7ae0"
+                                            },
+                                            {
+                                                "expression": "\u7b2c[0-9]+\u8282"
+                                            },
+                                            {
+                                                "expression": "[0-9]{1,2}[\\. \u3001]"
+                                            },
+                                            {
+                                                "expression": "[0-9]{1,2}\\.[0-9]{1,2}($|[^a-zA-Z/%~.-])"
+                                            },
+                                            {
+                                                "expression": "[0-9]{1,2}\\.[0-9]{1,2}\\.[0-9]{1,2}"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "levels": [
+                                            {
+                                                "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u7ae0"
+                                            },
+                                            {
+                                                "expression": "\u7b2c[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e0-9]+\u8282"
+                                            },
+                                            {
+                                                "expression": "[\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[ \u3001]"
+                                            },
+                                            {
+                                                "expression": "[\\(\uff08][\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e]+[\\)\uff09]"
+                                            },
+                                            {
+                                                "expression": "[\\(\uff08][0-9]{,2}[\\)\uff09]"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "levels": [
+                                            {
+                                                "expression": "PART (ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)"
+                                            },
+                                            {
+                                                "expression": "Chapter (I+V?|VI*|XI|IX|X)"
+                                            },
+                                            {
+                                                "expression": "Section [0-9]+"
+                                            },
+                                            {
+                                                "expression": "Article [0-9]+"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            "label": "TitleChunker",
+                            "name": "Title Chunker_0"
+                        },
+                        "id": "TitleChunker:NineInsectsFind",
+                        "measured": {
+                            "height": 74,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 616.9952409420641,
+                            "y": 195.39629819663406
+                        },
+                        "selected": true,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "chunkerNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "fields": "text",
+                                "filename_embd_weight": 0.1,
+                                "outputs": {},
+                                "search_method": [
+                                    "embedding",
+                                    "full_text"
+                                ]
+                            },
+                            "label": "Tokenizer",
+                            "name": "Indexer_0"
+                        },
+                        "id": "Tokenizer:FunnyBalloonsGrin",
+                        "measured": {
+                            "height": 114,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 916.9952409420641,
+                            "y": 195.39629819663406
+                        },
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "tokenizerNode"
+                    }
+                ]
+            },
+            "history": [],
+            "messages": [],
+            "path": [],
+            "retrieval": [],
+            "variables": []
+        },
+    "avatar": "data:image/png;base64,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"
+}

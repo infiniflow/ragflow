@@ -4,11 +4,17 @@ import {
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { LlmModelType } from '@/constants/knowledge';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { ParserMethodFormField } from './common-form-fields';
+import {
+  FlattenMediaToTextFormField,
+  LargeModelFormField,
+  ParserMethodFormField,
+} from './common-form-fields';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -25,11 +31,17 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
 export function SpreadsheetFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const modelOptions = useComposeLlmOptionsByModelTypes([
+    LlmModelType.Image2text,
+  ]);
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
 
   const parseMethod = useWatch({
     name: parseMethodName,
+  });
+  const flattenMediaToText = useWatch({
+    name: buildFieldNameWithPrefix('flatten_media_to_text', prefix),
   });
 
   // Spreadsheet only supports DeepDOC and TCADPParser
@@ -89,6 +101,13 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
         prefix={prefix}
         optionsWithoutLLM={optionsWithoutLLM}
       ></ParserMethodFormField>
+      <FlattenMediaToTextFormField prefix={prefix} />
+      {!flattenMediaToText && (
+        <LargeModelFormField
+          prefix={prefix}
+          options={modelOptions}
+        ></LargeModelFormField>
+      )}
       {tcadpOptionsShown && (
         <>
           <RAGFlowFormItem

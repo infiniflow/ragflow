@@ -88,13 +88,16 @@ class _FakeFlow:
         self.credentials = _FakeCredentials()
         self.auth_kwargs = None
         self.token_code = None
+        self.token_code_verifier = None
+        self.code_verifier = "fake-code-verifier"
 
     def authorization_url(self, **kwargs):
         self.auth_kwargs = dict(kwargs)
         return f"https://oauth.example/{kwargs['state']}", kwargs["state"]
 
-    def fetch_token(self, code):
+    def fetch_token(self, code, code_verifier=None):
         self.token_code = code
+        self.token_code_verifier = code_verifier
 
 
 class _FakeBoxToken:
@@ -198,7 +201,11 @@ def _load_connector_app(monkeypatch):
             return []
 
         @staticmethod
-        def resume(*_args, **_kwargs):
+        def accessible(*_args, **_kwargs):
+            return True
+
+        @staticmethod
+        def cancel_tasks(*_args, **_kwargs):
             return True
 
         @staticmethod
@@ -243,6 +250,7 @@ def _load_connector_app(monkeypatch):
         SERVER_ERROR=500,
         RUNNING=102,
         PERMISSION_ERROR=403,
+        AUTHENTICATION_ERROR=109,
     )
     constants_mod.TaskStatus = SimpleNamespace(SCHEDULE="schedule", CANCEL="cancel")
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
@@ -321,7 +329,7 @@ def _load_connector_app(monkeypatch):
     box_mod.GetAuthorizeUrlOptions = _GetAuthorizeUrlOptions
     monkeypatch.setitem(sys.modules, "box_sdk_gen", box_mod)
 
-    module_path = repo_root / "api" / "apps" / "connector_app.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "connector_api.py"
     spec = importlib.util.spec_from_file_location("test_connector_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -341,7 +349,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     records = {"conn-1": _FakeConnectorRecord({"id": "conn-1", "source": "drive"})}
     update_calls = []
     save_calls = []
-    resume_calls = []
+    cancel_calls = []
     delete_calls = []
 
     monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda cid, payload: update_calls.append((cid, payload)))
@@ -354,7 +362,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda cid: (True, records[cid]))
     monkeypatch.setattr(module.ConnectorService, "list", lambda tenant_id: [{"id": "listed", "tenant": tenant_id}])
     monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda cid, page, page_size: ([{"id": "log-1"}], 9))
-    monkeypatch.setattr(module.ConnectorService, "resume", lambda cid, status: resume_calls.append((cid, status)))
+    monkeypatch.setattr(module.ConnectorService, "cancel_tasks", lambda cid: cancel_calls.append(cid))
     monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda cid: delete_calls.append(cid))
     monkeypatch.setattr(module, "get_uuid", lambda: "generated-id")
 
@@ -363,8 +371,8 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"id": "conn-1", "refresh_freq": 7, "config": {"x": 1}}),
     )
-    res = _run(module.set_connector())
-    assert update_calls == [("conn-1", {"refresh_freq": 7, "config": {"x": 1}})]
+    res = _run(module.update_connector("conn-1"))
+    assert update_calls == [("conn-1", {'id': 'conn-1', "refresh_freq": 7, "config": {"x": 1}})]
     assert res["data"]["id"] == "conn-1"
 
     monkeypatch.setattr(
@@ -372,7 +380,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
         "get_request_json",
         lambda: _AwaitableValue({"name": "new", "source": "gmail", "config": {"y": 2}}),
     )
-    res = _run(module.set_connector())
+    res = _run(module.create_connector())
     assert save_calls[-1]["id"] == "generated-id"
     assert save_calls[-1]["tenant_id"] == "tenant-1"
     assert save_calls[-1]["input_type"] == module.InputType.POLL
@@ -393,14 +401,6 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     logs_res = module.list_logs("conn-log")
     assert logs_res["data"] == {"total": 9, "logs": [{"id": "log-1"}]}
 
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"resume": True}))
-    assert _run(module.resume("conn-r1"))["data"] is True
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"resume": False}))
-    assert _run(module.resume("conn-r2"))["data"] is True
-    assert ("conn-r1", module.TaskStatus.SCHEDULE) in resume_calls
-    assert ("conn-r2", module.TaskStatus.CANCEL) in resume_calls
-
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1"}))
     monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: "rebuild-failed")
     failed_rebuild = _run(module.rebuild("conn-rb"))
@@ -413,8 +413,43 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
     rm_res = module.rm_connector("conn-rm")
     assert rm_res["data"] is True
-    assert ("conn-rm", module.TaskStatus.CANCEL) in resume_calls
+    assert cancel_calls == ["conn-rm"]
     assert delete_calls == ["conn-rm"]
+
+
+@pytest.mark.p2
+def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
+    """Verify per-id connector routes stop before body parsing or service access."""
+    module = _load_connector_app(monkeypatch)
+
+    touched = []
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda cid, uid: False)
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda *_args: touched.append("get_by_id"))
+    monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda *_args: touched.append("list_sync_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "cancel_tasks", lambda *_args: touched.append("cancel_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda *_args: touched.append("delete_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda *_args: touched.append("update_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: touched.append("rebuild"))
+
+    def _get_request_json():
+        touched.append("get_request_json")
+        return _AwaitableValue({"config": {"x": 1}})
+
+    monkeypatch.setattr(module, "get_request_json", _get_request_json)
+
+    responses = [
+        _run(module.update_connector("conn-victim")),
+        module.get_connector("conn-victim"),
+        module.list_logs("conn-victim"),
+        _run(module.rebuild("conn-victim")),
+        module.rm_connector("conn-victim"),
+        _run(module.test_connector("conn-victim")),
+    ]
+
+    assert all(res["code"] == module.RetCode.AUTHENTICATION_ERROR for res in responses)
+    assert all(res["message"] == "No authorization." for res in responses)
+    assert all(res["data"] is False for res in responses)
+    assert touched == []
 
 
 @pytest.mark.p2
@@ -519,6 +554,8 @@ def test_start_google_web_oauth_matrix(monkeypatch):
     assert any(call.scopes == module.GOOGLE_SCOPES[module.DocumentSource.GOOGLE_DRIVE] for call in flow_calls)
     assert "gmail_web_flow_state:flow-gmail" in redis.store
     assert "google-drive_web_flow_state:flow-drive" in redis.store
+    assert json.loads(redis.store["gmail_web_flow_state:flow-gmail"])["code_verifier"] == "fake-code-verifier"
+    assert json.loads(redis.store["google-drive_web_flow_state:flow-drive"])["code_verifier"] == "fake-code-verifier"
 
 
 @pytest.mark.p2
@@ -586,6 +623,7 @@ def test_google_web_oauth_callbacks_matrix(monkeypatch):
         redis.store[module._web_state_cache_key("sid", source)] = json.dumps({
             "user_id": "tenant-1",
             "client_config": {"web": {"client_id": "cid"}},
+            "code_verifier": "state-code-verifier",
         })
         _set_request(module, args={"state": "sid", "code": "code-123"})
         success = _run(callback())
@@ -598,6 +636,7 @@ def test_google_web_oauth_callbacks_matrix(monkeypatch):
         assert flow_calls[-1].redirect_uri == expected_redirect
         assert flow_calls[-1].scopes == expected_scopes
         assert flow_calls[-1].token_code == "code-123"
+        assert flow_calls[-1].token_code_verifier == "state-code-verifier"
 
 
 @pytest.mark.p2

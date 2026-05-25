@@ -10,7 +10,7 @@ BASE_URL="http://127.0.0.1:9380"
 LOGIN_EMAIL="qa@infiniflow.org"
 LOGIN_PASSWORD="123"
 DATASET_PAYLOAD='{"name":"bench_dataset","embedding_model":"BAAI/bge-small-en-v1.5@Builtin"}'
-CHAT_PAYLOAD='{"name":"bench_chat","llm":{"model_name":"glm-4-flash@ZHIPU-AI"}}'
+CHAT_PAYLOAD='{"name":"bench_chat","llm_id":"glm-4-flash@ZHIPU-AI","llm_setting":{}}'
 DATASET_ID=""
 
 cleanup_dataset() {

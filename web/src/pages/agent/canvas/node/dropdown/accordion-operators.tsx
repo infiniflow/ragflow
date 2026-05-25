@@ -122,7 +122,8 @@ export function AccordionOperators({
               Operator.Invoke,
               Operator.WenCai,
               Operator.SearXNG,
-              Operator.PDFGenerator,
+              Operator.DocGenerator,
+              Operator.Browser,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
@@ -166,7 +167,7 @@ export function PipelineAccordionOperators({
   const { getOperatorTypeFromId } = useGraphStore((state) => state);
 
   const operators = useMemo(() => {
-    let list = [
+    const list = [
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
@@ -176,8 +177,8 @@ export function PipelineAccordionOperators({
   const chunkerOperators = useMemo(() => {
     return [
       ...restrictSingleOperatorOnCanvas([
-        Operator.Splitter,
-        Operator.HierarchicalMerger,
+        Operator.TokenChunker,
+        Operator.TitleChunker,
       ]),
     ];
   }, [restrictSingleOperatorOnCanvas]);

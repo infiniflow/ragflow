@@ -46,7 +46,7 @@ export const RetrievalPartialSchema = {
   keywords_similarity_weight: z.coerce.number(),
   top_n: z.coerce.number(),
   top_k: z.coerce.number(),
-  kb_ids: z.array(z.string()),
+  dataset_ids: z.array(z.string()),
   rerank_id: z.string(),
   empty_response: z.string(),
   cross_languages: z.array(z.string()),
@@ -169,7 +169,8 @@ function RetrievalForm({ node }: INextOperatorForm) {
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <section className="space-y-5">
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>

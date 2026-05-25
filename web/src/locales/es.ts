@@ -181,6 +181,9 @@ export default {
     // Otros bloques de traducción
     // Continua con la misma estructura
     chat: {
+      chatSupport: 'Soporte de chat',
+      replyInstantly: 'Normalmente respondemos al instante',
+      typeYourMessage: 'Escribe tu mensaje...',
       newConversation: 'Nueva conversación',
       createAssistant: 'Crear un asistente',
       assistantSetting: 'Configuración del asistente',
@@ -415,8 +418,8 @@ export default {
       FishAudioLink: 'Cómo usar FishAudio',
       TencentCloudLink: 'Cómo usar TencentCloud ASR',
       volcModelNameMessage: '¡Por favor ingresa el nombre de tu modelo!',
-      addEndpointID: 'EndpointID del modelo',
-      endpointIDMessage: '¡Por favor ingresa el EndpointID del modelo!',
+      addEndpointID: 'Model ID',
+      endpointIDMessage: '¡Por favor ingresa el Model ID del modelo!',
       addArkApiKey: 'VOLC ARK_API_KEY',
       ArkApiKeyMessage: '¡Por favor ingresa tu ARK_API_KEY!',
       bedrockModelNameMessage: '¡Por favor ingresa el nombre de tu modelo!',
@@ -611,10 +614,8 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Un componente que busca a través de la URL de la instancia SearXNG que proporcionas. Especifica TopN y la URL de la instancia.',
-      pdfGenerator: 'Generador de Documentos',
-      pDFGenerator: 'Generador de Documentos',
-      pdfGeneratorDescription: `Un componente que genera documentos (PDF, DOCX, TXT) desde contenido formateado en markdown con estilo personalizable, imágenes y tablas. Soporta: **negrita**, *cursiva*, # encabezados, - listas, tablas con sintaxis |.`,
-      pDFGeneratorDescription: `Un componente que genera documentos (PDF, DOCX, TXT) desde contenido formateado en markdown con estilo personalizable, imágenes y tablas. Soporta: **negrita**, *cursiva*, # encabezados, - listas, tablas con sintaxis |.`,
+      docGenerator: 'Generador de Documentos',
+      docGeneratorDescription: `Genera un archivo a partir de contenido Markdown.`,
       subtitle: 'Subtítulo',
       logoImage: 'Imagen Logo',
       logoPosition: 'Posición Logo',

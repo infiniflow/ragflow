@@ -34,6 +34,30 @@ from common import settings
 
 ATTEMPT_TIME = 2
 
+_PAGERANK_FEA_ADJUST_SCRIPT = """
+double cur = 0.0;
+if (ctx._source.containsKey(params.pf)) {
+  Object v = ctx._source[params.pf];
+  if (v != null) {
+    if (v instanceof Number) {
+      cur = ((Number)v).doubleValue();
+    } else {
+      try { cur = Double.parseDouble(v.toString()); } catch (Exception e) { cur = 0.0; }
+    }
+  }
+}
+double nw = cur + params.delta;
+if (nw < params.min_w) { nw = params.min_w; }
+if (nw > params.max_w) { nw = params.max_w; }
+if (nw <= 0.0) {
+  if (ctx._source.containsKey(params.pf)) {
+    ctx._source.remove(params.pf);
+  }
+} else {
+  ctx._source[params.pf] = nw;
+}
+"""
+
 logger = logging.getLogger('ragflow.opensearch_conn')
 
 
@@ -101,6 +125,99 @@ class OSConnection(DocStoreConnection):
                                                  body=self.mapping)
         except Exception:
             logger.exception("OSConnection.createIndex error %s" % (indexName))
+
+    def create_doc_meta_idx(self, index_name: str):
+        """
+        Create a per-tenant document metadata index on OpenSearch.
+
+        Mirrors ESConnectionBase.create_doc_meta_idx so that the
+        DocMetadataService dispatches uniformly across ES and OS backends.
+        Index name pattern: ragflow_doc_meta_{tenant_id}
+        """
+        if self.index_exist(index_name, ""):
+            return True
+        try:
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", "doc_meta_es_mapping.json")
+            if not os.path.exists(fp_mapping):
+                logger.error(f"Document metadata mapping file not found at {fp_mapping}")
+                return False
+
+            with open(fp_mapping, "r") as f:
+                doc_meta_mapping = json.load(f)
+
+            from opensearchpy.client import IndicesClient
+            body = {
+                "settings": doc_meta_mapping["settings"],
+                "mappings": doc_meta_mapping["mappings"],
+            }
+            return IndicesClient(self.os).create(index=index_name, body=body)
+        except Exception as e:
+            logger.exception(f"OSConnection.create_doc_meta_idx error creating {index_name}: {e}")
+            return False
+
+    def refresh_idx(self, index_name: str) -> bool:
+        """
+        Refresh an index so that recently inserted documents become searchable.
+
+        DocMetadataService used to call ``settings.docStoreConn.es.indices.refresh``
+        directly, which raised AttributeError on the OpenSearch backend because
+        OSConnection exposes ``self.os`` rather than ``self.es``. This wrapper
+        gives both backends a uniform abstract entry point.
+        """
+        try:
+            self.os.indices.refresh(index=index_name)
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.warning(f"OSConnection.refresh_idx({index_name}) failed: {e}")
+            return False
+
+    def count_idx(self, index_name: str) -> int:
+        """
+        Return the document count for an index, or -1 if the call fails.
+
+        Used by DocMetadataService._drop_empty_metadata_table to decide whether
+        a per-tenant metadata index is empty without paying a full search.
+        """
+        try:
+            response = self.os.count(index=index_name)
+            return int(response.get("count", 0))
+        except NotFoundError:
+            return 0
+        except Exception as e:
+            logger.warning(f"OSConnection.count_idx({index_name}) failed: {e}")
+            return -1
+
+    def replace_meta_fields(self, index_name: str, doc_id: str, meta_fields: dict) -> bool:
+        """
+        Replace the ``meta_fields`` object on a single document.
+
+        ES.update with a ``doc`` body deep-merges object fields, which retains
+        old keys that should be removed. The fix in ESConnection is a script
+        that fully assigns the new meta_fields. We provide the same primitive
+        on OpenSearch so the service layer never reaches into ``self.es`` or
+        ``self.os`` directly.
+        """
+        body = {
+            "script": {
+                "source": "ctx._source.meta_fields = params.meta_fields",
+                "params": {"meta_fields": meta_fields},
+            }
+        }
+        for _ in range(ATTEMPT_TIME):
+            try:
+                self.os.update(index=index_name, id=doc_id, body=body, refresh=True)
+                return True
+            except NotFoundError:
+                return False
+            except Exception as e:
+                logger.warning(f"OSConnection.replace_meta_fields({index_name}, {doc_id}) failed: {e}")
+                if re.search(r"(timeout|connection)", str(e).lower()):
+                    time.sleep(1)
+                    continue
+                return False
+        return False
 
     def delete_idx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
@@ -303,7 +420,7 @@ class OSConnection(DocStoreConnection):
             try:
                 res = []
                 r = self.os.bulk(index=(indexName), body=operations,
-                                 refresh=False, timeout=60)
+                                 refresh="wait_for", timeout=60)
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 
@@ -329,9 +446,37 @@ class OSConnection(DocStoreConnection):
             # update specific single document
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
+                doc_part = copy.deepcopy(doc)
+                remove_value = doc_part.pop("remove", None)
+                remove_field = remove_value if isinstance(remove_value, str) else None
+                remove_dict = remove_value if isinstance(remove_value, dict) else None
                 try:
-                    self.os.update(index=indexName, id=chunkId, body={"doc": doc})
-                    return True
+                    if remove_field is not None:
+                        self.os.update(
+                            index=indexName,
+                            id=chunkId,
+                            body={"script": {"source": f"ctx._source.remove('{remove_field}');"}},
+                        )
+                    if remove_dict is not None:
+                        scripts = []
+                        params = {}
+                        for kk, vv in remove_dict.items():
+                            scripts.append(
+                                f"if (ctx._source.containsKey('{kk}') && ctx._source.{kk} != null) "
+                                f"{{ int i = ctx._source.{kk}.indexOf(params.p_{kk}); "
+                                f"if (i >= 0) {{ ctx._source.{kk}.remove(i); }} }}"
+                            )
+                            params[f"p_{kk}"] = vv
+                        if scripts:
+                            self.os.update(
+                                index=indexName,
+                                id=chunkId,
+                                body={"script": {"source": "".join(scripts), "params": params}},
+                            )
+                    if doc_part:
+                        self.os.update(index=indexName, id=chunkId, body={"doc": doc_part})
+                    if remove_field is not None or remove_dict is not None or doc_part:
+                        return True
                 except Exception as e:
                     logger.exception(
                         f"OSConnection.update(index={indexName}, id={id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
@@ -403,6 +548,52 @@ class OSConnection(DocStoreConnection):
                 if re.search(r"(timeout|connection|conflict)", str(e).lower()):
                     continue
                 break
+        return False
+
+    def adjust_chunk_pagerank_fea(
+        self,
+        chunk_id: str,
+        indexName: str,
+        knowledgebaseId: str,
+        delta: float,
+        min_w: float = 0.0,
+        max_w: float = 100.0,
+        row_id: int | None = None,
+    ) -> bool:
+        """Atomically adjust pagerank_fea on one chunk (painless script)."""
+        _ = row_id
+        try:
+            self.os.update(
+                index=indexName,
+                id=chunk_id,
+                retry_on_conflict=3,
+                body={
+                    "script": {
+                        "source": _PAGERANK_FEA_ADJUST_SCRIPT.strip(),
+                        "lang": "painless",
+                        "params": {
+                            "pf": PAGERANK_FLD,
+                            "delta": float(delta),
+                            "min_w": float(min_w),
+                            "max_w": float(max_w),
+                        },
+                    }
+                },
+            )
+            logger.debug(
+                "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s, delta=%s) succeeded",
+                indexName,
+                chunk_id,
+                delta,
+            )
+            return True
+        except Exception as e:
+            logger.exception(
+                "OSConnection.adjust_chunk_pagerank_fea(index=%s, id=%s): %s",
+                indexName,
+                chunk_id,
+                e,
+            )
         return False
 
     def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:

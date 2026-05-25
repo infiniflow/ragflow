@@ -15,7 +15,6 @@
 #
 
 
-from time import sleep
 
 import pytest
 from common import batch_add_chunks, delete_all_chunks
@@ -32,6 +31,10 @@ def condition(_dataset: DataSet):
             return False
     return True
 
+@wait_for(30, 1, "Chunk indexing timeout")
+def chunks_visible(_document: Document, _chunk_ids: list[str]):
+    visible_ids = {chunk.id for chunk in _document.list_chunks(page_size=1000)}
+    return set(_chunk_ids).issubset(visible_ids)
 
 @pytest.fixture(scope="function")
 def add_chunks_func(request: FixtureRequest, add_document: tuple[DataSet, Document]) -> tuple[DataSet, Document, list[Chunk]]:
@@ -47,6 +50,5 @@ def add_chunks_func(request: FixtureRequest, add_document: tuple[DataSet, Docume
     dataset.async_parse_documents([document.id])
     condition(dataset)
     chunks = batch_add_chunks(document, 4)
-    # issues/6487
-    sleep(1)
+    chunks_visible(document, [chunk.id for chunk in chunks])
     return dataset, document, chunks

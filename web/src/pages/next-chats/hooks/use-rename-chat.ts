@@ -1,8 +1,9 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetDialog } from '@/hooks/use-chat-request';
+import { useCreateChat, usePatchChat } from '@/hooks/use-chat-request';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IDialog } from '@/interfaces/database/chat';
-import { isEmpty, omit } from 'lodash';
+import { isEmpty } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -13,9 +14,11 @@ export const useRenameChat = () => {
     hideModal: hideChatRenameModal,
     showModal: showChatRenameModal,
   } = useSetModalState();
-  const { setDialog, loading } = useSetDialog();
+  const { createChat, loading: createLoading } = useCreateChat();
+  const { patchChat, loading: patchLoading } = usePatchChat();
   const { t } = useTranslation();
   const tenantInfo = useFetchTenantInfo();
+  const findLlmByUuid = useFindLlmByUuid();
 
   const InitialData = useMemo(
     () => ({
@@ -23,6 +26,7 @@ export const useRenameChat = () => {
       icon: '',
       language: 'English',
       description: '',
+      dataset_ids: [],
       prompt_config: {
         empty_response: '',
         prologue: t('chat.setAnOpenerInitial'),
@@ -37,32 +41,34 @@ export const useRenameChat = () => {
         toc_enhance: false,
       },
       llm_id: tenantInfo.data.llm_id,
-      llm_setting: {},
+      llm_setting: {
+        model_type: findLlmByUuid(tenantInfo.data.llm_id)?.model_type || 'chat',
+      },
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.3,
       top_n: 8,
+      top_k: 1024,
     }),
-    [t, tenantInfo.data.llm_id],
+    [t, tenantInfo.data.llm_id, findLlmByUuid],
   );
 
   const onChatRenameOk = useCallback(
     async (name: string) => {
-      const nextChat = {
-        ...(isEmpty(chat)
-          ? InitialData
-          : {
-              ...omit(chat, 'nickname', 'tenant_avatar', 'operator_permission'),
-              dialog_id: chat.id,
-            }),
-        name,
-      };
-      const ret = await setDialog(nextChat);
+      let ret: number | undefined;
+      if (isEmpty(chat)) {
+        ret = await createChat({ ...InitialData, name });
+      } else {
+        ret = await patchChat({
+          chatId: chat.id,
+          params: { name },
+        });
+      }
 
       if (ret === 0) {
         hideChatRenameModal();
       }
     },
-    [chat, InitialData, setDialog, hideChatRenameModal],
+    [chat, InitialData, createChat, patchChat, hideChatRenameModal],
   );
 
   const handleShowChatRenameModal = useCallback(
@@ -83,7 +89,7 @@ export const useRenameChat = () => {
   }, [hideChatRenameModal]);
 
   return {
-    chatRenameLoading: loading,
+    chatRenameLoading: createLoading || patchLoading,
     initialChatName: chat?.name,
     onChatRenameOk,
     chatRenameVisible,

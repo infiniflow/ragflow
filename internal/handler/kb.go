@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/service"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -79,39 +78,6 @@ var (
 	ErrForbidden    = &HTTPError{Code: common.CodeForbidden, Message: "Forbidden user"}
 )
 
-// CreateKB handles the create knowledge base request
-// @Summary Create Knowledge Base
-// @Description Create a new knowledge base (dataset)
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body service.CreateKBRequest true "knowledge base info"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/create [post]
-func (h *KnowledgebaseHandler) CreateKB(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req service.CreateKBRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	result, code, err := h.kbService.CreateKB(&req, user.ID)
-	if err != nil {
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, result, "success")
-}
-
-// UpdateKB handles the update knowledge base request
 // @Summary Update Knowledge Base
 // @Description Update an existing knowledge base
 // @Tags knowledgebase
@@ -212,131 +178,7 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
-}
-
-// ListKbs handles the list knowledge bases request
-// @Summary List Knowledge Bases
-// @Description List knowledge bases with pagination and filtering
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body service.ListKbsRequest true "list options"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/list [post]
-func (h *KnowledgebaseHandler) ListKbs(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req service.ListKbsRequest
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			jsonError(c, common.CodeDataError, err.Error())
-			return
-		}
-	}
-
-	// Get parameters from request or query string
-	keywords := ""
-	if req.Keywords != nil {
-		keywords = *req.Keywords
-	} else if queryKeywords := c.Query("keywords"); queryKeywords != "" {
-		keywords = queryKeywords
-	}
-
-	page := 0
-	if req.Page != nil {
-		page = *req.Page
-	} else if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if req.PageSize != nil {
-		pageSize = *req.PageSize
-	} else if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
-	}
-
-	parserID := ""
-	if req.ParserID != nil {
-		parserID = *req.ParserID
-	} else if queryParserID := c.Query("parser_id"); queryParserID != "" {
-		parserID = queryParserID
-	}
-
-	orderby := "update_time"
-	if req.Orderby != nil {
-		orderby = *req.Orderby
-	} else if queryOrderby := c.Query("orderby"); queryOrderby != "" {
-		orderby = queryOrderby
-	}
-
-	desc := true
-	if req.Desc != nil {
-		desc = *req.Desc
-	} else if descStr := c.Query("desc"); descStr != "" {
-		desc = strings.ToLower(descStr) == "true"
-	}
-
-	var ownerIDs []string
-	if req.OwnerIDs != nil {
-		ownerIDs = *req.OwnerIDs
-	}
-
-	result, code, err := h.kbService.ListKbs(keywords, page, pageSize, parserID, orderby, desc, ownerIDs, user.ID)
-	if err != nil {
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, result, "success")
-}
-
-// DeleteKB handles the delete knowledge base request
-// @Summary Delete Knowledge Base
-// @Description Soft delete a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body object{kb_id string} true "knowledge base id"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/rm [post]
-func (h *KnowledgebaseHandler) DeleteKB(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req struct {
-		KBID string `json:"kb_id" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	code, err := h.kbService.DeleteKB(req.KBID, user.ID)
-	if err != nil {
-		if strings.Contains(err.Error(), "authorization") {
-			jsonError(c, common.CodeAuthenticationError, err.Error())
-			return
-		}
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, true, "success")
+		jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // ListTags handles the list tags request for a knowledge base
@@ -402,46 +244,6 @@ func (h *KnowledgebaseHandler) ListTagsFromKbs(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, []string{}, "success")
-}
-
-// RemoveTags handles the remove tags request
-// @Summary Remove Tags
-// @Description Remove tags from a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param kb_id path string true "Knowledge Base ID"
-// @Param request body object{tags []string} true "tags to remove"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/{kb_id}/rm_tags [post]
-func (h *KnowledgebaseHandler) RemoveTags(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	kbID := c.Param("kb_id")
-	if kbID == "" {
-		jsonError(c, common.CodeDataError, "kb_id is required")
-		return
-	}
-
-	if !h.kbService.Accessible(kbID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
-		return
-	}
-
-	var req struct {
-		Tags []string `json:"tags" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, true, "success")
 }
 
 // RenameTag handles the rename tag request
@@ -621,85 +423,4 @@ func (h *KnowledgebaseHandler) GetBasicInfo(c *gin.Context) {
 	}
 
 	jsonResponse(c, common.CodeSuccess, map[string]interface{}{}, "success")
-}
-
-// CreateIndex handles the create index request for a knowledge base
-// @Summary Create Index
-// @Description Create the Infinity index/table for a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body service.CreateIndexRequest true "create index request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/index [post]
-func (h *KnowledgebaseHandler) CreateIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req service.CreateIndexRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
-		return
-	}
-
-	result, code, err := h.kbService.CreateIndex(&req)
-	if err != nil {
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, result, "success")
-}
-
-// DeleteIndexRequest represents the request for deleting an index
-type DeleteIndexRequest struct {
-	KBID string `json:"kb_id" binding:"required"`
-}
-
-// DeleteIndex handles the delete index request for a knowledge base
-// @Summary Delete Index
-// @Description Delete the Infinity index/table for a knowledge base
-// @Tags knowledgebase
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body DeleteIndexRequest true "delete index request"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/kb/index [delete]
-func (h *KnowledgebaseHandler) DeleteIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	var req DeleteIndexRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-
-	// Check authorization
-	if !h.kbService.Accessible(req.KBID, user.ID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization.")
-		return
-	}
-
-	code, err := h.kbService.DeleteIndex(req.KBID)
-	if err != nil {
-		jsonError(c, code, err.Error())
-		return
-	}
-
-	jsonResponse(c, common.CodeSuccess, nil, "success")
 }

@@ -8,7 +8,7 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
-import { downloadFile } from '@/services/file-manager-service';
+import { downloadAgentFile } from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
@@ -39,6 +39,7 @@ interface IProps {
     doc_id: string;
     format: string;
   };
+  isShare?: boolean;
 }
 
 export const AssistantGroupButton = ({
@@ -50,6 +51,7 @@ export const AssistantGroupButton = ({
   showLoudspeaker = true,
   showLog = true,
   attachment,
+  isShare,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -80,7 +82,10 @@ export const AssistantGroupButton = ({
         className="space-x-1"
       >
         <ToggleGroupItem value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
+          <CopyToClipboard
+            text={content}
+            className="border-none hover:!bg-transparent"
+          ></CopyToClipboard>
         </ToggleGroupItem>
         {showLoudspeaker && (
           <ToggleGroupItem value="b" onClick={handleRead}>
@@ -115,12 +120,12 @@ export const AssistantGroupButton = ({
             <NotebookText className="size-4" />
           </ToggleGroupItem>
         )}
-        {!!attachment?.doc_id && (
+        {!!attachment?.doc_id && !isShare && (
           <ToggleGroupItem
             value="g"
             onClick={async () => {
               try {
-                const response = await downloadFile({
+                const response = await downloadAgentFile({
                   docId: attachment.doc_id,
                   ext: attachment.format,
                 });

@@ -22,11 +22,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
 	"time"
-
-	"ragflow/internal/logger"
 
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -39,6 +38,7 @@ import (
 )
 
 var DB *gorm.DB
+var modelProviderManager *entity.ProviderManager
 
 // LLMFactoryConfig represents a single LLM factory configuration
 type LLMFactoryConfig struct {
@@ -146,6 +146,12 @@ func InitDB() error {
 		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
+		&entity.SkillSearchConfig{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+		&entity.TenantModelGroupMapping{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelGroup{},
 	}
 
 	for _, m := range models {
@@ -155,17 +161,28 @@ func InitDB() error {
 	}
 
 	// Run manual migrations for complex schema changes
-	if err := RunMigrations(DB); err != nil {
+	if err = RunMigrations(DB); err != nil {
 		return fmt.Errorf("failed to run manual migrations: %w", err)
 	}
 
-	logger.Info("Database connected and migrated successfully")
+	common.Info("Database connected and migrated successfully")
+
+	modelProviderManager, err = entity.NewProviderManager("conf/models")
+	if err != nil {
+		log.Fatal("Failed to load model providers:", err)
+	}
+	common.Info("Model providers loaded successfully")
 	return nil
 }
 
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// GetModelProviderManager get database instance
+func GetModelProviderManager() *entity.ProviderManager {
+	return modelProviderManager
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
@@ -179,17 +196,17 @@ func autoMigrateSafely(db *gorm.DB, model interface{}) error {
 	// Check if error is MySQL duplicate index error (Error 1061)
 	errStr := err.Error()
 	if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
-		logger.Info("Index already exists, skipping", zap.String("error", errStr))
+		common.Info("Index already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
-		logger.Info("Column already exists, skipping", zap.String("error", errStr))
+		common.Info("Column already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	if strings.Contains(errStr, "Error 1050") && strings.Contains(errStr, "Table") {
-		logger.Info("Table already exists, skipping", zap.String("error", errStr))
+		common.Info("Table already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 

@@ -19,14 +19,11 @@ package service
 import (
 	"errors"
 	"fmt"
-	"path"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
 )
@@ -241,75 +238,6 @@ func NewMemoryService() *MemoryService {
 	}
 }
 
-// splitNameCounter splits a filename into base name and counter
-// Handles names in format "filename(123)" pattern
-//
-// Parameters:
-//   - filename: The filename to split
-//
-// Returns:
-//   - string: The base name without counter
-//   - *int: The counter value, or nil if no counter exists
-//
-// Example:
-//
-//	splitNameCounter("test(5)") returns ("test", 5)
-//	splitNameCounter("test") returns ("test", nil)
-func splitNameCounter(filename string) (string, *int) {
-	re := regexp.MustCompile(`^(.+)\((\d+)\)$`)
-	matches := re.FindStringSubmatch(filename)
-	if len(matches) >= 3 {
-		counter := -1
-		fmt.Sscanf(matches[2], "%d", &counter)
-		stem := strings.TrimRight(matches[1], " ")
-		return stem, &counter
-	}
-	return filename, nil
-}
-
-// duplicateName generates a unique name by appending a counter if the name already exists
-// It tries up to 1000 times to generate a unique name
-//
-// Parameters:
-//   - queryFunc: Function to check if a name already exists (returns true if exists)
-//   - name: The original name
-//   - tenantID: The tenant ID for name uniqueness check
-//
-// Returns:
-//   - string: A unique name (either original or with counter appended)
-//
-// Example:
-//
-//	duplicateName(func(name string, tid string) bool { return false }, "test", "tenant1") returns "test"
-//	duplicateName(func(name string, tid string) bool { return true }, "test", "tenant1") returns "test(1)"
-func duplicateName(queryFunc func(name string, tenantID string) bool, name string, tenantID string) string {
-	const maxRetries = 1000
-
-	originalName := name
-	currentName := name
-	retries := 0
-
-	for retries < maxRetries {
-		if !queryFunc(currentName, tenantID) {
-			return currentName
-		}
-
-		stem, counter := splitNameCounter(currentName)
-		ext := path.Ext(stem)
-		stemBase := strings.TrimSuffix(stem, ext)
-
-		newCounter := 1
-		if counter != nil {
-			newCounter = *counter + 1
-		}
-
-		currentName = fmt.Sprintf("%s(%d)%s", stemBase, newCounter, ext)
-		retries++
-	}
-
-	panic(fmt.Sprintf("Failed to generate unique name within %d attempts. Original: %s", maxRetries, originalName))
-}
-
 // CreateMemoryRequest defines the request structure for creating a memory
 type CreateMemoryRequest struct {
 	// Name is the memory name (required, max 128 characters)
@@ -410,13 +338,11 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 		req.TenantEmbdID = &tenantEmbdIDStr
 	}
 
-	memoryName := strings.TrimSpace(req.Name)
-	if len(memoryName) == 0 {
-		return nil, errors.New("memory name cannot be empty or whitespace")
+	if err := common.ValidateName(req.Name); err != nil {
+		return nil, err
 	}
-	if len(memoryName) > MemoryNameLimit {
-		return nil, fmt.Errorf("memory name '%s' exceeds limit of %d", memoryName, MemoryNameLimit)
-	}
+
+	memoryName := req.Name
 
 	if !isList(req.MemoryType) {
 		return nil, errors.New("memory type must be a list")
@@ -435,24 +361,18 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 		uniqueMemoryTypes = append(uniqueMemoryTypes, mt)
 	}
 
-	memoryName = duplicateName(func(name string, tid string) bool {
+	memoryName, err := common.DuplicateName(func(name string, tid string) bool {
 		existing, _ := s.memoryDAO.GetByNameAndTenant(name, tid)
 		return len(existing) > 0
 	}, memoryName, tenantID)
-
-	if len(memoryName) > MemoryNameLimit {
-		return nil, fmt.Errorf("memory name %s exceeds limit of %d", memoryName, MemoryNameLimit)
+	if err != nil {
+		return nil, err
 	}
 
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
-	timestamp := time.Now().UnixMilli()
-
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
-	newID := strings.ReplaceAll(uuid.New().String(), "-", "")
-	if len(newID) > 32 {
-		newID = newID[:32]
-	}
+	newID := common.GenerateUUID()
 
 	memory := &entity.Memory{
 		ID:               newID,
@@ -480,9 +400,6 @@ func (s *MemoryService) CreateMemory(tenantID string, req *CreateMemoryRequest) 
 			memory.TenantLLMID = &llmID
 		}
 	}
-	memory.CreateTime = &timestamp
-	memory.UpdateTime = &timestamp
-
 	if err := s.memoryDAO.Create(memory); err != nil {
 		return nil, errors.New("could not create new memory")
 	}
@@ -516,18 +433,15 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
-		if len(memoryName) == 0 {
-			return nil, errors.New("memory name cannot be empty or whitespace")
+		if err := common.ValidateName(memoryName); err != nil {
+			return nil, err
 		}
-		if len(memoryName) > MemoryNameLimit {
-			return nil, fmt.Errorf("memory name '%s' exceeds limit of %d", memoryName, MemoryNameLimit)
-		}
-		memoryName = duplicateName(func(name string, tid string) bool {
+		memoryName, err := common.DuplicateName(func(name string, tid string) bool {
 			existing, _ := s.memoryDAO.GetByNameAndTenant(name, tid)
 			return len(existing) > 0
 		}, memoryName, tenantID)
-		if len(memoryName) > MemoryNameLimit {
-			return nil, fmt.Errorf("memory name %s exceeds limit of %d", memoryName, MemoryNameLimit)
+		if err != nil {
+			return nil, err
 		}
 		updateDict["name"] = memoryName
 	}
@@ -585,7 +499,7 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	}
 
 	if req.ForgettingPolicy != nil {
-		fp := ForgettingPolicy(strings.ToLower(*req.ForgettingPolicy))
+		fp := ForgettingPolicy(strings.ToUpper(strings.TrimSpace(*req.ForgettingPolicy)))
 		if !validForgettingPolicies[fp] {
 			return nil, fmt.Errorf("forgetting policy '%s' is not supported", *req.ForgettingPolicy)
 		}
@@ -630,6 +544,108 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 		return formatRetDataFromMemory(currentMemory), nil
 	}
 
+	currentMemoryTypes := dao.GetMemoryTypeHuman(currentMemory.MemoryType)
+	normalizedCurrentMemoryTypes := normalizeMemoryTypes(currentMemoryTypes)
+
+	filteredUpdateDict := make(map[string]interface{}, len(updateDict))
+	for field, value := range updateDict {
+		switch field {
+		case "name":
+			currentName := strings.TrimSpace(currentMemory.Name)
+			requestName := strings.TrimSpace(fmt.Sprint(value))
+			if currentName != requestName {
+				filteredUpdateDict[field] = value
+			}
+		case "permissions":
+			currentPermissions := strings.ToLower(strings.TrimSpace(currentMemory.Permissions))
+			requestPermissions := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+			if currentPermissions != requestPermissions {
+				filteredUpdateDict[field] = value
+			}
+		case "llm_id":
+			currentLLMID := strings.TrimSpace(currentMemory.LLMID)
+			requestLLMID := strings.TrimSpace(fmt.Sprint(value))
+			if currentLLMID != requestLLMID {
+				filteredUpdateDict[field] = value
+			}
+		case "embd_id":
+			currentEmbdID := strings.TrimSpace(currentMemory.EmbdID)
+			requestEmbdID := strings.TrimSpace(fmt.Sprint(value))
+			if currentEmbdID != requestEmbdID {
+				filteredUpdateDict[field] = value
+			}
+		case "tenant_llm_id":
+			if currentMemory.TenantLLMID == nil || *currentMemory.TenantLLMID != value.(int64) {
+				filteredUpdateDict[field] = value
+			}
+		case "tenant_embd_id":
+			if currentMemory.TenantEmbdID == nil || *currentMemory.TenantEmbdID != value.(int64) {
+				filteredUpdateDict[field] = value
+			}
+		case "memory_type":
+			if types, ok := value.([]string); ok {
+				if !sameStringSet(normalizedCurrentMemoryTypes, normalizeMemoryTypes(types)) {
+					filteredUpdateDict[field] = value
+				}
+			} else {
+				filteredUpdateDict[field] = value
+			}
+		case "memory_size":
+			if currentMemory.MemorySize != value.(int64) {
+				filteredUpdateDict[field] = value
+			}
+		case "forgetting_policy":
+			currentForgettingPolicy := strings.ToUpper(strings.TrimSpace(currentMemory.ForgettingPolicy))
+			requestForgettingPolicy := strings.ToUpper(strings.TrimSpace(fmt.Sprint(value)))
+			if currentForgettingPolicy != requestForgettingPolicy {
+				filteredUpdateDict[field] = value
+			}
+		case "temperature":
+			if currentMemory.Temperature != value.(float64) {
+				filteredUpdateDict[field] = value
+			}
+		case "avatar":
+			currentAvatar := ""
+			if currentMemory.Avatar != nil {
+				currentAvatar = *currentMemory.Avatar
+			}
+			if currentAvatar != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		case "description":
+			currentDescription := ""
+			if currentMemory.Description != nil {
+				currentDescription = *currentMemory.Description
+			}
+			if currentDescription != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		case "system_prompt":
+			currentSystemPrompt := ""
+			if currentMemory.SystemPrompt != nil {
+				currentSystemPrompt = *currentMemory.SystemPrompt
+			}
+			if currentSystemPrompt != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		case "user_prompt":
+			currentUserPrompt := ""
+			if currentMemory.UserPrompt != nil {
+				currentUserPrompt = *currentMemory.UserPrompt
+			}
+			if currentUserPrompt != fmt.Sprint(value) {
+				filteredUpdateDict[field] = value
+			}
+		default:
+			filteredUpdateDict[field] = value
+		}
+	}
+	updateDict = filteredUpdateDict
+
+	if len(updateDict) == 0 {
+		return formatRetDataFromMemory(currentMemory), nil
+	}
+
 	memorySize := currentMemory.MemorySize
 	notAllowedUpdate := []string{}
 	for _, f := range []string{"tenant_embd_id", "embd_id", "memory_type"} {
@@ -665,6 +681,45 @@ func (s *MemoryService) UpdateMemory(tenantID string, memoryID string, req *Upda
 	}
 
 	return formatRetDataFromMemory(updatedMemory), nil
+}
+
+func normalizeMemoryTypes(memoryTypes []string) []string {
+	normalized := make([]string, 0, len(memoryTypes))
+	seen := make(map[string]struct{}, len(memoryTypes))
+	for _, mt := range memoryTypes {
+		mt = strings.ToLower(strings.TrimSpace(mt))
+		if mt == "" {
+			continue
+		}
+		if _, exists := seen[mt]; exists {
+			continue
+		}
+		seen[mt] = struct{}{}
+		normalized = append(normalized, mt)
+	}
+	return normalized
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, item := range a {
+		counts[item]++
+	}
+	for _, item := range b {
+		counts[item]--
+		if counts[item] < 0 {
+			return false
+		}
+	}
+	for _, count := range counts {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // DeleteMemory deletes a memory by ID

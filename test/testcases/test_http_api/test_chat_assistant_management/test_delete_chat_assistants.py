@@ -26,12 +26,8 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_code, expected_message",
         [
-            (None, 0, "`Authorization` can't be empty"),
-            (
-                RAGFlowHttpApiAuth(INVALID_API_TOKEN),
-                109,
-                "Authentication error: API key is invalid!",
-            ),
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
     )
     def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
@@ -46,8 +42,8 @@ class TestChatAssistantsDelete:
         [
             pytest.param(None, 0, "", 5, marks=pytest.mark.p3),
             pytest.param({"ids": []}, 0, "", 5, marks=pytest.mark.p3),
-            pytest.param({"ids": ["invalid_id"]}, 102, "Assistant(invalid_id) not found.", 5, marks=pytest.mark.p3),
-            pytest.param({"ids": ["\n!?。；！？\"'"]}, 102, """Assistant(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": ["invalid_id"]}, 102, "Chat(invalid_id) not found.", 5, marks=pytest.mark.p3),
+            pytest.param({"ids": ["\n!?。；！？\"'"]}, 102, """Chat(\n!?。；！？"\') not found.""", 5, marks=pytest.mark.p3),
             pytest.param("not json", 100, "AttributeError(\"'str' object has no attribute 'get'\")", 5, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r[:1]}, 0, "", 4, marks=pytest.mark.p3),
             pytest.param(lambda r: {"ids": r}, 0, "", 0, marks=pytest.mark.p1),
@@ -63,7 +59,7 @@ class TestChatAssistantsDelete:
             assert res["message"] == expected_message
 
         res = list_chat_assistants(HttpApiAuth)
-        assert len(res["data"]) == remaining
+        assert len(res["data"]["chats"]) == remaining
 
     @pytest.mark.parametrize(
         "payload",
@@ -79,11 +75,11 @@ class TestChatAssistantsDelete:
             payload = payload(chat_assistant_ids)
         res = delete_chat_assistants(HttpApiAuth, payload)
         assert res["code"] == 0
-        assert res["data"]["errors"][0] == "Assistant(invalid_id) not found."
+        assert res["data"]["errors"][0] == "Chat(invalid_id) not found."
         assert res["data"]["success_count"] == 5
 
         res = list_chat_assistants(HttpApiAuth)
-        assert len(res["data"]) == 0
+        assert len(res["data"]["chats"]) == 0
 
     @pytest.mark.p3
     def test_repeated_deletion(self, HttpApiAuth, add_chat_assistants_func):
@@ -100,7 +96,7 @@ class TestChatAssistantsDelete:
         _, _, chat_assistant_ids = add_chat_assistants_func
         res = delete_chat_assistants(HttpApiAuth, {"ids": chat_assistant_ids + chat_assistant_ids})
         assert res["code"] == 0
-        assert "Duplicate assistant ids" in res["data"]["errors"][0]
+        assert "Duplicate chat ids" in res["data"]["errors"][0]
         assert res["data"]["success_count"] == 5
 
         res = list_chat_assistants(HttpApiAuth)
@@ -124,15 +120,15 @@ class TestChatAssistantsDelete:
         assert res["code"] == 0
 
         res = list_chat_assistants(HttpApiAuth)
-        assert len(res["data"]) == 0
+        assert len(res["data"]["chats"]) == 0
 
     @pytest.mark.p2
     def test_delete_all_errors_no_success_p2(self, HttpApiAuth, add_chat_assistants_func):
         delete_payload = {"ids": ["missing-1", "missing-2"]}
         res = delete_chat_assistants(HttpApiAuth, delete_payload)
         assert res["code"] == 102
-        assert "Assistant(missing-1) not found." in res["message"]
-        assert "Assistant(missing-2) not found." in res["message"]
+        assert "Chat(missing-1) not found." in res["message"]
+        assert "Chat(missing-2) not found." in res["message"]
 
     @pytest.mark.p2
     def test_delete_duplicate_partial_success_p2(self, HttpApiAuth, add_chat_assistants_func):
@@ -141,4 +137,4 @@ class TestChatAssistantsDelete:
         res = delete_chat_assistants(HttpApiAuth, payload)
         assert res["code"] == 0
         assert res["data"]["success_count"] == 1
-        assert "Duplicate assistant ids" in res["data"]["errors"][0]
+        assert "Duplicate chat ids" in res["data"]["errors"][0]
