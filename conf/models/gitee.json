@@ -8,7 +8,7 @@
     "models": "models",
     "status": "",
     "balance": "tokens/packages/balance",
-    "embedding": "embedding",
+    "embedding": "embeddings",
     "rerank": "rerank",
     "ocr": "images/ocr",
     "doc_parse": "async/documents/parse",

@@ -19,6 +19,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
 	"sort"
@@ -28,26 +29,32 @@ import (
 	"ragflow/internal/engine"
 
 	"ragflow/internal/server"
+
+	"github.com/google/uuid"
 )
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO *dao.DocumentDAO
-	kbDAO       *dao.KnowledgebaseDAO
-	docEngine   engine.DocEngine
-	engineType  server.EngineType
-	metadataSvc *MetadataService
+	documentDAO      *dao.DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	ingestionTaskDAO *dao.IngestionDAO
+	ingestionLogDAO  *dao.IngestionLogDAO
+	docEngine        engine.DocEngine
+	engineType       server.EngineType
+	metadataSvc      *MetadataService
 }
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
 	return &DocumentService{
-		documentDAO: dao.NewDocumentDAO(),
-		kbDAO:       dao.NewKnowledgebaseDAO(),
-		docEngine:   engine.Get(),
-		engineType:  cfg.DocEngine.Type,
-		metadataSvc: NewMetadataService(),
+		documentDAO:      dao.NewDocumentDAO(),
+		ingestionTaskDAO: dao.NewIngestionDAO(),
+		ingestionLogDAO:  dao.NewIngestionLogDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		docEngine:        engine.Get(),
+		engineType:       cfg.DocEngine.Type,
+		metadataSvc:      NewMetadataService(),
 	}
 }
 
@@ -207,11 +214,79 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	return responses, total, nil
 }
 
-func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) error {
+type ParseDocumentResponse struct {
+	DocumentID string  `json:"document_id"`
+	Result     *string `json:"result"`
+}
+
+func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
 	// create document parse id
 	// save to task table
 	// send to message queue
-	return nil
+
+	// deduplicate the document id
+	uniqueDocIDs := common.Deduplicate(docIDs)
+	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
+		return nil, fmt.Errorf("no documents to parse")
+	}
+
+	var responses []*ParseDocumentResponse
+
+	// query database, if the document ids are valid
+	for _, docID := range uniqueDocIDs {
+		doc, err := s.documentDAO.GetByID(docID)
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+		if doc == nil {
+			errorMessage := "no such document"
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		if doc.Status != nil && *doc.Status != "0" {
+			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		// create task for each document
+		task := &entity.IngestionTask{
+			ID:         uuid.New().String(),
+			DocumentID: docID,
+			UserID:     userID,
+			Config:     nil,
+			TryCount:   1,
+		}
+
+		// save the task to database
+		err = s.ingestionTaskDAO.Create(task)
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		// Send task to message queue
+		
+	}
+
+	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
+	return responses, nil
 }
 
 // toResponse convert model.Document to DocumentResponse

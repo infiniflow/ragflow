@@ -185,6 +185,16 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowModel(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
+	case "admin_list_ingestors":
+		return c.ListAdminIngestors(cmd)
+	case "admin_start_ingestion_command":
+		return c.AdminStartIngestionCommand(cmd)
+	case "admin_stop_ingestion_command":
+		return c.AdminStopIngestionCommand(cmd)
+	case "admin_shutdown_ingestor_command":
+		return c.AdminShutdownIngestor(cmd)
+	case "list_admin_ingestion_tasks":
+		return c.ListAdminIngestionTasks(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -324,6 +334,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RemoveChunks(cmd)
 	case "list_metadata":
 		return c.ListMetadata(cmd)
+	case "parse_documents_user_command":
+		return c.ParseDocumentsUserCommand(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)
