@@ -315,11 +315,14 @@ class RetryingPooledMySQLDatabase(_ConnectionLossRecoveryMixin, PooledMySQLDatab
 
     @staticmethod
     def _is_connection_loss(e):
+        # MySQL specific error codes
+        # 2013: Lost connection to MySQL server during query
+        # 2006: MySQL server has gone away
         error_codes = [2013, 2006]
-        error_messages = ['', 'Lost connection']
+        error_messages = ['lost connection', 'gone away']
         return (
             (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-            (str(e) in error_messages) or
+            any(msg in str(e).lower() for msg in error_messages) or
             (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
         )
 
@@ -447,7 +450,7 @@ class RetryingPooledOceanBaseDatabase(_ConnectionLossRecoveryMixin, PooledMySQLD
         # 2013: Lost connection to MySQL server during query
         # 2006: MySQL server has gone away
         error_codes = [2013, 2006]
-        error_messages = ['', 'Lost connection', 'gone away']
+        error_messages = ['lost connection', 'gone away']
         return (
             (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
             any(msg in str(e).lower() for msg in error_messages) or

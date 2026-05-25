@@ -239,23 +239,25 @@ class TestConnectionLossRecovery:
     """Regression tests for issue #15198: connection-loss retry must not leak
     pooled connections nor corrupt state when it happens inside a transaction."""
 
+    @pytest.mark.p1
     def test_recoverable_loss_outside_transaction_self_heals(self, mock_db):
         db, ctl = mock_db
         error = _run_request(db, ctl, in_transaction=False, fail_next=1)
         assert error is None, f"recoverable loss should be retried transparently, got {error!r}"
         assert len(db._in_use) == 0
 
+    @pytest.mark.p1
     def test_mid_transaction_loss_does_not_leak_connections(self, mock_db):
         db, ctl = mock_db
-        last_error = None
         for _ in range(50):
-            last_error = _run_request(db, ctl, in_transaction=True, fail_next=1)
+            _run_request(db, ctl, in_transaction=True, fail_next=1)
         # No pooled connection left checked out, and every dead socket was closed.
         assert len(db._in_use) == 0, f"leaked in-use connections: {len(db._in_use)}"
         assert ctl["created"] == ctl["closed"], (
             f"leaked sockets: created={ctl['created']} closed={ctl['closed']}"
         )
 
+    @pytest.mark.p1
     def test_mid_transaction_loss_surfaces_clean_error(self, mock_db):
         db, ctl = mock_db
         error = _run_request(db, ctl, in_transaction=True, fail_next=1)
@@ -263,6 +265,7 @@ class TestConnectionLossRecovery:
         # The original buggy code masked the real error with this message.
         assert "Connection already opened" not in str(error)
 
+    @pytest.mark.p2
     def test_non_connection_error_is_not_retried(self, mock_db):
         db, ctl = mock_db
         db.connect()
@@ -278,6 +281,7 @@ class TestConnectionLossRecovery:
         finally:
             _FakeCursor.execute = original
 
+    @pytest.mark.p1
     def test_begin_recovers_from_connection_loss(self, mock_db):
         db, ctl = mock_db
         db.connect()
