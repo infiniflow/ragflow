@@ -31,8 +31,6 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
-
 
 class _PassthroughManager:
     def route(self, *_args, **_kwargs):
