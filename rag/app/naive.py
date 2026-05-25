@@ -809,8 +809,12 @@ class Markdown(MarkdownParser):
             try:
                 if url.startswith(("http://", "https://")):
                     response = self._fetch_remote_image_response(url)
-                    if response is not None and response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-                        img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    if response is not None:
+                        try:
+                            if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                                img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                        finally:
+                            response.close()
                 else:
                     local_path = Path(url)
                     if local_path.exists():
