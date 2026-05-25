@@ -13,8 +13,7 @@
     "asr": "audio/transcriptions",
     "tts": "audio/speech",
     "files": "files",
-    "models": "models",
-    "ocr": "layout_parsing"
+    "models": "models"
   },
   "class": "glm",
   "models": [
@@ -269,12 +268,6 @@
       "name": "rerank",
       "model_types": [
         "rerank"
-      ]
-    },
-    {
-      "name": "glm-ocr",
-      "model_types": [
-        "ocr"
       ]
     }
   ]
