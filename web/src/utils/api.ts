@@ -39,7 +39,6 @@ export default {
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
-  dataSourceResume: (id: string) => `${restAPIv1}/connectors/${id}/resume`,
   dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
   dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -130,8 +129,6 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentThumbnails: `${restAPIv1}/thumbnails`,
   getDocumentFile: `${restAPIv1}/documents`,
-  getDocumentFileDownload: (docId: string) =>
-    `${restAPIv1}/documents/${docId}/download`,
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: (datasetId: string) =>
@@ -192,8 +189,7 @@ export default {
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
   listAgentTags: `${restAPIv1}/agents/tags`,
-  updateAgentTags: (agentId: string) =>
-    `${restAPIv1}/agents/${agentId}/tags`,
+  updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
@@ -225,6 +221,8 @@ export default {
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
+  getAttachmentFileDownload: (docId: string) =>
+    `${restAPIv1}/agents/attachments/${docId}/download`,
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,

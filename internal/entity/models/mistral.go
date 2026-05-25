@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -194,16 +195,78 @@ func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("invalid message format")
 	}
 
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
+	content, reasonContent, err := extractMistralContent(messageMap["content"])
+	if err != nil {
+		return nil, err
 	}
 
-	emptyReason := ""
 	return &ChatResponse{
 		Answer:        &content,
-		ReasonContent: &emptyReason,
+		ReasonContent: &reasonContent,
 	}, nil
+}
+
+// extractMistralContent normalizes the two shapes Mistral can return in
+// choices[0].message.content.
+//
+//  1. Plain string. The historical shape, used by every non-reasoning
+//     Mistral model (mistral-large, mistral-medium, ministral-*, etc.):
+//
+//     "content": "Pong."
+//
+//  2. Structured array of typed parts. Used by the magistral reasoning
+//     family (magistral-small-*, magistral-medium-*) when the model
+//     actually produces a chain-of-thought:
+//
+//     "content": [
+//     {"type": "thinking", "thinking": [{"type": "text", "text": "..."}]},
+//     {"type": "text", "text": "The final answer is ..."}
+//     ]
+//
+// The function concatenates the visible text parts into the assistant
+// answer and the inner thinking text into the reasoning trace. Unknown
+// part types are skipped rather than failing, so a new part shape from
+// Mistral does not break the driver for tenants that don't use it.
+func extractMistralContent(raw interface{}) (string, string, error) {
+	switch v := raw.(type) {
+	case string:
+		return v, "", nil
+	case []interface{}:
+		var answer, reasoning strings.Builder
+		for _, part := range v {
+			pm, ok := part.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			switch pm["type"] {
+			case "text":
+				if t, ok := pm["text"].(string); ok {
+					answer.WriteString(t)
+				}
+			case "thinking":
+				// thinking is an array of inner text parts; concatenate
+				// any inner element with a non-empty text field.
+				inner, ok := pm["thinking"].([]interface{})
+				if !ok {
+					continue
+				}
+				for _, sub := range inner {
+					sm, ok := sub.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if t, ok := sm["text"].(string); ok {
+						reasoning.WriteString(t)
+					}
+				}
+			}
+		}
+		return answer.String(), reasoning.String(), nil
+	case nil:
+		return "", "", nil
+	default:
+		return "", "", fmt.Errorf("mistral: unsupported content type %T", raw)
+	}
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
@@ -573,8 +636,8 @@ func (z *MistralModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -583,6 +646,99 @@ func (z *MistralModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (z *MistralModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if (urls == nil || *urls == "") && (content == nil || len(content) == 0) {
+		return nil, fmt.Errorf("file url or content is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.OCR)
+
+	var docURL string
+	if urls != nil && *urls != "" {
+		docURL = *urls
+	} else {
+		mimeType := http.DetectContentType(content)
+		base64Str := base64.StdEncoding.EncodeToString(content)
+		docURL = fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str)
+	}
+
+	reqData := map[string]interface{}{
+		"model": *modelName,
+		"document": map[string]interface{}{
+			"type":         "document_url",
+			"document_url": docURL,
+		},
+	}
+
+	jsonData, err := json.Marshal(reqData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Mistral OCR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var mistralResp struct {
+		Pages []struct {
+			Index    int    `json:"index"`
+			Markdown string `json:"markdown"`
+		} `json:"pages"`
+	}
+
+	if err = json.Unmarshal(body, &mistralResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response json: %w", err)
+	}
+
+	var fullMarkdown strings.Builder
+	for _, page := range mistralResp.Pages {
+		fullMarkdown.WriteString(page.Markdown)
+		fullMarkdown.WriteString("\n\n")
+	}
+
+	resultText := strings.TrimSpace(fullMarkdown.String())
+
+	return &OCRFileResponse{
+		Text: &resultText,
+	}, nil
+}
+
+func (z *MistralModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (z *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *MistralModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

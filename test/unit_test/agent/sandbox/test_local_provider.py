@@ -3,12 +3,10 @@ import sys
 
 import pytest
 
-from agent.sandbox.providers.base import SandboxProviderConfigError
 from agent.sandbox.providers.local import LocalProvider
 
 
-def _make_provider(monkeypatch, tmp_path, **overrides):
-    monkeypatch.setenv("SANDBOX_LOCAL_ENABLED", "true")
+def _make_provider(tmp_path, **overrides):
     config = {
         "python_bin": sys.executable,
         "work_dir": str(tmp_path),
@@ -24,16 +22,14 @@ def _make_provider(monkeypatch, tmp_path, **overrides):
     return provider
 
 
-def test_local_provider_requires_explicit_env_enable(monkeypatch, tmp_path):
-    monkeypatch.delenv("SANDBOX_LOCAL_ENABLED", raising=False)
+def test_local_provider_initializes_from_config(tmp_path):
     provider = LocalProvider()
+    provider.initialize({"python_bin": sys.executable, "work_dir": str(tmp_path)})
+    assert provider.health_check() is True
 
-    with pytest.raises(SandboxProviderConfigError):
-        provider.initialize({"work_dir": str(tmp_path)})
 
-
-def test_local_provider_executes_python_main(monkeypatch, tmp_path):
-    provider = _make_provider(monkeypatch, tmp_path)
+def test_local_provider_executes_python_main(tmp_path):
+    provider = _make_provider(tmp_path)
     instance = provider.create_instance("python")
 
     try:
@@ -53,8 +49,8 @@ def test_local_provider_executes_python_main(monkeypatch, tmp_path):
     assert result.metadata["result_value"] == {"message": "hello ragflow"}
 
 
-def test_local_provider_collects_artifacts(monkeypatch, tmp_path):
-    provider = _make_provider(monkeypatch, tmp_path)
+def test_local_provider_collects_artifacts(tmp_path):
+    provider = _make_provider(tmp_path)
     instance = provider.create_instance("python")
 
     try:
@@ -82,8 +78,8 @@ def test_local_provider_collects_artifacts(monkeypatch, tmp_path):
     ]
 
 
-def test_local_provider_times_out(monkeypatch, tmp_path):
-    provider = _make_provider(monkeypatch, tmp_path, timeout=1)
+def test_local_provider_times_out(tmp_path):
+    provider = _make_provider(tmp_path, timeout=1)
     instance = provider.create_instance("python")
 
     try:

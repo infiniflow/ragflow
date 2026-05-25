@@ -265,6 +265,8 @@ class GptV4(Base):
             messages=self.prompt(b64),
             extra_body=self.extra_body
         )
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
@@ -274,6 +276,8 @@ class GptV4(Base):
             messages=self.vision_llm_prompt(b64, prompt),
             extra_body=self.extra_body,
         )
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
 
@@ -507,6 +511,8 @@ class Zhipu4V(GptV4):
 
         resp = self.client.chat.completions.create(model=self.model_name, messages=messages, stream=False)
 
+        if not resp.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         content = resp.choices[0].message.content.strip()
         cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
 

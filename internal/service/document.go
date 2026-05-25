@@ -19,6 +19,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
 	"sort"
@@ -28,26 +29,32 @@ import (
 	"ragflow/internal/engine"
 
 	"ragflow/internal/server"
+
+	"github.com/google/uuid"
 )
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO *dao.DocumentDAO
-	kbDAO       *dao.KnowledgebaseDAO
-	docEngine   engine.DocEngine
-	engineType  server.EngineType
-	metadataSvc *MetadataService
+	documentDAO      *dao.DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	ingestionTaskDAO *dao.IngestionDAO
+	ingestionLogDAO  *dao.IngestionLogDAO
+	docEngine        engine.DocEngine
+	engineType       server.EngineType
+	metadataSvc      *MetadataService
 }
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
 	return &DocumentService{
-		documentDAO: dao.NewDocumentDAO(),
-		kbDAO:       dao.NewKnowledgebaseDAO(),
-		docEngine:   engine.Get(),
-		engineType:  cfg.DocEngine.Type,
-		metadataSvc: NewMetadataService(),
+		documentDAO:      dao.NewDocumentDAO(),
+		ingestionTaskDAO: dao.NewIngestionDAO(),
+		ingestionLogDAO:  dao.NewIngestionLogDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		docEngine:        engine.Get(),
+		engineType:       cfg.DocEngine.Type,
+		metadataSvc:      NewMetadataService(),
 	}
 }
 
@@ -175,17 +182,17 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	return responses, total, nil
 }
 
-// ListDocumentsByKBID list documents by knowledge base ID
-func (s *DocumentService) ListDocumentsByKBID(kbID string, page, pageSize int) ([]*DocumentResponse, int64, error) {
+// ListDocumentsByDatasetID list documents by knowledge base ID
+func (s *DocumentService) ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error) {
 	offset := (page - 1) * pageSize
 	documents, total, err := s.documentDAO.ListByKBID(kbID, offset, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	responses := make([]*DocumentResponse, len(documents))
+	responses := make([]*entity.DocumentListItem, len(documents))
 	for i, doc := range documents {
-		responses[i] = s.toResponse(doc)
+		responses[i] = doc
 	}
 
 	return responses, total, nil
@@ -205,6 +212,81 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	}
 
 	return responses, total, nil
+}
+
+type ParseDocumentResponse struct {
+	DocumentID string  `json:"document_id"`
+	Result     *string `json:"result"`
+}
+
+func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+	// create document parse id
+	// save to task table
+	// send to message queue
+
+	// deduplicate the document id
+	uniqueDocIDs := common.Deduplicate(docIDs)
+	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
+		return nil, fmt.Errorf("no documents to parse")
+	}
+
+	var responses []*ParseDocumentResponse
+
+	// query database, if the document ids are valid
+	for _, docID := range uniqueDocIDs {
+		doc, err := s.documentDAO.GetByID(docID)
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+		if doc == nil {
+			errorMessage := "no such document"
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		if doc.Status != nil && *doc.Status != "0" {
+			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		// create task for each document
+		task := &entity.IngestionTask{
+			ID:         uuid.New().String(),
+			DocumentID: docID,
+			UserID:     userID,
+			Config:     nil,
+			TryCount:   1,
+		}
+
+		// save the task to database
+		err = s.ingestionTaskDAO.Create(task)
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		// Send task to message queue
+		
+	}
+
+	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
+	return responses, nil
 }
 
 // toResponse convert model.Document to DocumentResponse
@@ -299,6 +381,58 @@ func (s *DocumentService) SetDocumentMetadata(docID string, meta map[string]inte
 	err = s.docEngine.UpdateMetadata(nil, docID, doc.KbID, meta, tenantID)
 	if err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteDocumentMetadata deletes metadata keys for a document in the document engine
+func (s *DocumentService) DeleteDocumentMetadata(docID string, keys []string) error {
+	// Get document to find kb_id
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return fmt.Errorf("document not found: %w", err)
+	}
+
+	// Get tenant ID
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Delete metadata using the document engine
+	err = s.docEngine.DeleteMetadataKeys(nil, docID, doc.KbID, keys, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to delete metadata: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteDocumentAllMetadata deletes all metadata for a document in the document engine
+func (s *DocumentService) DeleteDocumentAllMetadata(docID string) error {
+	// Get document to find kb_id
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return fmt.Errorf("document not found: %w", err)
+	}
+
+	// Get tenant ID
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	if err != nil {
+		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Build condition to match the document
+	condition := map[string]interface{}{
+		"id":   docID,
+		"kb_id": doc.KbID,
+	}
+
+	// Delete entire document metadata
+	_, err = s.docEngine.DeleteMetadata(nil, condition, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to delete document metadata: %w", err)
 	}
 
 	return nil

@@ -356,6 +356,19 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 			continue
 		}
 
+		// Reasoning chunks first, content second. Upstage's solar-pro3
+		// stream interleaves both fields within the same SSE event when
+		// reasoning_effort is medium or high; emit reasoning before the
+		// visible answer so callers that pipe both into a UI see the
+		// chain-of-thought start before the answer, matching the wire
+		// ordering. solar-pro2 inlines reasoning into delta.content and
+		// never sets delta.reasoning, so this block is a no-op for it.
+		if r, ok := delta["reasoning"].(string); ok && r != "" {
+			if err := sender(nil, &r); err != nil {
+				return err
+			}
+		}
+
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
 			if err := sender(&content, nil); err != nil {
@@ -594,8 +607,8 @@ func (z *UpstageModel) TranscribeAudioWithSender(modelName *string, file *string
 	return fmt.Errorf("%s, no such method", z.Name())
 }
 
-// AudioSpeech convert audio to text
-func (z *UpstageModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig) (*TTSResponse, error) {
+// AudioSpeech convert text to audio
+func (z *UpstageModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
@@ -604,6 +617,19 @@ func (z *UpstageModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (z *UpstageModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRResponse, error) {
+func (z *UpstageModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+// ParseFile parse file
+func (z *UpstageModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *UpstageModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *UpstageModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

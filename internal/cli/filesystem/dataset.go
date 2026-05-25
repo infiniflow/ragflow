@@ -305,8 +305,8 @@ func (p *DatasetProvider) searchWithRetrieval(ctx stdctx.Context, opts *SearchOp
 
 	// Build retrieval request
 	payload := map[string]interface{}{
-		"kb_id":    kbIDs,
-		"question": opts.Query,
+		"dataset_ids": kbIDs,
+		"question":    opts.Query,
 	}
 
 	// Set top_k (default to 10 if not specified)
@@ -323,8 +323,8 @@ func (p *DatasetProvider) searchWithRetrieval(ctx stdctx.Context, opts *SearchOp
 	}
 	payload["similarity_threshold"] = threshold
 
-	// Call retrieval API (useAPIBase=false because the route is /v1/chunk/retrieval_test, not /api/v1/...)
-	resp, err := p.httpClient.Request("POST", "/chunk/retrieval_test", "auto", nil, payload)
+	// Call retrieval API
+	resp, err := p.httpClient.Request("POST", "/datasets/search", "auto", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval request failed: %w", err)
 	}
@@ -589,8 +589,8 @@ func (p *DatasetProvider) searchDocuments(ctx stdctx.Context, datasetName string
 
 	// Build retrieval request for specific dataset
 	payload := map[string]interface{}{
-		"kb_id":    []string{kbID},
-		"question": opts.Query,
+		"dataset_ids": []string{kbID},
+		"question":    opts.Query,
 	}
 
 	// Set top_k (default to 10 if not specified)
@@ -607,8 +607,8 @@ func (p *DatasetProvider) searchDocuments(ctx stdctx.Context, datasetName string
 	}
 	payload["similarity_threshold"] = threshold
 
-	// Call retrieval API (useAPIBase=false because the route is /v1/chunk/retrieval_test, not /api/v1/...)
-	resp, err := p.httpClient.Request("POST", "/chunk/retrieval_test", "auto", nil, payload)
+	// Call retrieval API
+	resp, err := p.httpClient.Request("POST", "/datasets/search", "auto", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval request failed: %w", err)
 	}

@@ -170,8 +170,9 @@ static char *parse_trim(char *str) {
 static int parse(config_desc *config, const char *filename, const char *home_path) {
     FILE *fp = fopen(filename, "rb");
     if (!fp) {
-        char *pkg_filename = (char *)malloc(sizeof(char) * (strlen(filename) + strlen(home_path) + 2));
-        sprintf(pkg_filename, "%s/%s", home_path, filename);
+        size_t pkg_filename_len = strlen(filename) + strlen(home_path) + 2;
+        char *pkg_filename = (char *)malloc(sizeof(char) * pkg_filename_len);
+        snprintf(pkg_filename, pkg_filename_len, "%s/%s", home_path, filename);
         printf("pkg_filename %s\n", pkg_filename);
         fp = fopen(pkg_filename, "rb");
         if (!fp) {
@@ -182,12 +183,26 @@ static int parse(config_desc *config, const char *filename, const char *home_pat
         free(pkg_filename);
     }
 
-    config->home_dir = (char *)malloc(sizeof(char) * (strlen(home_path) + 1));
-    sprintf(config->home_dir, "%s", home_path);
+    size_t home_dir_len = strlen(home_path) + 1;
+    config->home_dir = (char *)malloc(sizeof(char) * home_dir_len);
+    snprintf(config->home_dir, home_dir_len, "%s", home_path);
 
-    static char buff[BUFFER_SIZE];
+    char buff[BUFFER_SIZE];
 
     while (fgets(buff, BUFFER_SIZE, fp) != NULL) {
+        /* Detect line truncation: if buffer is full and last char is not newline,
+         * the line was longer than BUFFER_SIZE-1 bytes. Drain the remainder and
+         * treat this as a parse error to avoid processing partial config lines. */
+        size_t buff_len = strlen(buff);
+        if (buff_len == BUFFER_SIZE - 1 && buff[buff_len - 1] != '\n') {
+            int c;
+            while ((c = fgetc(fp)) != '\n' && c != EOF)
+                ;
+            fclose(fp);
+            errnum = CONFIG_ERROR_PARSE;
+            return -1;
+        }
+
         char *trimed_buff = parse_trim(buff);
         if (*trimed_buff == ';' || *trimed_buff == '#' || *trimed_buff == '\0') {
             /* Comment Line or empty line */

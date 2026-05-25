@@ -33,6 +33,8 @@ func NewModelFactory() *ModelFactory {
 func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string]string, urlSuffix URLSuffix) (ModelDriver, error) {
 	providerLower := strings.ToLower(providerName)
 	switch providerLower {
+	case "anthropic":
+		return NewAnthropicModel(baseURL, urlSuffix), nil
 	case "zhipu-ai":
 		return NewZhipuAIModel(baseURL, urlSuffix), nil
 	case "deepseek":
@@ -61,6 +63,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOllamaModel(baseURL, urlSuffix), nil
 	case "openai":
 		return NewOpenAIModel(baseURL, urlSuffix), nil
+	case "groq":
+		return NewGroqModel(baseURL, urlSuffix), nil
+	case "azure-openai":
+		return NewAzureOpenAIModel(baseURL, urlSuffix), nil
 	case "nvidia":
 		return NewNvidiaModel(baseURL, urlSuffix), nil
 	case "openrouter":
@@ -71,6 +77,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewBaiduModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
+	case "cometapi":
+		return NewCometAPIModel(baseURL, urlSuffix), nil
 	case "fishaudio":
 		return NewFishAudioModel(baseURL, urlSuffix), nil
 	case "mistral":
@@ -85,12 +93,50 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewJinaModel(baseURL, urlSuffix), nil
 	case "localai":
 		return NewLocalAIModel(baseURL, urlSuffix), nil
+	case "xinference":
+		return NewXinferenceModel(baseURL, urlSuffix), nil
+	case "astraflow":
+		return NewAstraflowModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
+	case "hunyuan":
+		return NewHunyuanModel(baseURL, urlSuffix), nil
+	case "tokenpony":
+		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
+	case "avian":
+		return NewAvianModel(baseURL, urlSuffix), nil
+	case "replicate":
+		return NewReplicateModel(baseURL, urlSuffix), nil
+	case "togetherai":
+		return NewTogetherAIModel(baseURL, urlSuffix), nil
+	case "ppio":
+		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage":
 		return NewVoyageModel(baseURL, urlSuffix), nil
+	case "paddleocr":
+		return NewPaddleOCRModel(baseURL, urlSuffix), nil
+	case "xunfei":
+		return NewXunFeiModel(baseURL, urlSuffix), nil
+	case "deepinfra":
+		return NewDeepInfraModel(baseURL, urlSuffix), nil
+	case "mineru":
+		return NewMinerUModel(baseURL, urlSuffix), nil
+	case "jiekouai":
+		return NewJieKouAIModel(baseURL, urlSuffix), nil
+	case "302.ai":
+		return NewAI302Model(baseURL, urlSuffix), nil
+	case "mineru_local":
+		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "perplexity":
+		return NewPerplexityModel(baseURL, urlSuffix), nil
+	case "gpustack":
+		return NewGPUStackModel(baseURL, urlSuffix), nil
+	case "n1n":
+		return NewN1NModel(baseURL, urlSuffix), nil
+	case "paddleocr_local":
+		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

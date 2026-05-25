@@ -360,6 +360,7 @@ def test_create_validation_guards(monkeypatch):
     res = _run(module.create.__wrapped__())
     assert "Invalid url" in res["message"]
     assert "blocked unsafe url" not in res["message"]
+    assert "blocked unsafe url" in res["message"]
 
 
 @pytest.mark.p2
@@ -467,6 +468,7 @@ def test_update_validation_guards(monkeypatch):
     res = _run(module.update("mcp-1"))
     assert "Invalid url" in res["message"]
     assert "blocked unsafe url" not in res["message"]
+    assert "blocked unsafe url" in res["message"]
 
 
 @pytest.mark.p2
@@ -671,6 +673,7 @@ def test_import_multiple_mixed_results(monkeypatch):
     assert results["unsafe"]["success"] is False
     assert "Invalid url" in results["unsafe"]["message"]
     assert "blocked unsafe url" not in results["unsafe"]["message"]
+    assert "blocked unsafe url" in results["unsafe"]["message"]
     assert results["tool_err"]["success"] is False
     assert "tool call failed" in results["tool_err"]["message"]
     assert results["insert_fail"]["success"] is False
