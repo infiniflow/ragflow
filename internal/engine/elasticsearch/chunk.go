@@ -445,8 +445,8 @@ func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName
 			if removeDict, ok := v.(map[string]interface{}); ok {
 				for kk, vv := range removeDict {
 					scripts = append(scripts,
-						fmt.Sprintf("int i=ctx._source.%s.indexOf(params.p_%s);ctx._source.%s.remove(i);",
-							kk, kk, kk))
+						fmt.Sprintf("if (ctx._source.containsKey('%s') && ctx._source.%s != null) { int i = ctx._source.%s.indexOf(params.p_%s); if (i >= 0) { ctx._source.%s.remove(i); }}",
+							kk, kk, kk, kk, kk))
 					params[fmt.Sprintf("p_%s", kk)] = vv
 				}
 			}
@@ -882,17 +882,7 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		if strings.HasPrefix(indexName, "ragflow_doc_meta_") {
 			indexNames = []string{indexName}
 		} else {
-			kbIDs := req.KbIDs
-			if len(kbIDs) == 0 {
-				kbIDs = []string{""}
-			}
-			for _, kbID := range kbIDs {
-				if kbID == "" {
-					indexNames = append(indexNames, indexName)
-				} else {
-					indexNames = append(indexNames, fmt.Sprintf("%s_%s", indexName, kbID))
-				}
-			}
+			indexNames = []string{indexName}
 		}
 
 		for _, fullIndexName := range indexNames {

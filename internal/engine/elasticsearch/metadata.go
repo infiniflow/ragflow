@@ -101,9 +101,11 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	// Build bulk request body
 	var buf bytes.Buffer
 	for _, doc := range metadata {
-		docID, hasID := doc["id"]
-		kbID, hasKBID := doc["kb_id"]
-		if !hasID || !hasKBID {
+		docIDRaw, hasID := doc["id"]
+		kbIDRaw, hasKBID := doc["kb_id"]
+		docID, idOK := docIDRaw.(string)
+		kbID, kbOK := kbIDRaw.(string)
+		if !hasID || !hasKBID || !idOK || !kbOK || strings.TrimSpace(docID) == "" || strings.TrimSpace(kbID) == "" {
 			common.Warn("Skipping metadata document without id or kb_id")
 			continue
 		}
@@ -112,7 +114,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 		action, err := json.Marshal(map[string]interface{}{
 			"index": map[string]interface{}{
 				"_index": indexName,
-				"_id":    fmt.Sprintf("%s_%v", docID, kbID),
+				"_id":    fmt.Sprintf("%s_%s", docID, kbID),
 			},
 		})
 		if err != nil {
@@ -295,8 +297,8 @@ func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[
 	return deleted, nil
 }
 
-// DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields
-// The document itself remains, only the specified keys are deleted.
+// DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields.
+// If deleting those keys leaves no metadata entries, the metadata document is removed.
 func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.DeleteMetadataKeys called", zap.String("index_name", indexName), zap.String("docID", docID), zap.Any("keys", keys))

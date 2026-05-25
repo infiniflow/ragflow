@@ -3286,6 +3286,8 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenPing:
 		return p.parsePingServer()
+	case TokenDelete:
+		return p.parseDeleteCommand()
 	case TokenShow:
 		return p.parseShowCommand()
 	case TokenCreate:

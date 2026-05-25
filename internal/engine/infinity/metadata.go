@@ -352,8 +352,8 @@ func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[strin
 	return delResp.DeletedRows, nil
 }
 
-// DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields
-// The document itself remains, only the specified keys are deleted.
+// DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields.
+// If deleting those keys leaves no metadata entries, the metadata row is removed.
 func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.DeleteMetadataKeys called", zap.String("tableName", tableName), zap.String("docID", docID), zap.Any("keys", keys))
@@ -435,7 +435,12 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 	}
 
 	if !hasKeysToRemove {
-		common.Info("No matching keys to delete from document", zap.String("docID", docID), zap.Any("existingMetaFields", existingMetaFields), zap.Any("keys", keys))
+		common.Info(
+			"No matching keys to delete from document",
+			zap.String("docID", docID),
+			zap.Int("existingMetaFieldCount", len(existingMetaFields)),
+			zap.Int("keysCount", len(keys)),
+		)
 		return nil
 	}
 

@@ -583,7 +583,7 @@ type DeleteMetaRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/document/delete_meta [post]
 func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -603,6 +603,20 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 			"code":    1,
 			"message": "doc_id is required",
 		})
+		return
+	}
+
+	// Authorization: user must be able to access the document's dataset.
+	doc, err := h.documentService.GetDocumentByID(req.DocID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "document not found",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(doc.KbID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
 
