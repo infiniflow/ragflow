@@ -16,24 +16,26 @@
 
 import threading
 
-from rag.llm import embedding_model
+import pytest
+
+from rag.llm import dashscope_utils
 
 
 def test_dashscope_native_api_url_scope_restores_previous_endpoint(monkeypatch):
     original_url = "https://dashscope.aliyuncs.com/api/v1"
     custom_url = "https://dashscope-intl.aliyuncs.com/api/v1"
-    monkeypatch.setattr(embedding_model.dashscope, "base_http_api_url", original_url, raising=False)
+    monkeypatch.setattr(dashscope_utils.dashscope, "base_http_api_url", original_url, raising=False)
 
-    with embedding_model._dashscope_native_api_url_scope(custom_url):
-        assert embedding_model.dashscope.base_http_api_url == custom_url
+    with dashscope_utils.dashscope_native_api_url_scope(custom_url):
+        assert dashscope_utils.dashscope.base_http_api_url == custom_url
 
-    assert embedding_model.dashscope.base_http_api_url == original_url
+    assert dashscope_utils.dashscope.base_http_api_url == original_url
 
 
 def test_dashscope_default_scope_waits_for_custom_endpoint_to_restore(monkeypatch):
     original_url = "https://dashscope.aliyuncs.com/api/v1"
     custom_url = "https://dashscope-intl.aliyuncs.com/api/v1"
-    monkeypatch.setattr(embedding_model.dashscope, "base_http_api_url", original_url, raising=False)
+    monkeypatch.setattr(dashscope_utils.dashscope, "base_http_api_url", original_url, raising=False)
 
     custom_entered = threading.Event()
     release_custom = threading.Event()
@@ -45,7 +47,7 @@ def test_dashscope_default_scope_waits_for_custom_endpoint_to_restore(monkeypatc
 
     def custom_call():
         try:
-            with embedding_model._dashscope_native_api_url_scope(custom_url):
+            with dashscope_utils.dashscope_native_api_url_scope(custom_url):
                 custom_entered.set()
                 if not release_custom.wait(2):
                     errors.append("custom scope was not released")
@@ -61,8 +63,8 @@ def test_dashscope_default_scope_waits_for_custom_endpoint_to_restore(monkeypatc
             if not default_may_enter.wait(2):
                 errors.append("default scope was not released to enter")
                 return
-            with embedding_model._dashscope_native_api_url_scope(None):
-                observed_urls.append(embedding_model.dashscope.base_http_api_url)
+            with dashscope_utils.dashscope_native_api_url_scope(None):
+                observed_urls.append(dashscope_utils.dashscope.base_http_api_url)
                 default_entered.set()
         except Exception as exc:
             errors.append(exc)
@@ -86,4 +88,9 @@ def test_dashscope_default_scope_waits_for_custom_endpoint_to_restore(monkeypatc
     assert not default_thread.is_alive()
     assert errors == []
     assert observed_urls == [original_url]
-    assert embedding_model.dashscope.base_http_api_url == original_url
+    assert dashscope_utils.dashscope.base_http_api_url == original_url
+
+
+def test_dashscope_text_embedding_call_rejects_unsupported_text_type():
+    with pytest.raises(ValueError, match="unsupported DashScope embedding text_type"):
+        dashscope_utils.dashscope_text_embedding_call(None, "text-embedding-v2", "query", "api-key", "invalid")
