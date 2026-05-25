@@ -14,10 +14,12 @@
 #  limitations under the License.
 #
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
 
+import rag.llm.cv_model as cv_model
 from rag.llm import dashscope_utils
 from rag.llm.cv_model import QWenCV
 
@@ -26,7 +28,18 @@ from rag.llm.cv_model import QWenCV
 def test_qwen_cv_video_fallback_uses_scoped_dashscope_endpoint(monkeypatch):
     original_url = dashscope_utils.DASHSCOPE_CN_NATIVE_API_URL
     observed_urls = []
+    scoped_urls = []
     monkeypatch.setattr(dashscope_utils.dashscope, "base_http_api_url", original_url, raising=False)
+
+    real_scope = cv_model.dashscope_native_api_url_scope
+
+    @contextmanager
+    def recording_scope(url):
+        scoped_urls.append(url)
+        with real_scope(url):
+            yield
+
+    monkeypatch.setattr(cv_model, "dashscope_native_api_url_scope", recording_scope)
 
     class FakeMultiModalConversation:
         @staticmethod
@@ -46,5 +59,6 @@ def test_qwen_cv_video_fallback_uses_scoped_dashscope_endpoint(monkeypatch):
 
     assert summary == "video summary"
     assert token_count > 0
+    assert scoped_urls == [None, dashscope_utils.DASHSCOPE_INTL_NATIVE_API_URL]
     assert observed_urls == [original_url, dashscope_utils.DASHSCOPE_INTL_NATIVE_API_URL]
     assert dashscope_utils.dashscope.base_http_api_url == original_url

@@ -393,7 +393,8 @@ class QWenCV(GptV4):
 
         try:
             try:
-                return call_api()
+                with dashscope_native_api_url_scope(None):
+                    return call_api()
             except Exception as e1:
                 try:
                     with dashscope_native_api_url_scope(DASHSCOPE_INTL_NATIVE_API_URL):
