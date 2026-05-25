@@ -282,23 +282,40 @@ class LLM(ComponentBase):
             self.set_input_value(k, args[k])
 
         sys_file_texts, sys_file_imgs = self._collect_sys_files()
+        prev_img_count = len(self.imgs) + len(extracted_imgs)
         self.imgs = self._uniq_images(self.imgs + extracted_imgs + sys_file_imgs)
-        if self.imgs and TenantLLMService.llm_id2llm_type(self._param.llm_id) == LLMType.CHAT.value:
+        logging.debug(
+            "[LLM] imgs rebuilt: total=%d sys_files_added=%d unique_dropped=%d",
+            len(self.imgs), len(sys_file_imgs), max(0, prev_img_count + len(sys_file_imgs) - len(self.imgs)),
+        )
+        llm_type = TenantLLMService.llm_id2llm_type(self._param.llm_id)
+        if self.imgs and llm_type == LLMType.CHAT.value:
+            logging.info("[LLM] images present with chat-typed llm_id=%s; switching to IMAGE2TEXT", self._param.llm_id)
             self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT.value,
                                       self._param.llm_id, max_retries=self._param.max_retries,
                                       retry_interval=self._param.delay_after_error
                                       )
+        else:
+            logging.debug("[LLM] no model switch: imgs=%d llm_type=%s", len(self.imgs), llm_type)
 
         msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
 
         if sys_file_texts:
             joined = "\n\n".join(sys_file_texts)
+            merged_idx = -1
             for i in range(len(msg) - 1, -1, -1):
                 if msg[i].get("role") == "user":
                     msg[i]["content"] = (msg[i].get("content") or "") + "\n\n" + joined
+                    merged_idx = i
                     break
             else:
                 msg.append({"role": "user", "content": joined})
+                merged_idx = len(msg) - 1
+            logging.info(
+                "[LLM] sys.files text merged into msg: parts=%d total_chars=%d msg_index=%d action=%s",
+                len(sys_file_texts), len(joined), merged_idx,
+                "merged_into_existing_user" if merged_idx < len(msg) - 1 or msg[merged_idx].get("content", "") != joined else "appended_new_user",
+            )
 
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
