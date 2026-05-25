@@ -832,10 +832,6 @@ def _load_chat_routes_unit_module(monkeypatch):
     api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
-
     rag_pkg = ModuleType("rag")
     rag_pkg.__path__ = [str(repo_root / "rag")]
     monkeypatch.setitem(sys.modules, "rag", rag_pkg)

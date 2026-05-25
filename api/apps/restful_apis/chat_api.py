@@ -171,8 +171,12 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
+    conf_model_type = (llm_setting or {}).get("model_type")
+    if isinstance(conf_model_type, str):
+        model_type = conf_model_type if conf_model_type in {"chat", "image2text"} else "chat"
+    elif isinstance(conf_model_type, list):
+        model_type = "image2text" if "image2text" in conf_model_type else "chat"
+    else:
         model_type = "chat"
     try:
         await thread_pool_exec(

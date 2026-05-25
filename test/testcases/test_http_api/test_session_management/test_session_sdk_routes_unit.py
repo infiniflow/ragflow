@@ -2184,10 +2184,6 @@ def _load_chat_api_module(monkeypatch):
     api_utils_mod.validate_request = lambda *_a, **_k: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
-
     rag_gen_mod = ModuleType("rag.prompts.generator")
     rag_gen_mod.chunks_format = lambda chunks: chunks
     monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_gen_mod)
