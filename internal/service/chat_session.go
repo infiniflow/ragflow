@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
@@ -77,8 +76,8 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	if !req.IsNew {
 		// Update existing chat session
 		updates := map[string]interface{}{
-			"name":        name,
-			"user_id":     userID,
+			"name":    name,
+			"user_id": userID,
 		}
 
 		if err := s.chatSessionDAO.UpdateByID(req.SessionID, updates); err != nil {
@@ -102,11 +101,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	}
 
 	// Generate UUID for new chat session
-	newID := uuid.New().String()
-	newID = strings.ReplaceAll(newID, "-", "")
-	if len(newID) > 32 {
-		newID = newID[:32]
-	}
+	newID := common.GenerateUUID()
 
 	// Get prologue from dialog's prompt_config
 	prologue := "Hi! I'm your assistant. What can I do for you?"
@@ -448,8 +443,8 @@ func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, 
 	referenceJSON, _ := json.Marshal(reference)
 
 	updates := map[string]interface{}{
-		"message":     messagesJSON,
-		"reference":   referenceJSON,
+		"message":   messagesJSON,
+		"reference": referenceJSON,
 	}
 	s.chatSessionDAO.UpdateByID(session.ID, updates)
 }

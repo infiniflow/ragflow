@@ -129,6 +129,10 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminShutdownCommand()
 	case TokenRestart:
 		return p.parseAdminRestartCommand()
+	case TokenStart:
+		return p.parseStartIngestion()
+	case TokenStop:
+		return p.parseStopIngestion()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -259,7 +263,7 @@ func (p *Parser) expectSemicolon() error {
 }
 
 func isKeyword(tokenType int) bool {
-	return tokenType >= TokenLogin && tokenType <= TokenTag
+	return tokenType >= TokenLogin && tokenType <= TokenPanic
 }
 
 // isCECommand checks if the given string is a Filesystem command
