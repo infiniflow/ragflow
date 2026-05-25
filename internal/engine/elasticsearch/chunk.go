@@ -1136,16 +1136,18 @@ func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID st
 		if err != nil {
 			return nil, fmt.Errorf("failed to search for chunk: %w", err)
 		}
-		defer res.Body.Close()
 
 		if res.IsError() {
+			res.Body.Close()
 			return nil, fmt.Errorf("failed to search for chunk: %s", res.Status())
 		}
 
 		var searchResult map[string]interface{}
 		if err := json.NewDecoder(res.Body).Decode(&searchResult); err != nil {
+			res.Body.Close()
 			return nil, fmt.Errorf("failed to parse search response: %w", err)
 		}
+		res.Body.Close()
 
 		hits, ok := searchResult["hits"].(map[string]interface{})
 		if !ok {

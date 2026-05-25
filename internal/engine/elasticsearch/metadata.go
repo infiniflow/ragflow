@@ -111,10 +111,11 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 		}
 
 		// Action line: use json.Marshal to properly escape string values
+		compositeID := fmt.Sprintf("%d:%s|%d:%s", len(docID), docID, len(kbID), kbID)
 		action, err := json.Marshal(map[string]interface{}{
 			"index": map[string]interface{}{
 				"_index": indexName,
-				"_id":    fmt.Sprintf("%s_%s", docID, kbID),
+				"_id":    compositeID,
 			},
 		})
 		if err != nil {
@@ -312,16 +313,16 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 		return fmt.Errorf("index '%s' does not exist", indexName)
 	}
 
-	// Build the document ID for query
-	docID = strings.ReplaceAll(docID, "'", "''")
-	datasetIDStr := strings.ReplaceAll(datasetID, "'", "''")
+	// Build the document ID for query (no escaping needed for ES term queries)
+	docIDTerm := docID
+	datasetIDTerm := datasetID
 
 	// Build query to find the document
 	query := map[string]interface{}{
 		"bool": map[string]interface{}{
 			"must": []map[string]interface{}{
-				{"term": map[string]interface{}{"id": docID}},
-				{"term": map[string]interface{}{"kb_id": datasetIDStr}},
+				{"term": map[string]interface{}{"id": docIDTerm}},
+				{"term": map[string]interface{}{"kb_id": datasetIDTerm}},
 			},
 		},
 	}
@@ -432,8 +433,8 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 
 		// Build condition for deletion using docID and datasetID
 		condition := map[string]interface{}{
-			"id":    docID,
-			"kb_id": datasetIDStr,
+			"id":    docIDTerm,
+			"kb_id": datasetIDTerm,
 		}
 
 		// Use existing DeleteMetadata method which handles the deletion properly

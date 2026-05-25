@@ -3655,6 +3655,10 @@ func (p *Parser) parseDeleteMeta() (*Command, error) {
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
+		return cmd, nil
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("expected end of command after KEYS")
 	}
 
 	return cmd, nil

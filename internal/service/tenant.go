@@ -305,10 +305,16 @@ type CreateChunkStoreResponse struct {
 
 // CreateChunkStore creates a chunk store in the document engine for a knowledge base
 func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
+	if req == nil {
+		return nil, common.CodeDataError, fmt.Errorf("request is required")
+	}
 	// Get KB to find tenant_id for building table name
 	kb, err := s.kbDAO.GetByID(req.KBID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to query knowledge base %s: %w", req.KBID, err)
 	}
 
 	// vector_size is required
@@ -339,7 +345,10 @@ func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) 
 	// Get KB to find tenant_id for building table name
 	kb, err := s.kbDAO.GetByID(kbID)
 	if err != nil {
-		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
+		}
+		return common.CodeServerError, fmt.Errorf("failed to query knowledge base %s: %w", kbID, err)
 	}
 
 	// Call document engine to delete table
