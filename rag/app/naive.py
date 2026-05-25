@@ -797,7 +797,8 @@ class Markdown(MarkdownParser):
         """
         from pathlib import Path
 
-        cache = cache or {}
+        if cache is None:
+            cache = {}
         images = []
         for url in urls:
             if url in cache:
