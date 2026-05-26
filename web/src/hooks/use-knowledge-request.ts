@@ -502,7 +502,7 @@ export const useFetchTagListByKnowledgeIds = () => {
   const [knowledgeIds, setKnowledgeIds] = useState<string[]>([]);
 
   const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
-    queryKey: ['fetchTagListByKnowledgeIds'],
+    queryKey: ['fetchTagListByKnowledgeIds', knowledgeIds],
     enabled: knowledgeIds.length > 0,
     initialData: [],
     gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
@@ -510,8 +510,15 @@ export const useFetchTagListByKnowledgeIds = () => {
       const { data } = await kbService.listTagByKnowledgeIds({
         dataset_ids: knowledgeIds.join(','),
       });
-      const list = data?.data || [];
-      return list;
+      const list = (data?.data || []) as Array<
+        [string, number] | { value?: string; count?: number }
+      >;
+      return list.flatMap((tag): Array<[string, number]> => {
+        if (Array.isArray(tag)) {
+          return [tag];
+        }
+        return tag.value ? [[tag.value, tag.count ?? 0]] : [];
+      });
     },
   });
 

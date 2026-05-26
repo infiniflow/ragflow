@@ -15,15 +15,15 @@ Released on May 26, 2026.
 
 ### New features
 
-- Agent: Adds a **Browser** component for AI-driven browser automation. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
+- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
 
 ### Improvements
 
 - RAG: RAPTOR construction now introduces AHC mode (Ψ-RAG), which expands semantics from the document level to the dataset level. Not only is index construction performance significantly higher than the previous RAPTOR, but it also outperforms the old RAPTOR on Recall@5 and average F1. Users can switch between AHC and GMM modes. This feature was introduced in v0.25.3, and this release fixes several bugs. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
-- Agent: @tool decorator for Chat Model tool registration.
-- Agent: Agent messages now support displaying base64 images.
-- Agent: Doc Generator exposes file metadata as discrete outputs. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
-- Agent: Agent chat completion supports passing chat_template_kwargs.
+- Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/infiniflow/ragflow/pull/15047)
+- Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/infiniflow/ragflow/pull/15212)
+- Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
+- Agent: Allows developers to pass `chat_template_kwargs` to agent chat completion endpoint. [#14182](https://github.com/infiniflow/ragflow/issues/14182)[#14542](https://github.com/infiniflow/ragflow/pull/14542)
 
 ### Bug fixes
 
