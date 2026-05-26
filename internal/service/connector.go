@@ -17,7 +17,11 @@
 package service
 
 import (
+	"errors"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"strings"
 )
 
 // ConnectorService connector service
@@ -66,4 +70,33 @@ func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsRespons
 	return &ListConnectorsResponse{
 		Connectors: connectors,
 	}, nil
+}
+
+// GetConnector returns connector details when the current user can access it.
+// Equivalent to Python's get_connector in api/apps/restful_apis/connector_api.py.
+func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, common.CodeDataError, errors.New("connector_id is required")
+	}
+	if !s.accessible(connectorID, userID) {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+	return connector, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) accessible(connectorID, userID string) bool {
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return false
+	}
+	if connector.TenantID == userID {
+		return true
+	}
+	_, err = s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
+	return err == nil
 }

@@ -19,15 +19,21 @@ package handler
 import (
 	"net/http"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/service"
 )
 
+type connectorService interface {
+	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
+	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
+}
+
 // ConnectorHandler connector handler
 type ConnectorHandler struct {
-	connectorService *service.ConnectorService
+	connectorService connectorService
 	userService      *service.UserService
 }
 
@@ -37,6 +43,30 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 		connectorService: connectorService,
 		userService:      userService,
 	}
+}
+
+// GetConnector gets connector details.
+// @Summary Get Connector
+// @Description Get connector details when the current user can access it
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} entity.Connector
+// @Router /api/v1/connectors/{connector_id} [get]
+func (h *ConnectorHandler) GetConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	result, code, err := h.connectorService.GetConnector(c.Param("connector_id"), user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // ListConnectors list connectors
