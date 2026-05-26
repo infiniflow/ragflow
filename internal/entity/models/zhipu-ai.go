@@ -19,6 +19,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -584,6 +585,10 @@ type zhipuRerankResponse struct {
 	} `json:"results"`
 }
 
+type zhipuOCRResponse struct {
+	MarkdownResults *string `json:"md_results"`
+}
+
 // Rerank calculates similarity scores between query and documents using
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
 // score per input text, in the same order the documents were given.
@@ -933,8 +938,88 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 }
 
 // OCRFile OCR file
-func (m *ZhipuAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	if (fileURL == nil || *fileURL == "") && len(content) == 0 {
+		return nil, fmt.Errorf("file url or content is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, ok := z.BaseURL[region]
+	if !ok || baseURL == "" {
+		return nil, fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
+	}
+
+	if z.URLSuffix.OCR == "" {
+		return nil, fmt.Errorf("zhipu-ai: no OCR URL suffix configured")
+	}
+
+	file := ""
+	if fileURL != nil && *fileURL != "" {
+		file = *fileURL
+	} else {
+		mimeType := http.DetectContentType(content)
+		if len(content) > 4 && string(content[:4]) == "%PDF" {
+			mimeType = "application/pdf"
+		}
+		file = fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(content))
+	}
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"file":  file,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(z.URLSuffix.OCR, "/"))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ZhipuAI OCR API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var zhipuResp zhipuOCRResponse
+	if err = json.Unmarshal(body, &zhipuResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if zhipuResp.MarkdownResults == nil {
+		return nil, fmt.Errorf("ZhipuAI OCR API response missing md_results")
+	}
+
+	return &OCRFileResponse{Text: zhipuResp.MarkdownResults}, nil
 }
 
 // ParseFile parse file

@@ -97,12 +97,16 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewXinferenceModel(baseURL, urlSuffix), nil
 	case "astraflow":
 		return NewAstraflowModel(baseURL, urlSuffix), nil
+	case "modelscope":
+		return NewModelScopeModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "hunyuan":
 		return NewHunyuanModel(baseURL, urlSuffix), nil
 	case "tokenpony":
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
+	case "tokenhub":
+		return NewTokenHubModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
@@ -129,14 +133,22 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAI302Model(baseURL, urlSuffix), nil
 	case "mineru_local":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
+	case "futurmix":
+		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":
 		return NewPerplexityModel(baseURL, urlSuffix), nil
 	case "gpustack":
 		return NewGPUStackModel(baseURL, urlSuffix), nil
 	case "n1n":
 		return NewN1NModel(baseURL, urlSuffix), nil
+	case "bedrock":
+		return NewBedrockModel(baseURL, urlSuffix), nil
 	case "paddleocr_local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "orcarouter":
+		return NewOrcaRouterModel(baseURL, urlSuffix), nil
+	case "huaweicloud":
+		return NewHuaweiCloudModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
