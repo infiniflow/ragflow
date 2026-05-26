@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -31,6 +32,7 @@ const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
 	mcpServerNameLimit          = 255
+	mcpServerDateFormat         = "2006-01-02T15:04:05"
 )
 
 // MCPService handles MCP server operations.
@@ -67,6 +69,24 @@ type CreateMCPServerResponse struct {
 	Description *string        `json:"description,omitempty"`
 	Variables   entity.JSONMap `json:"variables"`
 	Headers     entity.JSONMap `json:"headers"`
+}
+
+// MCPServerListItem is an MCP server item in the list response.
+type MCPServerListItem struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	ServerType  string         `json:"server_type"`
+	URL         string         `json:"url"`
+	Description *string        `json:"description"`
+	Variables   entity.JSONMap `json:"variables"`
+	CreateDate  *string        `json:"create_date"`
+	UpdateDate  *string        `json:"update_date"`
+}
+
+// ListMCPServersResponse is the response payload for listing MCP servers.
+type ListMCPServersResponse struct {
+	MCPServers []*MCPServerListItem `json:"mcp_servers"`
+	Total      int64                `json:"total"`
 }
 
 // CreateMCPServer creates an MCP server owned by a tenant.
@@ -127,6 +147,40 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 	}, common.CodeSuccess, nil
 }
 
+// ListMCPServers lists MCP servers owned by a tenant.
+func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, error) {
+	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, page, pageSize, orderby, desc)
+	if err != nil {
+		return nil, err
+	}
+	if servers == nil {
+		servers = []*entity.MCPServer{}
+	}
+
+	items := make([]*MCPServerListItem, 0, len(servers))
+	for _, server := range servers {
+		variables := server.Variables
+		if variables == nil {
+			variables = entity.JSONMap{}
+		}
+		items = append(items, &MCPServerListItem{
+			ID:          server.ID,
+			Name:        server.Name,
+			ServerType:  server.ServerType,
+			URL:         server.URL,
+			Description: server.Description,
+			Variables:   variables,
+			CreateDate:  formatMCPServerDate(server.CreateDate),
+			UpdateDate:  formatMCPServerDate(server.UpdateDate),
+		})
+	}
+
+	return &ListMCPServersResponse{
+		MCPServers: items,
+		Total:      total,
+	}, nil
+}
+
 func isValidMCPServerType(serverType string) bool {
 	return serverType == mcpServerTypeSSE || serverType == mcpServerTypeStreamableHTTP
 }
@@ -151,4 +205,12 @@ func safeJSONMap(raw json.RawMessage) entity.JSONMap {
 		return entity.JSONMap{}
 	}
 	return entity.JSONMap(value)
+}
+
+func formatMCPServerDate(date *time.Time) *string {
+	if date == nil {
+		return nil
+	}
+	formatted := date.Format(mcpServerDateFormat)
+	return &formatted
 }

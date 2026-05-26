@@ -16,7 +16,12 @@
 
 package dao
 
-import "ragflow/internal/entity"
+import (
+	"fmt"
+	"strings"
+
+	"ragflow/internal/entity"
+)
 
 // MCPServerDAO MCP server data access object.
 type MCPServerDAO struct{}
@@ -40,4 +45,65 @@ func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, err
 // CreateMCPServer creates an MCP server.
 func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
 	return DB.Create(server).Error
+}
+
+// ListMCPServers returns MCP servers for a tenant with optional filtering.
+func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+	var servers []*entity.MCPServer
+	var total int64
+
+	query := DB.Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
+
+	if len(ids) > 0 {
+		query = query.Where("id IN ?", ids)
+	}
+
+	if keywords != "" {
+		query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	orderColumn, err := mcpServerOrderColumn(orderby)
+	if err != nil {
+		return nil, 0, err
+	}
+	orderDirection := "ASC"
+	if desc {
+		orderDirection = "DESC"
+	}
+	query = query.Order(orderColumn + " " + orderDirection)
+
+	if page > 0 && pageSize > 0 {
+		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+
+	if err := query.
+		Select("id", "name", "server_type", "url", "description", "variables", "create_date", "update_date").
+		Find(&servers).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return servers, total, nil
+}
+
+func mcpServerOrderColumn(orderby string) (string, error) {
+	switch orderby {
+	case "id":
+		return "id", nil
+	case "name":
+		return "name", nil
+	case "server_type":
+		return "server_type", nil
+	case "url":
+		return "url", nil
+	case "update_time", "update_date":
+		return "update_date", nil
+	case "create_time", "create_date":
+		return "create_date", nil
+	default:
+		return "", fmt.Errorf("type object 'MCPServer' has no attribute '%s'", orderby)
+	}
 }
