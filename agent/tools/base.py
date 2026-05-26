@@ -161,6 +161,7 @@ class ToolBase(ComponentBase):
         except Exception as e:
             logging.exception(e)
             if self.get_exception_default_value():
+                self.set_output("_EXCEPTION", str(e))
                 self.set_exception_default_value()
                 res = self.get_exception_default_value()
             else:
@@ -192,6 +193,7 @@ class ToolBase(ComponentBase):
         except Exception as e:
             logging.exception(e)
             if self.get_exception_default_value():
+                self.set_output("_EXCEPTION", str(e))
                 self.set_exception_default_value()
                 res = self.get_exception_default_value()
             else:

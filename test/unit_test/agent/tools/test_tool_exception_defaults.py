@@ -54,6 +54,7 @@ def test_toolbase_comment_exception_sets_default_without_error():
 
     assert result == "SQL failed, continue with fallback."
     assert tool.error() in ("", None)
+    assert tool.output("_EXCEPTION") == "boom"
     assert tool.output("result") == "SQL failed, continue with fallback."
 
 
@@ -76,5 +77,6 @@ def test_exesql_comment_exception_sets_sql_outputs(monkeypatch):
 
     assert result == "Database query failed."
     assert tool.error() in ("", None)
+    assert tool.output("_EXCEPTION") == "bad sql"
     assert tool.output("formalized_content") == "Database query failed."
     assert tool.output("json") == []
