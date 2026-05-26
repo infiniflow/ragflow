@@ -575,32 +575,26 @@ func (h *HuaweiCloudModel) Rerank(modelName *string, query string, documents []s
 
 func (h *HuaweiCloudModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -660,7 +654,6 @@ func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 func (h *HuaweiCloudModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) CheckConnection(apiConfig *APIConfig) error {
@@ -670,10 +663,8 @@ func (h *HuaweiCloudModel) CheckConnection(apiConfig *APIConfig) error {
 
 func (h *HuaweiCloudModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", h.Name())
-	panic("implement me")
 }
