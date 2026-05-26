@@ -47,6 +47,7 @@ type DocEngine interface {
 	InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error)
 	UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error
 	DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error)
+	DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error
 	DropMetadataStore(ctx context.Context, tenantID string) error
 	MetadataStoreExists(ctx context.Context, tenantID string) (bool, error)
 

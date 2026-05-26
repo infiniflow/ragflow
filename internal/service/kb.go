@@ -78,69 +78,6 @@ type ListKbsResponse struct {
 	Total int64                    `json:"total"`
 }
 
-// CreateDatasetTableRequest represents the request for creating a dataset table
-type CreateDatasetTableRequest struct {
-	KBID       string `json:"kb_id" binding:"required"`
-	VectorSize int    `json:"vector_size" binding:"required"`
-	ParserID   string `json:"parser_id,omitempty"`
-}
-
-// CreateDatasetInDocEngineResponse represents the response for creating a dataset table
-type CreateDatasetInDocEngineResponse struct {
-	KBID       string `json:"kb_id"`
-	TableName  string `json:"table_name"`
-	VectorSize int    `json:"vector_size"`
-}
-
-// CreateDatasetInDocEngine creates a table in the document engine for a knowledge base
-func (s *KnowledgebaseService) CreateDatasetInDocEngine(req *CreateDatasetTableRequest) (*CreateDatasetInDocEngineResponse, common.ErrorCode, error) {
-	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(req.KBID)
-	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
-	}
-
-	// vector_size is required
-	vecSize := req.VectorSize
-	if vecSize <= 0 {
-		return nil, common.CodeDataError, fmt.Errorf("vector_size must be positive")
-	}
-
-	// Build table name prefix: ragflow_<tenant_id>
-	tableName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-
-	// Call document engine to create table
-	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateChunkStore(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
-	}
-
-	return &CreateDatasetInDocEngineResponse{
-		KBID:       req.KBID,
-		TableName:  tableName,
-		VectorSize: vecSize,
-	}, common.CodeSuccess, nil
-}
-
-// DeleteDatasetInDocEngine deletes the table in the document engine for a knowledge base
-func (s *KnowledgebaseService) DeleteDatasetInDocEngine(kbID string) (common.ErrorCode, error) {
-	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(kbID)
-	if err != nil {
-		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
-	}
-
-	// Call document engine to delete table
-	err = s.docEngine.DropChunkStore(context.Background(), fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
-
-	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
-	}
-
-	return common.CodeSuccess, nil
-}
-
 // UpdateKB updates an existing knowledge base
 // This matches the Python update endpoint in kb_app.py
 func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (map[string]interface{}, common.ErrorCode, error) {
