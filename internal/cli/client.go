@@ -185,6 +185,16 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowModel(cmd)
 	case "list_admin_tasks":
 		return c.ListAdminTasks(cmd)
+	case "admin_list_ingestors":
+		return c.ListAdminIngestors(cmd)
+	case "admin_start_ingestion_command":
+		return c.AdminStartIngestionCommand(cmd)
+	case "admin_stop_ingestion_command":
+		return c.AdminStopIngestionCommand(cmd)
+	case "admin_shutdown_ingestor_command":
+		return c.AdminShutdownIngestor(cmd)
+	case "list_admin_ingestion_tasks":
+		return c.ListAdminIngestionTasks(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -299,17 +309,16 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListTasksUserCommand(cmd)
 	case "show_task_user_command":
 		return c.ShowTaskUserCommand(cmd)
-	// Dataset, metadata commands
-	case "create_dataset_table":
-		return c.CreateDatasetInDocEngine(cmd)
-	case "drop_dataset_table":
-		return c.DropDatasetInDocEngine(cmd)
-	case "create_metadata_table":
-		return c.CreateMetadataInDocEngine(cmd)
-	case "drop_metadata_table":
-		return c.DropMetadataInDocEngine(cmd)
-	case "insert_dataset_from_file":
-		return c.InsertDatasetFromFile(cmd)
+	case "create_chunk_store":
+		return c.CreateChunkStore(cmd)
+	case "drop_chunk_store":
+		return c.DropChunkStore(cmd)
+	case "create_metadata_store":
+		return c.CreateMetadataStore(cmd)
+	case "drop_metadata_store":
+		return c.DropMetadataStore(cmd)
+	case "insert_chunks_from_file":
+		return c.InsertChunksFromFile(cmd)
 	case "insert_metadata_from_file":
 		return c.InsertMetadataFromFile(cmd)
 	case "update_chunk":
@@ -318,12 +327,16 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.GetChunk(cmd)
 	case "set_meta":
 		return c.SetMeta(cmd)
+	case "delete_meta":
+		return c.DeleteMeta(cmd)
 	case "rm_tags":
 		return c.RmTags(cmd)
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
 	case "list_metadata":
 		return c.ListMetadata(cmd)
+	case "parse_documents_user_command":
+		return c.ParseDocumentsUserCommand(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

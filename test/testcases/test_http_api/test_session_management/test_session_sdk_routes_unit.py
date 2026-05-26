@@ -690,7 +690,7 @@ def _load_session_module(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", user_canvas_version_mod)
 
-    module_path = repo_root / "api" / "apps" / "sdk" / "session.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "bot_api.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -2039,6 +2039,7 @@ def _load_chat_api_module(monkeypatch):
 
     class _RetCode(int, Enum):
         SUCCESS = 0
+        ARGUMENT_ERROR = 101
         DATA_ERROR = 102
         AUTHENTICATION_ERROR = 109
         SERVER_ERROR = 500
@@ -2258,3 +2259,183 @@ def test_session_completion_user_id_not_spoofable(monkeypatch):
     _run(inspect.unwrap(module.session_completion)())
 
     assert captured_user_ids == [module.current_user.id]
+
+
+@pytest.mark.p2
+def test_session_completion_uses_server_history_by_default(monkeypatch):
+    """Session chat completions should append only the latest user message to stored history by default."""
+    module = _load_chat_api_module(monkeypatch)
+
+    captured_messages = []
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[
+            {"role": "assistant", "content": "prologue"},
+            {"role": "user", "content": "server old question", "id": "old-user"},
+            {"role": "assistant", "content": "server old answer", "id": "old-user"},
+        ],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+
+    async def _fake_async_chat(_dia, messages, stream=True, **_kwargs):
+        captured_messages.append([dict(message) for message in messages])
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "messages": [
+                {"role": "user", "content": "client old question", "id": "client-old"},
+                {"role": "assistant", "content": "client old answer", "id": "client-old"},
+                {"role": "user", "content": "latest question", "id": "latest"},
+            ],
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    assert [message["content"] for message in captured_messages[0]] == [
+        "server old question",
+        "server old answer",
+        "latest question",
+    ]
+    assert [message["content"] for message in conv.message] == [
+        "prologue",
+        "server old question",
+        "server old answer",
+        "latest question",
+    ]
+
+
+@pytest.mark.p2
+def test_session_completion_can_use_submitted_full_history(monkeypatch):
+    """The UI opt-in flag should preserve the previous full-history request behavior."""
+    module = _load_chat_api_module(monkeypatch)
+
+    captured_messages = []
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[
+            {"role": "assistant", "content": "prologue"},
+            {"role": "user", "content": "server old question", "id": "old-user"},
+        ],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+
+    async def _fake_async_chat(_dia, messages, stream=True, **_kwargs):
+        captured_messages.append([dict(message) for message in messages])
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "pass_all_history_messages": True,
+            "messages": [
+                {"role": "user", "content": "client old question", "id": "client-old"},
+                {"role": "assistant", "content": "client old answer", "id": "client-old"},
+                {"role": "user", "content": "latest question", "id": "latest"},
+            ],
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    assert [message["content"] for message in captured_messages[0]] == [
+        "client old question",
+        "client old answer",
+        "latest question",
+    ]
+    assert [message["content"] for message in conv.message] == [
+        "client old question",
+        "client old answer",
+        "latest question",
+    ]
+
+
+@pytest.mark.p2
+def test_session_completion_accepts_question_payload(monkeypatch):
+    """Compatibility calls from /chats/{chat_id}/completions may send only `question`."""
+    module = _load_chat_api_module(monkeypatch)
+
+    captured_messages = []
+    conv = SimpleNamespace(
+        id="session-1",
+        dialog_id="chat-1",
+        message=[{"role": "assistant", "content": "prologue"}],
+        reference=[],
+        user_id="authenticated-user",
+        name="test",
+    )
+    conv.to_dict = lambda: {
+        "id": conv.id,
+        "dialog_id": conv.dialog_id,
+        "message": conv.message,
+        "reference": conv.reference,
+        "user_id": conv.user_id,
+        "name": conv.name,
+    }
+
+    async def _fake_async_chat(_dia, messages, stream=True, **_kwargs):
+        captured_messages.append([dict(message) for message in messages])
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module.ConversationService, "get_by_id", lambda _id: (True, conv))
+    monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_a, **_k: True, raising=False)
+    monkeypatch.setattr(module, "async_chat", _fake_async_chat)
+    monkeypatch.setattr(module, "structure_answer", lambda _conv, ans, _message_id, _session_id: ans)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({
+            "chat_id": "chat-1",
+            "session_id": "session-1",
+            "stream": False,
+            "question": "latest question",
+        }),
+    )
+
+    res = _run(inspect.unwrap(module.session_completion)())
+
+    assert res["code"] == 0, res
+    assert [message["content"] for message in captured_messages[0]] == ["latest question"]
+    assert conv.message[-1]["content"] == "latest question"

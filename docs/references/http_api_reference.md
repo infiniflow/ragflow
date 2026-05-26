@@ -4082,11 +4082,14 @@ The previous endpoint `POST /api/v1/chats/{chat_id}/completions` is deprecated. 
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
+
   - `"messages"`: `list[object]`
+  - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
+  - `"pass_all_history_messages"`: `boolean` (optional)
 
 ##### Request example
 
@@ -4118,10 +4121,6 @@ curl --request POST \
           "session_id":"9fa7691cb85c11ef9c5f0242ac120005",
           "messages": [
               {
-                  "role": "assistant",
-                  "content": "Hi! I'\''m your assistant. What can I do for you?"
-              },
-              {
                   "role": "user",
                   "content": "Who are you?"
               }
@@ -4131,8 +4130,10 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `"messages"`: (*Body Parameter*), `list[object]`, *Required*
-  The conversation messages sent to the model.
+- `"messages"`: (*Body Parameter*), `list[object]`
+  The latest user message, or the conversation messages sent to the model when `pass_all_history_messages` is `true`. Either `messages` or `question` is required.
+- `"question"`: (*Body Parameter*), `string`
+  Latest user question. This is equivalent to passing `messages: [{"role": "user", "content": question}]`.
 - `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
@@ -4143,6 +4144,8 @@ curl --request POST \
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
 - `"llm_id"`: (*Body Parameter*), `string`
   Optional model override when a specific chat model should be used for this request.
+- `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
+  When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 
 #### Response
 
@@ -6905,18 +6908,18 @@ Failure:
 
 ### Download attachment
 
-**GET** `/api/v1/documents/{doc_id}/download`
+**GET** `/api/v1/agents/attachments/{attachment_id}/download`
 
 :::caution DEPRECATED
-The previous endpoint `GET /v1/document/download/{doc_id}` is deprecated. Please use this endpoint instead.
+The previous endpoints `GET /v1/document/download/{doc_id}` and `GET /api/v1/document/download/{doc_id}` are deprecated. Please use this endpoint instead.
 :::
 
-Downloads a runtime attachment previously uploaded via the [Upload document](#upload-document) method.
+Downloads a runtime attachment previously uploaded for use in the agent system.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/documents/{doc_id}/download`
+- URL: `/api/v1/agents/attachments/{attachment_id}/download`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query parameter:
@@ -6926,15 +6929,15 @@ Downloads a runtime attachment previously uploaded via the [Upload document](#up
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/documents/{doc_id}/download?ext=pdf' \
+     --url 'http://{address}/api/v1/agents/attachments/{attachment_id}/download?ext=pdf' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --output ./downloaded_attachment.pdf
 ```
 
 ##### Request parameters
 
-- `doc_id`: (*Path parameter*), `string`, *Required*
-  The document ID whose attachment should be downloaded.
+- `attachment_id`: (*Path parameter*), `string`, *Required*
+  The attachment ID whose file should be downloaded.
 - `ext`: (*Query parameter*), `string`, *Optional*
   A file extension hint specifying the response's Content-Type. Defaults to `"markdown"`. Available values:
   - `"markdown"`
