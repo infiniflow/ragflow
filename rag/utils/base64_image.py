@@ -106,7 +106,7 @@ def parse_storage_composite_id(composite_id: str) -> tuple[str, str] | None:
         ``(bucket, object_key)`` when valid, otherwise ``None``.
     """
     parts = composite_id.split("-", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
+    if len(parts) != 2 or not parts[0] or not parts[1] or composite_id.endswith("-"):
         return None
     return parts[0], parts[1]
 
