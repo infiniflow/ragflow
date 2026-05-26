@@ -28,8 +28,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// HeartbeatSender is responsible for sending heartbeat reports to the admin server
-type HeartbeatSender struct {
+// AdminClient is responsible for sending heartbeat reports to the admin server
+type AdminClient struct {
 	client       *utility.HTTPClient
 	logger       *zap.Logger
 	serverType   common.ServerType
@@ -41,9 +41,9 @@ type HeartbeatSender struct {
 	attemptCount int
 }
 
-// NewHeartbeatSender creates a new heartbeat service instance
-func NewHeartbeatSender(logger *zap.Logger, serverType common.ServerType, serverName, host string, port int) *HeartbeatSender {
-	return &HeartbeatSender{
+// NewAdminClient creates a new heartbeat service instance
+func NewAdminClient(logger *zap.Logger, serverType common.ServerType, serverName, host string, port int) *AdminClient {
+	return &AdminClient{
 		logger:       logger,
 		serverType:   serverType,
 		serverName:   serverName,
@@ -56,7 +56,7 @@ func NewHeartbeatSender(logger *zap.Logger, serverType common.ServerType, server
 }
 
 // InitHTTPClient initializes the HTTP client with admin server configuration
-func (h *HeartbeatSender) InitHTTPClient() error {
+func (h *AdminClient) InitHTTPClient() error {
 	adminConfig := server.GetAdminConfig()
 	if adminConfig == nil {
 		return fmt.Errorf("admin configuration not found")
@@ -77,7 +77,7 @@ func (h *HeartbeatSender) InitHTTPClient() error {
 }
 
 // SendHeartbeat sends a heartbeat message to the admin server
-func (h *HeartbeatSender) SendHeartbeat() error {
+func (h *AdminClient) SendHeartbeat() error {
 
 	if h.attemptCount < 10 {
 		if h.lastSuccess {
