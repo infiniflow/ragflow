@@ -191,6 +191,180 @@ def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk
 
 @pytest.mark.p1
 @pytest.mark.parametrize(
+    "name, parser_config",
+    [
+        ("auto_keywords_min", {"auto_keywords": 0}),
+        ("auto_keywords_mid", {"auto_keywords": 16}),
+        ("auto_keywords_max", {"auto_keywords": 32}),
+        ("auto_questions_min", {"auto_questions": 0}),
+        ("auto_questions_mid", {"auto_questions": 5}),
+        ("auto_questions_max", {"auto_questions": 10}),
+        ("chunk_token_num_min", {"chunk_token_num": 1}),
+        ("chunk_token_num_mid", {"chunk_token_num": 1024}),
+        ("chunk_token_num_max", {"chunk_token_num": 2048}),
+        ("delimiter", {"delimiter": "\n"}),
+        ("delimiter_space", {"delimiter": " "}),
+        ("html4excel_true", {"html4excel": True}),
+        ("html4excel_false", {"html4excel": False}),
+        ("layout_recognize_DeepDOC", {"layout_recognize": "DeepDOC"}),
+        ("layout_recognize_navie", {"layout_recognize": "Plain Text"}),
+        ("tag_kb_ids", {"tag_kb_ids": ["1", "2"]}),
+        ("topn_tags_min", {"topn_tags": 1}),
+        ("topn_tags_mid", {"topn_tags": 5}),
+        ("topn_tags_max", {"topn_tags": 10}),
+        ("filename_embd_weight_min", {"filename_embd_weight": 0.1}),
+        ("filename_embd_weight_mid", {"filename_embd_weight": 0.5}),
+        ("filename_embd_weight_max", {"filename_embd_weight": 1.0}),
+        ("task_page_size_min", {"task_page_size": 1}),
+        ("task_page_size_None", {"task_page_size": None}),
+        ("pages", {"pages": [[1, 100]]}),
+        ("pages_none", {"pages": None}),
+        ("graphrag_true", {"graphrag": {"use_graphrag": True}}),
+        ("graphrag_false", {"graphrag": {"use_graphrag": False}}),
+        ("graphrag_entity_types", {"graphrag": {"entity_types": ["age", "sex", "height", "weight"]}}),
+        ("graphrag_method_general", {"graphrag": {"method": "general"}}),
+        ("graphrag_method_light", {"graphrag": {"method": "light"}}),
+        ("graphrag_community_true", {"graphrag": {"community": True}}),
+        ("graphrag_community_false", {"graphrag": {"community": False}}),
+        ("graphrag_resolution_true", {"graphrag": {"resolution": True}}),
+        ("graphrag_resolution_false", {"graphrag": {"resolution": False}}),
+        ("raptor_true", {"raptor": {"use_raptor": True}}),
+        ("raptor_false", {"raptor": {"use_raptor": False}}),
+        ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
+        ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+        ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
+        ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
+        ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
+        ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
+        ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+        ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
+        ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
+        ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
+        ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+        ("raptor_clustering_method_gmm", {"raptor": {"clustering_method": "gmm"}}),
+        ("raptor_clustering_method_ahc", {"raptor": {"clustering_method": "ahc"}}),
+        ("raptor_tree_builder_raptor", {"raptor": {"tree_builder": "raptor"}}),
+        ("raptor_tree_builder_psi", {"raptor": {"tree_builder": "psi"}}),
+    ],
+    ids=[
+        "auto_keywords_min",
+        "auto_keywords_mid",
+        "auto_keywords_max",
+        "auto_questions_min",
+        "auto_questions_mid",
+        "auto_questions_max",
+        "chunk_token_num_min",
+        "chunk_token_num_mid",
+        "chunk_token_num_max",
+        "delimiter",
+        "delimiter_space",
+        "html4excel_true",
+        "html4excel_false",
+        "layout_recognize_DeepDOC",
+        "layout_recognize_navie",
+        "tag_kb_ids",
+        "topn_tags_min",
+        "topn_tags_mid",
+        "topn_tags_max",
+        "filename_embd_weight_min",
+        "filename_embd_weight_mid",
+        "filename_embd_weight_max",
+        "task_page_size_min",
+        "task_page_size_None",
+        "pages",
+        "pages_none",
+        "graphrag_true",
+        "graphrag_false",
+        "graphrag_entity_types",
+        "graphrag_method_general",
+        "graphrag_method_light",
+        "graphrag_community_true",
+        "graphrag_community_false",
+        "graphrag_resolution_true",
+        "graphrag_resolution_false",
+        "raptor_true",
+        "raptor_false",
+        "raptor_prompt",
+        "raptor_max_token_min",
+        "raptor_max_token_mid",
+        "raptor_max_token_max",
+        "raptor_threshold_min",
+        "raptor_threshold_mid",
+        "raptor_threshold_max",
+        "raptor_max_cluster_min",
+        "raptor_max_cluster_mid",
+        "raptor_max_cluster_max",
+        "raptor_random_seed_min",
+        "raptor_clustering_method_gmm",
+        "raptor_clustering_method_ahc",
+        "raptor_tree_builder_raptor",
+        "raptor_tree_builder_psi",
+    ],
+)
+def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_parser_{name}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"parser_config": parser_config},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 0, update_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    actual_parser_config = list_payload["data"][0]["parser_config"]
+    for key, expected_value in parser_config.items():
+        if isinstance(expected_value, dict):
+            for nested_key, nested_expected in expected_value.items():
+                assert actual_parser_config[key][nested_key] == nested_expected, list_payload
+        else:
+            assert actual_parser_config[key] == expected_value, list_payload
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "name, update_payload",
+    [
+        ("parser_config_empty", {"chunk_method": "qa", "parser_config": {}}),
+        ("parser_config_none", {"chunk_method": "qa", "parser_config": None}),
+        ("parser_config_unset", {"chunk_method": "qa"}),
+    ],
+    ids=["parser_config_empty", "parser_config_none", "parser_config_unset"],
+)
+def test_dataset_update_parser_config_with_chunk_method_change_contract(rest_client, clear_datasets, name, update_payload):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_{name}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(f"/datasets/{dataset_id}", json=update_payload)
+    assert update_res.status_code == 200
+    update_body = update_res.json()
+    assert update_body["code"] == 0, update_body
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_body = list_res.json()
+    assert list_body["code"] == 0, list_body
+    assert list_body["data"][0]["parser_config"] == {
+        "raptor": {"use_raptor": False},
+        "graphrag": {"use_graphrag": False},
+        "image_context_size": 0,
+        "table_context_size": 0,
+    }, list_body
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
     "embedding_model, unauthorized_is_xfail",
     [
         ("BAAI/bge-small-en-v1.5@Builtin", False),
