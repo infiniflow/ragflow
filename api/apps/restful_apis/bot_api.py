@@ -368,6 +368,38 @@ async def begin_inputs(agent_id):
               "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
 
 
+@manager.route("/agentbots/<shared_id>/logs/<message_id>", methods=["GET"])  # noqa: F821
+async def agent_bot_logs(shared_id, message_id):
+    # Beta-token sibling of /agents/<agent_id>/logs/<message_id>.
+    # Used by the shared/embedded chat page's "Thinking" button (fixes #14985).
+    # The <shared_id> path segment is just the value the client passed in the
+    # URL (it equals the beta token in the share flow); authentication comes
+    # from the Authorization header and the real agent_id is read from the
+    # looked-up APIToken so we never trust client-supplied identifiers.
+    from rag.utils.redis_conn import REDIS_CONN
+
+    token = _get_sdk_authorization_token()
+    if not token:
+        return get_error_data_result(message='Authorization is not valid!')
+    objs = await thread_pool_exec(APIToken.query, beta=token)
+    if not objs:
+        return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    agent_id = objs[0].dialog_id
+    if not agent_id:
+        return get_error_data_result(message='API token is not bound to an agent.')
+
+    try:
+        binary = await thread_pool_exec(REDIS_CONN.get, f"{agent_id}-{message_id}-logs")
+        if not binary:
+            return get_json_result(data={})
+        payload = binary.decode("utf-8") if isinstance(binary, bytes) else binary
+        return get_json_result(data=json.loads(payload))
+    except Exception as exc:
+        logging.exception(exc)
+        return server_error_response(exc)
+
+
 @manager.route("/searchbots/ask", methods=["POST"])  # noqa: F821
 @validate_request("question", "kb_ids")
 async def ask_about_embedded():

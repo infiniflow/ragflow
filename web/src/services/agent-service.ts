@@ -154,6 +154,15 @@ export const fetchTrace = (data: { canvas_id: string; message_id: string }) => {
     }),
   );
 };
+
+// Used by the shared/embedded chat page where the only credential available
+// is the share (beta) APIToken (fixes #14985).
+export const fetchSharedTrace = (data: {
+  shared_id: string;
+  message_id: string;
+}) => {
+  return request.get(api.sharedTrace(data.shared_id, data.message_id));
+};
 export const fetchAgentLogsByCanvasId = (
   canvasId: string,
   params: IAgentLogsRequest,
