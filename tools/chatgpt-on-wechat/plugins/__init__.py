@@ -14,6 +14,10 @@
 #  limitations under the License.
 #
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # beartype's runtime type-checking is a development aid, not a hard runtime
 # requirement. Tolerate a missing install (e.g. partial / slim builds) instead
 # of failing to import the package — fixes #14931.
@@ -21,7 +25,10 @@ try:
     from beartype.claw import beartype_this_package
     beartype_this_package()
 except ImportError:
-    pass
+    logger.debug(
+        "beartype not available; chatgpt-on-wechat plugins are running "
+        "without beartype.claw.beartype_this_package runtime type checks."
+    )
 
 from .ragflow_chat import RAGFlowChat
 
