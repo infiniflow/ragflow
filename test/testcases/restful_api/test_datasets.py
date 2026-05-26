@@ -23,7 +23,7 @@ from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
 from test.testcases.configs import INVALID_API_TOKEN
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
-from test.testcases.utils.file_utils import create_image_file
+from test.testcases.utils.file_utils import create_image_file, create_txt_file
 
 
 @pytest.mark.p1
@@ -1740,6 +1740,514 @@ def test_dataset_list_ordering_and_pagination(rest_client, clear_datasets):
     assert list_payload["code"] == 0, list_payload
     assert len(list_payload["data"]) == 2, list_payload
     assert list_payload.get("total_datasets", 0) >= 3, list_payload
+
+
+@pytest.mark.p2
+def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
+    ids = []
+    for i in range(3):
+        create_res = rest_client.post("/datasets", json={"name": f"dataset_delete_matrix_{i}"})
+        assert create_res.status_code == 200
+        create_payload = create_res.json()
+        assert create_payload["code"] == 0, create_payload
+        ids.append(create_payload["data"]["id"])
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        auth_res = client.delete("/datasets", json={"ids": [ids[0]]})
+        assert auth_res.status_code == 401, (scenario_name, auth_res.text)
+        auth_payload = auth_res.json()
+        assert auth_payload["code"] == 401, (scenario_name, auth_payload)
+        assert auth_payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, auth_payload)
+
+    bad_content_type = "text/xml"
+    bad_content_type_res = rest_client.delete(
+        "/datasets",
+        data='{"ids": []}',
+        headers={"Content-Type": bad_content_type},
+    )
+    assert bad_content_type_res.status_code == 200
+    bad_content_type_payload = bad_content_type_res.json()
+    assert bad_content_type_payload["code"] == 101, bad_content_type_payload
+    assert (
+        f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"]
+    ), bad_content_type_payload
+
+    malformed_json_res = rest_client.delete("/datasets", data="a")
+    assert malformed_json_res.status_code == 200
+    malformed_json_payload = malformed_json_res.json()
+    assert malformed_json_payload["code"] == 101, malformed_json_payload
+    assert "Malformed JSON syntax: Missing commas/brackets or invalid encoding" in malformed_json_payload["message"], malformed_json_payload
+
+    invalid_payload_type_res = rest_client.delete("/datasets", data='"a"')
+    assert invalid_payload_type_res.status_code == 200
+    invalid_payload_type_payload = invalid_payload_type_res.json()
+    assert invalid_payload_type_payload["code"] == 101, invalid_payload_type_payload
+    assert "Invalid request payload: expected object, got str" in invalid_payload_type_payload["message"], invalid_payload_type_payload
+
+    unset_payload_res = rest_client.delete("/datasets")
+    assert unset_payload_res.status_code == 200
+    unset_payload = unset_payload_res.json()
+    assert unset_payload["code"] == 101, unset_payload
+    assert "Malformed JSON syntax: Missing commas/brackets or invalid encoding" in unset_payload["message"], unset_payload
+
+    single_delete_res = rest_client.delete("/datasets", json={"ids": [ids[0]]})
+    assert single_delete_res.status_code == 200
+    single_delete_payload = single_delete_res.json()
+    assert single_delete_payload["code"] == 0, single_delete_payload
+
+    list_after_single = rest_client.get("/datasets")
+    assert list_after_single.status_code == 200
+    list_after_single_payload = list_after_single.json()
+    assert list_after_single_payload["code"] == 0, list_after_single_payload
+    assert len(list_after_single_payload["data"]) == 2, list_after_single_payload
+
+    ids_empty_res = rest_client.delete("/datasets", json={"ids": []})
+    assert ids_empty_res.status_code == 200
+    ids_empty_payload = ids_empty_res.json()
+    assert ids_empty_payload["code"] == 0, ids_empty_payload
+
+    ids_none_res = rest_client.delete("/datasets", json={"ids": None})
+    assert ids_none_res.status_code == 200
+    ids_none_payload = ids_none_res.json()
+    assert ids_none_payload["code"] == 0, ids_none_payload
+
+    id_not_uuid_res = rest_client.delete("/datasets", json={"ids": ["not_uuid"]})
+    assert id_not_uuid_res.status_code == 200
+    id_not_uuid_payload = id_not_uuid_res.json()
+    assert id_not_uuid_payload["code"] == 101, id_not_uuid_payload
+    assert "Invalid UUID1 format" in id_not_uuid_payload["message"], id_not_uuid_payload
+
+    id_not_uuid1_res = rest_client.delete("/datasets", json={"ids": [uuid.uuid4().hex]})
+    assert id_not_uuid1_res.status_code == 200
+    id_not_uuid1_payload = id_not_uuid1_res.json()
+    assert id_not_uuid1_payload["code"] == 101, id_not_uuid1_payload
+    assert "Invalid UUID1 format" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+
+    id_wrong_uuid_res = rest_client.delete("/datasets", json={"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]})
+    assert id_wrong_uuid_res.status_code == 200
+    id_wrong_uuid_payload = id_wrong_uuid_res.json()
+    assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
+    assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
+
+    list_res = rest_client.get("/datasets")
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    remaining_ids = [dataset["id"] for dataset in list_payload["data"]]
+
+    for invalid_ids in (
+        ["d94a8dc02c9711f0930f7fbc369eab6d"] + remaining_ids,
+        remaining_ids[:1] + ["d94a8dc02c9711f0930f7fbc369eab6d"] + remaining_ids[1:],
+        remaining_ids + ["d94a8dc02c9711f0930f7fbc369eab6d"],
+    ):
+        partial_invalid_res = rest_client.delete("/datasets", json={"ids": invalid_ids})
+        assert partial_invalid_res.status_code == 200
+        partial_invalid_payload = partial_invalid_res.json()
+        assert partial_invalid_payload["code"] == 102, partial_invalid_payload
+        assert "lacks permission for dataset" in partial_invalid_payload["message"], partial_invalid_payload
+
+    duplicate_ids_res = rest_client.delete("/datasets", json={"ids": remaining_ids + remaining_ids})
+    assert duplicate_ids_res.status_code == 200
+    duplicate_ids_payload = duplicate_ids_res.json()
+    assert duplicate_ids_payload["code"] == 101, duplicate_ids_payload
+    assert "Duplicate ids:" in duplicate_ids_payload["message"], duplicate_ids_payload
+
+    repeated_delete_payload = {"ids": remaining_ids}
+    first_delete_res = rest_client.delete("/datasets", json=repeated_delete_payload)
+    assert first_delete_res.status_code == 200
+    first_delete_payload = first_delete_res.json()
+    assert first_delete_payload["code"] == 0, first_delete_payload
+
+    second_delete_res = rest_client.delete("/datasets", json=repeated_delete_payload)
+    assert second_delete_res.status_code == 200
+    second_delete_payload = second_delete_res.json()
+    assert second_delete_payload["code"] == 102, second_delete_payload
+    assert "lacks permission for dataset" in second_delete_payload["message"], second_delete_payload
+
+    unsupported_field_res = rest_client.delete("/datasets", json={"unknown_field": "unknown_field"})
+    assert unsupported_field_res.status_code == 200
+    unsupported_field_payload = unsupported_field_res.json()
+    assert unsupported_field_payload["code"] == 101, unsupported_field_payload
+    assert "Extra inputs are not permitted" in unsupported_field_payload["message"], unsupported_field_payload
+
+
+@pytest.mark.p3
+def test_dataset_delete_bulk_and_concurrent_contract(rest_client, clear_datasets):
+    bulk_ids = []
+    for i in range(1000):
+        create_res = rest_client.post("/datasets", json={"name": f"dataset_delete_bulk_{i}"})
+        assert create_res.status_code == 200
+        create_payload = create_res.json()
+        assert create_payload["code"] == 0, create_payload
+        bulk_ids.append(create_payload["data"]["id"])
+
+    bulk_delete_res = rest_client.delete("/datasets", json={"ids": bulk_ids})
+    assert bulk_delete_res.status_code == 200
+    bulk_delete_payload = bulk_delete_res.json()
+    assert bulk_delete_payload["code"] == 0, bulk_delete_payload
+
+    list_after_bulk_delete = rest_client.get("/datasets")
+    assert list_after_bulk_delete.status_code == 200
+    list_after_bulk_delete_payload = list_after_bulk_delete.json()
+    assert list_after_bulk_delete_payload["code"] == 0, list_after_bulk_delete_payload
+    assert len(list_after_bulk_delete_payload["data"]) == 0, list_after_bulk_delete_payload
+
+    concurrent_ids = []
+    for i in range(100):
+        create_res = rest_client.post("/datasets", json={"name": f"dataset_delete_concurrent_{i}"})
+        assert create_res.status_code == 200
+        create_payload = create_res.json()
+        assert create_payload["code"] == 0, create_payload
+        concurrent_ids.append(create_payload["data"]["id"])
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(rest_client.delete, "/datasets", json={"ids": [dataset_id]}) for dataset_id in concurrent_ids]
+
+    responses = list(as_completed(futures))
+    assert len(responses) == len(concurrent_ids), responses
+    for future in futures:
+        res = future.result()
+        assert res.status_code == 200, res.text
+        payload = res.json()
+        assert payload["code"] == 0, payload
+
+
+@pytest.mark.p1
+def test_dataset_list_requires_auth_contract(rest_client, clear_datasets):
+    rest_client.post("/datasets", json={"name": "dataset_list_auth_contract"})
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        res = client.get("/datasets")
+        assert res.status_code == 401, (scenario_name, res.text)
+        payload = res.json()
+        assert payload["code"] == 401, (scenario_name, payload)
+        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+
+
+@pytest.mark.p2
+def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
+    dataset_ids = []
+    for i in range(5):
+        create_res = rest_client.post("/datasets", json={"name": f"dataset_{i}"})
+        assert create_res.status_code == 200
+        create_payload = create_res.json()
+        assert create_payload["code"] == 0, create_payload
+        dataset_ids.append(create_payload["data"]["id"])
+
+    params_unset_res = rest_client.get("/datasets")
+    assert params_unset_res.status_code == 200
+    params_unset_payload = params_unset_res.json()
+    assert params_unset_payload["code"] == 0, params_unset_payload
+    assert len(params_unset_payload["data"]) == 5, params_unset_payload
+
+    params_empty_res = rest_client.get("/datasets", params={})
+    assert params_empty_res.status_code == 200
+    params_empty_payload = params_empty_res.json()
+    assert params_empty_payload["code"] == 0, params_empty_payload
+    assert len(params_empty_payload["data"]) == 5, params_empty_payload
+
+    for params, expected_size in (
+        ({"page": 2, "page_size": 2}, 2),
+        ({"page": 3, "page_size": 2}, 1),
+        ({"page": 4, "page_size": 2}, 0),
+        ({"page": "2", "page_size": 2}, 2),
+        ({"page": 1, "page_size": 10}, 5),
+    ):
+        page_res = rest_client.get("/datasets", params=params)
+        assert page_res.status_code == 200
+        page_payload = page_res.json()
+        assert page_payload["code"] == 0, page_payload
+        assert len(page_payload["data"]) == expected_size, page_payload
+
+    for params, expected_fragment in (
+        ({"page": 0}, "Input should be greater than or equal to 1"),
+        ({"page": "a"}, "Input should be a valid integer, unable to parse string as an integer"),
+    ):
+        page_invalid_res = rest_client.get("/datasets", params=params)
+        assert page_invalid_res.status_code == 200
+        page_invalid_payload = page_invalid_res.json()
+        assert page_invalid_payload["code"] == 101, page_invalid_payload
+        assert expected_fragment in page_invalid_payload["message"], page_invalid_payload
+
+    page_none_res = rest_client.get("/datasets", params={"page": None})
+    assert page_none_res.status_code == 200
+    page_none_payload = page_none_res.json()
+    assert page_none_payload["code"] == 0, page_none_payload
+    assert len(page_none_payload["data"]) == 5, page_none_payload
+
+    for params, expected_size in (
+        ({"page_size": 1}, 1),
+        ({"page_size": 3}, 3),
+        ({"page_size": 5}, 5),
+        ({"page_size": 6}, 5),
+        ({"page_size": "1"}, 1),
+    ):
+        page_size_res = rest_client.get("/datasets", params=params)
+        assert page_size_res.status_code == 200
+        page_size_payload = page_size_res.json()
+        assert page_size_payload["code"] == 0, page_size_payload
+        assert len(page_size_payload["data"]) == expected_size, page_size_payload
+
+    for params, expected_fragment in (
+        ({"page_size": 0}, "Input should be greater than or equal to 1"),
+        ({"page_size": "a"}, "Input should be a valid integer, unable to parse string as an integer"),
+    ):
+        page_size_invalid_res = rest_client.get("/datasets", params=params)
+        assert page_size_invalid_res.status_code == 200
+        page_size_invalid_payload = page_size_invalid_res.json()
+        assert page_size_invalid_payload["code"] == 101, page_size_invalid_payload
+        assert expected_fragment in page_size_invalid_payload["message"], page_size_invalid_payload
+
+    page_size_none_res = rest_client.get("/datasets", params={"page_size": None})
+    assert page_size_none_res.status_code == 200
+    page_size_none_payload = page_size_none_res.json()
+    assert page_size_none_payload["code"] == 0, page_size_none_payload
+    assert len(page_size_none_payload["data"]) == 5, page_size_none_payload
+
+    for params in ({"orderby": "create_time"}, {"orderby": "update_time"}):
+        orderby_res = rest_client.get("/datasets", params=params)
+        assert orderby_res.status_code == 200
+        orderby_payload = orderby_res.json()
+        assert orderby_payload["code"] == 0, orderby_payload
+
+    for params in (
+        {"orderby": ""},
+        {"orderby": "unknown"},
+        {"orderby": "CREATE_TIME"},
+        {"orderby": "UPDATE_TIME"},
+        {"orderby": " create_time "},
+    ):
+        orderby_invalid_res = rest_client.get("/datasets", params=params)
+        assert orderby_invalid_res.status_code == 200
+        orderby_invalid_payload = orderby_invalid_res.json()
+        assert orderby_invalid_payload["code"] == 101, orderby_invalid_payload
+        assert "Input should be 'create_time' or 'update_time'" in orderby_invalid_payload["message"], orderby_invalid_payload
+
+    orderby_none_res = rest_client.get("/datasets", params={"orderby": None})
+    assert orderby_none_res.status_code == 200
+    orderby_none_payload = orderby_none_res.json()
+    assert orderby_none_payload["code"] == 0, orderby_none_payload
+
+    for params in (
+        {"desc": True},
+        {"desc": False},
+        {"desc": "true"},
+        {"desc": "false"},
+        {"desc": 1},
+        {"desc": 0},
+        {"desc": "yes"},
+        {"desc": "no"},
+        {"desc": "y"},
+        {"desc": "n"},
+    ):
+        desc_res = rest_client.get("/datasets", params=params)
+        assert desc_res.status_code == 200
+        desc_payload = desc_res.json()
+        assert desc_payload["code"] == 0, desc_payload
+
+    for params in ({"desc": 3.14}, {"desc": "unknown"}):
+        desc_invalid_res = rest_client.get("/datasets", params=params)
+        assert desc_invalid_res.status_code == 200
+        desc_invalid_payload = desc_invalid_res.json()
+        assert desc_invalid_payload["code"] == 101, desc_invalid_payload
+        assert "Input should be a valid boolean, unable to interpret input" in desc_invalid_payload["message"], desc_invalid_payload
+
+    desc_none_res = rest_client.get("/datasets", params={"desc": None})
+    assert desc_none_res.status_code == 200
+    desc_none_payload = desc_none_res.json()
+    assert desc_none_payload["code"] == 0, desc_none_payload
+
+    name_res = rest_client.get("/datasets", params={"name": "dataset_1"})
+    assert name_res.status_code == 200
+    name_payload = name_res.json()
+    assert name_payload["code"] == 0, name_payload
+    assert len(name_payload["data"]) == 1, name_payload
+    assert name_payload["data"][0]["name"] == "dataset_1", name_payload
+
+    name_wrong_res = rest_client.get("/datasets", params={"name": "wrong name"})
+    assert name_wrong_res.status_code == 200
+    name_wrong_payload = name_wrong_res.json()
+    assert name_wrong_payload["code"] == 102, name_wrong_payload
+    assert "lacks permission for dataset" in name_wrong_payload["message"], name_wrong_payload
+
+    name_empty_res = rest_client.get("/datasets", params={"name": ""})
+    assert name_empty_res.status_code == 200
+    name_empty_payload = name_empty_res.json()
+    assert name_empty_payload["code"] == 0, name_empty_payload
+    assert len(name_empty_payload["data"]) == 5, name_empty_payload
+
+    name_none_res = rest_client.get("/datasets", params={"name": None})
+    assert name_none_res.status_code == 200
+    name_none_payload = name_none_res.json()
+    assert name_none_payload["code"] == 0, name_none_payload
+    assert len(name_none_payload["data"]) == 5, name_none_payload
+
+    id_res = rest_client.get("/datasets", params={"id": dataset_ids[0]})
+    assert id_res.status_code == 200
+    id_payload = id_res.json()
+    assert id_payload["code"] == 0, id_payload
+    assert len(id_payload["data"]) == 1, id_payload
+    assert id_payload["data"][0]["id"] == dataset_ids[0], id_payload
+
+    id_not_uuid_res = rest_client.get("/datasets", params={"id": "not_uuid"})
+    assert id_not_uuid_res.status_code == 200
+    id_not_uuid_payload = id_not_uuid_res.json()
+    assert id_not_uuid_payload["code"] == 101, id_not_uuid_payload
+    assert "Invalid UUID1 format" in id_not_uuid_payload["message"], id_not_uuid_payload
+
+    id_not_uuid1_res = rest_client.get("/datasets", params={"id": uuid.uuid4().hex})
+    assert id_not_uuid1_res.status_code == 200
+    id_not_uuid1_payload = id_not_uuid1_res.json()
+    assert id_not_uuid1_payload["code"] == 101, id_not_uuid1_payload
+    assert "Invalid UUID1 format" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+
+    id_wrong_uuid_res = rest_client.get("/datasets", params={"id": "d94a8dc02c9711f0930f7fbc369eab6d"})
+    assert id_wrong_uuid_res.status_code == 200
+    id_wrong_uuid_payload = id_wrong_uuid_res.json()
+    assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
+    assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
+
+    id_empty_res = rest_client.get("/datasets", params={"id": ""})
+    assert id_empty_res.status_code == 200
+    id_empty_payload = id_empty_res.json()
+    assert id_empty_payload["code"] == 101, id_empty_payload
+    assert "Invalid UUID1 format" in id_empty_payload["message"], id_empty_payload
+
+    id_none_res = rest_client.get("/datasets", params={"id": None})
+    assert id_none_res.status_code == 200
+    id_none_payload = id_none_res.json()
+    assert id_none_payload["code"] == 0, id_none_payload
+    assert len(id_none_payload["data"]) == 5, id_none_payload
+
+    name_id_match_res = rest_client.get("/datasets", params={"id": dataset_ids[0], "name": "dataset_0"})
+    assert name_id_match_res.status_code == 200
+    name_id_match_payload = name_id_match_res.json()
+    assert name_id_match_payload["code"] == 0, name_id_match_payload
+    assert len(name_id_match_payload["data"]) == 1, name_id_match_payload
+
+    name_id_mismatch_res = rest_client.get("/datasets", params={"id": dataset_ids[0], "name": "dataset_1"})
+    assert name_id_mismatch_res.status_code == 200
+    name_id_mismatch_payload = name_id_mismatch_res.json()
+    assert name_id_mismatch_payload["code"] == 0, name_id_mismatch_payload
+    assert len(name_id_mismatch_payload["data"]) == 0, name_id_mismatch_payload
+
+    for dataset_id, name in ((dataset_ids[0], "wrong_name"), (uuid.uuid1().hex, "dataset_0")):
+        name_id_wrong_res = rest_client.get("/datasets", params={"id": dataset_id, "name": name})
+        assert name_id_wrong_res.status_code == 200
+        name_id_wrong_payload = name_id_wrong_res.json()
+        assert name_id_wrong_payload["code"] == 102, name_id_wrong_payload
+        assert "lacks permission for dataset" in name_id_wrong_payload["message"], name_id_wrong_payload
+
+    unsupported_field_res = rest_client.get("/datasets", params={"unknown_field": "unknown_field"})
+    assert unsupported_field_res.status_code == 200
+    unsupported_field_payload = unsupported_field_res.json()
+    assert unsupported_field_payload["code"] == 101, unsupported_field_payload
+    assert "Extra inputs are not permitted" in unsupported_field_payload["message"], unsupported_field_payload
+
+
+@pytest.mark.p3
+def test_dataset_list_concurrent_contract(rest_client, clear_datasets):
+    for i in range(5):
+        create_res = rest_client.post("/datasets", json={"name": f"dataset_list_concurrent_{i}"})
+        assert create_res.status_code == 200
+        create_payload = create_res.json()
+        assert create_payload["code"] == 0, create_payload
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(rest_client.get, "/datasets") for _ in range(100)]
+    responses = list(as_completed(futures))
+    assert len(responses) == 100, responses
+    for future in futures:
+        res = future.result()
+        assert res.status_code == 200, res.text
+        payload = res.json()
+        assert payload["code"] == 0, payload
+
+
+@pytest.mark.p2
+def test_dataset_get_contract(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_get_success")
+
+    success_res = rest_client.get(f"/datasets/{dataset_id}")
+    assert success_res.status_code == 200
+    success_payload = success_res.json()
+    assert success_payload["code"] == 0, success_payload
+    assert success_payload["data"]["id"] == dataset_id, success_payload
+
+    invalid_id_res = rest_client.get("/datasets/invalid_dataset_id")
+    assert invalid_id_res.status_code == 200
+    invalid_id_payload = invalid_id_res.json()
+    assert invalid_id_payload["code"] != 0, invalid_id_payload
+
+    unauthorized_res = RestClient(token=INVALID_API_TOKEN).get(f"/datasets/{dataset_id}")
+    assert unauthorized_res.status_code == 401
+    unauthorized_payload = unauthorized_res.json()
+    assert unauthorized_payload["code"] == 401, unauthorized_payload
+
+    nonexistent_res = rest_client.get(f"/datasets/{'0' * 32}")
+    assert nonexistent_res.status_code == 200
+    nonexistent_payload = nonexistent_res.json()
+    assert nonexistent_payload["code"] != 0, nonexistent_payload
+
+
+@pytest.mark.p2
+def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path):
+    dataset_id = create_dataset("dataset_metadata_summary")
+    document_ids = []
+    for i in range(3):
+        fp = create_txt_file(tmp_path / f"metadata_summary_{i}.txt")
+        with fp.open("rb") as file_obj:
+            upload_res = rest_client.post(
+                f"/datasets/{dataset_id}/documents",
+                files=[("file", (fp.name, file_obj))],
+            )
+        assert upload_res.status_code == 200
+        upload_payload = upload_res.json()
+        assert upload_payload["code"] == 0, upload_payload
+        document_ids.append(upload_payload["data"][0]["id"])
+
+    payloads = [
+        {"tags": ["foo", "bar"], "author": "alice"},
+        {"tags": ["foo"], "author": "bob"},
+        {"tags": ["bar", "baz"], "author": ""},
+    ]
+    for document_id, meta_fields in zip(document_ids, payloads):
+        update_res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{document_id}",
+            json={"meta_fields": meta_fields},
+        )
+        assert update_res.status_code == 200
+        update_payload = update_res.json()
+        assert update_payload["code"] == 0, update_payload
+
+    success_res = rest_client.get(f"/datasets/{dataset_id}/metadata/summary")
+    assert success_res.status_code == 200
+    success_payload = success_res.json()
+    assert success_payload["code"] == 0, success_payload
+    assert "summary" in success_payload["data"], success_payload
+
+    summary = success_payload["data"]["summary"]
+    counts = {}
+    for key, field_data in summary.items():
+        counts[key] = {str(k): v for k, v in field_data["values"]}
+    assert counts["tags"]["foo"] == 2, counts
+    assert counts["tags"]["bar"] == 2, counts
+    assert counts["tags"]["baz"] == 1, counts
+    assert counts["author"]["alice"] == 1, counts
+    assert counts["author"]["bob"] == 1, counts
+    assert "None" not in counts["author"], counts
+
+    invalid_dataset_id = f"invalid_{dataset_id}"
+    invalid_dataset_res = rest_client.get(f"/datasets/{invalid_dataset_id}/metadata/summary")
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == f"You don't own the dataset {invalid_dataset_id}. ", invalid_dataset_payload
+
+    nonexistent_res = rest_client.get(f"/datasets/{'0' * 32}/metadata/summary")
+    assert nonexistent_res.status_code == 200
+    nonexistent_payload = nonexistent_res.json()
+    assert nonexistent_payload["code"] == 102, nonexistent_payload
 
 
 @pytest.mark.p2
