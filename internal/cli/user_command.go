@@ -875,8 +875,8 @@ func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// CreateDataset creates a table for a dataset
-func (c *RAGFlowClient) CreateDataset(cmd *Command) (ResponseIf, error) {
+// CreateChunkStore creates a chunk store in doc engine
+func (c *RAGFlowClient) CreateChunkStore(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -902,13 +902,13 @@ func (c *RAGFlowClient) CreateDataset(cmd *Command) (ResponseIf, error) {
 		"vector_size": vectorSize,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/chunk_store", "web", nil, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
+		return nil, fmt.Errorf("failed to create chunk store: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create table: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to create chunk store: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	resJSON, err := resp.JSON()
@@ -924,73 +924,16 @@ func (c *RAGFlowClient) CreateDataset(cmd *Command) (ResponseIf, error) {
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to create table for dataset: %s", datasetName)
+		result.Message = fmt.Sprintf("Success to create chunk store for dataset: %s", datasetName)
 	} else {
-		result.Message = fmt.Sprintf("Failed to create table: %v", resJSON)
+		result.Message = fmt.Sprintf("Failed to create chunk store: %v", resJSON)
 	}
 	result.Duration = 0
 	return &result, nil
 }
 
-// CreateDatasetInDocEngine creates a table for a dataset in doc engine
-func (c *RAGFlowClient) CreateDatasetInDocEngine(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	datasetName, ok := cmd.Params["dataset_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("dataset_name not provided")
-	}
-
-	vectorSize, ok := cmd.Params["vector_size"].(int)
-	if !ok {
-		return nil, fmt.Errorf("vector_size not provided")
-	}
-
-	// Get dataset ID by name
-	datasetID, err := c.getDatasetID(datasetName)
-	if err != nil {
-		return nil, err
-	}
-
-	payload := map[string]interface{}{
-		"kb_id":       datasetID,
-		"vector_size": vectorSize,
-	}
-
-	resp, err := c.HTTPClient.Request("POST", "/kb/doc_engine_table", "web", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create table: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	code, ok := resJSON["code"].(float64)
-	if !ok {
-		return nil, fmt.Errorf("invalid response format: code is not a number")
-	}
-
-	var result SimpleResponse
-	result.Code = int(code)
-	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to create table for dataset: %s", datasetName)
-	} else {
-		result.Message = fmt.Sprintf("Failed to create table: %v", resJSON)
-	}
-	result.Duration = 0
-	return &result, nil
-}
-
-// DropDatasetInDocEngine drops a table for a dataset in doc engine
-func (c *RAGFlowClient) DropDatasetInDocEngine(cmd *Command) (ResponseIf, error) {
+// DropChunkStore drops a chunk store in doc engine
+func (c *RAGFlowClient) DropChunkStore(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -1010,7 +953,7 @@ func (c *RAGFlowClient) DropDatasetInDocEngine(cmd *Command) (ResponseIf, error)
 		"kb_id": datasetID,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/kb/doc_engine_table", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", "/tenant/chunk_store", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
@@ -1032,27 +975,27 @@ func (c *RAGFlowClient) DropDatasetInDocEngine(cmd *Command) (ResponseIf, error)
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		result.Message = fmt.Sprintf("Success to drop table for dataset: %s", datasetName)
+		result.Message = fmt.Sprintf("Success to drop chunk store for dataset: %s", datasetName)
 	} else {
-		result.Message = fmt.Sprintf("Failed to drop table for dataset: %s: %v", datasetName, resJSON)
+		result.Message = fmt.Sprintf("Failed to drop chunk store for dataset: %s: %v", datasetName, resJSON)
 	}
 	result.Duration = 0
 	return &result, nil
 }
 
-// CreateMetadataInDocEngine creates the document metadata table for the tenant
-func (c *RAGFlowClient) CreateMetadataInDocEngine(cmd *Command) (ResponseIf, error) {
+// CreateMetadataStore creates the document metadata store for the tenant
+func (c *RAGFlowClient) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/doc_engine_metadata_table", "web", nil, nil)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/metadata_store", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create metadata table: %w", err)
+		return nil, fmt.Errorf("failed to create metadata store: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to create metadata table: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to create metadata store: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	resJSON, err := resp.JSON()
@@ -1068,27 +1011,27 @@ func (c *RAGFlowClient) CreateMetadataInDocEngine(cmd *Command) (ResponseIf, err
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		result.Message = "Success to create metadata table"
+		result.Message = "Success to create metadata store"
 	} else {
-		result.Message = fmt.Sprintf("Failed to create metadata table: %v", resJSON)
+		result.Message = fmt.Sprintf("Failed to create metadata store: %v", resJSON)
 	}
 	result.Duration = 0
 	return &result, nil
 }
 
-// DropMetadataInDocEngine drops the document metadata table for the tenant
-func (c *RAGFlowClient) DropMetadataInDocEngine(cmd *Command) (ResponseIf, error) {
+// DropMetadataStore drops the document metadata store for the tenant
+func (c *RAGFlowClient) DropMetadataStore(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/tenant/doc_engine_metadata_table", "web", nil, nil)
+	resp, err := c.HTTPClient.Request("DELETE", "/tenant/metadata_store", "web", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to drop metadata table: %w", err)
+		return nil, fmt.Errorf("failed to drop metadata store: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to drop metadata table: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+		return nil, fmt.Errorf("failed to drop metadata store: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	resJSON, err := resp.JSON()
@@ -1104,9 +1047,9 @@ func (c *RAGFlowClient) DropMetadataInDocEngine(cmd *Command) (ResponseIf, error
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		result.Message = "Success to drop metadata table"
+		result.Message = "Success to drop metadata store"
 	} else {
-		result.Message = fmt.Sprintf("Failed to drop metadata table: %v", resJSON)
+		result.Message = fmt.Sprintf("Failed to drop metadata store: %v", resJSON)
 	}
 	result.Duration = 0
 	return &result, nil
@@ -2838,8 +2781,8 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 	return &response, nil
 }
 
-// InsertDatasetFromFile inserts dataset chunks from a JSON file
-func (c *RAGFlowClient) InsertDatasetFromFile(cmd *Command) (ResponseIf, error) {
+// InsertChunksFromFile inserts chunks from a JSON file
+func (c *RAGFlowClient) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -2852,7 +2795,7 @@ func (c *RAGFlowClient) InsertDatasetFromFile(cmd *Command) (ResponseIf, error) 
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/kb/insert_from_file", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_chunks_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
 	}
@@ -2938,14 +2881,14 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("chunk_id not provided")
 	}
 
+	docID, ok := cmd.Params["doc_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("doc_id not provided")
+	}
+
 	datasetName, ok := cmd.Params["dataset_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("dataset_name not provided")
-	}
-
-	jsonBody, ok := cmd.Params["json_body"].(string)
-	if !ok {
-		return nil, fmt.Errorf("json_body not provided")
 	}
 
 	// Look up dataset_id from dataset_name
@@ -2954,26 +2897,9 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("failed to get dataset ID: %w", err)
 	}
 
-	// Try to get doc_id from the chunk retrieval endpoint
-	getResp, err := c.HTTPClient.Request("GET", "/chunk/get?chunk_id="+chunkID, "web", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get chunk info: %w", err)
-	}
-
-	var docID string
-	if getResp.StatusCode == 200 {
-		getJSON, err := getResp.JSON()
-		if err == nil {
-			if data, ok := getJSON["data"].(map[string]interface{}); ok {
-				if d, ok := data["doc_id"].(string); ok {
-					docID = d
-				}
-			}
-		}
-	}
-
-	if docID == "" {
-		return nil, fmt.Errorf("could not find document_id for chunk %s. Please provide document_id explicitly", chunkID)
+	jsonBody, ok := cmd.Params["json_body"].(string)
+	if !ok {
+		return nil, fmt.Errorf("json_body not provided")
 	}
 
 	// Parse the JSON body
@@ -3028,19 +2954,14 @@ func (c *RAGFlowClient) GetChunk(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("chunk_id not provided")
 	}
 
-	datasetName, ok := cmd.Params["dataset_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("dataset_name not provided")
-	}
-
-	datasetID, err := c.getDatasetID(datasetName)
-	if err != nil {
-		return nil, err
-	}
-
 	docID, ok := cmd.Params["doc_id"].(string)
 	if !ok {
 		return nil, fmt.Errorf("doc_id not provided")
+	}
+
+	datasetID, ok := cmd.Params["dataset_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_id not provided")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), "web", nil, nil)
@@ -3116,6 +3037,57 @@ func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+// DeleteMeta deletes metadata for a document
+// If keys is provided, deletes specific keys; otherwise deletes entire document metadata
+func (c *RAGFlowClient) DeleteMeta(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	docID, ok := cmd.Params["doc_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("doc_id not provided")
+	}
+
+	payload := map[string]interface{}{
+		"doc_id": docID,
+	}
+
+	// If keys provided, include in payload for deleting specific keys
+	if keysJSON, ok := cmd.Params["keys"].(string); ok {
+		payload["keys"] = keysJSON
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/document/delete_meta", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete metadata: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to delete metadata: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	resJSON, err := resp.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("invalid JSON response: %w", err)
+	}
+
+	code, ok := resJSON["code"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("invalid response format: code is not a number")
+	}
+
+	var result SimpleResponse
+	result.Code = int(code)
+	if result.Code == 0 {
+		result.Message = fmt.Sprintf("Success to delete metadata for document: %s", docID)
+	} else {
+		result.Message = fmt.Sprintf("Failed to delete metadata: %v", resJSON)
+	}
+	result.Duration = 0
+	return &result, nil
+}
+
 // RmTags removes tags from chunks in a dataset
 func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
@@ -3177,14 +3149,23 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
+	datasetName, ok := cmd.Params["dataset_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("dataset_name not provided")
+	}
+
 	docID, ok := cmd.Params["doc_id"].(string)
 	if !ok {
 		return nil, fmt.Errorf("doc_id not provided")
 	}
 
-	payload := map[string]interface{}{
-		"doc_id": docID,
+	// Look up dataset ID by name
+	datasetID, err := c.getDatasetID(datasetName)
+	if err != nil {
+		return nil, fmt.Errorf("dataset not found: %w", err)
 	}
+
+	payload := map[string]interface{}{}
 
 	// Check if delete_all is set
 	if deleteAll, ok := cmd.Params["delete_all"].(bool); ok && deleteAll {
@@ -3193,7 +3174,7 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 		payload["chunk_ids"] = chunkIDs
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/chunk/rm", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", "/datasets/"+datasetID+"/documents/"+docID+"/chunks", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove chunks: %w", err)
 	}

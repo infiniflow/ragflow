@@ -638,6 +638,12 @@ func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string,
 	if (fileURL == nil || *fileURL == "") && (content == nil || len(content) == 0) {
 		return nil, fmt.Errorf("image url or content is required")
 	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
