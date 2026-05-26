@@ -741,6 +741,8 @@ class TestTocAsyncFlowIntegration:
     @pytest.mark.asyncio
     async def test_toc_async_flow_creates_toc_thread(self):
         """Verify that TOC async flow creates a TOC thread when enabled."""
+        import gc
+
         task_dict = self._create_toc_enabled_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
@@ -785,9 +787,18 @@ class TestTocAsyncFlowIntegration:
 
             mock_run_toc.assert_called()
 
+        # Explicit cleanup to prevent resource leaks
+        del mock_embedding, mock_settings, mock_chunk_service
+        del mock_get_config, mock_get_default, mock_bundle, mock_file_service
+        del mock_index_name, mock_doc_service, mock_chunk_service_cls, mock_run_toc, mock_post_doc_service
+        del mock_thread_exec, mock_chunk_thread_exec
+        gc.collect()
+
     @pytest.mark.asyncio
     async def test_toc_async_flow_does_not_create_thread_when_disabled(self):
         """Verify that TOC async flow does not create a thread when disabled."""
+        import gc
+
         task_dict = self._create_toc_enabled_task_dict()
         task_dict["parser_config"]["toc_extraction"] = False
         ctx = create_task_context(task_dict)
@@ -829,6 +840,13 @@ class TestTocAsyncFlowIntegration:
             await handler.handle()
 
             mock_run_toc.assert_not_called()
+
+        # Explicit cleanup to prevent resource leaks
+        del mock_embedding, mock_settings, mock_chunk_service
+        del mock_get_config, mock_get_default, mock_bundle, mock_file_service
+        del mock_index_name, mock_doc_service, mock_chunk_service_cls, mock_run_toc
+        del mock_thread_exec, mock_chunk_thread_exec
+        gc.collect()
 
 
 class TestRecordingContextDataFlowAssertions:
