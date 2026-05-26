@@ -21,6 +21,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -31,6 +34,7 @@ const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
 	mcpServerNameLimit          = 255
+	mcpServerDateFormat         = "2006-01-02T15:04:05"
 )
 
 // MCPService handles MCP server operations.
@@ -67,6 +71,54 @@ type CreateMCPServerResponse struct {
 	Description *string        `json:"description,omitempty"`
 	Variables   entity.JSONMap `json:"variables"`
 	Headers     entity.JSONMap `json:"headers"`
+}
+
+// ListMCPServersResponse is the response payload for listing MCP servers.
+type ListMCPServersResponse struct {
+	MCPServers []*MCPServerListItem `json:"mcp_servers"`
+	Total      int64                `json:"total"`
+}
+
+// MCPServerListItem is the list projection returned by Python MCPServerService.get_servers.
+type MCPServerListItem struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	ServerType  string         `json:"server_type"`
+	URL         string         `json:"url"`
+	Description *string        `json:"description"`
+	Variables   entity.JSONMap `json:"variables"`
+	CreateDate  *string        `json:"create_date"`
+	UpdateDate  *string        `json:"update_date"`
+}
+
+// MCPServerDetail is the detail payload returned by Python MCPServer.to_dict.
+type MCPServerDetail struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	TenantID    string         `json:"tenant_id"`
+	URL         string         `json:"url"`
+	ServerType  string         `json:"server_type"`
+	Description *string        `json:"description"`
+	Variables   entity.JSONMap `json:"variables"`
+	Headers     entity.JSONMap `json:"headers"`
+	CreateTime  *int64         `json:"create_time"`
+	CreateDate  *string        `json:"create_date"`
+	UpdateTime  *int64         `json:"update_time"`
+	UpdateDate  *string        `json:"update_date"`
+}
+
+// ExportedMCPServers is the download response payload for MCP server export.
+type ExportedMCPServers struct {
+	MCPServers map[string]ExportedMCPServer `json:"mcpServers"`
+}
+
+// ExportedMCPServer is one MCP server in export format.
+type ExportedMCPServer struct {
+	Type               string      `json:"type"`
+	URL                string      `json:"url"`
+	Name               string      `json:"name"`
+	AuthorizationToken string      `json:"authorization_token"`
+	Tools              interface{} `json:"tools"`
 }
 
 // CreateMCPServer creates an MCP server owned by a tenant.
@@ -127,6 +179,111 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 	}, common.CodeSuccess, nil
 }
 
+// ListMCPServers lists MCP servers owned by a tenant.
+func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, error) {
+	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, page, pageSize, orderby, desc)
+	if err != nil {
+		return nil, err
+	}
+	if servers == nil {
+		servers = []*entity.MCPServer{}
+	}
+
+	return &ListMCPServersResponse{
+		MCPServers: buildMCPServerListItems(servers),
+		Total:      total,
+	}, nil
+}
+
+// GetMCPServer returns one MCP server owned by a tenant.
+func (s *MCPService) GetMCPServer(tenantID, mcpID string) (*MCPServerDetail, bool, error) {
+	server, err := s.mcpServerDAO.GetMCPServerByIDAndTenantID(mcpID, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return buildMCPServerDetail(server), true, nil
+}
+
+// ExportMCPServer returns one MCP server in download format.
+func (s *MCPService) ExportMCPServer(tenantID, mcpID string) (*ExportedMCPServers, bool, error) {
+	server, err := s.mcpServerDAO.GetMCPServerByIDAndTenantID(mcpID, tenantID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	normalizeMCPServer(server)
+	exported, found := buildExportedMCPServer(server)
+	if !found {
+		return nil, false, nil
+	}
+	return exported, true, nil
+}
+
+func buildMCPServerListItems(servers []*entity.MCPServer) []*MCPServerListItem {
+	items := make([]*MCPServerListItem, 0, len(servers))
+	for _, server := range servers {
+		normalizeMCPServer(server)
+		items = append(items, &MCPServerListItem{
+			ID:          server.ID,
+			Name:        server.Name,
+			ServerType:  server.ServerType,
+			URL:         server.URL,
+			Description: server.Description,
+			Variables:   server.Variables,
+			CreateDate:  formatMCPServerDate(server.CreateDate),
+			UpdateDate:  formatMCPServerDate(server.UpdateDate),
+		})
+	}
+	return items
+}
+
+func buildMCPServerDetail(server *entity.MCPServer) *MCPServerDetail {
+	normalizeMCPServer(server)
+	return &MCPServerDetail{
+		ID:          server.ID,
+		Name:        server.Name,
+		TenantID:    server.TenantID,
+		URL:         server.URL,
+		ServerType:  server.ServerType,
+		Description: server.Description,
+		Variables:   server.Variables,
+		Headers:     server.Headers,
+		CreateTime:  server.CreateTime,
+		CreateDate:  formatMCPServerDate(server.CreateDate),
+		UpdateTime:  server.UpdateTime,
+		UpdateDate:  formatMCPServerDate(server.UpdateDate),
+	}
+}
+
+func buildExportedMCPServer(server *entity.MCPServer) (*ExportedMCPServers, bool) {
+	if server == nil {
+		return nil, false
+	}
+	normalizeMCPServer(server)
+	authorizationToken, _ := server.Variables["authorization_token"].(string)
+	tools, ok := server.Variables["tools"]
+	if !ok || tools == nil {
+		tools = map[string]interface{}{}
+	}
+
+	return &ExportedMCPServers{
+		MCPServers: map[string]ExportedMCPServer{
+			server.Name: {
+				Type:               server.ServerType,
+				URL:                server.URL,
+				Name:               server.Name,
+				AuthorizationToken: authorizationToken,
+				Tools:              tools,
+			},
+		},
+	}, true
+}
+
 func isValidMCPServerType(serverType string) bool {
 	return serverType == mcpServerTypeSSE || serverType == mcpServerTypeStreamableHTTP
 }
@@ -151,4 +308,24 @@ func safeJSONMap(raw json.RawMessage) entity.JSONMap {
 		return entity.JSONMap{}
 	}
 	return entity.JSONMap(value)
+}
+
+func normalizeMCPServer(server *entity.MCPServer) {
+	if server == nil {
+		return
+	}
+	if server.Variables == nil {
+		server.Variables = entity.JSONMap{}
+	}
+	if server.Headers == nil {
+		server.Headers = entity.JSONMap{}
+	}
+}
+
+func formatMCPServerDate(date *time.Time) *string {
+	if date == nil {
+		return nil
+	}
+	formatted := date.Format(mcpServerDateFormat)
+	return &formatted
 }

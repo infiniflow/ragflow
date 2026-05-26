@@ -16,7 +16,11 @@
 
 package dao
 
-import "ragflow/internal/entity"
+import (
+	"strings"
+
+	"ragflow/internal/entity"
+)
 
 // MCPServerDAO MCP server data access object.
 type MCPServerDAO struct{}
@@ -40,4 +44,74 @@ func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, err
 // CreateMCPServer creates an MCP server.
 func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
 	return DB.Create(server).Error
+}
+
+// ListMCPServers returns MCP servers for a tenant with optional filtering.
+func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+	var servers []*entity.MCPServer
+	var total int64
+
+	query := DB.Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
+
+	if len(ids) > 0 {
+		query = query.Where("id IN ?", ids)
+	}
+
+	if keywords != "" {
+		query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	}
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	orderColumn := mcpServerOrderColumn(orderby)
+	orderDirection := "ASC"
+	if desc {
+		orderDirection = "DESC"
+	}
+	query = query.Order(orderColumn + " " + orderDirection)
+
+	if page > 0 && pageSize > 0 {
+		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+
+	if err := query.
+		Select("id", "name", "server_type", "url", "description", "variables", "create_date", "update_date").
+		Find(&servers).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return servers, total, nil
+}
+
+// GetMCPServerByIDAndTenantID returns one MCP server scoped to a tenant.
+func (dao *MCPServerDAO) GetMCPServerByIDAndTenantID(id, tenantID string) (*entity.MCPServer, error) {
+	var server entity.MCPServer
+	err := DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error
+	if err != nil {
+		return nil, err
+	}
+	return &server, nil
+}
+
+func mcpServerOrderColumn(orderby string) string {
+	switch orderby {
+	case "id":
+		return "id"
+	case "name":
+		return "name"
+	case "server_type":
+		return "server_type"
+	case "url":
+		return "url"
+	case "update_time":
+		return "update_time"
+	case "update_date":
+		return "update_date"
+	case "create_date":
+		return "create_date"
+	default:
+		return "create_time"
+	}
 }

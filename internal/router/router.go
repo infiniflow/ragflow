@@ -256,6 +256,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			mcp := v1.Group("/mcp")
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
 			}
 
 			// Skill search routes
