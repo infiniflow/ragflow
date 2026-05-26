@@ -177,6 +177,7 @@ done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
+source /ragflow/docker/process_utils.sh
 
 # -----------------------------------------------------------------------------
 # Select Nginx Configuration based on API_PROXY_SCHEME
@@ -208,12 +209,8 @@ function task_exe() {
     local host_id="$2"
 
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
-    while true; do
-        LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
-        wait;
-        sleep 1;
-    done
+    run_forever "task executor ${host_id}_${consumer_id}" \
+        env LD_PRELOAD="$JEMALLOC_PATH" "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
 }
 
 function start_mcp_server() {
@@ -242,24 +239,6 @@ function ensure_db_init() {
     echo "Database tables initialized."
 }
 
-function wait_for_server() {
-    local url="$1"
-    local server_name="$2"
-    local timeout=90
-    local interval=2
-    local start_time=$(date +%s)
-
-    echo "Waiting for $server_name to be ready at $url..."
-    while ! curl -f -s -o /dev/null "$url"; do
-        if [ $(($(date +%s) - start_time)) -gt $timeout ]; then
-            echo "Timeout waiting for $server_name after $timeout seconds"
-            return 1
-        fi
-        sleep $interval
-    done
-    echo "$server_name is ready."
-}
-
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
@@ -270,51 +249,27 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    while true; do
-        echo "Attempt to start RAGFlow server..."
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
-        echo "RAGFlow python server started."
-        sleep 1;
-    done &
+    run_forever "RAGFlow server" "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        while true; do
-            echo "Attempt to start RAGFlow go server..."
-            wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server"
-            echo "Starting RAGFlow go server..."
-            bin/server_main
-            sleep 1;
-        done &
+        run_forever "RAGFlow go server" bash -lc \
+            'source /ragflow/docker/process_utils.sh; wait_for_server "http://127.0.0.1:9380/healthz" "ragflow_server" && exec bin/server_main' &
     fi
 fi
 
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    while true; do
-        echo "Attempt to start Admin python server..."
-        "$PY" admin/server/admin_server.py
-        echo "Admin python server started"
-        sleep 1;
-    done &
+    run_forever "Admin python server" "$PY" admin/server/admin_server.py &
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
-        while true; do
-            echo "Attempt to starting Admin go server..."
-            wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server"
-            echo "Starting Admin go server..."
-            bin/admin_server
-            sleep 1;
-        done &
+        run_forever "Admin go server" bash -lc \
+            'source /ragflow/docker/process_utils.sh; wait_for_server "http://127.0.0.1:9381/api/v1/admin/ping" "admin_server" && exec bin/admin_server' &
     fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
-    while true; do
-        "$PY" rag/svr/sync_data_source.py &
-        wait;
-        sleep 1;
-    done &
+    run_forever "data sync" "$PY" rag/svr/sync_data_source.py &
 fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
