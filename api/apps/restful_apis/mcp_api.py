@@ -67,7 +67,6 @@ def _assert_mcp_url_is_safe(url, invalid_message: str = "Invalid url.") -> tuple
     except ValueError as exc:
         logger.warning("MCP URL safety check failed: %s", exc)
         return "", "", invalid_message
-        return "", "", str(exc)
     return hostname, resolved_ip, None
 
 
