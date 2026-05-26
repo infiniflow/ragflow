@@ -235,16 +235,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				memory.GET("/:memory_id", r.memoryHandler.GetMemoryMessages)
 			}
 
-			// TODO: Message routes - Implementation pending - depends on CanvasService, TaskService and embedding engine
-			// message := v1.Group("/messages")
-			// {
-			// 	message.POST("", r.memoryHandler.AddMessage)
-			// 	message.DELETE("/:memory_id/:message_id", r.memoryHandler.ForgetMessage)
-			// 	message.PUT("/:memory_id/:message_id", r.memoryHandler.UpdateMessage)
-			// 	message.GET("/search", r.memoryHandler.SearchMessage)
-			// 	message.GET("", r.memoryHandler.GetMessages)
-			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
-			// }
+			// Message routes
+			message := v1.Group("/messages")
+			{
+				message.DELETE("/:memory_message", r.memoryHandler.ForgetMessage)
+			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")
@@ -356,12 +351,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Tenant routes (per-tenant resources)
 		tenant := v1.Group("/tenant")
 		{
-			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)        // Internal API only for GO
-			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)     // Internal API only for GO
-			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)      // Internal API only for GO
-			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)  // Internal API only for GO
-			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)   // Internal API only for GO
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)      // Internal API only for GO
+			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
+			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
+			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
+			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
+			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 		}
 
 		// Document routes

@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 )
 
 const (
@@ -226,6 +228,7 @@ func generateOutputFormat(typesToExtract []string) string {
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
 	memoryDAO *dao.MemoryDAO
+	docEngine engine.DocEngine
 }
 
 // NewMemoryService creates a new MemoryService instance
@@ -235,6 +238,7 @@ type MemoryService struct {
 func NewMemoryService() *MemoryService {
 	return &MemoryService{
 		memoryDAO: dao.NewMemoryDAO(),
+		docEngine: engine.Get(),
 	}
 }
 
@@ -753,6 +757,64 @@ func (s *MemoryService) DeleteMemory(memoryID string) error {
 	}
 
 	return nil
+}
+
+// ForgetMessage marks a memory message as forgotten by setting forget_at.
+// This mirrors Python memory_api_service.forget_message and keeps the message
+// record for retention/cleanup policies instead of deleting it immediately.
+func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memoryID string, messageID int64) error {
+	memory, err := s.requireMemoryAccess(userID, memoryID)
+	if err != nil {
+		return err
+	}
+
+	if s.docEngine == nil {
+		return errors.New("message store is not initialized")
+	}
+
+	now := time.Now().Local()
+	forgetTime := now.Format("2006-01-02 15:04:05")
+	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	updates := map[string]interface{}{
+		"forget_at":     forgetTime,
+		"forget_at_flt": now.UnixMilli(),
+	}
+	condition := map[string]interface{}{
+		"id": messageDocID,
+	}
+	indexName := fmt.Sprintf("memory_%s", memory.TenantID)
+
+	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
+		return fmt.Errorf("Failed to forget message '%d' in memory '%s'.", messageID, memoryID)
+	}
+
+	return nil
+}
+
+func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*entity.Memory, error) {
+	memory, err := s.memoryDAO.GetByID(memoryID)
+	if err != nil {
+		return nil, fmt.Errorf("Memory '%s' not found.", memoryID)
+	}
+	if memory.TenantID == userID {
+		return memory, nil
+	}
+	if memory.Permissions != string(TenantPermissionTeam) {
+		return nil, fmt.Errorf("Memory '%s' not found.", memoryID)
+	}
+
+	userTenantService := NewUserTenantService()
+	userTenants, err := userTenantService.GetUserTenantRelationByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, tenant := range userTenants {
+		if tenant.TenantID == memory.TenantID {
+			return memory, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Memory '%s' not found.", memoryID)
 }
 
 // ListMemories retrieves a paginated list of memories with optional filters
