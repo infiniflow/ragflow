@@ -222,7 +222,6 @@ func startServer(config *server.Config) {
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService())
 
-	// Initialize router
 	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler)
 
 	// Create Gin engine
