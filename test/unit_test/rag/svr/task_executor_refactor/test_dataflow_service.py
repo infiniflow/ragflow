@@ -23,7 +23,6 @@ reaches directly into those internals.
 """
 
 import pytest
-import numpy as np
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from rag.svr.task_executor_refactor.dataflow_service import DataflowService
