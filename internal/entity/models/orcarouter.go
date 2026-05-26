@@ -297,23 +297,19 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 }
 
 func (o *OrcaRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	//TODO implement me
-	panic("implement me")
+	return fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
@@ -375,18 +371,15 @@ func (o *OrcaRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 }
 
 func (o *OrcaRouterModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	//TODO implement me
-	panic("implement me")
+	return fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -445,8 +438,7 @@ func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (o *OrcaRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) CheckConnection(apiConfig *APIConfig) error {
@@ -455,11 +447,9 @@ func (o *OrcaRouterModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 func (o *OrcaRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
 func (o *OrcaRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s no such method", o.Name())
 }
