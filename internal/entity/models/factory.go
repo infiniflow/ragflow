@@ -139,6 +139,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewN1NModel(baseURL, urlSuffix), nil
 	case "paddleocr_local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "huaweicloud":
+		return NewHuaweiCloudModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
