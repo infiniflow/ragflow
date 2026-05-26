@@ -29,9 +29,22 @@ func NewModelFactory() *ModelFactory {
 	return &ModelFactory{}
 }
 
+var providerDriverAliases = map[string]string{
+	"mineru.net":    "mineru",
+	"paddleocr.net": "paddleocr",
+}
+
+func canonicalProviderName(providerName string) string {
+	providerLower := strings.ToLower(providerName)
+	if alias, ok := providerDriverAliases[providerLower]; ok {
+		return alias
+	}
+	return providerLower
+}
+
 // CreateModelDriver creates a ModelDriver for the given provider and model
 func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string]string, urlSuffix URLSuffix) (ModelDriver, error) {
-	providerLower := strings.ToLower(providerName)
+	providerLower := canonicalProviderName(providerName)
 	switch providerLower {
 	case "anthropic":
 		return NewAnthropicModel(baseURL, urlSuffix), nil
