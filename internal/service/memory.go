@@ -804,7 +804,10 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*entity.Memory, error) {
 	memory, err := s.memoryDAO.GetByID(memoryID)
 	if err != nil {
-		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+		if dao.IsNotFoundErr(err) {
+			return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+		}
+		return nil, fmt.Errorf("failed to get memory '%s': %w", memoryID, err)
 	}
 	if memory.TenantID == userID {
 		return memory, nil
