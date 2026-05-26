@@ -440,13 +440,23 @@ func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
 
 	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
+	baseURL, err := a.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -496,7 +506,7 @@ func (a *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("hunyuan embedding response contains no data: %s", string(body))
 	}
 
-	var embeddings []EmbeddingData
+	embeddings := make([]EmbeddingData, 0, len(parsedResponse.Data))
 	for _, dataElem := range parsedResponse.Data {
 		embeddings = append(embeddings, EmbeddingData{
 			Embedding: dataElem.Embedding,
