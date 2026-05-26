@@ -14,8 +14,10 @@
 #  limitations under the License.
 #
 
-import pytest
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+
+import pytest
 from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file
@@ -71,6 +73,511 @@ def test_dataset_crud_cycle(rest_client, clear_datasets):
     list_after_delete_payload = list_after_delete.json()
     assert list_after_delete_payload["code"] == 0, list_after_delete_payload
     assert all(dataset["id"] != dataset_id for dataset in list_after_delete_payload["data"]), list_after_delete_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_name_and_case_insensitive_contract(rest_client, clear_datasets):
+    first_res = rest_client.post("/datasets", json={"name": "dataset_update_name_source"})
+    assert first_res.status_code == 200
+    first_payload = first_res.json()
+    assert first_payload["code"] == 0, first_payload
+    first_dataset_id = first_payload["data"]["id"]
+
+    second_res = rest_client.post("/datasets", json={"name": "dataset_update_name_target"})
+    assert second_res.status_code == 200
+    second_payload = second_res.json()
+    assert second_payload["code"] == 0, second_payload
+
+    rename_res = rest_client.put(
+        f"/datasets/{first_dataset_id}",
+        json={"name": "dataset_update_name_renamed"},
+    )
+    assert rename_res.status_code == 200
+    rename_payload = rename_res.json()
+    assert rename_payload["code"] == 0, rename_payload
+    assert rename_payload["data"]["name"] == "dataset_update_name_renamed", rename_payload
+
+    list_res = rest_client.get("/datasets", params={"id": first_dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["name"] == "dataset_update_name_renamed", list_payload
+
+    duplicate_case_res = rest_client.put(
+        f"/datasets/{first_dataset_id}",
+        json={"name": second_payload["data"]["name"].upper()},
+    )
+    assert duplicate_case_res.status_code == 200
+    duplicate_case_payload = duplicate_case_res.json()
+    assert duplicate_case_payload["code"] == 102, duplicate_case_payload
+    assert "already exists" in duplicate_case_payload["message"], duplicate_case_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_language_connectors_avatar_and_description_contract(rest_client, clear_datasets, tmp_path):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_lang_connectors"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    image_path = create_image_file(tmp_path / "dataset_update_avatar.png")
+    encoded_avatar = encode_avatar(image_path)
+    avatar_value = f"data:image/png;base64,{encoded_avatar}"
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={
+            "name": "dataset_update_lang_connectors",
+            "description": "",
+            "chunk_method": "naive",
+            "language": "English",
+            "connectors": [],
+            "avatar": avatar_value,
+        },
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 0, update_payload
+    assert update_payload["data"]["language"] == "English", update_payload
+    assert update_payload["data"]["connectors"] == [], update_payload
+    assert update_payload["data"]["avatar"] == avatar_value, update_payload
+
+    description_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"description": "description"},
+    )
+    assert description_res.status_code == 200
+    description_payload = description_res.json()
+    assert description_payload["code"] == 0, description_payload
+    assert description_payload["data"]["description"] == "description", description_payload
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "chunk_method",
+    [
+        "naive",
+        "book",
+        "email",
+        "laws",
+        "manual",
+        "one",
+        "paper",
+        "picture",
+        "presentation",
+        "qa",
+        "table",
+        "tag",
+    ],
+    ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+)
+def test_dataset_update_chunk_method_contract(rest_client, clear_datasets, chunk_method):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_chunk_{chunk_method}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"chunk_method": chunk_method},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 0, update_payload
+    assert update_payload["data"]["chunk_method"] == chunk_method, update_payload
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "name, parser_config",
+    [
+        ("auto_keywords_min", {"auto_keywords": 0}),
+        ("auto_keywords_mid", {"auto_keywords": 16}),
+        ("auto_keywords_max", {"auto_keywords": 32}),
+        ("auto_questions_min", {"auto_questions": 0}),
+        ("auto_questions_mid", {"auto_questions": 5}),
+        ("auto_questions_max", {"auto_questions": 10}),
+        ("chunk_token_num_min", {"chunk_token_num": 1}),
+        ("chunk_token_num_mid", {"chunk_token_num": 1024}),
+        ("chunk_token_num_max", {"chunk_token_num": 2048}),
+        ("delimiter", {"delimiter": "\n"}),
+        ("delimiter_space", {"delimiter": " "}),
+        ("html4excel_true", {"html4excel": True}),
+        ("html4excel_false", {"html4excel": False}),
+        ("layout_recognize_DeepDOC", {"layout_recognize": "DeepDOC"}),
+        ("layout_recognize_navie", {"layout_recognize": "Plain Text"}),
+        ("tag_kb_ids", {"tag_kb_ids": ["1", "2"]}),
+        ("topn_tags_min", {"topn_tags": 1}),
+        ("topn_tags_mid", {"topn_tags": 5}),
+        ("topn_tags_max", {"topn_tags": 10}),
+        ("filename_embd_weight_min", {"filename_embd_weight": 0.1}),
+        ("filename_embd_weight_mid", {"filename_embd_weight": 0.5}),
+        ("filename_embd_weight_max", {"filename_embd_weight": 1.0}),
+        ("task_page_size_min", {"task_page_size": 1}),
+        ("task_page_size_None", {"task_page_size": None}),
+        ("pages", {"pages": [[1, 100]]}),
+        ("pages_none", {"pages": None}),
+        ("graphrag_true", {"graphrag": {"use_graphrag": True}}),
+        ("graphrag_false", {"graphrag": {"use_graphrag": False}}),
+        ("graphrag_entity_types", {"graphrag": {"entity_types": ["age", "sex", "height", "weight"]}}),
+        ("graphrag_method_general", {"graphrag": {"method": "general"}}),
+        ("graphrag_method_light", {"graphrag": {"method": "light"}}),
+        ("graphrag_community_true", {"graphrag": {"community": True}}),
+        ("graphrag_community_false", {"graphrag": {"community": False}}),
+        ("graphrag_resolution_true", {"graphrag": {"resolution": True}}),
+        ("graphrag_resolution_false", {"graphrag": {"resolution": False}}),
+        ("raptor_true", {"raptor": {"use_raptor": True}}),
+        ("raptor_false", {"raptor": {"use_raptor": False}}),
+        ("raptor_prompt", {"raptor": {"prompt": "Who are you?"}}),
+        ("raptor_max_token_min", {"raptor": {"max_token": 1}}),
+        ("raptor_max_token_mid", {"raptor": {"max_token": 1024}}),
+        ("raptor_max_token_max", {"raptor": {"max_token": 2048}}),
+        ("raptor_threshold_min", {"raptor": {"threshold": 0.0}}),
+        ("raptor_threshold_mid", {"raptor": {"threshold": 0.5}}),
+        ("raptor_threshold_max", {"raptor": {"threshold": 1.0}}),
+        ("raptor_max_cluster_min", {"raptor": {"max_cluster": 1}}),
+        ("raptor_max_cluster_mid", {"raptor": {"max_cluster": 512}}),
+        ("raptor_max_cluster_max", {"raptor": {"max_cluster": 1024}}),
+        ("raptor_random_seed_min", {"raptor": {"random_seed": 0}}),
+        ("raptor_clustering_method_gmm", {"raptor": {"clustering_method": "gmm"}}),
+        ("raptor_clustering_method_ahc", {"raptor": {"clustering_method": "ahc"}}),
+        ("raptor_tree_builder_raptor", {"raptor": {"tree_builder": "raptor"}}),
+        ("raptor_tree_builder_psi", {"raptor": {"tree_builder": "psi"}}),
+    ],
+    ids=[
+        "auto_keywords_min",
+        "auto_keywords_mid",
+        "auto_keywords_max",
+        "auto_questions_min",
+        "auto_questions_mid",
+        "auto_questions_max",
+        "chunk_token_num_min",
+        "chunk_token_num_mid",
+        "chunk_token_num_max",
+        "delimiter",
+        "delimiter_space",
+        "html4excel_true",
+        "html4excel_false",
+        "layout_recognize_DeepDOC",
+        "layout_recognize_navie",
+        "tag_kb_ids",
+        "topn_tags_min",
+        "topn_tags_mid",
+        "topn_tags_max",
+        "filename_embd_weight_min",
+        "filename_embd_weight_mid",
+        "filename_embd_weight_max",
+        "task_page_size_min",
+        "task_page_size_None",
+        "pages",
+        "pages_none",
+        "graphrag_true",
+        "graphrag_false",
+        "graphrag_entity_types",
+        "graphrag_method_general",
+        "graphrag_method_light",
+        "graphrag_community_true",
+        "graphrag_community_false",
+        "graphrag_resolution_true",
+        "graphrag_resolution_false",
+        "raptor_true",
+        "raptor_false",
+        "raptor_prompt",
+        "raptor_max_token_min",
+        "raptor_max_token_mid",
+        "raptor_max_token_max",
+        "raptor_threshold_min",
+        "raptor_threshold_mid",
+        "raptor_threshold_max",
+        "raptor_max_cluster_min",
+        "raptor_max_cluster_mid",
+        "raptor_max_cluster_max",
+        "raptor_random_seed_min",
+        "raptor_clustering_method_gmm",
+        "raptor_clustering_method_ahc",
+        "raptor_tree_builder_raptor",
+        "raptor_tree_builder_psi",
+    ],
+)
+def test_dataset_update_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_parser_{name}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"parser_config": parser_config},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 0, update_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    actual_parser_config = list_payload["data"][0]["parser_config"]
+    for key, expected_value in parser_config.items():
+        if isinstance(expected_value, dict):
+            for nested_key, nested_expected in expected_value.items():
+                assert actual_parser_config[key][nested_key] == nested_expected, list_payload
+        else:
+            assert actual_parser_config[key] == expected_value, list_payload
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "name, update_payload",
+    [
+        ("parser_config_empty", {"chunk_method": "qa", "parser_config": {}}),
+        ("parser_config_none", {"chunk_method": "qa", "parser_config": None}),
+        ("parser_config_unset", {"chunk_method": "qa"}),
+    ],
+    ids=["parser_config_empty", "parser_config_none", "parser_config_unset"],
+)
+def test_dataset_update_parser_config_with_chunk_method_change_contract(rest_client, clear_datasets, name, update_payload):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_{name}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(f"/datasets/{dataset_id}", json=update_payload)
+    assert update_res.status_code == 200
+    update_body = update_res.json()
+    assert update_body["code"] == 0, update_body
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_body = list_res.json()
+    assert list_body["code"] == 0, list_body
+    assert list_body["data"][0]["parser_config"] == {
+        "raptor": {"use_raptor": False},
+        "graphrag": {"use_graphrag": False},
+        "image_context_size": 0,
+        "table_context_size": 0,
+    }, list_body
+
+
+@pytest.mark.p1
+@pytest.mark.parametrize(
+    "embedding_model, unauthorized_is_xfail",
+    [
+        ("BAAI/bge-small-en-v1.5@Builtin", False),
+        ("embedding-3@ZHIPU-AI", True),
+    ],
+    ids=["builtin_baai", "tenant_zhipu"],
+)
+def test_dataset_update_embedding_model_contract(rest_client, clear_datasets, embedding_model, unauthorized_is_xfail):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_embedding_{embedding_model.split('@')[0].replace('/', '_')}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"embedding_model": embedding_model},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    if unauthorized_is_xfail and update_payload["code"] == 102:
+        pytest.xfail(f"Environment has no authorized tenant model for {embedding_model}: {update_payload}")
+    assert update_payload["code"] == 0, update_payload
+    assert update_payload["data"]["embedding_model"] == embedding_model, update_payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "name, embedding_model, expected_fragment",
+    [
+        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ ", "Both model_name and provider must be non-empty strings"),
+    ],
+    ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
+)
+def test_dataset_update_embedding_model_format_contract(rest_client, clear_datasets, name, embedding_model, expected_fragment):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_embedding_format_{name}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"embedding_model": embedding_model},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 101, update_payload
+    assert expected_fragment in update_payload["message"], update_payload
+
+
+@pytest.mark.p1
+def test_dataset_update_embedding_model_with_existing_chunks_contract(rest_client, create_document):
+    dataset_id, document_id = create_document("dataset_update_embedding_with_chunks.txt")
+    chunk_res = rest_client.post(
+        f"/datasets/{dataset_id}/documents/{document_id}/chunks",
+        json={"content": "dataset update embedding with chunks"},
+    )
+    assert chunk_res.status_code == 200
+    chunk_payload = chunk_res.json()
+    assert chunk_payload["code"] == 0, chunk_payload
+
+    dataset_res = rest_client.get(f"/datasets/{dataset_id}")
+    assert dataset_res.status_code == 200
+    dataset_payload = dataset_res.json()
+    assert dataset_payload["code"] == 0, dataset_payload
+    current_embedding = dataset_payload["data"]["embedding_model"]
+
+    candidates = ["embedding-3@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Builtin"]
+    last_payload = None
+    for candidate in candidates:
+        if candidate == current_embedding:
+            continue
+        update_res = rest_client.put(
+            f"/datasets/{dataset_id}",
+            json={"embedding_model": candidate},
+        )
+        assert update_res.status_code == 200
+        update_payload = update_res.json()
+        last_payload = update_payload
+        if update_payload["code"] == 0:
+            assert update_payload["data"]["embedding_model"] == candidate, update_payload
+            return
+        if update_payload["code"] == 102 and "Unauthorized model" in update_payload.get("message", ""):
+            continue
+        assert False, update_payload
+
+    pytest.xfail(f"No authorized alternative embedding model available for update: {last_payload}")
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "permission",
+    ["me", "team"],
+    ids=["me", "team"],
+)
+def test_dataset_update_permission_contract(rest_client, clear_datasets, permission):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_permission_{permission}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"permission": permission},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 0, update_payload
+    assert update_payload["data"]["permission"] == permission.lower().strip(), update_payload
+
+
+@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
+@pytest.mark.p2
+@pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
+def test_dataset_update_pagerank_contract(rest_client, clear_datasets, pagerank):
+    create_res = rest_client.post("/datasets", json={"name": f"dataset_update_pagerank_{pagerank}"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"pagerank": pagerank},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 0, update_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["pagerank"] == pagerank, list_payload
+
+
+@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
+@pytest.mark.p2
+def test_dataset_update_pagerank_set_to_zero_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_set_to_zero"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    fifty_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"pagerank": 50},
+    )
+    assert fifty_res.status_code == 200
+    fifty_payload = fifty_res.json()
+    assert fifty_payload["code"] == 0, fifty_payload
+
+    zero_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"pagerank": 0},
+    )
+    assert zero_res.status_code == 200
+    zero_payload = zero_res.json()
+    assert zero_payload["code"] == 0, zero_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["pagerank"] == 0, list_payload
+
+
+@pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
+@pytest.mark.p2
+def test_dataset_update_pagerank_infinity_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_infinity"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"pagerank": 50},
+    )
+    assert update_res.status_code == 200
+    update_payload = update_res.json()
+    assert update_payload["code"] == 102, update_payload
+    assert update_payload["message"] == "'pagerank' can only be set when doc_engine is elasticsearch", update_payload
+
+
+@pytest.mark.p3
+def test_dataset_update_concurrent_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_concurrent_base"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    count = 100
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(rest_client.put, f"/datasets/{dataset_id}", json={"name": f"dataset_update_{i}"}) for i in range(count)]
+        responses = list(as_completed(futures))
+    assert len(responses) == count, responses
+    for index, future in enumerate(futures):
+        res = future.result()
+        assert res.status_code == 200, (index, res.text)
+        payload = res.json()
+        assert payload["code"] == 0, (index, payload)
 
 
 @pytest.mark.p2
