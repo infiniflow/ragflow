@@ -114,7 +114,6 @@ func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *Upda
 			updates["timeout_secs"] = *req.TimeoutSecs
 		}
 		if len(updates) > 0 {
-			updates["id"] = connectorID
 			if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
 				return nil, common.CodeServerError, err
 			}
