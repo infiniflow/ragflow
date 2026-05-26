@@ -29,22 +29,9 @@ func NewModelFactory() *ModelFactory {
 	return &ModelFactory{}
 }
 
-var providerDriverAliases = map[string]string{
-	"mineru.net":    "mineru",
-	"paddleocr.net": "paddleocr",
-}
-
-func canonicalProviderName(providerName string) string {
-	providerLower := strings.ToLower(providerName)
-	if alias, ok := providerDriverAliases[providerLower]; ok {
-		return alias
-	}
-	return providerLower
-}
-
 // CreateModelDriver creates a ModelDriver for the given provider and model
 func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string]string, urlSuffix URLSuffix) (ModelDriver, error) {
-	providerLower := canonicalProviderName(providerName)
+	providerLower := strings.ToLower(providerName)
 	switch providerLower {
 	case "anthropic":
 		return NewAnthropicModel(baseURL, urlSuffix), nil
@@ -128,19 +115,19 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage":
 		return NewVoyageModel(baseURL, urlSuffix), nil
-	case "paddleocr":
+	case "paddleocr.net":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
 	case "xunfei":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
 		return NewDeepInfraModel(baseURL, urlSuffix), nil
-	case "mineru":
+	case "mineru.net":
 		return NewMinerUModel(baseURL, urlSuffix), nil
 	case "jiekouai":
 		return NewJieKouAIModel(baseURL, urlSuffix), nil
 	case "302.ai":
 		return NewAI302Model(baseURL, urlSuffix), nil
-	case "mineru_local":
+	case "mineru":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
@@ -150,7 +137,7 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGPUStackModel(baseURL, urlSuffix), nil
 	case "n1n":
 		return NewN1NModel(baseURL, urlSuffix), nil
-	case "paddleocr_local":
+	case "paddleocr":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil

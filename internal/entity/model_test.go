@@ -81,6 +81,42 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	}
 }
 
+func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
+	dir := t.TempDir()
+	for _, fileName := range []string{"mineru_local.json", "paddleocr_local.json"} {
+		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
+			t.Fatalf("write %s config: %v", fileName, err)
+		}
+	}
+
+	pm, err := NewProviderManager(dir)
+	if err != nil {
+		t.Fatalf("NewProviderManager: %v", err)
+	}
+
+	minerU := pm.FindProvider("MinerU")
+	if minerU == nil {
+		t.Fatal("MinerU provider not found")
+	}
+	if _, ok := minerU.ModelDriver.(*modeldrivers.MinerULocalModel); !ok {
+		t.Fatalf("MinerU ModelDriver=%T, want *models.MinerULocalModel", minerU.ModelDriver)
+	}
+	if minerU.URLSuffix.DocumentParse != "file_parse" {
+		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
+	}
+
+	paddleOCR := pm.FindProvider("PaddleOCR")
+	if paddleOCR == nil {
+		t.Fatal("PaddleOCR provider not found")
+	}
+	if _, ok := paddleOCR.ModelDriver.(*modeldrivers.PaddleOCRLocalModel); !ok {
+		t.Fatalf("PaddleOCR ModelDriver=%T, want *models.PaddleOCRLocalModel", paddleOCR.ModelDriver)
+	}
+	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
+		t.Errorf("PaddleOCR OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
 func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "ppio.json"), readPPIOProviderConfig(t), 0o600); err != nil {
