@@ -12,7 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
+import argparse
 import time
 
 from rag.svr.task_executor_refactor.task_manager import TaskManager
@@ -93,7 +93,13 @@ from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
-from common.asyncio_utils import LoopLocalSemaphore
+from rag.svr.task_executor_limiter import (
+    task_limiter,
+    chunk_limiter,
+    embed_limiter,
+    minio_limiter,
+    kg_limiter,
+)
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 from rag.utils.table_es_metadata import (
@@ -134,9 +140,10 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
 }
 
 UNACKED_ITERATOR = None
+# Task type and executor index (consistent with SAAS version)
+TASK_TYPE = "common"
+TE_IDX = "0"
 
-CONSUMER_NO = "0" if len(sys.argv) < 2 else sys.argv[1]
-CONSUMER_NAME = "task_executor_" + CONSUMER_NO
 BOOT_AT = datetime.now().astimezone().isoformat(timespec="milliseconds")
 PENDING_TASKS = 0
 LAG_TASKS = 0
@@ -145,14 +152,6 @@ FAILED_TASKS = 0
 
 CURRENT_TASKS = {}
 
-MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
-MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
-MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
-task_limiter = LoopLocalSemaphore(MAX_CONCURRENT_TASKS)
-chunk_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
-embed_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
-minio_limiter = LoopLocalSemaphore(MAX_CONCURRENT_MINIO)
-kg_limiter = LoopLocalSemaphore(2)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
@@ -201,7 +200,8 @@ async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
 
-    svr_queue_names = settings.get_svr_queue_names()
+    svr_queue_names = settings.get_svr_queue_names(TASK_TYPE)
+
     redis_msg = None
     try:
         if not UNACKED_ITERATOR:
@@ -1923,6 +1923,17 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Parse command line arguments (consistent with SAAS version)
+    parser = argparse.ArgumentParser(description='Task Executor')
+    parser.add_argument("-i", "--index", type=str, default='0')
+    parser.add_argument("-t", "--type", type=str, default="common", help="[common, graphrag, raptor, resume]")
+    args = parser.parse_args()
+    
+    # Update global variables
+    TASK_TYPE = args.type
+    TE_IDX = args.index
+    CONSUMER_NAME = f"task_executor_{TASK_TYPE}_{TE_IDX}"
+    
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
     try:

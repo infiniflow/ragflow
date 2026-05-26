@@ -29,7 +29,6 @@ The comparison supports various data types with appropriate strategies:
 """
 
 import logging
-import random
 from typing import Any, List, Optional, Set
 
 from rag.svr.task_executor_refactor.recording_context import BaseRecordingContext

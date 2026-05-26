@@ -234,7 +234,7 @@ class TestRaptorServiceRunRaptorForKb:
 
             mock_file.return_value = (sample_chunks, 42)
 
-            result = AsyncMock(return_value=(sample_chunks, 42, []))
+            AsyncMock(return_value=(sample_chunks, 42, []))
             with patch.object(RaptorService, "run_raptor_for_kb", new=AsyncMock(wraps=svc.run_raptor_for_kb)):
                 pass  # let's just call directly
 
@@ -288,7 +288,7 @@ class TestRaptorServiceRunRaptorForKb:
 
         with patch.object(svc, "_collect_doc_info", return_value={}), \
            patch.object(svc, "_run_file_level_raptor", new_callable=AsyncMock) as mock_file, \
-           patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock) as mock_dataset:
+           patch.object(svc, "_run_dataset_level_raptor", new_callable=AsyncMock):
 
             mock_file.return_value = ([], 0)
 
