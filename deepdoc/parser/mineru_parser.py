@@ -235,19 +235,9 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = [
-            # Current MinerU backends (fixes #15244).
-            "pipeline",
-            "vlm-auto-engine",
-            "hybrid-auto-engine",
-            # Legacy — kept for backward compatibility with older MinerU servers.
-            "vlm-http-client",
-            "vlm-transformers",
-            "vlm-vllm-engine",
-            "vlm-mlx-engine",
-            "vlm-vllm-async-engine",
-            "vlm-lmdeploy-engine",
-        ]
+        # Derived from MinerUBackend so a new enum value is automatically
+        # accepted without having to update this list (fixes #15244).
+        valid_backends = [b.value for b in MinerUBackend]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
