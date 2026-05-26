@@ -1,0 +1,218 @@
+{
+  "name": "HuaweiCloud",
+  "url": {
+    "default": "https://api.modelarts-maas.com",
+    "cn-southwest-2": "https://api.modelarts-maas.com",
+    "ap-southeast-1": "https://api-ap-southeast-1.modelarts-maas.com"
+  },
+  "url_suffix": {
+    "chat": "v2/chat/completions",
+    "async_chat": "v1/chat/completions",
+    "models": "v2/models",
+    "embedding": "v1/embeddings",
+    "rerank": "v1/rerank"
+  },
+  "class": "huaweicloud",
+  "models": [
+    {
+      "name": "deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v3.2",
+      "max_tokens": 163840,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v3.1-terminus",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": false,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "DeepSeek-V3",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-r1-250528",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-235b-a22b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-32b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-30b-a3b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "kimi-k2.6",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "longcat-flash-chat",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "glm-5",
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "glm-5.1",
+      "max_tokens": 202752,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen2.5-vl-72b",
+      "max_tokens": 49152,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "bge-m3",
+      "max_tokens": 8000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "bge-reranker-v2-m3",
+      "max_tokens": 8000,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+        "deepseek-v3.2",
+        "deepseek-v3.1-terminus",
+        "deepseek-r1-250528",
+        "qwen3-235b-a22b",
+        "qwen3-32b",
+        "qwen3-30b-a3b",
+        "kimi-k2.6",
+        "glm-5",
+        "glm-5.1"
+      ]
+    },
+    "clear_thinking": {
+      "default_value": true,
+      "supported_models": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+        "deepseek-v3.2",
+        "deepseek-v3.1-terminus",
+        "deepseek-r1-250528",
+        "qwen3-235b-a22b",
+        "qwen3-32b",
+        "qwen3-30b-a3b",
+        "kimi-k2.6",
+        "glm-5",
+        "glm-5.1"
+      ]
+    },
+    "reasoning": {
+      "type": "effort",
+      "enabled": true,
+      "default": "high",
+      "options": [
+        "high",
+        "max"
+      ]
+    }
+  }
+}
