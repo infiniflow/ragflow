@@ -308,6 +308,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 			}
 
 			system := v1.Group("/system")

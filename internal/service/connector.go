@@ -17,7 +17,13 @@
 package service
 
 import (
+	"errors"
+	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // ConnectorService connector service
@@ -37,6 +43,37 @@ func NewConnectorService() *ConnectorService {
 // ListConnectorsResponse list connectors response
 type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
+}
+
+// GetConnector returns one connector when the user can access its tenant.
+func (s *ConnectorService) GetConnector(connectorID string, userID string) (*entity.Connector, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if connector.TenantID == userID {
+		return connector, common.CodeSuccess, nil
+	}
+
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	for _, tenantID := range tenantIDs {
+		if tenantID == connector.TenantID {
+			return connector, common.CodeSuccess, nil
+		}
+	}
+
+	return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
 }
 
 // ListConnectors list connectors for a user
