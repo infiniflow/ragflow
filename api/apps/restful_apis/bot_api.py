@@ -380,13 +380,25 @@ async def agent_bot_logs(shared_id, message_id):
 
     token = _get_sdk_authorization_token()
     if not token:
+        logger.warning(
+            "agent_bot_logs: missing Authorization header (shared_id=%s message_id=%s)",
+            shared_id, message_id,
+        )
         return get_error_data_result(message='Authorization is not valid!')
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
+        logger.warning(
+            "agent_bot_logs: invalid beta token (prefix=%s... shared_id=%s)",
+            token[:10], shared_id,
+        )
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     agent_id = objs[0].dialog_id
     if not agent_id:
+        logger.warning(
+            "agent_bot_logs: APIToken has no dialog_id (tenant_id=%s prefix=%s...)",
+            objs[0].tenant_id, token[:10],
+        )
         return get_error_data_result(message='API token is not bound to an agent.')
 
     try:
