@@ -94,7 +94,7 @@ class TestRunChunking:
         mock_chunker.chunk = MagicMock(return_value=[])
 
         with patch("rag.svr.task_executor_refactor.chunk_builder.thread_pool_exec") as mock_thread:
-            mock_thread.return_value = AsyncMock(return_value=[])()
+            mock_thread.return_value = []
 
             with patch("rag.svr.task_executor_refactor.chunk_builder.merge_table_parser_config_from_kb") as mock_merge:
                 mock_merge.return_value = {"chunk_token_num": 128}
