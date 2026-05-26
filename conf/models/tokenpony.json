@@ -5,7 +5,8 @@
   },
   "url_suffix": {
     "chat": "chat/completions",
-    "models": "models"
+    "models": "models",
+    "embedding": "embeddings"
   },
   "class": "tokenpony",
   "models": [
@@ -88,6 +89,21 @@
       "name": "minimax-m2",
       "max_tokens": 200000,
       "model_types": ["chat"]
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": ["embedding"]
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": ["embedding"]
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": ["embedding"]
     }
   ]
 }

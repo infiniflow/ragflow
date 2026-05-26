@@ -35,6 +35,7 @@ import (
 //
 // Wire shape matches the OpenAI convention exactly:
 //   - POST /v1/chat/completions with {model, messages, stream, ...}
+//   - POST /v1/embeddings with {model, input, ...}
 //   - GET  /v1/models for the catalog
 //   - Authorization: Bearer <api-key> on every call
 //   - SSE response with `data:` lines and a [DONE] terminator
@@ -445,11 +446,126 @@ func (a *TokenPonyModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-// Embed is not implemented for TokenPony in this initial driver; the
-// factory entry only registers chat models. Mirrors how LongCat /
-// Astraflow landed chat-only.
-func (a *TokenPonyModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+// tokenponyEmbeddingData is one element in a TokenPony embeddings response.
+type tokenponyEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     *int      `json:"index"`
+}
+
+// tokenponyEmbeddingResponse is the JSON body returned by TokenPony embeddings API.
+type tokenponyEmbeddingResponse struct {
+	Data []tokenponyEmbeddingData `json:"data"`
+}
+
+// tokenponyEmbeddingRequest is the JSON body sent to TokenPony embeddings API.
+type tokenponyEmbeddingRequest struct {
+	Model      string   `json:"model"`
+	Input      []string `json:"input"`
+	Dimensions int      `json:"dimensions,omitempty"`
+}
+
+// Embed requests embedding vectors via TokenPony's OpenAI-compatible
+// POST /v1/embeddings endpoint (see https://docs.tokenpony.cn/api/embeddings).
+func (a *TokenPonyModel) Embed(
+	modelName *string,
+	texts []string,
+	apiConfig *APIConfig,
+	embeddingConfig *EmbeddingConfig,
+) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := a.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	if a.URLSuffix.Embedding == "" {
+		return nil, fmt.Errorf("tokenpony: embedding URL suffix is not configured")
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Embedding)
+
+	reqBody := tokenponyEmbeddingRequest{
+		Model: *modelName,
+		Input: texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody.Dimensions = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tokenpony embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed tokenponyEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([]EmbeddingData, len(texts))
+	filled := make([]bool, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index == nil {
+			return nil, fmt.Errorf("tokenpony: missing embedding index in response item")
+		}
+		idx := *item.Index
+		if idx < 0 || idx >= len(texts) {
+			return nil, fmt.Errorf("tokenpony: embedding response index %d out of range for %d inputs", idx, len(texts))
+		}
+		if filled[idx] {
+			return nil, fmt.Errorf("tokenpony: duplicate embedding index %d in response", idx)
+		}
+		if len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("tokenpony: empty embedding vector for input index %d", idx)
+		}
+		embeddings[idx] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     idx,
+		}
+		filled[idx] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("tokenpony: missing embedding for input index %d", i)
+		}
+	}
+	return embeddings, nil
 }
 
 func (a *TokenPonyModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
