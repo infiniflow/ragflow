@@ -315,8 +315,26 @@ class MinerUParser(RAGFlowPdfParser):
         # Retry on transient errors (connect/read timeouts, conn errors, 5xx).
         # Non-transient failures (4xx, malformed response, OS errors) raise on
         # the first attempt — retrying them wastes minutes per task.
-        max_attempts = max(1, int(os.environ.get("MINERU_MAX_ATTEMPTS", "3")))
-        backoff_base = float(os.environ.get("MINERU_BACKOFF_SECONDS", "2"))
+        # Parse env vars defensively: a malformed value should fall back to
+        # safe defaults and log a warning rather than aborting the parse.
+        _max_attempts_raw = os.environ.get("MINERU_MAX_ATTEMPTS", "3")
+        try:
+            max_attempts = max(1, int(_max_attempts_raw))
+        except (TypeError, ValueError):
+            max_attempts = 3
+            self.logger.warning(
+                "[MinerU] invalid MINERU_MAX_ATTEMPTS=%r; falling back to %d",
+                _max_attempts_raw, max_attempts,
+            )
+        _backoff_base_raw = os.environ.get("MINERU_BACKOFF_SECONDS", "2")
+        try:
+            backoff_base = float(_backoff_base_raw)
+        except (TypeError, ValueError):
+            backoff_base = 2.0
+            self.logger.warning(
+                "[MinerU] invalid MINERU_BACKOFF_SECONDS=%r; falling back to %s",
+                _backoff_base_raw, backoff_base,
+            )
 
         def _is_transient(exc: Exception) -> bool:
             if isinstance(exc, (requests.ConnectionError, requests.Timeout)):

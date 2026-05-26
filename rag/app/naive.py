@@ -919,6 +919,11 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         # leaving the task marked DONE with 0 chunks. Raise instead so the
         # executor's chunking-exception handler marks the task FAILED.
         if sections is None and tables is None:
+            logging.error(
+                "[%s] parser is unavailable or failed; raising RuntimeError "
+                "(sections=None, tables=None, filename=%s)",
+                name, filename,
+            )
             raise RuntimeError(
                 f"[{name}] parser is unavailable or failed; see progress log for details."
             )
