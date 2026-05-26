@@ -579,7 +579,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 
 	if err := h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "not found") {
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "does not exist") {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    common.CodeNotFound,
 				"message": errMsg,

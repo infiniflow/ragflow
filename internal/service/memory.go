@@ -785,7 +785,7 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	indexName := fmt.Sprintf("memory_%s", memory.TenantID)
 
 	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
-		return fmt.Errorf("Failed to forget message '%d' in memory '%s'.", messageID, memoryID)
+		return fmt.Errorf("failed to forget message '%d' in memory '%s': %w", messageID, memoryID, err)
 	}
 
 	return nil
