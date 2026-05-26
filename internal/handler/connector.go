@@ -18,6 +18,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -101,6 +102,7 @@ func unwrapConnectorPayload(payload map[string]json.RawMessage) ([]byte, error) 
 		if err := json.Unmarshal(data, &dataObj); err == nil && dataObj != nil {
 			return data, nil
 		}
+		return nil, errors.New("field 'data' must be a JSON object")
 	}
 	return json.Marshal(payload)
 }

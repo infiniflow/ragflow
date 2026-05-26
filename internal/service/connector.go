@@ -195,34 +195,20 @@ func (s *ConnectorService) scheduleTasks(connectorID string) error {
 }
 
 func (s *ConnectorService) latestDoneSyncState(connectorID, datasetID string) (*string, int64, error) {
-	latest, err := s.connectorDAO.GetLatestSyncLog(connectorID, datasetID, "sync")
+	latest, err := s.connectorDAO.GetLatestDoneSyncLog(connectorID, datasetID, "sync")
 	if err != nil {
 		if dao.IsRecordNotFound(err) {
 			return nil, 0, nil
 		}
 		return nil, 0, err
 	}
-	if latest.Status != string(entity.TaskStatusDone) {
-		return nil, 0, nil
-	}
 	return latest.PollRangeEnd, latest.TotalDocsIndexed, nil
 }
 
 func (s *ConnectorService) scheduleTask(connectorID, datasetID, taskType string, pollRangeStart *string, totalDocsIndexed int64) error {
-	exists, err := s.connectorDAO.HasScheduledSyncLog(connectorID, datasetID, taskType)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
 	fromBeginning := "0"
 	now := time.Now().Local()
-	if err := s.connectorDAO.UpdateByID(connectorID, map[string]interface{}{"status": string(entity.TaskStatusSchedule)}); err != nil {
-		return err
-	}
-	return s.connectorDAO.CreateSyncLog(&entity.SyncLogs{
+	return s.connectorDAO.ScheduleSyncLogIfAbsent(&entity.SyncLogs{
 		ID:               common.GenerateUUID(),
 		ConnectorID:      connectorID,
 		KbID:             datasetID,

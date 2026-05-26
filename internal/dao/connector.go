@@ -21,6 +21,7 @@ import (
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ConnectorDAO connector data access object
@@ -121,10 +122,10 @@ func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(connectorID string) error 
 		Update("status", string(entity.TaskStatusCancel)).Error
 }
 
-// GetLatestSyncLog gets the latest sync log for a connector/dataset/task type.
-func (dao *ConnectorDAO) GetLatestSyncLog(connectorID, datasetID, taskType string) (*entity.SyncLogs, error) {
+// GetLatestDoneSyncLog gets the latest completed sync log for a connector/dataset/task type.
+func (dao *ConnectorDAO) GetLatestDoneSyncLog(connectorID, datasetID, taskType string) (*entity.SyncLogs, error) {
 	var log entity.SyncLogs
-	err := DB.Where("connector_id = ? AND kb_id = ? AND task_type = ?", connectorID, datasetID, taskType).
+	err := DB.Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, datasetID, taskType, string(entity.TaskStatusDone)).
 		Order("update_time DESC").
 		First(&log).Error
 	if err != nil {
@@ -145,6 +146,35 @@ func (dao *ConnectorDAO) HasScheduledSyncLog(connectorID, datasetID, taskType st
 // CreateSyncLog creates a connector sync log.
 func (dao *ConnectorDAO) CreateSyncLog(log *entity.SyncLogs) error {
 	return DB.Create(log).Error
+}
+
+// ScheduleSyncLogIfAbsent creates a scheduled sync log and marks the connector scheduled atomically.
+func (dao *ConnectorDAO) ScheduleSyncLogIfAbsent(log *entity.SyncLogs) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var connector entity.Connector
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", log.ConnectorID).
+			First(&connector).Error; err != nil {
+			return err
+		}
+
+		var count int64
+		if err := tx.Model(&entity.SyncLogs{}).
+			Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", log.ConnectorID, log.KbID, log.TaskType, string(entity.TaskStatusSchedule)).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+
+		if err := tx.Model(&entity.Connector{}).
+			Where("id = ?", log.ConnectorID).
+			Update("status", string(entity.TaskStatusSchedule)).Error; err != nil {
+			return err
+		}
+		return tx.Create(log).Error
+	})
 }
 
 // IsRecordNotFound reports whether err is GORM's record-not-found sentinel.

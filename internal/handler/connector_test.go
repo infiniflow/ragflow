@@ -19,6 +19,7 @@ type fakeConnectorService struct {
 	gotConnectorID string
 	gotUserID      string
 	gotReq         *service.UpdateConnectorRequest
+	called         bool
 }
 
 func (f *fakeConnectorService) ListConnectors(userID string) (*service.ListConnectorsResponse, error) {
@@ -26,6 +27,7 @@ func (f *fakeConnectorService) ListConnectors(userID string) (*service.ListConne
 }
 
 func (f *fakeConnectorService) UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	f.called = true
 	f.gotConnectorID = connectorID
 	f.gotUserID = userID
 	f.gotReq = req
@@ -112,5 +114,45 @@ func TestUpdateConnector(t *testing.T) {
 	}
 	if resp.Data.ID != "conn123" || resp.Data.TenantID != "tenant123" {
 		t.Fatalf("response connector = %+v", resp.Data)
+	}
+}
+
+func TestUpdateConnectorRejectsMalformedDataWrapper(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	connectorService := &fakeConnectorService{}
+	h := &ConnectorHandler{connectorService: connectorService}
+	r := gin.New()
+	r.PATCH("/api/v1/connectors/:connector_id", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "tenant123"})
+		h.UpdateConnector(c)
+	})
+
+	body := []byte(`{"data":[]}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/connectors/conn123", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if connectorService.called {
+		t.Fatal("service should not be called for malformed data wrapper")
+	}
+
+	var resp struct {
+		Code    common.ErrorCode `json:"code"`
+		Message string           `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Code != common.CodeDataError {
+		t.Fatalf("code = %d, want %d, body: %s", resp.Code, common.CodeDataError, w.Body.String())
+	}
+	if resp.Message != "field 'data' must be a JSON object" {
+		t.Fatalf("message = %q", resp.Message)
 	}
 }
