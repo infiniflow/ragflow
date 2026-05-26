@@ -14,10 +14,10 @@ import { Input } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useForm, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialExeSqlValues } from '../../constant';
+import { AgentExceptionMethod, initialExeSqlValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
@@ -147,9 +147,19 @@ function ExeSQLForm({ node }: INextOperatorForm) {
 
   const { onSubmit, loading } = useSubmitForm();
 
+  const ExceptionMethodOptions = [AgentExceptionMethod.Comment].map((x) => ({
+    label: t(`flow.${x}`),
+    value: x,
+  }));
+
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues,
+  });
+
+  const exceptionMethod = useWatch({
+    control: form.control,
+    name: 'exception_method',
   });
 
   useWatchFormChange(node?.id, form);
@@ -165,6 +175,36 @@ function ExeSQLForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <ExeSQLFormWidgets loading={loading}></ExeSQLFormWidgets>
+        <FormField
+          control={form.control}
+          name="exception_method"
+          render={({ field }) => (
+            <FormItem className="flex-1">
+              <FormLabel>{t('flow.exceptionMethod')}</FormLabel>
+              <FormControl>
+                <SelectWithSearch
+                  {...field}
+                  options={ExceptionMethodOptions}
+                  allowClear
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+        {exceptionMethod === AgentExceptionMethod.Comment && (
+          <FormField
+            control={form.control}
+            name="exception_default_value"
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{t('flow.ExceptionDefaultValue')}</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+        )}
       </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
