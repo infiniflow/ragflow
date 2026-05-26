@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import html
 import logging
 import os
 import re
@@ -33,7 +34,7 @@ import numpy as np
 import pdfplumber
 import requests
 from PIL import Image
-from strenum import StrEnum
+from enum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from deepdoc.parser.utils import extract_pdf_outlines
@@ -248,6 +249,26 @@ class MinerUParser(RAGFlowPdfParser):
             return response.ok, response.status_code
         except Exception:
             return False, None
+
+    @staticmethod
+    def _sanitize_section_text(section: str) -> str:
+        """Normalize MinerU text blocks before chunking.
+
+        MinerU may return HTML fragments (e.g. table_body with <tr>/<td>/<br>).
+        Keep human-readable text while removing tag noise that hurts chunking.
+        """
+        if not section:
+            return ""
+        section = html.unescape(section)
+        # Preserve rough structure before dropping tags.
+        section = re.sub(r"(?is)<\s*br\s*/?\s*>", "\n", section)
+        section = re.sub(r"(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>", "\n", section)
+        section = re.sub(r"(?is)<[^>]+>", "", section)
+        # Collapse whitespace while preserving line boundaries.
+        section = re.sub(r"[ \t]+\n", "\n", section)
+        section = re.sub(r"\n{3,}", "\n\n", section)
+        section = re.sub(r"[ \t]{2,}", " ", section)
+        return section.strip()
 
     def check_installation(
         self,
@@ -918,6 +939,21 @@ class MinerUParser(RAGFlowPdfParser):
                 if nested_alt.exists():
                     subdir = nested_alt.parent
                     json_file = nested_alt
+                else:
+                    # Try vlm subdirectory (for vlm-http-client backend)
+                    vlm_path = output_dir / "vlm" / f"{file_stem}_content_list.json"
+                    self.logger.info(f"[MinerU] Trying vlm subdirectory: {vlm_path}")
+                    attempted.append(vlm_path)
+                    if vlm_path.exists():
+                        subdir = vlm_path.parent
+                        json_file = vlm_path
+                    else:
+                        vlm_safe = output_dir / "vlm" / f"{safe_stem}_content_list.json"
+                        self.logger.info(f"[MinerU] Trying vlm subdirectory with sanitized name: {vlm_safe}")
+                        attempted.append(vlm_safe)
+                        if vlm_safe.exists():
+                            subdir = vlm_safe.parent
+                            json_file = vlm_safe
 
         if not json_file:
             parse_subdir = None
@@ -1034,6 +1070,12 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.IMAGE:
                     section = "".join(output.get("image_caption", [])) + "\n" + "".join(
                         output.get("image_footnote", []))
+                    # If a vision model enriched this image with a semantic
+                    # description (see _enhance_images_with_vlm), embed it in
+                    # the chunk so it becomes searchable / retrievable.
+                    vlm_description = (output.get("vlm_description") or "").strip()
+                    if vlm_description:
+                        section = (section.strip("\n") + "\n" + vlm_description).strip("\n") if section.strip() else vlm_description
                 case MinerUContentType.EQUATION:
                     section = output.get("text", "")
                 case MinerUContentType.CODE:
@@ -1042,6 +1084,11 @@ class MinerUParser(RAGFlowPdfParser):
                     section = "\n".join(output.get("list_items", []))
                 case MinerUContentType.DISCARDED:
                     continue  # Skip discarded blocks entirely
+
+            section = self._sanitize_section_text(section)
+            if not section:
+                self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
+                continue
 
             if section and parse_method in {"manual", "pipeline"}:
                 sections.append((section, output["type"], self._line_tag(output)))
@@ -1053,6 +1100,49 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
         return []
+
+    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
+        """Generate semantic descriptions for image blocks via the tenant's
+        IMAGE2TEXT model, mirroring deepdoc's VisionFigureParser. Each
+        IMAGE block with a readable img_path gets a ``vlm_description``
+        field that ``_transfer_to_sections`` then folds into the chunk
+        text — closing issue #14869.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from rag.app.picture import vision_llm_chunk
+        from rag.prompts.generator import vision_llm_figure_describe_prompt
+
+        image_jobs = [
+            (idx, item)
+            for idx, item in enumerate(outputs)
+            if item.get("type") == MinerUContentType.IMAGE
+            and item.get("img_path")
+            and os.path.exists(item["img_path"])
+        ]
+        if not image_jobs:
+            return
+
+        if callback:
+            callback(0.78, f"[MinerU] Generating VLM descriptions for {len(image_jobs)} images...")
+
+        prompt = vision_llm_figure_describe_prompt()
+
+        def worker(idx, item):
+            try:
+                with Image.open(item["img_path"]) as img:
+                    img.load()
+                    desc = vision_llm_chunk(binary=img, vision_model=vision_model, prompt=prompt)
+                return idx, (desc or "").strip()
+            except Exception as e:
+                logging.warning(f"[MinerU] VLM description failed for image #{idx}: {e}")
+                return idx, ""
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(worker, idx, item) for idx, item in image_jobs]
+            for fut in as_completed(futures):
+                idx, desc = fut.result()
+                if desc:
+                    outputs[idx]["vlm_description"] = desc
 
     def parse_pdf(
             self,
@@ -1167,6 +1257,13 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.85, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
+
+            vision_model = kwargs.get("vision_model")
+            if vision_model is not None:
+                try:
+                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback)
+                except Exception as e:
+                    self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
 
             return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
         finally:

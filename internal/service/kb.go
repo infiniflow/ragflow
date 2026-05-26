@@ -27,7 +27,6 @@ import (
 
 	"ragflow/internal/utility"
 	"strings"
-	"time"
 )
 
 // KnowledgebaseService service class for managing dataset operations
@@ -77,71 +76,6 @@ type UpdateMetadataSettingRequest struct {
 type ListKbsResponse struct {
 	KBs   []map[string]interface{} `json:"kbs"`
 	Total int64                    `json:"total"`
-}
-
-// CreateDatasetTableRequest represents the request for creating a dataset table
-type CreateDatasetTableRequest struct {
-	KBID       string `json:"kb_id" binding:"required"`
-	VectorSize int    `json:"vector_size" binding:"required"`
-	ParserID   string `json:"parser_id,omitempty"`
-}
-
-// CreateDatasetInDocEngineResponse represents the response for creating a dataset table
-type CreateDatasetInDocEngineResponse struct {
-	KBID       string `json:"kb_id"`
-	TableName  string `json:"table_name"`
-	VectorSize int    `json:"vector_size"`
-}
-
-// CreateDatasetInDocEngine creates a table in the document engine for a knowledge base
-func (s *KnowledgebaseService) CreateDatasetInDocEngine(req *CreateDatasetTableRequest) (*CreateDatasetInDocEngineResponse, common.ErrorCode, error) {
-	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(req.KBID)
-	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
-	}
-
-	// vector_size is required
-	vecSize := req.VectorSize
-	if vecSize <= 0 {
-		return nil, common.CodeDataError, fmt.Errorf("vector_size must be positive")
-	}
-
-	// Build table name prefix: ragflow_<tenant_id>
-	tableName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-
-	// Call document engine to create table
-	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateDataset(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
-	}
-
-	return &CreateDatasetInDocEngineResponse{
-		KBID:       req.KBID,
-		TableName:  tableName,
-		VectorSize: vecSize,
-	}, common.CodeSuccess, nil
-}
-
-// DeleteDatasetInDocEngine deletes the table in the document engine for a knowledge base
-func (s *KnowledgebaseService) DeleteDatasetInDocEngine(kbID string) (common.ErrorCode, error) {
-	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(kbID)
-	if err != nil {
-		return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
-	}
-
-	// Build table name: ragflow_<tenant_id>_<kb_id>
-	tableName := fmt.Sprintf("ragflow_%s_%s", kb.TenantID, kbID)
-
-	// Call document engine to delete table
-	err = s.docEngine.DropTable(context.Background(), tableName)
-	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
-	}
-
-	return common.CodeSuccess, nil
 }
 
 // UpdateKB updates an existing knowledge base
@@ -212,11 +146,6 @@ func (s *KnowledgebaseService) UpdateKB(req *UpdateKBRequest, userID string) (ma
 	if req.ParserConfig != nil {
 		updates["parser_config"] = req.ParserConfig
 	}
-
-	now := time.Now().Unix()
-	nowDate := time.Now().Truncate(time.Second)
-	updates["update_time"] = now
-	updates["update_date"] = nowDate
 
 	// Update in database
 	if err := s.kbDAO.UpdateByID(req.KBID, updates); err != nil {
@@ -291,7 +220,7 @@ func (s *KnowledgebaseService) Accessible(kbID, userID string) bool {
 
 // RemoveTag removes a tag from documents in a dataset
 func (s *KnowledgebaseService) RemoveTag(condition map[string]interface{}, newValue map[string]interface{}, indexName, kbID string) error {
-	return s.docEngine.UpdateDataset(context.Background(), condition, newValue, indexName, kbID)
+	return s.docEngine.UpdateChunks(context.Background(), condition, newValue, indexName, kbID)
 }
 
 // GetByID retrieves a knowledge base by ID

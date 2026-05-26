@@ -21,6 +21,7 @@ Cargo.lock
 
 .idea/
 .vscode/
+.cursor/settings.json
 
 # Exclude Mac generated files
 .DS_Store

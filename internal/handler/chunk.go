@@ -48,7 +48,7 @@ func NewChunkHandler(chunkService *service.ChunkService, userService *service.Us
 // @Produce json
 // @Param request body service.RetrievalTestRequest true "retrieval test parameters"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/chunk/retrieval_test [post]
+// @Router /api/v1/datasets/search [post]
 func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -92,7 +92,7 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		})
 		return
 	}
-	if req.KbID == nil {
+	if req.Datasets == nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "kb_id is required",
@@ -100,52 +100,10 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
-	// Validate kb_id type: string or []string
-	switch v := req.KbID.(type) {
-	case string:
-		if v == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "kb_id cannot be empty string",
-			})
-			return
-		}
-	case []interface{}:
-		// Convert to []string
-		var kbIDs []string
-		for _, item := range v {
-			if str, ok := item.(string); ok && str != "" {
-				kbIDs = append(kbIDs, str)
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"code":    400,
-					"message": "kb_id array must contain non-empty strings",
-				})
-				return
-			}
-		}
-		if len(kbIDs) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "kb_id array cannot be empty",
-			})
-			return
-		}
-		// Convert back to interface{} for service
-		req.KbID = kbIDs
-	case []string:
-		// Already correct type
-		if len(v) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "kb_id array cannot be empty",
-			})
-			return
-		}
-	default:
+	if len(req.Datasets) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "kb_id must be string or array of strings",
+			"message": "kb_id array cannot be empty",
 		})
 		return
 	}
@@ -175,7 +133,7 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		return
 	}
 
-	chunkID := c.Query("chunk_id")
+	chunkID := c.Param("chunk_id")
 	if chunkID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -304,13 +262,13 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	// Allowed fields for update (exclude ID fields)
 	allowedFields := map[string]bool{
-		"content":              true,
-		"important_keywords":    true,
-		"questions":             true,
-		"available":             true,
-		"positions":             true,
-		"tag_kwd":              true,
-		"tag_feas":             true,
+		"content":            true,
+		"important_keywords": true,
+		"questions":          true,
+		"available":          true,
+		"positions":          true,
+		"tag_kwd":            true,
+		"tag_feas":           true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
@@ -379,7 +337,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	})
 }
 
-// Remove handles chunk removal requests
+// RemoveChunks handles chunk removal requests
 // @Summary Remove Chunks
 // @Description Remove chunks from a document
 // @Tags chunks
@@ -387,11 +345,21 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 // @Produce json
 // @Param request body service.RemoveChunksRequest true "remove chunks request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/chunk/rm [post]
-func (h *ChunkHandler) Remove(c *gin.Context) {
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [delete]
+func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Get document_id from URL path
+	docID := c.Param("document_id")
+	if docID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "document_id is required",
+		})
 		return
 	}
 
@@ -403,6 +371,8 @@ func (h *ChunkHandler) Remove(c *gin.Context) {
 		})
 		return
 	}
+
+	req.DocID = docID
 
 	if req.DocID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{

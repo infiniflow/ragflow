@@ -514,7 +514,7 @@ def test_agents_crud_unit_branches(monkeypatch):
 
     captured = {}
 
-    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category):
+    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category, tags):
         captured["owner_ids"] = owner_ids
         captured["tenant_id"] = tenant_id
         captured["page"] = page
@@ -523,6 +523,7 @@ def test_agents_crud_unit_branches(monkeypatch):
         captured["desc"] = desc
         captured["keywords"] = keywords
         captured["canvas_category"] = canvas_category
+        captured["tags"] = tags
         return [{"id": "agent-1"}], 1
 
     monkeypatch.setattr(module.UserCanvasService, "get_by_tenant_ids", fake_get_by_tenant_ids)
@@ -568,12 +569,17 @@ def test_agents_crud_unit_branches(monkeypatch):
         return {"dsl": {"nodes": []}, "title": "  webhook-agent  ", "unused": None}
 
     monkeypatch.setattr(module, "get_request_json", req_update)
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
-    res = _run(module.update_agent.__wrapped__("agent-1", "tenant-1"))
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: False)
+
+    @module._require_canvas_access_async
+    async def _dummy_update(agent_id, tenant_id):
+        return module.get_json_result(data=True)
+
+    res = _run(_dummy_update(agent_id="agent-1", tenant_id="tenant-1"))
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
     calls = {"update": 0, "save_or_replace_latest": 0, "replace_for_set": 0}
-    monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: True)
+    monkeypatch.setattr(module.UserCanvasService, "accessible", lambda *_a, **_kw: True)
     monkeypatch.setattr(
         module.UserCanvasService,
         "get_by_id",
@@ -599,7 +605,12 @@ def test_agents_crud_unit_branches(monkeypatch):
     assert calls == {"update": 1, "save_or_replace_latest": 1, "replace_for_set": 1}
 
     monkeypatch.setattr(module.UserCanvasService, "query", lambda **_kwargs: False)
-    res = module.delete_agent.__wrapped__("agent-1", "tenant-1")
+
+    @module._require_canvas_owner_sync
+    def _dummy_delete(agent_id, tenant_id):
+        return module.get_json_result(data=True)
+
+    res = _dummy_delete(agent_id="agent-1", tenant_id="tenant-1")
     assert res["code"] == module.RetCode.OPERATING_ERROR
 
 

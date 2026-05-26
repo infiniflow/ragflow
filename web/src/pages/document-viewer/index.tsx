@@ -1,5 +1,5 @@
 import { Images } from '@/constants/common';
-import { restAPIv1, webAPI } from '@/utils/api';
+import { restAPIv1 } from '@/utils/api';
 import { useParams, useSearchParams } from 'react-router';
 // import Docx from './docx';
 // import Excel from './excel';
@@ -29,7 +29,7 @@ const DocumentViewer = () => {
   const api =
     resource === 'files'
       ? `${restAPIv1}/files/${documentId}`
-      : `${webAPI}/document/get/${documentId}`;
+      : `${restAPIv1}/documents/${documentId}/preview`;
   // request.head
 
   if (ext === 'html' && documentId) {

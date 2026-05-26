@@ -26,11 +26,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  useFetchKnowledgeList,
-  useFetchKnowledgeMetadataKeys,
-} from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
@@ -136,9 +132,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
       search_config: {
         kb_ids: search_config?.kb_ids || [],
         vector_similarity_weight:
-          (search_config?.vector_similarity_weight
-            ? 1 - search_config?.vector_similarity_weight
-            : 0.3) || 0.3,
+          search_config?.vector_similarity_weight ?? 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
         similarity_threshold: search_config?.similarity_threshold || 0.2,
@@ -221,9 +215,8 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
     control: formMethods.control,
     name: 'search_config.reference_metadata.include',
   });
-  const { data: metadataKeys } = useFetchKnowledgeMetadataKeys(
-    selectedKbIds || [],
-  );
+  const { data: metadataKeys, loading: metadataKeysLoading } =
+    useFetchKnowledgeMetadataKeys(selectedKbIds || []);
   const metadataFieldOptions = useMemo(() => {
     return (metadataKeys || []).map((key) => ({
       label: key,
@@ -232,16 +225,37 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
   }, [metadataKeys]);
 
   useEffect(() => {
-    const currentFields = formMethods.getValues('search_config.reference_metadata.fields');
-    if (referenceMetadataEnabled && Array.isArray(currentFields) && currentFields.length > 0 && metadataKeys) {
-      const validFields = currentFields.filter((field) => metadataKeys.includes(field));
+    const currentFields = formMethods.getValues(
+      'search_config.reference_metadata.fields',
+    );
+    if (
+      referenceMetadataEnabled &&
+      Array.isArray(currentFields) &&
+      currentFields.length > 0 &&
+      metadataKeys
+    ) {
+      const validFields = currentFields.filter((field) =>
+        metadataKeys.includes(field),
+      );
       if (validFields.length !== currentFields.length) {
-        formMethods.setValue('search_config.reference_metadata.fields', validFields);
+        formMethods.setValue(
+          'search_config.reference_metadata.fields',
+          validFields,
+        );
       }
     } else if (!referenceMetadataEnabled) {
-        formMethods.setValue('search_config.reference_metadata.fields', undefined);
+      formMethods.setValue(
+        'search_config.reference_metadata.fields',
+        undefined,
+      );
     }
-  }, [selectedKbIds, metadataKeys, referenceMetadataEnabled, formMethods]);
+  }, [
+    selectedKbIds,
+    metadataKeys,
+    metadataKeysLoading,
+    referenceMetadataEnabled,
+    formMethods,
+  ]);
 
   // Reset top_k to 1024 only when user actively disables rerank (from true to false)
   const prevRerankEnabled = useRef<boolean | undefined>(undefined);
@@ -293,7 +307,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           ...other_config,
           reference_metadata: normalizedReferenceMetadata,
           chat_id: llm_setting.llm_id,
-          vector_similarity_weight: 1 - vector_similarity_weight,
+          vector_similarity_weight,
           rerank_id: use_rerank ? rerank_id : '',
           llm_setting: { ...llmSetting },
         },
@@ -406,7 +420,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
             <SimilaritySliderFormField
               isTooltipShown
               similarityName="search_config.similarity_threshold"
-              vectorSimilarityWeightName="search_config.vector_similarity_weight"
+              similarityWeightName="search_config.vector_similarity_weight"
               numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
             {/* Rerank Model */}

@@ -51,6 +51,13 @@ export type SelectWithSearchFlagProps = {
   optionTestIdPrefix?: string;
 };
 
+function filterFn(value: string, search: string, keywords?: string[]) {
+  const searchLower = search.toLowerCase();
+  const extendValue = (value + ' ' + (keywords?.join(' ') || '')).toLowerCase();
+  if (extendValue.includes(searchLower)) return 1;
+  return 0;
+}
+
 function findLabelWithoutOptions(
   options: SelectWithSearchFlagOptionType[],
   value: string,
@@ -195,7 +202,7 @@ export const SelectWithSearch = forwardRef<
           className="border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0"
           align="start"
         >
-          <Command className="p-5">
+          <Command className="p-5" filter={filterFn}>
             {showSearch && (
               <CommandInput
                 placeholder={t('common.search') + '...'}
@@ -222,6 +229,11 @@ export const SelectWithSearch = forwardRef<
                           }
                           value={option.value}
                           disabled={option.disabled}
+                          keywords={
+                            typeof option.label === 'string'
+                              ? [option.label]
+                              : []
+                          }
                           onSelect={handleSelect}
                           data-testid={
                             optionTestIdPrefix && option.value
@@ -245,6 +257,9 @@ export const SelectWithSearch = forwardRef<
                       key={group.value || `item-${groupIndex}`}
                       value={group.value}
                       disabled={group.disabled}
+                      keywords={
+                        typeof group.label === 'string' ? [group.label] : []
+                      }
                       onSelect={handleSelect}
                       data-testid={
                         optionTestIdPrefix && group.value

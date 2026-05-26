@@ -13,13 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from io import BytesIO
 import logging
 import json
 import os
 import re
 from pathlib import Path
 
-from quart import request, make_response
+from quart import request, make_response,send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
@@ -33,11 +34,12 @@ from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
+from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
@@ -48,7 +50,7 @@ from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_B
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.file_utils import filename_type, thumbnail
-from api.utils.web_utils import html2pdf, is_valid_url, apply_safe_file_response_headers
+from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
@@ -583,9 +585,25 @@ async def _upload_local_documents(kb, tenant_id):
             logging.error(msg)
             return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
 
+    # Parse optional parser_config overrides from form data
+    parser_config_override = None
+    raw_parser_config = form.get("parser_config")
+    if raw_parser_config:
+        try:
+            parsed = json.loads(raw_parser_config)
+            if isinstance(parsed, dict):
+                # Only allow known table column config keys to prevent arbitrary overrides
+                allowed_keys = {"table_column_mode", "table_column_roles"}
+                parser_config_override = {k: v for k, v in parsed.items() if k in allowed_keys}
+                if not parser_config_override:
+                    parser_config_override = None
+        except (json.JSONDecodeError, TypeError):
+            parser_config_override = None
+
     err, files = await thread_pool_exec(
         FileService.upload_document, kb, file_objs, tenant_id,
-        parent_path=form.get("parent_path")
+        parent_path=form.get("parent_path"),
+        parser_config_override=parser_config_override,
     )
     if err:
         msg = "\n".join(err)
@@ -719,23 +737,25 @@ def list_docs(dataset_id, tenant_id):
         logging.error(f"You don't own the dataset {dataset_id}. ")
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
-    err_code, err_msg, docs, total = _get_docs_with_request(request, dataset_id)
+    if request.args.get("type") == "filter":
+        err_code, err_msg, payload, total = _get_doc_filters_with_request(request, dataset_id)
+        if err_code != RetCode.SUCCESS:
+            return get_data_error_result(code=err_code, message=err_msg)
+        return get_json_result(data={"total": total, "filter": payload})
+
+    err_code, err_msg, payload, total = _get_docs_with_request(request, dataset_id)
     if err_code != RetCode.SUCCESS:
         return get_data_error_result(code=err_code, message=err_msg)
 
-    if request.args.get("type") == "filter":
-        docs_filter = _aggregate_filters(docs)
-        return get_json_result(data={"total": total, "filter": docs_filter})
-    else:
-        renamed_doc_list = [map_doc_keys(doc) for doc in docs]
-        for doc_item in renamed_doc_list:
-            if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
-            if doc_item.get("source_type"):
-                doc_item["source_type"] = doc_item["source_type"].split("/")[0]
-            if doc_item["parser_config"].get("metadata"):
-                doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
-        return get_json_result(data={"total": total, "docs": renamed_doc_list})
+    renamed_doc_list = [map_doc_keys(doc) for doc in payload]
+    for doc_item in renamed_doc_list:
+        if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
+            doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
+        if doc_item.get("source_type"):
+            doc_item["source_type"] = doc_item["source_type"].split("/")[0]
+        if doc_item["parser_config"].get("metadata"):
+            doc_item["parser_config"]["metadata"] = turn2jsonschema(doc_item["parser_config"]["metadata"])
+    return get_json_result(data={"total": total, "docs": renamed_doc_list})
 
 
 def _get_docs_with_request(req, dataset_id:str):
@@ -791,15 +811,10 @@ def _get_docs_with_request(req, dataset_id:str):
             msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
             return RetCode.DATA_ERROR, msg, [], 0
 
-    # map run status (text or numeric) - align with API parameter
-    run_status = q.getlist("run")
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-    if run_status_converted:
-        invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
-        if invalid_status:
-            msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
-            return RetCode.DATA_ERROR, msg, [], 0
+    run_status_converted, invalid_status = _parse_run_status_filter(q)
+    if invalid_status:
+        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, msg, [], 0
 
     err_code, err_message, doc_ids_filter, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
     if err_code != RetCode.SUCCESS:
@@ -830,6 +845,53 @@ def _get_docs_with_request(req, dataset_id:str):
         docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
 
     return RetCode.SUCCESS, "", docs, total
+
+
+def _get_doc_filters_with_request(req, dataset_id: str):
+    """Get aggregated document filters with request parameters from a dataset."""
+    q = req.args
+
+    keywords = q.get("keywords", "")
+
+    suffix = q.getlist("suffix")
+
+    types = q.getlist("types")
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
+            return RetCode.DATA_ERROR, msg, {}, 0
+
+    run_status_converted, invalid_status = _parse_run_status_filter(q)
+    if invalid_status:
+        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, msg, {}, 0
+
+    docs_filter, total = DocumentService.get_filter_by_kb_id(
+        dataset_id,
+        keywords,
+        run_status_converted,
+        types,
+        suffix,
+    )
+    return RetCode.SUCCESS, "", docs_filter, total
+
+
+def _get_query_values(req_args, *names):
+    values = []
+    for name in names:
+        values.extend(req_args.getlist(name))
+        values.extend(req_args.getlist(f"{name}[]"))
+    return [str(value).strip() for value in values if value is not None and str(value).strip()]
+
+
+def _parse_run_status_filter(req_args):
+    raw_statuses = _get_query_values(req_args, "run", "run_status")
+    status_text_to_numeric = {status.name: status.value for status in TaskStatus}
+    valid_statuses = set(status_text_to_numeric.values())
+    converted = [status_text_to_numeric.get(status.upper(), status) for status in raw_statuses]
+    invalid_statuses = {status for status in converted if status not in valid_statuses}
+    return converted, invalid_statuses
 
 def _parse_doc_id_filter_with_metadata(req, kb_id):
     """Parse document ID filter based on metadata conditions from the request.
@@ -958,7 +1020,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
             if not doc_ids_filter:
                 return RetCode.SUCCESS, "", [], return_empty_metadata
 
-    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else [], return_empty_metadata
+    return RetCode.SUCCESS, "", list(doc_ids_filter) if doc_ids_filter is not None else None, return_empty_metadata
 
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
@@ -1051,65 +1113,6 @@ async def delete_documents(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
-
-
-def _aggregate_filters(docs):
-    """Aggregate filter options from a list of documents.
-
-    This function processes a list of document dictionaries and aggregates
-    available filter values for building filter UI on the client side.
-
-    Args:
-        docs (list): List of document dictionaries, each containing:
-            - id (str): Document ID
-            - suffix (str): File extension (e.g., "pdf", "docx")
-            - run (int): Parsing status code (0=UNSTART, 1=RUNNING, 2=CANCEL, 3=DONE, 4=FAIL)
-
-    Returns:
-        tuple: A tuple containing:
-            - dict: Aggregated filter options with keys:
-                - suffix: Dict mapping file extensions to document counts
-                - run_status: Dict mapping status codes to document counts
-                - metadata: Dict mapping metadata field names to value counts
-            - int: Total number of documents processed
-    """
-    suffix_counter = {}
-    run_status_counter = {}
-    metadata_counter = {}
-    empty_metadata_count = 0
-
-    for doc in docs:
-        suffix_counter[doc.get("suffix")] = suffix_counter.get(doc.get("suffix"), 0) + 1
-        key_of_run = str(doc.get("run"))
-        run_status_counter[key_of_run] = run_status_counter.get(key_of_run, 0) + 1
-        meta_fields = doc.get("meta_fields", {})
-
-        if not meta_fields:
-            empty_metadata_count += 1
-            continue
-        has_valid_meta = False
-
-        for key, value in meta_fields.items():
-            values = value if isinstance(value, list) else [value]
-            for vv in values:
-                if vv is None:
-                    continue
-                if isinstance(vv, str) and not vv.strip():
-                    continue
-                sv = str(vv)
-                if key not in metadata_counter:
-                    metadata_counter[key] = {}
-                metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
-                has_valid_meta = True
-        if not has_valid_meta:
-            empty_metadata_count += 1
-
-    metadata_counter["empty_metadata"] = {"true": empty_metadata_count}
-    return {
-        "suffix": suffix_counter,
-        "run_status": run_status_counter,
-        "metadata": metadata_counter,
-    }
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
@@ -1854,3 +1857,147 @@ async def batch_update_document_status(tenant_id, dataset_id):
     if has_error:
         return get_json_result(data=result, message="Partial failure", code=RetCode.SERVER_ERROR)
     return get_json_result(data=result)
+
+@manager.route("/documents/<doc_id>/preview", methods=["GET"])  # noqa: F821
+@login_required
+async def get(doc_id):
+    """Return the raw file bytes for a document the requesting user is authorized to read.
+
+    The user must belong to the tenant that owns the document's knowledge base; otherwise
+    the response is indistinguishable from a missing document to avoid cross-tenant ID
+    enumeration.
+    """
+    try:
+
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e:
+            return get_data_error_result(message="Document not found!")
+
+        b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        response = await make_response(data)
+
+        ext = re.search(r"\.([^.]+)$", doc.name.lower())
+        ext = ext.group(1) if ext else None
+        content_type = None
+        if ext:
+            fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
+            content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
+        return response
+    except Exception as e:
+        return server_error_response(e)
+
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def download(dataset_id, document_id):
+    """
+    Download a document from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(kb_id=dataset_id, id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
+
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def download_document(document_id):
+    """
+    Download a document.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )

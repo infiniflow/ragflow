@@ -39,10 +39,10 @@ export default {
   dataSourceSet: `${restAPIv1}/connectors`,
   dataSourceList: `${restAPIv1}/connectors`,
   dataSourceDel: (id: string) => `${restAPIv1}/connectors/${id}`,
-  dataSourceResume: (id: string) => `${restAPIv1}/connectors/${id}/resume`,
   dataSourceRebuild: (id: string) => `${restAPIv1}/connectors/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${restAPIv1}/connectors/${id}/logs`,
   dataSourceDetail: (id: string) => `${restAPIv1}/connectors/${id}`,
+  dataSourceTest: (id: string) => `${restAPIv1}/connectors/${id}/test`,
   googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
     `${restAPIv1}/connectors/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
@@ -58,14 +58,14 @@ export default {
   // knowledge base
 
   checkEmbedding: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/embedding`,
+    `${restAPIv1}/datasets/${datasetId}/embedding/check`,
   kbList: `${restAPIv1}/datasets`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   rmKb: `${restAPIv1}/datasets`,
   getKbDetail: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   getKnowledgeGraph: (knowledgeId: string) =>
-    `${restAPIv1}/datasets/${knowledgeId}/graph/search`,
+    `${restAPIv1}/datasets/${knowledgeId}/graph`,
   knowledgeGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/graph`,
   deleteKnowledgeGraph: (knowledgeId: string) =>
@@ -109,8 +109,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
-  retrievalTest: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/search`,
+  retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
   getDocumentList: (datasetId: string) =>
@@ -126,10 +125,10 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
+  getDatasetDocumentFileDownload: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentThumbnails: `${restAPIv1}/thumbnails`,
-  getDocumentFile: `${webAPI}/document/get`,
-  getDocumentFileDownload: (docId: string) =>
-    `${webAPI}/document/download/${docId}`,
+  getDocumentFile: `${restAPIv1}/documents`,
   documentUpload: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents`,
   webCrawl: (datasetId: string) =>
@@ -189,6 +188,8 @@ export default {
   // flow
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
+  listAgentTags: `${restAPIv1}/agents/tags`,
+  updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
   updateAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
@@ -220,6 +221,8 @@ export default {
     `${restAPIv1}/agentbots/${canvasId}/inputs`,
   prompt: `${restAPIv1}/agents/prompts`,
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
+  getAttachmentFileDownload: (docId: string) =>
+    `${restAPIv1}/agents/attachments/${docId}/download`,
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,

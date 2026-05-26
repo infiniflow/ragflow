@@ -19,7 +19,9 @@ package rag_analyzer
 /*
 #cgo CXXFLAGS: -std=c++20 -I${SRCDIR}/..
 #cgo linux LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/lib/x86_64-linux-gnu/libpcre2-8.a
-#cgo darwin LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
+// Apple Silicon: Homebrew installs to /opt/homebrew; Intel Macs keep /usr/local.
+#cgo darwin,arm64 LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /opt/homebrew/lib/libpcre2-8.a
+#cgo darwin,amd64 LDFLAGS: ${SRCDIR}/../cpp/cmake-build-release/librag_tokenizer_c_api.a -lstdc++ -lm -lpthread /usr/local/lib/libpcre2-8.a
 
 #include <stdlib.h>
 #include "../cpp/rag_analyzer_c_api.h"

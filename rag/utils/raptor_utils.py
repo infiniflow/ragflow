@@ -18,13 +18,109 @@
 Utility functions for Raptor processing decisions.
 """
 
+import json
 import logging
 from typing import Optional
+
+import xxhash
+
+RAPTOR_TREE_BUILDER = "raptor"
+PSI_TREE_BUILDER = "psi"
+SUPPORTED_TREE_BUILDERS = {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
+GMM_CLUSTERING_METHOD = "gmm"
+AHC_CLUSTERING_METHOD = "ahc"
+SUPPORTED_CLUSTERING_METHODS = {GMM_CLUSTERING_METHOD, AHC_CLUSTERING_METHOD}
 
 # File extensions for structured data types
 EXCEL_EXTENSIONS = {".xls", ".xlsx", ".xlsm", ".xlsb"}
 CSV_EXTENSIONS = {".csv", ".tsv"}
 STRUCTURED_EXTENSIONS = EXCEL_EXTENSIONS | CSV_EXTENSIONS
+
+
+def get_raptor_tree_builder(raptor_config: dict | None) -> str:
+    """Return the configured RAPTOR tree builder with legacy ext fallback."""
+    raptor_config = raptor_config or {}
+    ext = raptor_config.get("ext") or {}
+    tree_builder = ext.get("tree_builder") or raptor_config.get("tree_builder") or RAPTOR_TREE_BUILDER
+    if tree_builder not in SUPPORTED_TREE_BUILDERS:
+        raise ValueError(f"Unsupported RAPTOR tree builder: {tree_builder}")
+    return tree_builder
+
+
+def get_raptor_clustering_method(raptor_config: dict | None) -> str:
+    """Return the configured RAPTOR clustering method with legacy ext fallback."""
+    raptor_config = raptor_config or {}
+    ext = raptor_config.get("ext") or {}
+    clustering_method = ext.get("clustering_method") or raptor_config.get("clustering_method") or GMM_CLUSTERING_METHOD
+    if clustering_method not in SUPPORTED_CLUSTERING_METHODS:
+        raise ValueError(f"Unsupported RAPTOR clustering method: {clustering_method}")
+    return clustering_method
+
+
+def _as_extra_dict(extra) -> dict:
+    """Normalize a chunk extra payload into a dictionary."""
+    if isinstance(extra, dict):
+        return extra
+    if isinstance(extra, str) and extra:
+        try:
+            parsed = json.loads(extra)
+        except json.JSONDecodeError:
+            logging.warning(
+                "Ignoring malformed RAPTOR extra payload while collecting chunk metadata: %s",
+                extra[:200],
+                exc_info=True,
+            )
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _has_raptor_marker(marker) -> bool:
+    """Return whether a chunk marker identifies a RAPTOR summary chunk."""
+    if isinstance(marker, list):
+        return any(str(item) == RAPTOR_TREE_BUILDER for item in marker)
+    return str(marker) == RAPTOR_TREE_BUILDER
+
+
+def _raptor_methods_from_fields(fields: dict, extra: dict | None = None) -> set[str]:
+    """Read RAPTOR builder methods from stored chunk fields."""
+    extra = extra if extra is not None else _as_extra_dict(fields.get("extra"))
+    method = extra.get("raptor_method") or RAPTOR_TREE_BUILDER
+    if isinstance(method, list):
+        return {str(item) for item in method if item}
+    return {str(method)} if method else set()
+
+
+def collect_raptor_methods(field_map: dict) -> set[str]:
+    """Collect tree-builder methods from RAPTOR summary chunk fields."""
+    methods = set()
+    for fields in field_map.values():
+        extra = _as_extra_dict(fields.get("extra"))
+        marker = fields.get("raptor_kwd") or extra.get("raptor_kwd")
+        if not _has_raptor_marker(marker):
+            continue
+
+        methods.update(_raptor_methods_from_fields(fields, extra))
+    return methods
+
+
+def collect_raptor_chunk_ids(field_map: dict, exclude_methods: set[str] | None = None) -> set[str]:
+    """Collect RAPTOR summary chunk IDs, optionally excluding some methods."""
+    chunk_ids = set()
+    exclude_methods = exclude_methods or set()
+    for chunk_id, fields in field_map.items():
+        extra = _as_extra_dict(fields.get("extra"))
+        marker = fields.get("raptor_kwd") or extra.get("raptor_kwd")
+        if _has_raptor_marker(marker):
+            if _raptor_methods_from_fields(fields, extra).issubset(exclude_methods):
+                continue
+            chunk_ids.add(chunk_id)
+    return chunk_ids
+
+
+def make_raptor_summary_chunk_id(content: str, doc_id: str) -> str:
+    """Build the stable ID used for generated RAPTOR summary chunks."""
+    return xxhash.xxh64((content + str(doc_id)).encode("utf-8")).hexdigest()
 
 
 def is_structured_file_type(file_type: Optional[str]) -> bool:

@@ -24,7 +24,6 @@ export const PptPreviewer: React.FC<PptPreviewerProps> = ({
         console.error('Error loading document:', url);
       },
     });
-    console.log(res);
     try {
       const arrayBuffer = await res.data.arrayBuffer();
 
@@ -41,7 +40,7 @@ export const PptPreviewer: React.FC<PptPreviewerProps> = ({
         });
         pptxPrviewer.preview(arrayBuffer);
       }
-    } catch (err) {
+    } catch {
       message.error('ppt parse failed');
     }
   };

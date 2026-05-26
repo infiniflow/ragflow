@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/server"
@@ -30,11 +31,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-)
-
-// Common errors
-var (
-	ErrUserNotFound = errors.New("user not found")
 )
 
 // Handler admin handler
@@ -153,8 +149,15 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	variables := server.GetVariables()
-	secretKey := variables.SecretKey
+	secretKey, err := server.GetSecretKey(cache.Get())
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": fmt.Sprintf("Failed to get secret key: %s", err.Error()),
+		})
+		return
+	}
+
 	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -198,6 +201,15 @@ func (h *Handler) Logout(c *gin.Context) {
 // AuthCheck check admin auth
 func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
+}
+
+// ListTasks handle list tasks
+func (h *Handler) ListTasks(c *gin.Context) {
+	tasks, err := h.service.ListTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, tasks, "Get all tasks")
 }
 
 // ListUsers handle list users
@@ -1244,6 +1256,80 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
 }
 
+type StartIngestionTaskRequest struct {
+	FileURI string `json:"uri" binding:"required"`
+	From    string `json:"from" binding:"required"`
+}
+
+func (h *Handler) StartIngestionTask(c *gin.Context) {
+	var req StartIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri and from is required", 400)
+		return
+	}
+
+	taskID := common.GenerateUUID()
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:   taskID,
+		TaskType: "start_ingestion_task",
+		Config:   req.FileURI,
+		ComeFrom: req.From,
+	})
+
+	success(c, gin.H{"task_id": taskID}, "Send task for ingestion successfully")
+}
+
+type StopIngestionTaskRequest struct {
+	TaskID string `json:"task_id" binding:"required"`
+	From   string `json:"from" binding:"required"`
+}
+
+func (h *Handler) StopIngestionTask(c *gin.Context) {
+	var req StopIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "task id and from is required", 400)
+		return
+	}
+
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:   req.TaskID,
+		TaskType: "cancel_ingestion_task",
+		ComeFrom: req.From,
+	})
+
+	success(c, gin.H{"task_id": req.TaskID}, "Cancel task successfully")
+}
+
+func (h *Handler) ListIngestors(c *gin.Context) {
+	ingestionMgr := GetIngestionManager()
+	ingestors, err := ingestionMgr.ListIngestors()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, ingestors, "Get all tasks")
+}
+
+type ShutdownIngestorRequest struct {
+	IngestorID string `json:"ingestor_name" binding:"required"`
+}
+
+func (h *Handler) ShutdownIngestor(c *gin.Context) {
+	var req ShutdownIngestorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri is required", 400)
+		return
+	}
+
+	taskID := common.GenerateUUID()
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:     taskID,
+		TaskType:   "shutdown_ingestor",
+		AssignedTo: req.IngestorID,
+	})
+
+	success(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
+}
+
 // Reports handle heartbeat reports from servers
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
@@ -1277,4 +1363,15 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	responseWithCode(c, message, http.StatusOK, errCode)
+}
+
+// ListIngestionTasks
+func (h *Handler) ListIngestionTasks(c *gin.Context) {
+	tasks, err := h.service.ListIngestionTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+		return
+	}
+
+	success(c, tasks, "")
 }

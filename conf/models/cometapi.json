@@ -1,0 +1,125 @@
+{
+  "name": "CometAPI",
+  "url": {
+    "default": "https://api.cometapi.com"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "api/models",
+    "embedding": "v1/embeddings",
+    "balance": "https://query.cometapi.com/user/quota",
+    "tts": "v1/audio/speech",
+    "asr": "v1/audio/transcriptions"
+  },
+  "class": "cometapi",
+  "models": [
+    {
+      "name": "gpt-5.5",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-5",
+      "max_tokens": 400000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gpt-4o",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "max_tokens": 200000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "gemini-3-pro-preview",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "deepseek-v3.2",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "qwen3-235b-a22b",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "text-embedding-ada-002",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "whisper-1",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "tts-1",
+      "max_tokens": 8192,
+      "model_types": [
+        "tts"
+      ]
+    }
+  ]
+}

@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
@@ -77,10 +76,8 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	if !req.IsNew {
 		// Update existing chat session
 		updates := map[string]interface{}{
-			"name":        name,
-			"user_id":     userID,
-			"update_time": time.Now().UnixMilli(),
-			"update_date": time.Now(),
+			"name":    name,
+			"user_id": userID,
 		}
 
 		if err := s.chatSessionDAO.UpdateByID(req.SessionID, updates); err != nil {
@@ -104,11 +101,7 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 	}
 
 	// Generate UUID for new chat session
-	newID := uuid.New().String()
-	newID = strings.ReplaceAll(newID, "-", "")
-	if len(newID) > 32 {
-		newID = newID[:32]
-	}
+	newID := common.GenerateUUID()
 
 	// Get prologue from dialog's prompt_config
 	prologue := "Hi! I'm your assistant. What can I do for you?"
@@ -117,9 +110,6 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 			prologue = p
 		}
 	}
-
-	now := time.Now().Truncate(time.Second)
-	createTime := time.Now().UnixMilli()
 
 	// Create initial message - store as JSON object with messages array
 	messagesObj := map[string]interface{}{
@@ -144,10 +134,6 @@ func (s *ChatSessionService) SetChatSession(userID string, req *SetChatSessionRe
 		UserID:    &userID,
 		Reference: referenceJSON,
 	}
-	session.CreateTime = &createTime
-	session.CreateDate = &now
-	session.UpdateTime = &createTime
-	session.UpdateDate = &now
 
 	if err := s.chatSessionDAO.Create(session); err != nil {
 		return nil, errors.New("Fail to create a chat session")
@@ -221,7 +207,7 @@ type ListChatSessionsResponse struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
@@ -231,7 +217,8 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 	// Check if user is the owner of the dialog
 	isOwner := false
 	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(tenantID, dialogID)
+		var exists bool
+		exists, err = s.chatSessionDAO.CheckDialogExists(tenantID, chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +230,8 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 
 	// Also check with userID as tenant
 	if !isOwner {
-		exists, err := s.chatSessionDAO.CheckDialogExists(userID, dialogID)
+		var exists bool
+		exists, err = s.chatSessionDAO.CheckDialogExists(userID, chatID)
 		if err != nil {
 			return nil, err
 		}
@@ -251,11 +239,11 @@ func (s *ChatSessionService) ListChatSessions(userID string, dialogID string) (*
 	}
 
 	if !isOwner {
-		return nil, errors.New("Only owner of dialog authorized for this operation")
+		return nil, errors.New("only owner of dialog authorized for this operation")
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByDialogID(dialogID)
+	sessions, err := s.chatSessionDAO.ListByChatID(chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -455,10 +443,8 @@ func (s *ChatSessionService) updateSessionMessages(session *entity.ChatSession, 
 	referenceJSON, _ := json.Marshal(reference)
 
 	updates := map[string]interface{}{
-		"message":     messagesJSON,
-		"reference":   referenceJSON,
-		"update_time": time.Now().UnixMilli(),
-		"update_date": time.Now(),
+		"message":   messagesJSON,
+		"reference": referenceJSON,
 	}
 	s.chatSessionDAO.UpdateByID(session.ID, updates)
 }
