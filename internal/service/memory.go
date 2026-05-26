@@ -74,6 +74,16 @@ var validForgettingPolicies = map[ForgettingPolicy]bool{
 	ForgettingPolicyFIFO: true,
 }
 
+// ResourceNotFoundError marks client-visible missing memory/message resources.
+type ResourceNotFoundError struct {
+	Resource string
+	ID       string
+}
+
+func (e *ResourceNotFoundError) Error() string {
+	return fmt.Sprintf("%s '%s' not found.", e.Resource, e.ID)
+}
+
 //
 // Note: CalculateMemoryType and GetMemoryTypeHuman functions have been moved to dao package
 // Use dao.CalculateMemoryType() and dao.GetMemoryTypeHuman() instead
@@ -794,13 +804,13 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*entity.Memory, error) {
 	memory, err := s.memoryDAO.GetByID(memoryID)
 	if err != nil {
-		return nil, fmt.Errorf("Memory '%s' not found.", memoryID)
+		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
 	}
 	if memory.TenantID == userID {
 		return memory, nil
 	}
 	if memory.Permissions != string(TenantPermissionTeam) {
-		return nil, fmt.Errorf("Memory '%s' not found.", memoryID)
+		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
 	}
 
 	userTenantService := NewUserTenantService()
@@ -814,7 +824,7 @@ func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*en
 		}
 	}
 
-	return nil, fmt.Errorf("Memory '%s' not found.", memoryID)
+	return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
 }
 
 // ListMemories retrieves a paginated list of memories with optional filters

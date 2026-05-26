@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,16 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
+
+func TestIsMemoryServiceNotFound(t *testing.T) {
+	notFoundErr := &service.ResourceNotFoundError{Resource: "Memory", ID: "memory-1"}
+	if !isMemoryServiceNotFound(fmt.Errorf("wrapped: %w", notFoundErr)) {
+		t.Fatal("expected wrapped service not found error to map to not found")
+	}
+	if isMemoryServiceNotFound(fmt.Errorf("backend index does not exist")) {
+		t.Fatal("backend text should not map to not found without service error type")
+	}
+}
 
 func TestParseMemoryMessagePath(t *testing.T) {
 	tests := []struct {

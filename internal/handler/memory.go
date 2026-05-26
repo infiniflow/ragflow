@@ -579,7 +579,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 
 	if err := h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "does not exist") {
+		if isMemoryServiceNotFound(err) {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    common.CodeNotFound,
 				"message": errMsg,
@@ -601,6 +601,11 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 		"message": true,
 		"data":    nil,
 	})
+}
+
+func isMemoryServiceNotFound(err error) bool {
+	var notFoundErr *service.ResourceNotFoundError
+	return errors.As(err, &notFoundErr)
 }
 
 func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
