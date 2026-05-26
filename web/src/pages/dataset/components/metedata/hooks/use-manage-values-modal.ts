@@ -128,17 +128,18 @@ export const useManageValues = (props: IManageValuesProps) => {
     // return;
     // }
     if (isAddValueMode) {
-      addUpdateValue(
-        metaData.field,
-        undefined,
-        metaData.values,
-        metaData.valueType,
-      );
+      // Read from tempValues, not metaData.values. metaData.values is only synced
+      // on input blur; when the user clicks Confirm directly, the click handler's
+      // closure captures the pre-blur metaData.values (still the initial ['']),
+      // so the update gets queued with an empty value and the metadata is never
+      // actually saved.
+      addUpdateValue(metaData.field, undefined, tempValues, metaData.valueType);
     }
     // onSave(metaData);
     setShouldSave(true);
   }, [
     metaData,
+    tempValues,
     // onSave,
     // handleHideModal,
     type,
