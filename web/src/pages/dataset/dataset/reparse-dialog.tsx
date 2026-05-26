@@ -35,6 +35,11 @@ export const ReparseDialog = memo(
     const { t } = useTranslation();
     const handleOperationIconClickRef = useRef(handleOperationIconClick);
     const hiddenRef = useRef(hidden);
+    // Ref-based latch so the auto-fire below runs at most once per real mount.
+    // The downstream re-entry guard in useHandleRunDocumentByIds uses React
+    // state (currentId/loading) and is not synchronous, so two effect runs
+    // back-to-back (StrictMode in dev, or any remount) both slip through.
+    const autoFiredRef = useRef(false);
 
     useEffect(() => {
       handleOperationIconClickRef.current = handleOperationIconClick;
@@ -42,7 +47,9 @@ export const ReparseDialog = memo(
     });
 
     useEffect(() => {
+      if (autoFiredRef.current) return;
       if (hiddenRef.current) {
+        autoFiredRef.current = true;
         handleOperationIconClickRef.current();
       }
     }, []);
