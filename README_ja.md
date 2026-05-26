@@ -133,6 +133,7 @@
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlowのコード実行（サンドボックス）機能を利用する場合のみ必要です。
 
 > [!TIP]
@@ -302,7 +303,7 @@ docker build --platform linux/amd64 \
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.12 # install RAGFlow dependent python modules
+   uv sync --python 3.13 # install RAGFlow dependent python modules
    uv run python3 download_deps.py
    pre-commit install
    ```

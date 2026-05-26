@@ -150,6 +150,7 @@ Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinde
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca RAGFlow'un kod çalıştırıcı (sandbox) özelliğini kullanmayı planlıyorsanız gereklidir.
 
 > [!TIP]
@@ -323,7 +324,7 @@ docker build --platform linux/amd64 \
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.12 # RAGFlow'un bağımlı Python modüllerini yükler
+   uv sync --python 3.13 # RAGFlow'un bağımlı Python modüllerini yükler
    uv run python3 download_deps.py
    pre-commit install
    ```

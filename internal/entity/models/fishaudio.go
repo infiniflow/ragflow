@@ -49,11 +49,11 @@ func (f *FishAudioModel) Name() string {
 }
 
 func (f *FishAudioModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf(f.Name() + " no such method")
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf(f.Name() + " no such method")
+	return fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
@@ -66,7 +66,6 @@ func (f *FishAudioModel) Rerank(modelName *string, query string, documents []str
 
 // TranscribeAudio transcribe audio
 func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("FishAudio API key is missing")
 	}
@@ -151,11 +150,7 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(
-			"FishAudio ASR error: %s - %s",
-			resp.Status,
-			string(respBody),
-		)
+		return nil, fmt.Errorf("FishAudio ASR error: %s - %s", resp.Status, string(respBody))
 	}
 
 	// result

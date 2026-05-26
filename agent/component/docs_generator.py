@@ -52,6 +52,10 @@ class DocGeneratorParam(ComponentParamBase):
         self.include_download_info_in_content = False
         self.font_size = 12
         self.outputs = {
+            "doc_id": {"value": "", "type": "string"},
+            "filename": {"value": "", "type": "string"},
+            "mime_type": {"value": "", "type": "string"},
+            "size": {"value": 0, "type": "number"},
             "download": {"value": "", "type": "string"},
         }
 
@@ -134,6 +138,10 @@ class DocGenerator(Message, ABC):
                     "base64": file_base64,
                     "include_download_info_in_content": self._param.include_download_info_in_content,
                 }
+                self.set_output("doc_id", doc_id)
+                self.set_output("filename", filename)
+                self.set_output("mime_type", mime_type)
+                self.set_output("size", file_size)
                 self.set_output("download", json.dumps(download_info))
                 return download_info
 
