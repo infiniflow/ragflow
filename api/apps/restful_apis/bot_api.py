@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import copy
+import hashlib
 import json
 import re
 
@@ -385,19 +386,23 @@ async def agent_bot_logs(shared_id, message_id):
             shared_id, message_id,
         )
         return get_error_data_result(message='Authorization is not valid!')
+    # Non-reversible fingerprint of the share token: lets operators correlate
+    # auth-failure log lines for the same token without leaking a guessable
+    # substring of the secret itself.
+    token_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         logger.warning(
-            "agent_bot_logs: invalid beta token (prefix=%s... shared_id=%s)",
-            token[:10], shared_id,
+            "agent_bot_logs: invalid beta token (fingerprint=%s shared_id=%s)",
+            token_fp, shared_id,
         )
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
     agent_id = objs[0].dialog_id
     if not agent_id:
         logger.warning(
-            "agent_bot_logs: APIToken has no dialog_id (tenant_id=%s prefix=%s...)",
-            objs[0].tenant_id, token[:10],
+            "agent_bot_logs: APIToken has no dialog_id (tenant_id=%s fingerprint=%s)",
+            objs[0].tenant_id, token_fp,
         )
         return get_error_data_result(message='API token is not bound to an agent.')
 
