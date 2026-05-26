@@ -52,7 +52,7 @@ from rag.utils.raptor_utils import (
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
+from rag.prompts.generator import compile_structure_from_text, keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
     gen_metadata
 import logging
 import os
@@ -625,6 +625,20 @@ def build_TOC(task, docs, progress_callback):
         d["id"] = xxhash.xxh64(
             (d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
+    return None
+
+
+def knowledge_compilation(task, docs, embedding_model, progress_callback):
+    progress_callback(msg="Start to generate table of content ...")
+    chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
+    chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
+    docs = sorted(docs, key=lambda d: (
+        d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+        d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
+    ))
+    struts: list[dict] = asyncio.run(
+        compile_structure_from_text(docs, task["parser_config"], chat_mdl, embedding_model, task["doc_id"], callback=progress_callback))
+    logging.info("------------ Knowledge Compilation -------------\n" + json.dumps(struts, ensure_ascii=False, indent='  '))
     return None
 
 
@@ -1464,8 +1478,11 @@ async def do_handle_task(task):
         progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
         logging.info(progress_message)
         progress_callback(msg=progress_message)
+        
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
             toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
+            # toc_thread = asyncio.create_task(asyncio.to_thread(knowledge_compilation, task, chunks, embedding_model, progress_callback))
+            
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
