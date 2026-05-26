@@ -43,7 +43,7 @@ class TestGetRaptorChunkFieldMap:
             with patch("rag.svr.task_executor_refactor.raptor_utils.thread_pool_exec") as mock_thread:
                 async def mock_exec(*args, **kwargs):
                     return {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}}
-                mock_thread.return_value = mock_exec()
+                mock_thread.side_effect = mock_exec
 
                 with patch("rag.svr.task_executor_refactor.raptor_utils.collect_raptor_chunk_ids") as mock_collect:
                     mock_collect.return_value = {"chunk_1"}

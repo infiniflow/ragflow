@@ -240,9 +240,13 @@ class TestRaptorServiceRunRaptorForKb:
 
             # Direct call since we need to invoke the async method properly
             import asyncio
-            chunks, tk_count, cleanup = asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                chunks, tk_count, cleanup = loop.run_until_complete(
+                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
+                )
+            finally:
+                loop.close()
 
         mock_file.assert_called_once()
         mock_dataset.assert_not_called()
@@ -269,9 +273,13 @@ class TestRaptorServiceRunRaptorForKb:
             mock_dataset.return_value = (sample_chunks, 99)
 
             import asyncio
-            chunks, tk_count, cleanup = asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(raptor_config_dataset_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                chunks, tk_count, cleanup = loop.run_until_complete(
+                    svc.run_raptor_for_kb(raptor_config_dataset_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
+                )
+            finally:
+                loop.close()
 
         mock_dataset.assert_called_once()
         mock_file.assert_not_called()
@@ -293,9 +301,13 @@ class TestRaptorServiceRunRaptorForKb:
             mock_file.return_value = ([], 0)
 
             import asyncio
-            chunks, tk_count, cleanup = asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, [])
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                chunks, tk_count, cleanup = loop.run_until_complete(
+                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, [])
+                )
+            finally:
+                loop.close()
 
         assert chunks == []
         assert tk_count == 0
@@ -333,9 +345,13 @@ class TestRaptorServiceRunRaptorForKb:
             mock_file.side_effect = mock_run_file
 
             import asyncio
-            chunks, tk_count, cleanup = asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                chunks, tk_count, cleanup = loop.run_until_complete(
+                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
+                )
+            finally:
+                loop.close()
 
         assert cleanup == expected_cleanup
 
@@ -359,9 +375,13 @@ class TestRaptorServiceRunRaptorForKb:
             mock_file.return_value = ([], 0)
 
             import asyncio
-            asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(config, chat_mdl, embd_mdl, 128, doc_ids)
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    svc.run_raptor_for_kb(config, chat_mdl, embd_mdl, 128, doc_ids)
+                )
+            finally:
+                loop.close()
 
         mock_file.assert_called_once()
         mock_dataset.assert_not_called()
@@ -385,9 +405,13 @@ class TestRaptorServiceRunRaptorForKb:
             mock_file.return_value = (sample_chunks, 10)
 
             import asyncio
-            asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, vector_size, doc_ids)
+                )
+            finally:
+                loop.close()
 
         # Verify _run_file_level_raptor received vctr_nm with the correct vector size
         # Positional args: 0=raptor_config, 1=tree_builder, 2=clustering_method,
@@ -414,9 +438,13 @@ class TestRaptorServiceRunRaptorForKb:
             mock_file.return_value = ([], 0)
 
             import asyncio
-            asyncio.new_event_loop().run_until_complete(
-                svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
-            )
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    svc.run_raptor_for_kb(raptor_config_file_scope, chat_mdl, embd_mdl, 128, doc_ids)
+                )
+            finally:
+                loop.close()
 
         mock_collect.assert_called_once_with(doc_ids)
         # Verify doc_info_by_id was passed as positional arg[7] to _run_file_level_raptor

@@ -353,7 +353,7 @@ class TestChunkServiceInsertChunks:
                 mock_index.return_value = "test_index"
 
                 with patch("rag.svr.task_executor_refactor.chunk_service.thread_pool_exec") as mock_thread:
-                    mock_thread.return_value = AsyncMock(return_value=None)()
+                    mock_thread.return_value = None
 
                     result = await service.insert_chunks("task_1", "tenant_1", "kb_1", chunks)
 
@@ -377,7 +377,7 @@ class TestChunkServiceInsertChunks:
                 mock_index.return_value = "test_index"
 
                 with patch("rag.svr.task_executor_refactor.chunk_service.thread_pool_exec") as mock_thread:
-                    mock_thread.return_value = AsyncMock(return_value="Error")()
+                    mock_thread.return_value = "Error"
 
                     with pytest.raises(Exception, match="Insert chunk error"):
                         await service.insert_chunks("task_1", "tenant_1", "kb_1", chunks)
