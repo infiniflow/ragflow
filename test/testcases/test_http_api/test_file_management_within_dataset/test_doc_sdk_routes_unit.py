@@ -142,11 +142,30 @@ def _load_doc_module(monkeypatch):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
+    apps_mod = ModuleType("api.apps")
+    apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
     common_settings_mod = ModuleType("common.settings")
     common_settings_mod.retriever = SimpleNamespace()
     common_settings_mod.kg_retriever = SimpleNamespace()
     common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=lambda *_args, **_kwargs: b"", rm=lambda *_args, **_kwargs: None)
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    common_misc_utils_mod = ModuleType("common.misc_utils")
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    common_misc_utils_mod.thread_pool_exec = _thread_pool_exec
+    monkeypatch.setitem(sys.modules, "common.misc_utils", common_misc_utils_mod)
+
+    common_string_utils_mod = ModuleType("common.string_utils")
+    common_string_utils_mod.is_content_empty = lambda content: content is None or not str(content).strip()
+    common_string_utils_mod.remove_redundant_spaces = lambda text: " ".join(str(text).split())
+    monkeypatch.setitem(sys.modules, "common.string_utils", common_string_utils_mod)
+
+    tag_feature_utils_mod = ModuleType("common.tag_feature_utils")
+    tag_feature_utils_mod.validate_tag_features = lambda value: value
+    monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     class _FakeExpr:
         def __or__(self, other):
@@ -225,6 +244,7 @@ def _load_doc_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
     api_utils_mod.construct_json_result = lambda code=0, message="success", data=None: {"code": code, "message": message, "data": data}
     api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=102: {"code": code, "message": message}
@@ -244,6 +264,32 @@ def _load_doc_module(monkeypatch):
 
     api_utils_mod.token_required = _token_required
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    image_utils_mod = ModuleType("api.utils.image_utils")
+    image_utils_mod.store_chunk_image = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.utils.image_utils", image_utils_mod)
+
+    reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
+    reference_metadata_utils_mod.resolve_reference_metadata_preferences = (
+        lambda req, *_args, **_kwargs: (
+            bool((req.get("reference_metadata") or {}).get("include")),
+            set((req.get("reference_metadata") or {}).get("fields") or []),
+        )
+    )
+    def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+        for chunk in chunks:
+            doc_id = chunk.get("doc_id") or chunk.get("document_id")
+            if not doc_id:
+                continue
+            metadata = doc_metadata_service_mod.DocMetadataService.get_metadata_for_documents([doc_id], chunk.get("kb_id"))
+            document_metadata = dict(metadata.get(doc_id, {}))
+            if metadata_fields:
+                document_metadata = {key: value for key, value in document_metadata.items() if key in metadata_fields}
+            if document_metadata:
+                chunk["document_metadata"] = document_metadata
+
+    reference_metadata_utils_mod.enrich_chunks_with_document_metadata = _enrich_chunks_with_document_metadata
+    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", reference_metadata_utils_mod)
 
     common_metadata_utils_mod = ModuleType("common.metadata_utils")
     common_metadata_utils_mod.convert_conditions = lambda conditions: conditions
@@ -452,8 +498,147 @@ def _load_doc_module(monkeypatch):
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
-    module_path = repo_root / "api" / "apps" / "sdk" / "doc.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "chunk_api.py"
     spec = importlib.util.spec_from_file_location("test_doc_sdk_routes_unit", module_path)
+    module = importlib.util.module_from_spec(spec)
+    module.manager = _DummyManager()
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_document_api_module(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[4]
+    common_pkg = ModuleType("common")
+    common_pkg.__path__ = [str(repo_root / "common")]
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    apps_mod = ModuleType("api.apps")
+    apps_mod.current_user = SimpleNamespace(id="tenant-1")
+    apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=lambda *_args, **_kwargs: b"", rm=lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    common_constants_mod = ModuleType("common.constants")
+    common_constants_mod.RetCode = SimpleNamespace(DATA_ERROR=102)
+    common_constants_mod.ParserType = SimpleNamespace()
+    common_constants_mod.TaskStatus = SimpleNamespace()
+    common_constants_mod.SANDBOX_ARTIFACT_BUCKET = "sandbox"
+    monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
+
+    common_metadata_mod = ModuleType("common.metadata_utils")
+    common_metadata_mod.convert_conditions = lambda conditions: conditions
+    common_metadata_mod.meta_filter = lambda *_args, **_kwargs: []
+    common_metadata_mod.turn2jsonschema = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_mod)
+
+    common_misc_utils_mod = ModuleType("common.misc_utils")
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    common_misc_utils_mod.thread_pool_exec = _thread_pool_exec
+    common_misc_utils_mod.get_uuid = lambda: "uuid"
+    monkeypatch.setitem(sys.modules, "common.misc_utils", common_misc_utils_mod)
+
+    ssrf_mod = ModuleType("common.ssrf_guard")
+    ssrf_mod.assert_url_is_safe = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "common.ssrf_guard", ssrf_mod)
+
+    api_constants_mod = ModuleType("api.constants")
+    api_constants_mod.FILE_NAME_LEN_LIMIT = 255
+    api_constants_mod.IMG_BASE64_PREFIX = "data:image"
+    monkeypatch.setitem(sys.modules, "api.constants", api_constants_mod)
+
+    api_db_mod = ModuleType("api.db")
+    api_db_mod.VALID_FILE_TYPES = set()
+    api_db_mod.FileType = FileType
+    monkeypatch.setitem(sys.modules, "api.db", api_db_mod)
+
+    document_api_service_mod = ModuleType("api.apps.services.document_api_service")
+    document_api_service_mod.validate_document_update_fields = lambda *_args, **_kwargs: (None, None)
+    document_api_service_mod.map_doc_keys = lambda doc: doc.to_dict() if hasattr(doc, "to_dict") else doc
+    document_api_service_mod.map_doc_keys_with_run_status = lambda doc, run_status="0": {
+        **(doc.to_dict() if hasattr(doc, "to_dict") else doc),
+        "run": run_status,
+    }
+    document_api_service_mod.update_document_name_only = lambda *_args, **_kwargs: None
+    document_api_service_mod.update_chunk_method = lambda *_args, **_kwargs: None
+    document_api_service_mod.update_document_status_only = lambda *_args, **_kwargs: None
+    document_api_service_mod.reset_document_for_reparse = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.apps.services.document_api_service", document_api_service_mod)
+
+    check_team_mod = ModuleType("api.common.check_team_permission")
+    check_team_mod.check_kb_team_permission = lambda *_args, **_kwargs: True
+    monkeypatch.setitem(sys.modules, "api.common.check_team_permission", check_team_mod)
+
+    document_service_mod = ModuleType("api.db.services.document_service")
+    document_service_mod.DocumentService = SimpleNamespace(
+        query=lambda **_kwargs: [],
+        accessible=lambda **_kwargs: False,
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.document_service", document_service_mod)
+
+    file2document_service_mod = ModuleType("api.db.services.file2document_service")
+    file2document_service_mod.File2DocumentService = SimpleNamespace(
+        get_storage_address=lambda **_kwargs: ("", ""),
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.file2document_service", file2document_service_mod)
+
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace(
+        accessible=lambda **_kwargs: True,
+        query=lambda **_kwargs: [],
+        get_by_id=lambda *_args, **_kwargs: (False, None),
+    )
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
+    file_service_mod = ModuleType("api.db.services.file_service")
+    file_service_mod.FileService = SimpleNamespace(get_root_folder=lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.duplicate_name = lambda name: name
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
+    api_utils_mod.construct_json_result = lambda code=0, message="success", data=None: {"code": code, "message": message, "data": data}
+    api_utils_mod.get_data_error_result = lambda message="Sorry! Data missing!", code=102: {"code": code, "message": message}
+    api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=102: {"code": code, "message": message}
+    api_utils_mod.get_error_argument_result = lambda message="", code=102: {"code": code, "message": message}
+    api_utils_mod.get_json_result = lambda **_kwargs: {}
+    api_utils_mod.get_result = lambda **_kwargs: {}
+    api_utils_mod.server_error_response = lambda e: {"code": 500, "message": str(e)}
+    api_utils_mod.get_request_json = lambda: _AwaitableValue({})
+    api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    validation_utils_mod = ModuleType("api.utils.validation_utils")
+    validation_utils_mod.UpdateDocumentReq = type("UpdateDocumentReq", (), {})
+    validation_utils_mod.DeleteDocumentReq = type("DeleteDocumentReq", (), {})
+    validation_utils_mod.format_validation_error_message = lambda *_args, **_kwargs: ""
+    validation_utils_mod.validate_and_parse_json_request = lambda *_args, **_kwargs: ({}, None)
+    monkeypatch.setitem(sys.modules, "api.utils.validation_utils", validation_utils_mod)
+
+    file_utils_mod = ModuleType("api.utils.file_utils")
+    file_utils_mod.filename_type = lambda *_args, **_kwargs: ""
+    file_utils_mod.thumbnail = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.utils.file_utils", file_utils_mod)
+
+    web_utils_mod = ModuleType("api.utils.web_utils")
+    web_utils_mod.CONTENT_TYPE_MAP = {}
+    web_utils_mod.html2pdf = lambda *_args, **_kwargs: b""
+    web_utils_mod.is_valid_url = lambda *_args, **_kwargs: True
+    web_utils_mod.apply_safe_file_response_headers = lambda response, *_args, **_kwargs: response
+    monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
+
+    rag_nlp_mod = ModuleType("rag.nlp")
+    rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx_{tenant_id}")
+    monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
+
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "document_api.py"
+    spec = importlib.util.spec_from_file_location("test_doc_sdk_document_api_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
     spec.loader.exec_module(module)
@@ -506,7 +691,7 @@ class TestDocRoutesUnit:
         assert "length of 5" in str(exc_info.value)
 
     def test_download_and_download_doc_errors(self, monkeypatch):
-        module = _load_doc_module(monkeypatch)
+        module = _load_document_api_module(monkeypatch)
         _patch_send_file(monkeypatch, module)
         _patch_storage(monkeypatch, module, file_stream=b"")
         res = _run(module.download("ds-1", ""))

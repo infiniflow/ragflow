@@ -133,6 +133,7 @@
 - RAM >= 16 GB
 - Disk >= 50 GB
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
+- Python >= 3.13
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlowのコード実行（サンドボックス）機能を利用する場合のみ必要です。
 
 > [!TIP]
