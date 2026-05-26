@@ -65,6 +65,9 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	if _, ok := minerU.ModelDriver.(*modeldrivers.MinerUModel); !ok {
 		t.Fatalf("MinerU.Net ModelDriver=%T, want *models.MinerUModel", minerU.ModelDriver)
 	}
+	if minerU.Class != "mineru.net" {
+		t.Errorf("MinerU.Net class=%q", minerU.Class)
+	}
 	if minerU.URLSuffix.DocumentParse != "v4/extract/task" {
 		t.Errorf("MinerU.Net doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
 	}
@@ -75,6 +78,9 @@ func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {
 	}
 	if _, ok := paddleOCR.ModelDriver.(*modeldrivers.PaddleOCRModel); !ok {
 		t.Fatalf("PaddleOCR.Net ModelDriver=%T, want *models.PaddleOCRModel", paddleOCR.ModelDriver)
+	}
+	if paddleOCR.Class != "paddleocr.net" {
+		t.Errorf("PaddleOCR.Net class=%q", paddleOCR.Class)
 	}
 	if paddleOCR.URLSuffix.OCR != "v2/ocr/jobs" {
 		t.Errorf("PaddleOCR.Net OCR suffix=%q", paddleOCR.URLSuffix.OCR)
