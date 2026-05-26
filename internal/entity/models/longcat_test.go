@@ -47,7 +47,7 @@ func newLongCatServer(t *testing.T, expectedPath string, handler func(t *testing
 func newLongCatForTest(baseURL string) *LongCatModel {
 	return NewLongCatModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "openai/v1/chat/completions"},
+		URLSuffix{Chat: "openai/v1/chat/completions", Models: "openai/v1/models"},
 	)
 }
 
@@ -406,23 +406,83 @@ func TestLongCatStreamSurfacesUpstreamError(t *testing.T) {
 	}
 }
 
-// LongCat does not document /models or /health endpoints, so per
-// maintainer guidance ListModels and CheckConnection both return the
-// "no such method" sentinel rather than inventing fake catalogs or
-// burning chat completions for connection checks.
-func TestLongCatListModelsReturnsNoSuchMethod(t *testing.T) {
+func TestLongCatListModelsAndCheckConnection(t *testing.T) {
+	var requests int
+	srv := newLongCatServer(t, "/openai/v1/models", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		requests++
+		if body != nil {
+			t.Errorf("GET /models should not send a JSON body: %v", body)
+		}
+		if requests == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"object": "list",
+				"data": []map[string]interface{}{
+					{"id": "LongCat-Flash-Chat", "object": "model"},
+					{"id": "LongCat-Flash-Thinking-2601", "object": "model"},
+					{"id": "", "object": "model"},
+				},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"object": "list",
+			"data": []map[string]interface{}{
+				{"id": "LongCat-Flash-Chat", "object": "model"},
+			},
+		})
+	})
+	defer srv.Close()
+
 	apiKey := "test-key"
-	_, err := newLongCatForTest("http://unused").ListModels(&APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("ListModels: want 'no such method', got %v", err)
+	models, err := newLongCatForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if got := strings.Join(models, ","); got != "LongCat-Flash-Chat,LongCat-Flash-Thinking-2601" {
+		t.Errorf("models=%q", got)
+	}
+	if err := newLongCatForTest(srv.URL).CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
-func TestLongCatCheckConnectionReturnsNoSuchMethod(t *testing.T) {
-	apiKey := "test-key"
-	err := newLongCatForTest("http://unused").CheckConnection(&APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("CheckConnection: want 'no such method', got %v", err)
+func TestLongCatListModelsRejectsInvalidResponses(t *testing.T) {
+	for name, response := range map[string]string{
+		"missing data": `{}`,
+		"null data":    `{"data":null}`,
+		"too large":    strings.Repeat(" ", longCatMaxListModelsResponseBytes+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newLongCatServer(t, "/openai/v1/models", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+				_, _ = io.WriteString(w, response)
+			})
+			defer srv.Close()
+
+			apiKey := "test-key"
+			_, err := newLongCatForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+		})
+	}
+}
+
+func TestLongCatListModelsRequiresAPIKey(t *testing.T) {
+	for name, cfg := range map[string]*APIConfig{
+		"nil config": nil,
+		"nil key":    {},
+		"empty key":  {ApiKey: new(string)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := newLongCatForTest("http://unused").ListModels(cfg)
+			if err == nil || !strings.Contains(err.Error(), "api key is required") {
+				t.Errorf("expected api-key error, got %v", err)
+			}
+			err = newLongCatForTest("http://unused").CheckConnection(cfg)
+			if err == nil || !strings.Contains(err.Error(), "api key is required") {
+				t.Errorf("CheckConnection expected api-key error, got %v", err)
+			}
+		})
 	}
 }
 
