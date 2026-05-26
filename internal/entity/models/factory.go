@@ -97,6 +97,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewXinferenceModel(baseURL, urlSuffix), nil
 	case "astraflow":
 		return NewAstraflowModel(baseURL, urlSuffix), nil
+	case "modelscope":
+		return NewModelScopeModel(baseURL, urlSuffix), nil
 	case "longcat":
 		return NewLongCatModel(baseURL, urlSuffix), nil
 	case "hunyuan":
@@ -143,6 +145,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewBedrockModel(baseURL, urlSuffix), nil
 	case "paddleocr":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "orcarouter":
+		return NewOrcaRouterModel(baseURL, urlSuffix), nil
 	case "huaweicloud":
 		return NewHuaweiCloudModel(baseURL, urlSuffix), nil
 	default:
