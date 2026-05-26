@@ -115,7 +115,7 @@ func TestXAICheckConnectionDelegatesToListModels(t *testing.T) {
 
 func TestXAIListModelsRequiresModelsSuffix(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatalf("ListModels should reject a missing models suffix before sending a request")
+		t.Errorf("ListModels should reject a missing models suffix before sending a request")
 	}))
 	defer srv.Close()
 
