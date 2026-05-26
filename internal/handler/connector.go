@@ -31,6 +31,13 @@ type connectorService interface {
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
 }
 
+// ConnectorResponse describes the standard JSON envelope for connector details.
+type ConnectorResponse struct {
+	Code    common.ErrorCode  `json:"code"`
+	Data    *entity.Connector `json:"data"`
+	Message string            `json:"message"`
+}
+
 // ConnectorHandler connector handler
 type ConnectorHandler struct {
 	connectorService connectorService
@@ -51,7 +58,7 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 // @Tags connector
 // @Accept json
 // @Produce json
-// @Success 200 {object} entity.Connector
+// @Success 200 {object} ConnectorResponse
 // @Router /api/v1/connectors/{connector_id} [get]
 func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

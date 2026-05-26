@@ -78,13 +78,12 @@ func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Con
 	if strings.TrimSpace(connectorID) == "" {
 		return nil, common.CodeDataError, errors.New("connector_id is required")
 	}
-	if !s.accessible(connectorID, userID) {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
-	}
-
 	connector, err := s.connectorDAO.GetByID(connectorID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+	if !s.canAccessConnector(connector, userID) {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 	return connector, common.CodeSuccess, nil
 }
@@ -94,9 +93,13 @@ func (s *ConnectorService) accessible(connectorID, userID string) bool {
 	if err != nil {
 		return false
 	}
+	return s.canAccessConnector(connector, userID)
+}
+
+func (s *ConnectorService) canAccessConnector(connector *entity.Connector, userID string) bool {
 	if connector.TenantID == userID {
 		return true
 	}
-	_, err = s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
+	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
 	return err == nil
 }
