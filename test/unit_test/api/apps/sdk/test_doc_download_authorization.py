@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for SDK document download authorization in api/apps/sdk/doc.py."""
+"""Regression tests for SDK document download authorization in document_api.py."""
 
 import asyncio
 import importlib.util
@@ -26,7 +26,7 @@ import pytest
 
 _MODULE_NAME = "test_doc_download_module"
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_DOC_PATH = _REPO_ROOT / "api" / "apps" / "sdk" / "doc.py"
+_DOC_PATH = _REPO_ROOT / "api" / "apps" / "restful_apis" / "document_api.py"
 
 
 class _PassthroughManager:
@@ -55,24 +55,75 @@ def _install_dependency_stubs(monkeypatch, *, accessible, storage_get):
     apps_mod.login_required = lambda func: func
     monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
 
+    repo_root = _REPO_ROOT
+    apps_services_mod = ModuleType("api.apps.services")
+    apps_services_mod.__path__ = [str(repo_root / "api" / "apps" / "services")]
+    monkeypatch.setitem(sys.modules, "api.apps.services", apps_services_mod)
+
+    document_api_service_mod = ModuleType("api.apps.services.document_api_service")
+    document_api_service_mod.validate_document_update_fields = lambda *_a, **_k: (None, None)
+    document_api_service_mod.map_doc_keys = lambda doc: doc
+    document_api_service_mod.map_doc_keys_with_run_status = lambda doc, run_status="0": doc
+    document_api_service_mod.update_document_name_only = lambda *_a, **_k: None
+    document_api_service_mod.update_chunk_method = lambda *_a, **_k: None
+    document_api_service_mod.update_document_status_only = lambda *_a, **_k: None
+    document_api_service_mod.reset_document_for_reparse = lambda *_a, **_k: None
+    monkeypatch.setitem(sys.modules, "api.apps.services.document_api_service", document_api_service_mod)
+
+    api_constants_mod = ModuleType("api.constants")
+    api_constants_mod.FILE_NAME_LEN_LIMIT = 255
+    api_constants_mod.IMG_BASE64_PREFIX = "data:image"
+    monkeypatch.setitem(sys.modules, "api.constants", api_constants_mod)
+
+    api_db_mod = ModuleType("api.db")
+    api_db_mod.VALID_FILE_TYPES = set()
+    api_db_mod.FileType = SimpleNamespace(VISUAL=SimpleNamespace(value="visual"))
+    monkeypatch.setitem(sys.modules, "api.db", api_db_mod)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    services_pkg.duplicate_name = lambda query_func, **kwargs: kwargs.get("name", "file")
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    file_service_mod = ModuleType("api.db.services.file_service")
+    file_service_mod.FileService = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
+
+    check_team_permission_mod = ModuleType("api.common.check_team_permission")
+    check_team_permission_mod.check_kb_team_permission = lambda *_a, **_k: None
+    monkeypatch.setitem(sys.modules, "api.common.check_team_permission", check_team_permission_mod)
+
     common_settings_mod = ModuleType("common.settings")
     common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=_storage_get)
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
 
-    common_mod = ModuleType("common")
-    common_mod.settings = common_settings_mod
-    monkeypatch.setitem(sys.modules, "common", common_mod)
+    common_pkg = ModuleType("common")
+    common_pkg.__path__ = [str(repo_root / "common")]
+    common_pkg.settings = common_settings_mod
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
 
     common_constants_mod = ModuleType("common.constants")
     common_constants_mod.RetCode = SimpleNamespace(DATA_ERROR=102)
     common_constants_mod.LLMType = SimpleNamespace()
     common_constants_mod.TaskStatus = SimpleNamespace()
+    common_constants_mod.ParserType = SimpleNamespace()
+    common_constants_mod.SANDBOX_ARTIFACT_BUCKET = "sandbox"
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
 
     common_metadata_mod = ModuleType("common.metadata_utils")
     common_metadata_mod.convert_conditions = lambda conditions: conditions
     common_metadata_mod.meta_filter = lambda *_args, **_kwargs: []
+    common_metadata_mod.turn2jsonschema = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_mod)
+
+    common_misc_utils_mod = ModuleType("common.misc_utils")
+    common_misc_utils_mod.get_uuid = lambda: "uuid"
+    common_misc_utils_mod.thread_pool_exec = lambda func, *args, **kwargs: func(*args, **kwargs)
+    monkeypatch.setitem(sys.modules, "common.misc_utils", common_misc_utils_mod)
+
+    ssrf_guard_mod = ModuleType("common.ssrf_guard")
+    ssrf_guard_mod.assert_url_is_safe = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "common.ssrf_guard", ssrf_guard_mod)
 
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.Document = type("Document", (), {})
@@ -115,31 +166,39 @@ def _install_dependency_stubs(monkeypatch, *, accessible, storage_get):
 
     api_utils_mod = ModuleType("api.utils.api_utils")
     api_utils_mod.get_error_data_result = lambda message="", code=102: {"code": code, "message": message}
+    api_utils_mod.get_data_error_result = lambda message="": {"message": message}
     api_utils_mod.construct_json_result = lambda message="", code=102: {"code": code, "message": message}
+    api_utils_mod.get_json_result = lambda **_kwargs: {}
     api_utils_mod.check_duplicate_ids = lambda ids, _kind: (ids, [])
     api_utils_mod.get_request_json = lambda: {}
     api_utils_mod.get_result = lambda **_kwargs: {}
     api_utils_mod.server_error_response = lambda e: {"message": str(e)}
     api_utils_mod.token_required = lambda func: func
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
-    ref_meta_mod = ModuleType("api.utils.reference_metadata_utils")
-    ref_meta_mod.enrich_chunks_with_document_metadata = lambda *_a, **_k: None
-    ref_meta_mod.resolve_reference_metadata_preferences = lambda req, _cfg=None: req
-    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", ref_meta_mod)
+    validation_utils_mod = ModuleType("api.utils.validation_utils")
+    validation_utils_mod.UpdateDocumentReq = type("UpdateDocumentReq", (), {})
+    validation_utils_mod.DeleteDocumentReq = type("DeleteDocumentReq", (), {})
+    validation_utils_mod.format_validation_error_message = lambda e: str(e)
+    validation_utils_mod.validate_and_parse_json_request = lambda *_a, **_k: ({}, None)
+    monkeypatch.setitem(sys.modules, "api.utils.validation_utils", validation_utils_mod)
 
-    rag_tag_mod = ModuleType("rag.app.tag")
-    rag_tag_mod.label_question = lambda *_a, **_k: {}
-    monkeypatch.setitem(sys.modules, "rag.app.tag", rag_tag_mod)
+    file_utils_mod = ModuleType("api.utils.file_utils")
+    file_utils_mod.filename_type = lambda *_a, **_k: ""
+    file_utils_mod.thumbnail = lambda *_a, **_k: None
+    monkeypatch.setitem(sys.modules, "api.utils.file_utils", file_utils_mod)
+
+    web_utils_mod = ModuleType("api.utils.web_utils")
+    web_utils_mod.CONTENT_TYPE_MAP = {}
+    web_utils_mod.html2pdf = lambda *_a, **_k: b""
+    web_utils_mod.is_valid_url = lambda *_a, **_k: True
+    web_utils_mod.apply_safe_file_response_headers = lambda response, *_a, **_k: response
+    monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
 
     rag_nlp_mod = ModuleType("rag.nlp")
     rag_nlp_mod.search = SimpleNamespace(index_name=lambda tenant_id: f"idx_{tenant_id}")
     monkeypatch.setitem(sys.modules, "rag.nlp", rag_nlp_mod)
-
-    rag_prompts_mod = ModuleType("rag.prompts.generator")
-    rag_prompts_mod.cross_languages = lambda *_a, **_k: ""
-    rag_prompts_mod.keyword_extraction = lambda *_a, **_k: ""
-    monkeypatch.setitem(sys.modules, "rag.prompts.generator", rag_prompts_mod)
 
     quart_mod = ModuleType("quart")
 
