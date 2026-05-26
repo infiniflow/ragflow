@@ -418,7 +418,11 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
+	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	if modelsSuffix == "" {
+		return nil, fmt.Errorf("xai: models URL suffix is not configured")
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
