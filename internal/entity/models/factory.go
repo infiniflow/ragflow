@@ -103,6 +103,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHunyuanModel(baseURL, urlSuffix), nil
 	case "tokenpony":
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
+	case "tokenhub":
+		return NewTokenHubModel(baseURL, urlSuffix), nil
 	case "novita":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
