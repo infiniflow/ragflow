@@ -221,6 +221,19 @@ func TestJinaChatRejectsUnknownRegion(t *testing.T) {
 	}
 }
 
+// TestJinaStreamNotSupported documents that streaming chat is unavailable upstream.
+func TestJinaStreamNotSupported(t *testing.T) {
+	j := newJinaForTest("http://unused")
+	apiKey := "test-key"
+	err := j.ChatStreamlyWithSender("jina-vlm",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil,
+		func(*string, *string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Errorf("expected not-supported error, got %v", err)
+	}
+}
+
 func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
