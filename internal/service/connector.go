@@ -17,7 +17,13 @@
 package service
 
 import (
+	"errors"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"strings"
+	"time"
+
+	"ragflow/internal/common"
 )
 
 // ConnectorService connector service
@@ -37,6 +43,16 @@ func NewConnectorService() *ConnectorService {
 // ListConnectorsResponse list connectors response
 type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
+}
+
+// UpdateConnectorRequest update connector request.
+type UpdateConnectorRequest struct {
+	RefreshFreq *int64                  `json:"refresh_freq,omitempty"`
+	PruneFreq   *int64                  `json:"prune_freq,omitempty"`
+	Config      *map[string]interface{} `json:"config,omitempty"`
+	TimeoutSecs *int64                  `json:"timeout_secs,omitempty"`
+	Reschedule  bool                    `json:"reschedule,omitempty"`
+	Status      string                  `json:"status,omitempty"`
 }
 
 // ListConnectors list connectors for a user
@@ -66,4 +82,155 @@ func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsRespons
 	return &ListConnectorsResponse{
 		Connectors: connectors,
 	}, nil
+}
+
+// UpdateConnector updates an accessible connector's polling configuration.
+// Equivalent to Python's update_connector in api/apps/restful_apis/connector_api.py.
+func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, common.CodeDataError, errors.New("connector_id is required")
+	}
+	if !s.accessible(connectorID, userID) {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+
+	if req != nil {
+		updates := map[string]interface{}{}
+		if req.PruneFreq != nil {
+			updates["prune_freq"] = *req.PruneFreq
+		}
+		if req.RefreshFreq != nil {
+			updates["refresh_freq"] = *req.RefreshFreq
+		}
+		if req.Config != nil {
+			updates["config"] = entity.JSONMap(*req.Config)
+		}
+		if req.TimeoutSecs != nil {
+			updates["timeout_secs"] = *req.TimeoutSecs
+		}
+		if len(updates) > 0 {
+			updates["id"] = connectorID
+			if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		}
+
+		switch {
+		case req.Reschedule:
+			if err := s.cancelTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+			if err := s.scheduleTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		case req.Status == string(entity.TaskStatusCancel) || strings.EqualFold(req.Status, "CANCEL"):
+			if err := s.cancelTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		case req.Status == string(entity.TaskStatusSchedule) || strings.EqualFold(req.Status, "SCHEDULE"):
+			if err := s.scheduleTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		}
+	}
+
+	connector, err = s.connectorDAO.GetByID(connector.ID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+	return connector, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) accessible(connectorID, userID string) bool {
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return false
+	}
+	if connector.TenantID == userID {
+		return true
+	}
+	_, err = s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
+	return err == nil
+}
+
+func (s *ConnectorService) cancelTasks(connectorID string) error {
+	if err := s.connectorDAO.CancelRunningOrScheduledLogs(connectorID); err != nil {
+		return err
+	}
+	return s.connectorDAO.UpdateByID(connectorID, map[string]interface{}{"status": string(entity.TaskStatusCancel)})
+}
+
+func (s *ConnectorService) scheduleTasks(connectorID string) error {
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return err
+	}
+
+	mappings, err := s.connectorDAO.ListMappingsByConnectorID(connectorID)
+	if err != nil {
+		return err
+	}
+
+	pruneEnabled, _ := connector.Config["sync_deleted_files"].(bool)
+	for _, mapping := range mappings {
+		pollRangeStart, totalDocsIndexed, err := s.latestDoneSyncState(connectorID, mapping.KbID)
+		if err != nil {
+			return err
+		}
+		if err := s.scheduleTask(connectorID, mapping.KbID, "sync", pollRangeStart, totalDocsIndexed); err != nil {
+			return err
+		}
+		if pruneEnabled {
+			if err := s.scheduleTask(connectorID, mapping.KbID, "prune", nil, 0); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *ConnectorService) latestDoneSyncState(connectorID, datasetID string) (*string, int64, error) {
+	latest, err := s.connectorDAO.GetLatestSyncLog(connectorID, datasetID, "sync")
+	if err != nil {
+		if dao.IsRecordNotFound(err) {
+			return nil, 0, nil
+		}
+		return nil, 0, err
+	}
+	if latest.Status != string(entity.TaskStatusDone) {
+		return nil, 0, nil
+	}
+	return latest.PollRangeEnd, latest.TotalDocsIndexed, nil
+}
+
+func (s *ConnectorService) scheduleTask(connectorID, datasetID, taskType string, pollRangeStart *string, totalDocsIndexed int64) error {
+	exists, err := s.connectorDAO.HasScheduledSyncLog(connectorID, datasetID, taskType)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	fromBeginning := "0"
+	now := time.Now().Local()
+	if err := s.connectorDAO.UpdateByID(connectorID, map[string]interface{}{"status": string(entity.TaskStatusSchedule)}); err != nil {
+		return err
+	}
+	return s.connectorDAO.CreateSyncLog(&entity.SyncLogs{
+		ID:               common.GenerateUUID(),
+		ConnectorID:      connectorID,
+		KbID:             datasetID,
+		TaskType:         taskType,
+		Status:           string(entity.TaskStatusSchedule),
+		PollRangeStart:   pollRangeStart,
+		FromBeginning:    &fromBeginning,
+		TotalDocsIndexed: totalDocsIndexed,
+		TimeStarted:      &now,
+	})
 }

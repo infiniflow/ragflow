@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"errors"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // ConnectorDAO connector data access object
@@ -102,4 +105,49 @@ func (dao *ConnectorDAO) UpdateByID(id string, updates map[string]interface{}) e
 // DeleteByID delete connector by ID
 func (dao *ConnectorDAO) DeleteByID(id string) error {
 	return DB.Where("id = ?", id).Delete(&entity.Connector{}).Error
+}
+
+// ListMappingsByConnectorID lists dataset links for a connector.
+func (dao *ConnectorDAO) ListMappingsByConnectorID(connectorID string) ([]*entity.Connector2Kb, error) {
+	var mappings []*entity.Connector2Kb
+	err := DB.Where("connector_id = ?", connectorID).Find(&mappings).Error
+	return mappings, err
+}
+
+// CancelRunningOrScheduledLogs marks active sync logs as canceled for a connector.
+func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(connectorID string) error {
+	return DB.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND status IN ?", connectorID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
+		Update("status", string(entity.TaskStatusCancel)).Error
+}
+
+// GetLatestSyncLog gets the latest sync log for a connector/dataset/task type.
+func (dao *ConnectorDAO) GetLatestSyncLog(connectorID, datasetID, taskType string) (*entity.SyncLogs, error) {
+	var log entity.SyncLogs
+	err := DB.Where("connector_id = ? AND kb_id = ? AND task_type = ?", connectorID, datasetID, taskType).
+		Order("update_time DESC").
+		First(&log).Error
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// HasScheduledSyncLog returns whether a scheduled sync log already exists.
+func (dao *ConnectorDAO) HasScheduledSyncLog(connectorID, datasetID, taskType string) (bool, error) {
+	var count int64
+	err := DB.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, datasetID, taskType, string(entity.TaskStatusSchedule)).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// CreateSyncLog creates a connector sync log.
+func (dao *ConnectorDAO) CreateSyncLog(log *entity.SyncLogs) error {
+	return DB.Create(log).Error
+}
+
+// IsRecordNotFound reports whether err is GORM's record-not-found sentinel.
+func IsRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }

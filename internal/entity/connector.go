@@ -57,6 +57,7 @@ func (Connector2Kb) TableName() string {
 type SyncLogs struct {
 	ID                   string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	ConnectorID          string     `gorm:"column:connector_id;size:32;index" json:"connector_id"`
+	TaskType             string     `gorm:"column:task_type;size:32;not null;default:sync;index" json:"task_type"`
 	Status               string     `gorm:"column:status;size:128;not null;index" json:"status"`
 	FromBeginning        *string    `gorm:"column:from_beginning;size:1" json:"from_beginning,omitempty"`
 	NewDocsIndexed       int64      `gorm:"column:new_docs_indexed;default:0" json:"new_docs_indexed"`
