@@ -479,6 +479,10 @@ func TestHunyuanEmbedValidatesInputs(t *testing.T) {
 	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("missing api key: %v", err)
 	}
+	emptyKey := ""
+	if _, err := newHunyuanForTest("http://unused").Embed(&model, []string{"x"}, &APIConfig{ApiKey: &emptyKey}, nil); err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("empty api key: %v", err)
+	}
 }
 
 func TestHunyuanAudioOCRReturnNoSuchMethod(t *testing.T) {
