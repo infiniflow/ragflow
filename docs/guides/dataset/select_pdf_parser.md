@@ -49,14 +49,18 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
 1. Prepare a reachable MinerU API service (FastAPI server).
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
-   - `MINERU_BACKEND`: The MinerU backend:
+   - `MINERU_BACKEND`: The MinerU backend. Current MinerU releases expose three
+     backends — the first three options below — and the remaining values are
+     retained for backward compatibility with older MinerU servers:
       - `"pipeline"` (default)
-      - `"vlm-http-client"`
-      - `"vlm-transformers"`
-      - `"vlm-vllm-engine"`
-      - `"vlm-mlx-engine"`
-      - `"vlm-vllm-async-engine"`
-      - `"vlm-lmdeploy-engine"`.
+      - `"vlm-auto-engine"`
+      - `"hybrid-auto-engine"`
+      - `"vlm-http-client"` (legacy)
+      - `"vlm-transformers"` (legacy)
+      - `"vlm-vllm-engine"` (legacy)
+      - `"vlm-mlx-engine"` (legacy)
+      - `"vlm-vllm-async-engine"` (legacy)
+      - `"vlm-lmdeploy-engine"` (legacy).
    - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`. 
    - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:

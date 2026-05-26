@@ -31,7 +31,11 @@ const FormSchema = z.object({
   mineru_apiserver: z.string().url(),
   mineru_output_dir: z.string().optional(),
   mineru_backend: z.enum([
+    // Current MinerU backends (aligns with backend enum, fixes #15244).
     'pipeline',
+    'vlm-auto-engine',
+    'hybrid-auto-engine',
+    // Legacy backends — retained for users still on older MinerU servers.
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
@@ -59,7 +63,11 @@ const MinerUModal = ({
   const { t } = useTranslation();
 
   const backendOptions = buildOptions([
+    // Current MinerU backends first (the recommended set, fixes #15244).
     'pipeline',
+    'vlm-auto-engine',
+    'hybrid-auto-engine',
+    // Legacy backends — kept for users still on older MinerU servers.
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
