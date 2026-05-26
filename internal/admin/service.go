@@ -41,13 +41,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// Service errors
-var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrNotAdmin     = errors.New("user is not admin")
-	ErrUserInactive = errors.New("user is inactive")
-)
-
 // Service admin service layer
 type Service struct {
 	userDAO           *dao.UserDAO
@@ -105,32 +98,38 @@ func (s *Service) Logout(user interface{}) error {
 // ListTasks
 func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 
-	tasks, err := s.taskDAO.GetAllTasks()
+	//tasks, err := s.taskDAO.GetAllTasks()
+	//if err != nil {
+	//	return nil, err
+	//}
+	//
+	//var result []map[string]interface{}
+	//for _, task := range tasks {
+	//	// task.ChunkIDs is a string, delimiter is space, count the word count
+	//	ChunkCount := strings.Count(*task.ChunkIDs, " ")
+	//	result = append(result, map[string]interface{}{
+	//		"id":          task.ID,
+	//		"task_type":   task.TaskType,
+	//		"document_id": task.DocID,
+	//		"chunk_count": ChunkCount,
+	//		"from_page":   task.FromPage,
+	//		"to_page":     task.ToPage,
+	//		"priority":    task.Priority,
+	//		"duration":    task.ProcessDuration,
+	//		"progress":    task.Progress,
+	//		//"message":     *task.ProgressMsg,
+	//		"retry_count": task.RetryCount,
+	//		"digest":      task.Digest,
+	//	})
+	//}
+
+	ingestionMgr := GetIngestionManager()
+	ingestionTasks, err := ingestionMgr.ListIngestionTasks()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fail to list ingestion tasks")
 	}
 
-	var result []map[string]interface{}
-	for _, task := range tasks {
-		// task.ChunkIDs is a string, delimiter is space, count the word count
-		ChunkCount := strings.Count(*task.ChunkIDs, " ")
-		result = append(result, map[string]interface{}{
-			"id":          task.ID,
-			"task_type":   task.TaskType,
-			"document_id": task.DocID,
-			"chunk_count": ChunkCount,
-			"from_page":   task.FromPage,
-			"to_page":     task.ToPage,
-			"priority":    task.Priority,
-			"duration":    task.ProcessDuration,
-			"progress":    task.Progress,
-			//"message":     *task.ProgressMsg,
-			"retry_count": task.RetryCount,
-			"digest":      task.Digest,
-		})
-	}
-
-	return result, nil
+	return ingestionTasks, nil
 }
 
 // GetUserByToken get user by access token
@@ -1055,7 +1054,7 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 	}
 
 	id := len(result)
-	serverList := GlobalServerStatusStore.GetAllStatuses()
+	serverList := GlobalServerStore.ListInfos()
 	for _, serverStatus := range serverList {
 		serverItem := make(map[string]interface{})
 		serverItem["name"] = serverStatus.ServerName
@@ -1695,8 +1694,13 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 		Timestamp:  message.Timestamp,
 		Ext:        message.Ext,
 	}
-	GlobalServerStatusStore.UpdateStatus(message.ServerName, status)
+	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
 	return common.CodeLicenseValid, ""
+}
+
+func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
+	// TODO: Implement with sandbox manager
+	return []map[string]interface{}{}, nil
 }
 
 // InitDefaultAdmin initialize default admin user

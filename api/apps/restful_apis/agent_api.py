@@ -25,9 +25,11 @@ import json
 import logging
 import time
 from functools import partial, wraps
+from typing import Set
 
+from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 import jwt
-from quart import Response, jsonify, request
+from quart import Response, jsonify, request, make_response
 
 from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
@@ -61,6 +63,9 @@ from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
+
+# Keeps strong references to fire-and-forget tasks so they are not GC'd before completion.
+_background_tasks: Set[asyncio.Task] = set()
 
 
 def _require_canvas_access_sync(func):
@@ -177,6 +182,7 @@ async def _run_workflow_session(
     canvas_category,
     return_trace,
     stream,
+    chat_template_kwargs=None,
 ):
     async def commit_runtime_replica():
         commit_ok = CanvasReplicaService.commit_after_run(
@@ -213,6 +219,14 @@ async def _run_workflow_session(
     final_ans = {}
     trace_items = []
     structured_output = {}
+    run_kwargs = {
+        "query": query,
+        "files": files,
+        "user_id": user_id,
+        "inputs": inputs,
+    }
+    if chat_template_kwargs is not None:
+        run_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
     async def persist_workflow_session():
         if not final_ans:
@@ -237,7 +251,7 @@ async def _run_workflow_session(
             nonlocal full_content, reference, final_ans, trace_items, structured_output
             done_sent = False
             try:
-                async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+                async for ans in canvas.run(**run_kwargs):
                     ans["session_id"] = session_id
                     if ans.get("event") == "message":
                         full_content += ans.get("data", {}).get("content", "")
@@ -285,7 +299,7 @@ async def _run_workflow_session(
         return _build_sse_response(sse())
 
     try:
-        async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+        async for ans in canvas.run(**run_kwargs):
             ans["session_id"] = session_id
             if ans.get("event") == "message":
                 full_content += ans.get("data", {}).get("content", "")
@@ -412,7 +426,9 @@ async def create_agent_session(agent_id, tenant_id):
 @add_tenant_id_to_kwargs
 @_require_canvas_access_sync
 def get_agent_session(agent_id, session_id, tenant_id):
-    _, conv = API4ConversationService.get_by_id(session_id)
+    exists, conv = API4ConversationService.get_by_id(session_id)
+    if not exists:
+        return get_data_error_result(message="Session not found!")
     return get_json_result(data=conv.to_dict())
 
 
@@ -600,6 +616,7 @@ async def update_agent_tags(tenant_id, canvas_id):
 @add_tenant_id_to_kwargs
 async def create_agent(tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
+    req["canvas_type"] = req.get("canvas_type","")
     req["user_id"] = tenant_id
     req["canvas_category"] = req.get("canvas_category") or CanvasCategory.Agent
     req["release"] = bool(req.get("release", ""))
@@ -856,6 +873,7 @@ def delete_agent(agent_id, tenant_id):
 @_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
+    req["canvas_type"] = req.get("canvas_type","")
     req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is not None:
@@ -1256,6 +1274,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_category=getattr(cvs, "canvas_category", CanvasCategory.Agent),
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
+            chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     if not session_id:
@@ -1402,6 +1421,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             canvas_category=canvas_category,
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
+            chat_template_kwargs=req.get("chat_template_kwargs"),
         )
 
     return_trace = bool(req.get("return_trace", False))
@@ -2065,7 +2085,10 @@ async def webhook(agent_id: str):
                     except Exception:
                         logging.exception("Failed to append webhook trace")
 
-        asyncio.create_task(background_run())
+        task = asyncio.create_task(background_run())
+        if isinstance(task, asyncio.Task):
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
         return resp
     else:
         async def sse():
@@ -2254,3 +2277,28 @@ async def webhook_trace(agent_id: str):
             "finished": finished,
         }
     )
+
+@manager.route("/agents/attachments/<attachment_id>/download", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def download_attachment(tenant_id=None, attachment_id=None):
+    """Stream a document's underlying file to the requesting user.
+
+    Mirrors the authorization model of the preview endpoint: the user must belong
+    to the tenant that owns the document's knowledge base. A denial returns the
+    same "Document not found!" response so the endpoint cannot be used to
+    enumerate doc ids across tenants.
+    """
+    try:
+        # Keep backward compatibility with older callers and unit tests that still
+        # pass `attachment_id` instead of the route parameter name.
+        ext = request.args.get("ext", "markdown")
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        response = await make_response(data)
+        content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
+        apply_safe_file_response_headers(response, content_type, ext)
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)

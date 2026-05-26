@@ -22,6 +22,13 @@
       "model_types": [
         "chat"
       ]
+    },
+    {
+      "name": "replicate/all-mpnet-base-v2:b6b7585c9640cd7a9572c6e129c9549d79c9c31f0d3fdce7baac7c67ca38f305",
+      "max_tokens": 384,
+      "model_types": [
+        "embedding"
+      ]
     }
   ]
 }

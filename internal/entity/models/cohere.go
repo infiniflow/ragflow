@@ -670,7 +670,7 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (c *CoHereModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf(c.Name() + " no such method")
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
 func (c *CoHereModel) CheckConnection(apiConfig *APIConfig) error {

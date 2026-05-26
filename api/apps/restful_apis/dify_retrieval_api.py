@@ -253,6 +253,13 @@ async def retrieval(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
             return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
+        if not KnowledgebaseService.accessible(kb_id, tenant_id):
+            logger.warning(
+                "Rejected /dify/retrieval cross-tenant access: caller_tenant=%s knowledge_id=%s",
+                tenant_id,
+                kb_id,
+            )
+            return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
         if kb.tenant_embd_id:
             model_config = get_model_config_by_id(kb.tenant_embd_id)
         else:
@@ -287,9 +294,15 @@ async def retrieval(tenant_id):
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 
+        doc_ids = list(set([c["doc_id"] for c in ranks["chunks"]]))
+        docs = DocumentService.get_by_ids(doc_ids)
+        doc_map = {doc.id: doc for doc in docs}
+
         records = []
         for c in ranks["chunks"]:
-            e, doc = DocumentService.get_by_id(c["doc_id"])
+            doc = doc_map.get(c["doc_id"])
+            if not doc:
+                continue
             c.pop("vector", None)
             meta = getattr(doc, 'meta_fields', {})
             meta["doc_id"] = c["doc_id"]
@@ -304,7 +317,7 @@ async def retrieval(tenant_id):
 
         return jsonify({"records": records})
     except Exception as e:
-        if str(e).find("not_found") > 0:
+        if "not_found" in str(e):
             return build_error_result(
                 message='No chunk found! Check the chunk status please!',
                 code=RetCode.NOT_FOUND
