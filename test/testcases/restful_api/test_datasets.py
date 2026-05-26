@@ -16,9 +16,12 @@
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
+import uuid
 
 import pytest
 from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
+from test.testcases.configs import INVALID_API_TOKEN
+from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file
 
@@ -578,6 +581,468 @@ def test_dataset_update_concurrent_contract(rest_client, clear_datasets):
         assert res.status_code == 200, (index, res.text)
         payload = res.json()
         assert payload["code"] == 0, (index, payload)
+
+
+@pytest.mark.p1
+def test_dataset_update_requires_auth_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_auth_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        res = client.put(f"/datasets/{dataset_id}", json={"name": "dataset_update_auth_invalid"})
+        assert res.status_code == 401, (scenario_name, res.text)
+        payload = res.json()
+        assert payload["code"] == 401, (scenario_name, payload)
+        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+
+
+@pytest.mark.p2
+def test_dataset_update_content_type_and_payload_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_payload_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    bad_content_type = "text/xml"
+    bad_content_type_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        data='{"name": "bad_content_type"}',
+        headers={"Content-Type": bad_content_type},
+    )
+    assert bad_content_type_res.status_code == 200
+    bad_content_type_payload = bad_content_type_res.json()
+    assert bad_content_type_payload["code"] == 101, bad_content_type_payload
+    assert (
+        f"Unsupported content type: Expected application/json, got {bad_content_type}" in bad_content_type_payload["message"]
+    ), bad_content_type_payload
+
+    malformed_json_res = rest_client.put(f"/datasets/{dataset_id}", data="a")
+    assert malformed_json_res.status_code == 200
+    malformed_json_payload = malformed_json_res.json()
+    assert malformed_json_payload["code"] == 101, malformed_json_payload
+    assert "Malformed JSON syntax: Missing commas/brackets or invalid encoding" in malformed_json_payload["message"], malformed_json_payload
+
+    invalid_payload_type_res = rest_client.put(f"/datasets/{dataset_id}", data='"a"')
+    assert invalid_payload_type_res.status_code == 200
+    invalid_payload_type_payload = invalid_payload_type_res.json()
+    assert invalid_payload_type_payload["code"] == 101, invalid_payload_type_payload
+    assert "Invalid request payload: expected object, got str" in invalid_payload_type_payload["message"], invalid_payload_type_payload
+
+    empty_payload_res = rest_client.put(f"/datasets/{dataset_id}", json={})
+    assert empty_payload_res.status_code == 200
+    empty_payload = empty_payload_res.json()
+    assert empty_payload["code"] == 102, empty_payload
+    assert empty_payload["message"] == "No properties were modified", empty_payload
+
+    unset_payload_res = rest_client.put(f"/datasets/{dataset_id}")
+    assert unset_payload_res.status_code == 200
+    unset_payload = unset_payload_res.json()
+    assert unset_payload["code"] == 101, unset_payload
+    assert "Malformed JSON syntax: Missing commas/brackets or invalid encoding" in unset_payload["message"], unset_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_identifier_validation_contract(rest_client):
+    payload = {"name": "dataset_update_identifier_validation"}
+
+    not_uuid_res = rest_client.put("/datasets/not_uuid", json=payload)
+    assert not_uuid_res.status_code == 200
+    not_uuid_payload = not_uuid_res.json()
+    assert not_uuid_payload["code"] == 101, not_uuid_payload
+    assert "Invalid UUID1 format" in not_uuid_payload["message"], not_uuid_payload
+
+    not_uuid1_res = rest_client.put(f"/datasets/{uuid.uuid4().hex}", json=payload)
+    assert not_uuid1_res.status_code == 200
+    not_uuid1_payload = not_uuid1_res.json()
+    assert not_uuid1_payload["code"] == 101, not_uuid1_payload
+    assert "Invalid UUID1 format" in not_uuid1_payload["message"], not_uuid1_payload
+
+    wrong_uuid_res = rest_client.put("/datasets/d94a8dc02c9711f0930f7fbc369eab6d", json=payload)
+    assert wrong_uuid_res.status_code == 200
+    wrong_uuid_payload = wrong_uuid_res.json()
+    assert wrong_uuid_payload["code"] == 102, wrong_uuid_payload
+    assert "lacks permission for dataset" in wrong_uuid_payload["message"], wrong_uuid_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_datasets, tmp_path):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_avatar_invalid_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    exceed_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"avatar": "a" * 65536},
+    )
+    assert exceed_res.status_code == 200
+    exceed_payload = exceed_res.json()
+    assert exceed_payload["code"] == 101, exceed_payload
+    assert "String should have at most 65535 characters" in exceed_payload["message"], exceed_payload
+
+    image_path = create_image_file(tmp_path / "dataset_update_avatar_invalid.png")
+    encoded_avatar = encode_avatar(image_path)
+    invalid_prefix_cases = [
+        ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+        ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
+    ]
+    for prefix, expected_message in invalid_prefix_cases:
+        res = rest_client.put(
+            f"/datasets/{dataset_id}",
+            json={"avatar": f"{prefix}{encoded_avatar}"},
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"avatar": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["avatar"] is None, list_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_description_validation_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_description_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    exceeds_limit_res = rest_client.put(
+        f"/datasets/{dataset_id}",
+        json={"description": "a" * 65536},
+    )
+    assert exceeds_limit_res.status_code == 200
+    exceeds_limit_payload = exceeds_limit_res.json()
+    assert exceeds_limit_payload["code"] == 101, exceeds_limit_payload
+    assert "String should have at most 65535 characters" in exceeds_limit_payload["message"], exceeds_limit_payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"description": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["description"] is None, list_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
+    first_res = rest_client.post("/datasets", json={"name": "dataset_update_name_invalid_first"})
+    assert first_res.status_code == 200
+    first_payload = first_res.json()
+    assert first_payload["code"] == 0, first_payload
+    first_dataset_id = first_payload["data"]["id"]
+
+    second_res = rest_client.post("/datasets", json={"name": "dataset_update_name_invalid_second"})
+    assert second_res.status_code == 200
+    second_payload = second_res.json()
+    assert second_payload["code"] == 0, second_payload
+
+    invalid_cases = [
+        ("", "String should have at least 1 character"),
+        (" ", "String should have at least 1 character"),
+        ("a" * (DATASET_NAME_LIMIT + 1), f"String should have at most {DATASET_NAME_LIMIT} characters"),
+        (0, "Input should be a valid string"),
+        (None, "Input should be a valid string"),
+    ]
+    for name, expected_message in invalid_cases:
+        res = rest_client.put(f"/datasets/{first_dataset_id}", json={"name": name})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+    duplicated_res = rest_client.put(
+        f"/datasets/{first_dataset_id}",
+        json={"name": second_payload["data"]["name"]},
+    )
+    assert duplicated_res.status_code == 200
+    duplicated_payload = duplicated_res.json()
+    assert duplicated_payload["code"] == 102, duplicated_payload
+    assert f"Dataset name '{second_payload['data']['name']}' already exists" == duplicated_payload["message"], duplicated_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_embedding_invalid_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    invalid_cases = [
+        ("unknown@ZHIPU-AI", "Unsupported model: <unknown@ZHIPU-AI>"),
+        ("embedding-3@unknown", "Unsupported model: <embedding-3@unknown>"),
+        ("text-embedding-v3@Tongyi-Qianwen", "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>"),
+        ("text-embedding-3-small@OpenAI", "Unauthorized model: <text-embedding-3-small@OpenAI>"),
+    ]
+    for embedding_model, expected_message in invalid_cases:
+        res = rest_client.put(
+            f"/datasets/{dataset_id}",
+            json={"embedding_model": embedding_model},
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 102, payload
+        assert payload["message"] == expected_message, payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"embedding_model": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", list_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_permission_invalid_and_none_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_permission_invalid_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    invalid_permissions = ["", "unknown", [], "ME", "TEAM", " ME "]
+    for permission in invalid_permissions:
+        res = rest_client.put(f"/datasets/{dataset_id}", json={"permission": permission})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert "Input should be 'me' or 'team'" in payload["message"], payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"permission": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 101, none_payload
+    assert "Input should be 'me' or 'team'" in none_payload["message"], none_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_chunk_method_invalid_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    expected_chunk_message = (
+        "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', "
+        "'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'"
+    )
+    for chunk_method in ("", "unknown", []):
+        res = rest_client.put(f"/datasets/{dataset_id}", json={"chunk_method": chunk_method})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_chunk_message in payload["message"], payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"chunk_method": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 101, none_payload
+    assert expected_chunk_message in none_payload["message"], none_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_pagerank_invalid_and_none_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_invalid_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    for pagerank, expected_message in ((-1, "Input should be greater than or equal to 0"), (101, "Input should be less than or equal to 100")):
+        res = rest_client.put(f"/datasets/{dataset_id}", json={"pagerank": pagerank})
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"pagerank": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 101, none_payload
+    assert "Input should be a valid integer" in none_payload["message"], none_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_parser_config_defaults_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_parser_defaults_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    empty_res = rest_client.put(f"/datasets/{dataset_id}", json={"parser_config": {}})
+    assert empty_res.status_code == 200
+    empty_payload = empty_res.json()
+    assert empty_payload["code"] == 0, empty_payload
+
+    none_res = rest_client.put(f"/datasets/{dataset_id}", json={"parser_config": None})
+    assert none_res.status_code == 200
+    none_payload = none_res.json()
+    assert none_payload["code"] == 0, none_payload
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    assert list_payload["data"][0]["parser_config"] == DEFAULT_PARSER_CONFIG, list_payload
+
+
+@pytest.mark.p2
+def test_dataset_update_parser_config_invalid_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_parser_invalid_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    invalid_cases = [
+        ({"auto_keywords": -1}, "Input should be greater than or equal to 0"),
+        ({"auto_keywords": 33}, "Input should be less than or equal to 32"),
+        ({"auto_keywords": 3.14}, "Input should be a valid integer"),
+        ({"auto_keywords": "string"}, "Input should be a valid integer"),
+        ({"auto_questions": -1}, "Input should be greater than or equal to 0"),
+        ({"auto_questions": 11}, "Input should be less than or equal to 10"),
+        ({"auto_questions": 3.14}, "Input should be a valid integer"),
+        ({"auto_questions": "string"}, "Input should be a valid integer"),
+        ({"chunk_token_num": 0}, "Input should be greater than or equal to 1"),
+        ({"chunk_token_num": 2049}, "Input should be less than or equal to 2048"),
+        ({"chunk_token_num": 3.14}, "Input should be a valid integer"),
+        ({"chunk_token_num": "string"}, "Input should be a valid integer"),
+        ({"delimiter": ""}, "String should have at least 1 character"),
+        ({"html4excel": "string"}, "Input should be a valid boolean"),
+        ({"tag_kb_ids": "1,2"}, "Input should be a valid list"),
+        ({"tag_kb_ids": [1, 2]}, "Input should be a valid string"),
+        ({"topn_tags": 0}, "Input should be greater than or equal to 1"),
+        ({"topn_tags": 11}, "Input should be less than or equal to 10"),
+        ({"topn_tags": 3.14}, "Input should be a valid integer"),
+        ({"topn_tags": "string"}, "Input should be a valid integer"),
+        ({"filename_embd_weight": -1}, "Input should be greater than or equal to 0"),
+        ({"filename_embd_weight": 1.1}, "Input should be less than or equal to 1"),
+        ({"filename_embd_weight": "string"}, "Input should be a valid number"),
+        ({"task_page_size": 0}, "Input should be greater than or equal to 1"),
+        ({"task_page_size": 3.14}, "Input should be a valid integer"),
+        ({"task_page_size": "string"}, "Input should be a valid integer"),
+        ({"pages": "1,2"}, "Input should be a valid list"),
+        ({"pages": ["1,2"]}, "Input should be a valid list"),
+        ({"pages": [["string1", "string2"]]}, "Input should be a valid integer"),
+        ({"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
+        ({"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
+        ({"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
+        ({"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+        ({"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
+        ({"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
+        ({"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
+        ({"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
+        ({"raptor": {"prompt": ""}}, "String should have at least 1 character"),
+        ({"raptor": {"prompt": " "}}, "String should have at least 1 character"),
+        ({"raptor": {"max_token": 0}}, "Input should be greater than or equal to 1"),
+        ({"raptor": {"max_token": 2049}}, "Input should be less than or equal to 2048"),
+        ({"raptor": {"max_token": 3.14}}, "Input should be a valid integer"),
+        ({"raptor": {"max_token": "string"}}, "Input should be a valid integer"),
+        ({"raptor": {"threshold": -0.1}}, "Input should be greater than or equal to 0"),
+        ({"raptor": {"threshold": 1.1}}, "Input should be less than or equal to 1"),
+        ({"raptor": {"threshold": "string"}}, "Input should be a valid number"),
+        ({"raptor": {"max_cluster": 0}}, "Input should be greater than or equal to 1"),
+        ({"raptor": {"max_cluster": 1025}}, "Input should be less than or equal to 1024"),
+        ({"raptor": {"max_cluster": 3.14}}, "Input should be a valid integer"),
+        ({"raptor": {"max_cluster": "string"}}, "Input should be a valid integer"),
+        ({"raptor": {"random_seed": -1}}, "Input should be greater than or equal to 0"),
+        ({"raptor": {"random_seed": 3.14}}, "Input should be a valid integer"),
+        ({"raptor": {"random_seed": "string"}}, "Input should be a valid integer"),
+        ({"raptor": {"clustering_method": "unknown"}}, "Input should be 'gmm' or 'ahc'"),
+        ({"raptor": {"clustering_method": None}}, "Input should be 'gmm' or 'ahc'"),
+        ({"raptor": {"tree_builder": "ahc"}}, "Input should be 'raptor' or 'psi'"),
+        ({"raptor": {"tree_builder": None}}, "Input should be 'raptor' or 'psi'"),
+        ({"delimiter": "a" * 65536}, "Parser config exceeds size limit (max 65,535 characters)"),
+    ]
+    for parser_config, expected_message in invalid_cases:
+        res = rest_client.put(
+            f"/datasets/{dataset_id}",
+            json={"parser_config": parser_config},
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert expected_message in payload["message"], payload
+
+
+@pytest.mark.p2
+def test_dataset_update_field_unset_and_unsupported_contract(rest_client, clear_datasets):
+    create_res = rest_client.post("/datasets", json={"name": "dataset_update_field_unset_contract"})
+    assert create_res.status_code == 200
+    create_payload = create_res.json()
+    assert create_payload["code"] == 0, create_payload
+    dataset_id = create_payload["data"]["id"]
+
+    list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert list_res.status_code == 200
+    list_payload = list_res.json()
+    assert list_payload["code"] == 0, list_payload
+    original_data = list_payload["data"][0]
+
+    name_update_res = rest_client.put(f"/datasets/{dataset_id}", json={"name": "dataset_update_field_unset_renamed"})
+    assert name_update_res.status_code == 200
+    name_update_payload = name_update_res.json()
+    assert name_update_payload["code"] == 0, name_update_payload
+
+    after_list_res = rest_client.get("/datasets", params={"id": dataset_id})
+    assert after_list_res.status_code == 200
+    after_list_payload = after_list_res.json()
+    assert after_list_payload["code"] == 0, after_list_payload
+    assert after_list_payload["data"][0]["avatar"] == original_data["avatar"], after_list_payload
+    assert after_list_payload["data"][0]["description"] == original_data["description"], after_list_payload
+    assert after_list_payload["data"][0]["embedding_model"] == original_data["embedding_model"], after_list_payload
+    assert after_list_payload["data"][0]["permission"] == original_data["permission"], after_list_payload
+    assert after_list_payload["data"][0]["chunk_method"] == original_data["chunk_method"], after_list_payload
+    assert after_list_payload["data"][0]["pagerank"] == original_data["pagerank"], after_list_payload
+    assert after_list_payload["data"][0]["parser_config"] == original_data["parser_config"], after_list_payload
+
+    unsupported_field_payloads = [
+        {"id": "id"},
+        {"tenant_id": "e57c1966f99211efb41e9e45646e0111"},
+        {"created_by": "created_by"},
+        {"create_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
+        {"create_time": 1741671443322},
+        {"update_date": "Tue, 11 Mar 2025 13:37:23 GMT"},
+        {"update_time": 1741671443339},
+        {"document_count": 1},
+        {"chunk_count": 1},
+        {"token_num": 1},
+        {"status": "1"},
+        {"unknown_field": "unknown_field"},
+    ]
+    for payload_data in unsupported_field_payloads:
+        res = rest_client.put(f"/datasets/{dataset_id}", json=payload_data)
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["code"] == 101, payload
+        assert "Extra inputs are not permitted" in payload["message"], payload
 
 
 @pytest.mark.p2
