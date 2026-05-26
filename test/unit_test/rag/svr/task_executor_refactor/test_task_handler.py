@@ -242,12 +242,17 @@ class TestTaskHandlerBuildToc:
 
         docs = [{"id": "chunk_1", "content_with_weight": "text", "page_num_int": [1], "top_int": [0]}]
 
+        def mock_asyncio_run(coro):
+            # Close the coroutine to prevent "never awaited" warnings
+            coro.close()
+            return []
+
         with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             with patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle:
                 mock_msg = MagicMock()
                 mock_bundle.return_value.__enter__.return_value = mock_msg
-                with patch("rag.svr.task_executor_refactor.task_handler.asyncio.run", return_value=[]):
+                with patch("rag.svr.task_executor_refactor.task_handler.asyncio.run", side_effect=mock_asyncio_run):
                     result = TaskHandler._build_toc(ctx, docs, MagicMock())
                     assert result is None
 
@@ -261,12 +266,17 @@ class TestTaskHandlerBuildToc:
         docs = [{"id": "chunk_0", "content_with_weight": "text", "doc_id": "doc_1", "page_num_int": [1], "top_int": [0]}]
         toc_result = [{"chunk_id": "0", "title": "Section 1"}]
 
+        def mock_asyncio_run(coro):
+            # Close the coroutine to prevent "never awaited" warnings
+            coro.close()
+            return toc_result
+
         with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             with patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle:
                 mock_msg = MagicMock()
                 mock_bundle.return_value.__enter__.return_value = mock_msg
-                with patch("rag.svr.task_executor_refactor.task_handler.asyncio.run", return_value=toc_result):
+                with patch("rag.svr.task_executor_refactor.task_handler.asyncio.run", side_effect=mock_asyncio_run):
                     result = TaskHandler._build_toc(ctx, docs, MagicMock())
                     assert result is not None
                     assert "toc_kwd" in result
