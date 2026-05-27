@@ -132,7 +132,7 @@ func TestConnectorHandlerStartGoogleWebOAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("success_google_drive", func(t *testing.T) {
+	t.Run("fail_when_redis_unavailable", func(t *testing.T) {
 		router := gin.New()
 		router.POST("/api/v1/connectors/google/oauth/web/start", func(c *gin.Context) {
 			c.Set("user", &entity.User{ID: "tenant-1"})
@@ -145,32 +145,15 @@ func TestConnectorHandlerStartGoogleWebOAuth(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		router.ServeHTTP(resp, req)
 
-		var got struct {
-			Code int    `json:"code"`
-			Msg  string `json:"message"`
-			Data struct {
-				FlowID           string `json:"flow_id"`
-				AuthorizationURL string `json:"authorization_url"`
-				ExpiresIn        int    `json:"expires_in"`
-			} `json:"data"`
-		}
+		var got map[string]interface{}
 		if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
 			t.Fatalf("unmarshal response: %v", err)
 		}
-		if got.Code != int(common.CodeSuccess) {
-			t.Fatalf("expected success, got=%d body=%s", got.Code, resp.Body.String())
+		if got["code"] != float64(common.CodeServerError) {
+			t.Fatalf("expected server error, got=%v body=%s", got["code"], resp.Body.String())
 		}
-		if got.Msg != "success" {
-			t.Fatalf("expected success message, got=%q", got.Msg)
-		}
-		if got.Data.FlowID == "" {
-			t.Fatalf("expected flow_id, got empty")
-		}
-		if !strings.Contains(got.Data.AuthorizationURL, "https://accounts.google.com/o/oauth2/v2/auth?") {
-			t.Fatalf("unexpected authorization_url: %s", got.Data.AuthorizationURL)
-		}
-		if got.Data.ExpiresIn != 900 {
-			t.Fatalf("expected expires_in=900, got=%d", got.Data.ExpiresIn)
+		if got["message"] != "Failed to initialize Google OAuth flow. Please retry." {
+			t.Fatalf("unexpected message=%v body=%s", got["message"], resp.Body.String())
 		}
 	})
 }

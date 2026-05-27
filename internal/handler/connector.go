@@ -364,15 +364,29 @@ func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
 	authorizationURL := googleOAuthAuthorizationURL + "?" + params.Encode()
 
 	redisClient := cache.Get()
-	if redisClient != nil {
-		cachePayload := map[string]interface{}{
-			"user_id":       user.ID,
-			"client_config": map[string]interface{}{"web": webSection},
-			"redirect_uri":  redirectURI,
-			"code_verifier": codeVerifier,
-			"created_at":    time.Now().Unix(),
-		}
-		redisClient.SetObj(googleWebStateCacheKey(flowID, source), cachePayload, webFlowTTLSeconds*time.Second)
+	if redisClient == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to initialize Google OAuth flow. Please retry.",
+			"data":    nil,
+		})
+		return
+	}
+
+	cachePayload := map[string]interface{}{
+		"user_id":       user.ID,
+		"client_config": map[string]interface{}{"web": webSection},
+		"redirect_uri":  redirectURI,
+		"code_verifier": codeVerifier,
+		"created_at":    time.Now().Unix(),
+	}
+	if ok := redisClient.SetObj(googleWebStateCacheKey(flowID, source), cachePayload, webFlowTTLSeconds*time.Second); !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeServerError,
+			"message": "Failed to initialize Google OAuth flow. Please retry.",
+			"data":    nil,
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
