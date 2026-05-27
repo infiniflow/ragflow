@@ -28,6 +28,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var AdminServiceClient *AdminClient
+
 // AdminClient is responsible for sending heartbeat reports to the admin server
 type AdminClient struct {
 	client       *utility.HTTPClient
@@ -138,6 +140,52 @@ func (h *AdminClient) SendHeartbeat() error {
 	)
 
 	h.lastSuccess = true
+
+	return nil
+}
+
+// TaskId:   req.TaskID,
+// TaskType: "start_ingestion_task",
+// ComeFrom: req.From,
+// UserId:   req.UserID,
+func (h *AdminClient) SendIngestionTask(taskID, taskType, serverName, userID string) error {
+
+	message := &common.StartIngestionRequest{
+		TaskID:   taskID,
+		TaskType: taskType,
+		From:     serverName,
+		UserID:   userID,
+	}
+
+	jsonData, err := json.Marshal(message)
+	if err != nil {
+		h.logger.Error("Failed to marshal heartbeat message", zap.Error(err))
+		return err
+	}
+
+	resp, err := h.client.PostJSON("/api/v1/admin/ingestion/tasks", jsonData)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		// extract the Code and Message field of the response
+		var responseBody map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&responseBody)
+		if err != nil {
+			return err
+		}
+		responseCode := common.ErrorCode(responseBody["code"].(float64))
+		if responseCode != common.CodeLicenseValid {
+			return errors.New(responseCode.Message())
+		}
+	}
+
+	h.logger.Debug("Ingestion task sent successfully",
+		zap.String("server_id", h.serverName),
+		zap.String("server_type", string(h.serverType)),
+	)
 
 	return nil
 }

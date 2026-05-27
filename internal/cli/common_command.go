@@ -154,6 +154,7 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 		return err
 	}
 
+	c.Email = email
 	c.HTTPClient.LoginToken = token
 	fmt.Printf("Login user %s successfully\n", email)
 	return nil

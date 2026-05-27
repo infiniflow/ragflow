@@ -56,9 +56,9 @@ message TaskState {
 message TaskAssignment {
   string task_id = 1;
   string task_type = 2;
-  string config = 3;
-  string come_from = 4;
-  string assigned_to = 5;
+  string come_from = 3;
+  string assigned_to = 4;
+  string user_id = 5;
 }
 
 message TaskResult {

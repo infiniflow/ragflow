@@ -41,6 +41,7 @@ type RAGFlowClient struct {
 	OutputFormat   OutputFormat       // Output format: table, plain, json
 	ContextEngine  *ce.Engine         // Context Engine for virtual filesystem
 	CurrentModel   *CurrentModel      // Current model configuration
+	Email          string
 }
 
 func NewRAGFlowClient(serverType string) *RAGFlowClient {
@@ -336,6 +337,12 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
+	case "user_start_ingestion_command":
+		return c.UserStartIngestionCommand(cmd)
+	case "user_stop_ingestion_command":
+		return c.UserStopIngestionCommand(cmd)
+	case "user_list_ingestion_tasks":
+		return c.ListUserIngestionTasks(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

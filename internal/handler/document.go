@@ -599,3 +599,104 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 		"data":    parseResult,
 	})
 }
+
+type ListIngestionsRequest struct {
+	DatasetID *string `json:"dataset_id"`
+}
+
+func (h *DocumentHandler) ListIngestions(c *gin.Context) {
+	var req ListIngestionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	var parseResult []*entity.IngestionTask
+	var err error
+	if req.DatasetID != nil {
+		if !h.datasetService.Accessible(*req.DatasetID, userID) {
+			jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
+			return
+		}
+	}
+
+	parseResult, err = h.documentService.ListIngestions(userID, req.DatasetID, 0, 0)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}
+
+type StartParseDocumentsRequest struct {
+	DatasetID string   `json:"dataset_id" binding:"required"`
+	Documents []string `json:"documents" binding:"required"`
+}
+
+func (h *DocumentHandler) StartParseDocuments(c *gin.Context) {
+	var req StartParseDocumentsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(req.DatasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
+		return
+	}
+
+	parseResult, err := h.documentService.IngestDocuments(req.DatasetID, userID, req.Documents)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}
+
+type StopParseDocumentsRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
+}
+
+func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
+	var req StopParseDocumentsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	parseResult, err := h.documentService.StopIngestions(req.Tasks, userID)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}

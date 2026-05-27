@@ -1307,6 +1307,7 @@ func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
 func (c *RAGFlowClient) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
@@ -1339,13 +1340,24 @@ func (c *RAGFlowClient) AdminStartIngestionCommand(cmd *Command) (ResponseIf, er
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
-	fileURI, ok := cmd.Params["uri"].(string)
+	documentID, ok := cmd.Params["uri"].(string)
 	if !ok {
 		return nil, fmt.Errorf("uri not provided")
 	}
+
+	config := map[string]interface{}{
+		"document_id": documentID,
+	}
+
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+
 	payload := map[string]interface{}{
-		"uri":  fileURI,
-		"from": "CLI",
+		"config":  configJSON,
+		"user_id": c.Email,
+		"from":    "CLI",
 	}
 
 	resp, err := c.HTTPClient.Request("POST", "/admin/ingestion", "admin", nil, payload)

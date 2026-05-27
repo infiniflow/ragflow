@@ -6,6 +6,8 @@ import (
 	"log"
 	"math"
 	"os"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"sync"
 	"time"
 
@@ -47,6 +49,8 @@ type Ingestor struct {
 	taskChan  chan *TaskContext
 	workerWg  sync.WaitGroup
 	startOnce sync.Once
+
+	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 }
 
 type TaskContext struct {
@@ -65,16 +69,17 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	ctx, cancel := context.WithCancel(context.Background())
 	id := common.GenerateUUID()
 	return &Ingestor{
-		id:                id,
-		name:              name,
-		ctx:               ctx,
-		cancel:            cancel,
-		maxConcurrency:    maxConcurrency,
-		supportedDocTypes: supportedTypes,
-		version:           "1.0.0",
-		currentTasks:      make(map[string]*TaskContext),
-		taskChan:          make(chan *TaskContext, maxConcurrency*2),
-		ShutdownCh:        make(chan struct{}, 1),
+		id:                  id,
+		name:                name,
+		ctx:                 ctx,
+		cancel:              cancel,
+		maxConcurrency:      maxConcurrency,
+		supportedDocTypes:   supportedTypes,
+		version:             "1.0.0",
+		currentTasks:        make(map[string]*TaskContext),
+		taskChan:            make(chan *TaskContext, maxConcurrency*2),
+		ShutdownCh:          make(chan struct{}, 1),
+		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 	}
 }
 
@@ -281,6 +286,16 @@ func (e *Ingestor) handleTaskAssignment(task *common.TaskAssignment) {
 	case "cancel_ingestion_task":
 		e.handleCancelTask(task.TaskId)
 		return
+	case "start_ingestion_task":
+		// create ingestion task log
+		err := e.ingestionTaskLogDAO.Create(&entity.IngestionTaskLog{
+			TaskID: task.TaskId,
+			Action: "CREATED",
+		})
+		if err != nil {
+			common.Fatal(fmt.Sprintf("Failed to create ingestion task log for task %s: %v", task.TaskId, err))
+			return
+		}
 	}
 
 	// Construct TaskContext with a cancellable context
@@ -390,6 +405,18 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	task := taskCtx.Task
 	common.Info(fmt.Sprintf("Starting task %s", task.TaskId))
 
+	err := e.ingestionTaskLogDAO.Create(&entity.IngestionTaskLog{
+		TaskID: task.TaskId,
+		Action: "RUNNING",
+		Progress: entity.JSONMap{
+			"progress": "0",
+		},
+	})
+	if err != nil {
+		common.Fatal(fmt.Sprintf("Failed to create ingestion task log for task %s: %v", task.TaskId, err))
+		return
+	}
+
 	// Simulate task execution progress
 	// In production, this would split into subtasks and execute in parallel
 	for progress := int32(0); progress <= 100; progress += 10 {
@@ -406,6 +433,18 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 			taskCtx.Progress = progress
 			e.sendTaskProgress(task.TaskId, progress, "processing...")
 			common.Info(fmt.Sprintf("Task %s progress: %d%%", task.TaskId, progress))
+
+			err = e.ingestionTaskLogDAO.Create(&entity.IngestionTaskLog{
+				TaskID: task.TaskId,
+				Action: "RUNNING",
+				Progress: entity.JSONMap{
+					"progress": fmt.Sprintf("%d%%", progress),
+				},
+			})
+			if err != nil {
+				common.Fatal(fmt.Sprintf("Failed to create ingestion task log for task %s: %v", task.TaskId, err))
+				return
+			}
 		}
 	}
 
@@ -416,6 +455,15 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 	taskCtx.EndTime = time.Now()
 
 	time.Sleep(time.Second * 10)
+
+	err = e.ingestionTaskLogDAO.Create(&entity.IngestionTaskLog{
+		TaskID: task.TaskId,
+		Action: "COMPLETED",
+	})
+	if err != nil {
+		common.Fatal(fmt.Sprintf("Failed to create ingestion task log for task %s: %v", task.TaskId, err))
+		return
+	}
 
 	// Task completed
 	e.sendTaskResult(task.TaskId, "COMPLETED", "")

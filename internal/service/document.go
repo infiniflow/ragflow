@@ -29,32 +29,30 @@ import (
 	"ragflow/internal/engine"
 
 	"ragflow/internal/server"
-
-	"github.com/google/uuid"
 )
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO      *dao.DocumentDAO
-	kbDAO            *dao.KnowledgebaseDAO
-	ingestionTaskDAO *dao.IngestionDAO
-	ingestionLogDAO  *dao.IngestionLogDAO
-	docEngine        engine.DocEngine
-	engineType       server.EngineType
-	metadataSvc      *MetadataService
+	documentDAO         *dao.DocumentDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
+	docEngine           engine.DocEngine
+	engineType          server.EngineType
+	metadataSvc         *MetadataService
 }
 
 // NewDocumentService create document service
 func NewDocumentService() *DocumentService {
 	cfg := server.GetConfig()
 	return &DocumentService{
-		documentDAO:      dao.NewDocumentDAO(),
-		ingestionTaskDAO: dao.NewIngestionDAO(),
-		ingestionLogDAO:  dao.NewIngestionLogDAO(),
-		kbDAO:            dao.NewKnowledgebaseDAO(),
-		docEngine:        engine.Get(),
-		engineType:       cfg.DocEngine.Type,
-		metadataSvc:      NewMetadataService(),
+		documentDAO:         dao.NewDocumentDAO(),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		docEngine:           engine.Get(),
+		engineType:          cfg.DocEngine.Type,
+		metadataSvc:         NewMetadataService(),
 	}
 }
 
@@ -220,10 +218,6 @@ type ParseDocumentResponse struct {
 }
 
 func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
-	// create document parse id
-	// save to task table
-	// send to message queue
-
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
@@ -235,6 +229,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 	// query database, if the document ids are valid
 	for _, docID := range uniqueDocIDs {
 		doc, err := s.documentDAO.GetByID(docID)
+
 		if err != nil {
 			errorMessage := err.Error()
 			responses = append(responses, &ParseDocumentResponse{
@@ -243,6 +238,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 			})
 			continue
 		}
+
 		if doc == nil {
 			errorMessage := "no such document"
 			responses = append(responses, &ParseDocumentResponse{
@@ -261,13 +257,90 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 			continue
 		}
 
-		// create task for each document
+		//// create task for each document
+		//task := &entity.IngestionTask{
+		//	ID:         uuid.New().String(),
+		//	DocumentID: docID,
+		//	UserID:     userID,
+		//	Config:     nil,
+		//	TryCount:   1,
+		//}
+		//
+		//// save the task to database
+		//err = s.ingestionTaskDAO.Create(task)
+		//if err != nil {
+		//	errorMessage := err.Error()
+		//	responses = append(responses, &ParseDocumentResponse{
+		//		DocumentID: docID,
+		//		Result:     &errorMessage,
+		//	})
+		//	continue
+		//}
+
+		// Send task to message queue
+	}
+
+	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
+	return responses, nil
+}
+
+func (s *DocumentService) ListIngestions(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	offset := (page - 1) * pageSize
+
+	var tasks []*entity.IngestionTask
+	var err error
+	if datasetID == nil {
+		tasks, err = s.ingestionTaskDAO.ListByUserID(userID, offset, pageSize)
+	} else {
+		tasks, err = s.ingestionTaskDAO.ListByUserIDAndDatasetID(userID, *datasetID, offset, pageSize)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
+func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+	// deduplicate the document id
+	uniqueDocIDs := common.Deduplicate(docIDs)
+	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
+		return nil, fmt.Errorf("no documents to parse")
+	}
+
+	var responses []*ParseDocumentResponse
+
+	// query database, if the document ids are valid
+	for _, docID := range uniqueDocIDs {
+		doc, err := s.documentDAO.GetByID(docID)
+
+		if err != nil {
+			errorMessage := err.Error()
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		if doc == nil {
+			errorMessage := "no such document"
+			responses = append(responses, &ParseDocumentResponse{
+				DocumentID: docID,
+				Result:     &errorMessage,
+			})
+			continue
+		}
+
+		taskID := common.GenerateUUID()
 		task := &entity.IngestionTask{
-			ID:         uuid.New().String(),
+			ID:         taskID,
 			DocumentID: docID,
 			UserID:     userID,
-			Config:     nil,
-			TryCount:   1,
+			DatasetID:  datasetID,
+			Schema:     nil,
+			Status:     "CREATED",
 		}
 
 		// save the task to database
@@ -281,12 +354,50 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 			continue
 		}
 
-		// Send task to message queue
-		
+		// Send task to admin server for ingestion
+		err = AdminServiceClient.SendIngestionTask(task.ID, "start_ingestion_task", "ragflow.server", userID)
+		if err != nil {
+			return nil, err
+		}
+
+		responses = append(responses, &ParseDocumentResponse{
+			DocumentID: docID,
+			Result:     &taskID,
+		})
 	}
 
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
 	return responses, nil
+}
+
+func (s *DocumentService) StopIngestions(tasks []string, userID string) ([]*entity.IngestionTask, error) {
+
+	var taskResponses []*entity.IngestionTask
+	for _, taskID := range tasks {
+		task, err := s.ingestionTaskDAO.GetByID(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		if task == nil {
+			return nil, fmt.Errorf("no such task")
+		}
+
+		if task.Status == "CREATED" || task.Status == "COMPLETED" || task.Status == "RUNNING" {
+			err = AdminServiceClient.SendIngestionTask(task.ID, "stop_ingestion_task", "ragflow.server", userID)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		err = s.ingestionTaskDAO.UpdateStatus(taskID, "CANCELLING")
+		if err != nil {
+			return nil, err
+		}
+
+		taskResponses = append(taskResponses, task)
+	}
+	return taskResponses, nil
 }
 
 // toResponse convert model.Document to DocumentResponse

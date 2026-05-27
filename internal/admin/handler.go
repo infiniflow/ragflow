@@ -1256,45 +1256,41 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
 }
 
-type StartIngestionTaskRequest struct {
-	FileURI string `json:"uri" binding:"required"`
-	From    string `json:"from" binding:"required"`
-}
-
-func (h *Handler) StartIngestionTask(c *gin.Context) {
-	var req StartIngestionTaskRequest
+func (h *Handler) StartIngestion(c *gin.Context) {
+	var req common.StartIngestionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errorResponse(c, "file uri and from is required", 400)
 		return
 	}
 
-	taskID := common.GenerateUUID()
 	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:   taskID,
-		TaskType: "start_ingestion_task",
-		Config:   req.FileURI,
+		TaskId:   req.TaskID,
+		TaskType: "CREATED",
 		ComeFrom: req.From,
+		UserId:   req.UserID,
 	})
 
-	success(c, gin.H{"task_id": taskID}, "Send task for ingestion successfully")
+	success(c, gin.H{"task_id": req.TaskID}, "Send task for ingestion successfully")
 }
 
-type StopIngestionTaskRequest struct {
-	TaskID string `json:"task_id" binding:"required"`
-	From   string `json:"from" binding:"required"`
+type CancelIngestionTaskRequest struct {
+	TaskID     string `json:"task_id" binding:"required"`
+	From       string `json:"from" binding:"required"`
+	AssignedTo string `json:"assigned_to" binding:"required"`
 }
 
-func (h *Handler) StopIngestionTask(c *gin.Context) {
-	var req StopIngestionTaskRequest
+func (h *Handler) CancelIngestionTask(c *gin.Context) {
+	var req CancelIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errorResponse(c, "task id and from is required", 400)
 		return
 	}
 
 	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:   req.TaskID,
-		TaskType: "cancel_ingestion_task",
-		ComeFrom: req.From,
+		TaskId:     req.TaskID,
+		TaskType:   "CANCELLING",
+		ComeFrom:   req.From,
+		AssignedTo: req.AssignedTo,
 	})
 
 	success(c, gin.H{"task_id": req.TaskID}, "Cancel task successfully")
@@ -1323,7 +1319,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	taskID := common.GenerateUUID()
 	ingestionManager.SubmitTask(&common.TaskAssignment{
 		TaskId:     taskID,
-		TaskType:   "shutdown_ingestor",
+		TaskType:   "SHUTDOWN",
 		AssignedTo: req.IngestorID,
 	})
 
@@ -1367,7 +1363,8 @@ func (h *Handler) Reports(c *gin.Context) {
 
 // ListIngestionTasks
 func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	tasks, err := h.service.ListIngestionTasks()
+
+	tasks, err := ingestionManager.ListIngestionTasks()
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 		return
