@@ -43,6 +43,16 @@ type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
 }
 
+// UpdateConnectorRequest updates connector polling fields and status.
+type UpdateConnectorRequest struct {
+	RefreshFreq *int64                  `json:"refresh_freq,omitempty"`
+	PruneFreq   *int64                  `json:"prune_freq,omitempty"`
+	Config      *map[string]interface{} `json:"config,omitempty"`
+	TimeoutSecs *int64                  `json:"timeout_secs,omitempty"`
+	Reschedule  bool                    `json:"reschedule,omitempty"`
+	Status      string                  `json:"status,omitempty"`
+}
+
 // ListConnectors list connectors for a user
 // Equivalent to Python's ConnectorService.list(current_user.id)
 func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsResponse, error) {
@@ -84,6 +94,61 @@ func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Con
 	}
 	if !s.canAccessConnector(connector, userID) {
 		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+	return connector, common.CodeSuccess, nil
+}
+
+// UpdateConnector updates connector settings for an accessible connector.
+func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, common.CodeDataError, errors.New("connector_id is required")
+	}
+	if !s.accessible(connectorID, userID) {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+
+	if req != nil {
+		updates := map[string]interface{}{}
+		if req.PruneFreq != nil {
+			updates["prune_freq"] = *req.PruneFreq
+		}
+		if req.RefreshFreq != nil {
+			updates["refresh_freq"] = *req.RefreshFreq
+		}
+		if req.Config != nil {
+			updates["config"] = entity.JSONMap(*req.Config)
+		}
+		if req.TimeoutSecs != nil {
+			updates["timeout_secs"] = *req.TimeoutSecs
+		}
+		if req.Reschedule {
+			updates["status"] = string(entity.TaskStatusSchedule)
+		}
+		if req.Status != "" {
+			switch {
+			case strings.EqualFold(req.Status, "cancel"):
+				updates["status"] = string(entity.TaskStatusCancel)
+			case strings.EqualFold(req.Status, "schedule"):
+				updates["status"] = string(entity.TaskStatusSchedule)
+			default:
+				updates["status"] = req.Status
+			}
+		}
+		if len(updates) > 0 {
+			if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		}
+	}
+
+	connector, err = s.connectorDAO.GetByID(connector.ID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
 	}
 	return connector, common.CodeSuccess, nil
 }

@@ -17,6 +17,10 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -29,6 +33,7 @@ import (
 type connectorService interface {
 	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
+	UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error)
 }
 
 // ConnectorResponse describes the standard JSON envelope for connector details.
@@ -45,7 +50,7 @@ type ConnectorHandler struct {
 }
 
 // NewConnectorHandler create connector handler
-func NewConnectorHandler(connectorService *service.ConnectorService, userService *service.UserService) *ConnectorHandler {
+func NewConnectorHandler(connectorService connectorService, userService *service.UserService) *ConnectorHandler {
 	return &ConnectorHandler{
 		connectorService: connectorService,
 		userService:      userService,
@@ -107,4 +112,68 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 		"data":    result.Connectors,
 		"message": "success",
 	})
+}
+
+// UpdateConnector updates connector settings.
+// @Summary Update Connector
+// @Description Update connector details when the current user can access it
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} ConnectorResponse
+// @Router /api/v1/connectors/{connector_id} [patch]
+func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	body, err = unwrapConnectorPayload(body)
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+
+	var req service.UpdateConnectorRequest
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	result, code, err := h.connectorService.UpdateConnector(c.Param("connector_id"), user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+func unwrapConnectorPayload(body []byte) ([]byte, error) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return body, nil
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		return nil, err
+	}
+	if data, ok := payload["data"]; ok {
+		var dataObj map[string]json.RawMessage
+		if err := json.Unmarshal(data, &dataObj); err == nil && dataObj != nil {
+			return data, nil
+		}
+		return nil, errors.New("field 'data' must be a JSON object")
+	}
+	return trimmed, nil
 }
