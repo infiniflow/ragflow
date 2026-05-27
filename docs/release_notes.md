@@ -19,7 +19,7 @@ Released on May 26, 2026.
 
 ### Improvements
 
-- RAG: RAPTOR construction now introduces AHC mode (Ψ-RAG), which expands semantics from the document level to the dataset level. Not only is index construction performance significantly higher than the previous RAPTOR, but it also outperforms the old RAPTOR on Recall@5 and average F1. Users can switch between AHC and GMM modes. This feature was introduced in v0.25.3, and this release fixes several bugs. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
+- RAG: Stabilizes RAPTOR's AHC mode (Ψ-RAG), which was introduced in v0.25.3 to resolve previous semantic loss by building individual document trees and then merging them hierarchically. This new approach significantly accelerates index construction and outperforms the legacy mode in Recall@5 and average F1. Users retain the option to switch between the new AHC and legacy GMM modes. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
 - Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/infiniflow/ragflow/pull/15047)
 - Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/infiniflow/ragflow/pull/15212)
 - Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
@@ -28,8 +28,8 @@ Released on May 26, 2026.
 ### Bug fixes
 
 - Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/infiniflow/ragflow/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
-- Weight assigned to vector similarity was not applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
-- Fixes parser configs not saving on dataset configuration page.
+- Weight assigned to vector similarity was not properly applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
+- Users could not save parser configurations on the dataset configuration page. [#15175](https://github.com/infiniflow/ragflow/issues/15175)[#15177](https://github.com/infiniflow/ragflow/pull/15177)
 - Logs wer not fully displayed on data source details page.
 - Fixes document status filtering failure.
 - Fixes crash guard for empty LLM choices responses.
