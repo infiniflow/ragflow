@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -133,6 +134,9 @@ func TestConnectorHandlerStartGoogleWebOAuth(t *testing.T) {
 	})
 
 	t.Run("fail_when_redis_unavailable", func(t *testing.T) {
+		restore := cache.SwapGlobalClientForTest(nil)
+		defer restore()
+
 		router := gin.New()
 		router.POST("/api/v1/connectors/google/oauth/web/start", func(c *gin.Context) {
 			c.Set("user", &entity.User{ID: "tenant-1"})
