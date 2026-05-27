@@ -887,6 +887,23 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     if not toc_with_levels:
         return []
 
+    # Normalize TOC items to ensure consistent dict format
+    normalized_levels = []
+    for item in toc_with_levels:
+        if isinstance(item, dict):
+            # Already in correct format
+            normalized_levels.append(item)
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            # Convert ["level", "title"] or similar to dict
+            normalized_levels.append({"level": str(item[0]), "title": str(item[1])})
+        else:
+            logging.warning(f"Unexpected TOC item format (type={type(item).__name__}), skipping: {item}")
+
+    toc_with_levels = normalized_levels
+    if not toc_with_levels:
+        logging.warning("No valid TOC items after normalization.")
+        return []
+
     # Merge structure and content (by index)
     prune = len(toc_with_levels) > 512
     max_lvl = "0"
