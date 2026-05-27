@@ -26,9 +26,9 @@ from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import finalize_pdf_chunk
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
+from rag.svr.task_executor_limiter import embed_limiter
 from rag.nlp import rag_tokenizer
 from common import settings
-from rag.svr.task_executor import embed_limiter
 from common.token_utils import truncate
 
 from common.misc_utils import thread_pool_exec

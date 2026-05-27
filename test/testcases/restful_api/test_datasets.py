@@ -26,6 +26,23 @@ from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file, create_txt_file
 
 
+def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
+    env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
+    if env_engine:
+        return env_engine == "infinity"
+    try:
+        res = rest_client.get("/system/status")
+        if res.status_code != 200:
+            return False
+        payload = res.json()
+        if payload.get("code") != 0:
+            return False
+        engine = str(payload.get("data", {}).get("doc_engine", {}).get("type", "")).strip().lower()
+        return engine == "infinity"
+    except Exception:
+        return False
+
+
 @pytest.mark.p1
 class TestDatasetsAuthorization:
     def test_create_requires_auth(self, rest_client_noauth):
@@ -487,10 +504,11 @@ def test_dataset_update_permission_contract(rest_client, clear_datasets, permiss
     assert update_payload["data"]["permission"] == permission.lower().strip(), update_payload
 
 
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
 @pytest.mark.p2
 @pytest.mark.parametrize("pagerank", [0, 50, 100], ids=["min", "mid", "max"])
 def test_dataset_update_pagerank_contract(rest_client, clear_datasets, pagerank):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("#8208")
     create_res = rest_client.post("/datasets", json={"name": f"dataset_update_pagerank_{pagerank}"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
@@ -512,9 +530,10 @@ def test_dataset_update_pagerank_contract(rest_client, clear_datasets, pagerank)
     assert list_payload["data"][0]["pagerank"] == pagerank, list_payload
 
 
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
 @pytest.mark.p2
 def test_dataset_update_pagerank_set_to_zero_contract(rest_client, clear_datasets):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("#8208")
     create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_set_to_zero"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
@@ -544,9 +563,10 @@ def test_dataset_update_pagerank_set_to_zero_contract(rest_client, clear_dataset
     assert list_payload["data"][0]["pagerank"] == 0, list_payload
 
 
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="#8208")
 @pytest.mark.p2
 def test_dataset_update_pagerank_infinity_contract(rest_client, clear_datasets):
+    if not _is_infinity_doc_engine(rest_client):
+        pytest.skip("#8208")
     create_res = rest_client.post("/datasets", json={"name": "dataset_update_pagerank_infinity"})
     assert create_res.status_code == 200
     create_payload = create_res.json()
@@ -2264,6 +2284,28 @@ def test_dataset_search_endpoint(rest_client, ensure_parsed_document):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"question": "test TXT file", "page": 1, "size": 2},
+        {"question": "test TXT file", "similarity_threshold": 0.5},
+        {"question": "test TXT file", "vector_similarity_weight": 0.7},
+        {"question": "test TXT file", "top_k": 10},
+    ],
+    ids=["page_size", "similarity_threshold", "vector_similarity_weight", "top_k"],
+)
+def test_dataset_search_params_and_doc_ids_contract(rest_client, ensure_parsed_document, payload):
+    dataset_id, document_id = ensure_parsed_document()
+    search_payload = dict(payload)
+    search_payload["doc_ids"] = [document_id]
+    res = rest_client.post(f"/datasets/{dataset_id}/search", json=search_payload)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["code"] == 0, body
+    assert "chunks" in body["data"], body
+
+
+@pytest.mark.p2
 def test_dataset_search_requires_question(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_search_missing_question")
     res = rest_client.post(f"/datasets/{dataset_id}/search", json={})
@@ -2284,6 +2326,13 @@ def test_dataset_tags_and_aggregation(rest_client, create_dataset):
     # Known env/runtime behavior: this route can return 102 when retriever tag
     # backend is unavailable for an empty dataset. Keep route-contract coverage.
     assert list_tags_payload["code"] in (0, 102), list_tags_payload
+    if list_tags_payload["code"] == 0:
+        assert isinstance(list_tags_payload["data"], list), list_tags_payload
+
+    invalid_list_tags_res = rest_client.get("/datasets/invalid_id/tags")
+    assert invalid_list_tags_res.status_code == 200
+    invalid_list_tags_payload = invalid_list_tags_res.json()
+    assert invalid_list_tags_payload["code"] != 0, invalid_list_tags_payload
 
     aggregate_res = rest_client.get(
         "/datasets/tags/aggregation",
@@ -2312,6 +2361,11 @@ def test_dataset_tags_delete_and_rename_validation(rest_client, create_dataset):
     assert delete_invalid_tags_type.status_code == 200
     delete_invalid_tags_type_payload = delete_invalid_tags_type.json()
     assert delete_invalid_tags_type_payload["code"] != 0, delete_invalid_tags_type_payload
+
+    delete_invalid_dataset_tags = rest_client.delete("/datasets/invalid_id/tags", json={"tags": ["tag1"]})
+    assert delete_invalid_dataset_tags.status_code == 200
+    delete_invalid_dataset_tags_payload = delete_invalid_dataset_tags.json()
+    assert delete_invalid_dataset_tags_payload["code"] != 0, delete_invalid_dataset_tags_payload
 
     rename_empty = rest_client.put(
         f"/datasets/{dataset_id}/tags",
@@ -2380,6 +2434,19 @@ def test_dataset_ingestion_summary_and_logs(rest_client, create_dataset):
     assert "total" in logs_payload["data"], logs_payload
     assert "logs" in logs_payload["data"], logs_payload
 
+    abnormal_date_filter_res = rest_client.get(
+        f"/datasets/{dataset_id}/ingestions",
+        params={
+            "desc": "false",
+            "create_date_from": "2025-02-01",
+            "create_date_to": "2025-01-01",
+        },
+    )
+    assert abnormal_date_filter_res.status_code == 200
+    abnormal_date_filter_payload = abnormal_date_filter_res.json()
+    assert abnormal_date_filter_payload["code"] == 0, abnormal_date_filter_payload
+    assert abnormal_date_filter_payload["data"]["logs"] == [], abnormal_date_filter_payload
+
     not_found_log_res = rest_client.get(f"/datasets/{dataset_id}/ingestions/nonexistent_log")
     assert not_found_log_res.status_code == 200
     not_found_log_payload = not_found_log_res.json()
@@ -2424,6 +2491,14 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
     run_no_docs_payload = run_no_docs.json()
     assert run_no_docs_payload["code"] == 102, run_no_docs_payload
 
+    run_no_docs_raptor = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "raptor"},
+    )
+    assert run_no_docs_raptor.status_code == 200
+    run_no_docs_raptor_payload = run_no_docs_raptor.json()
+    assert run_no_docs_raptor_payload["code"] == 102, run_no_docs_raptor_payload
+
     trace_no_task = rest_client.get(
         f"/datasets/{dataset_id}/index",
         params={"type": "graph"},
@@ -2432,6 +2507,14 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
     trace_no_task_payload = trace_no_task.json()
     assert trace_no_task_payload["code"] == 0, trace_no_task_payload
     assert trace_no_task_payload["data"] == {}, trace_no_task_payload
+
+    trace_invalid_type = rest_client.get(
+        f"/datasets/{dataset_id}/index",
+        params={"type": "invalid_type"},
+    )
+    assert trace_invalid_type.status_code == 200
+    trace_invalid_type_payload = trace_invalid_type.json()
+    assert trace_invalid_type_payload["code"] != 0, trace_invalid_type_payload
 
     delete_graph = rest_client.delete(f"/datasets/{dataset_id}/graph")
     assert delete_graph.status_code == 200
@@ -2442,6 +2525,49 @@ def test_dataset_index_endpoints(rest_client, create_dataset):
     assert delete_invalid_type.status_code == 200
     delete_invalid_type_payload = delete_invalid_type.json()
     assert delete_invalid_type_payload["code"] != 0, delete_invalid_type_payload
+
+
+@pytest.mark.p2
+def test_dataset_graph_endpoint_contract(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_graph_contract")
+
+    get_graph_res = rest_client.get(f"/datasets/{dataset_id}/graph")
+    assert get_graph_res.status_code == 200
+    get_graph_payload = get_graph_res.json()
+    assert get_graph_payload["code"] == 0, get_graph_payload
+    assert "graph" in get_graph_payload["data"], get_graph_payload
+    assert "mind_map" in get_graph_payload["data"], get_graph_payload
+    assert isinstance(get_graph_payload["data"]["graph"], dict), get_graph_payload
+    assert isinstance(get_graph_payload["data"]["mind_map"], dict), get_graph_payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("index_type", ["graph", "raptor", "mindmap"])
+def test_dataset_index_trace_and_delete_type_contract(rest_client, create_document, index_type):
+    dataset_id, _ = create_document(f"dataset_index_trace_{index_type}.txt")
+
+    run_index_res = rest_client.post(
+        f"/datasets/{dataset_id}/index",
+        params={"type": index_type},
+    )
+    assert run_index_res.status_code == 200
+    run_index_payload = run_index_res.json()
+    assert run_index_payload["code"] == 0, run_index_payload
+    assert run_index_payload["data"].get("task_id"), run_index_payload
+
+    trace_index_res = rest_client.get(
+        f"/datasets/{dataset_id}/index",
+        params={"type": index_type},
+    )
+    assert trace_index_res.status_code == 200
+    trace_index_payload = trace_index_res.json()
+    assert trace_index_payload["code"] == 0, trace_index_payload
+    assert isinstance(trace_index_payload["data"], dict), trace_index_payload
+
+    delete_index_res = rest_client.delete(f"/datasets/{dataset_id}/{index_type}")
+    assert delete_index_res.status_code == 200
+    delete_index_payload = delete_index_res.json()
+    assert delete_index_payload["code"] == 0, delete_index_payload
 
 
 @pytest.mark.p2
