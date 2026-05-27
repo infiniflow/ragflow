@@ -45,7 +45,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.validation_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.tenant_utils import ensure_tenant_model_id_for_params
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings

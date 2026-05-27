@@ -21,13 +21,12 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
+from api.utils.pagination_utils import REST_API_MAX_PAGE_SIZE, validate_rest_api_page_size
 from api.utils.validation_utils import (
     ListDatasetReq,
     ListFileReq,
     ParserConfig,
-    REST_API_MAX_PAGE_SIZE,
     UpdateDocumentReq,
-    validate_rest_api_page_size,
     validate_chunk_method,
     validate_document_name,
     validate_immutable_fields,

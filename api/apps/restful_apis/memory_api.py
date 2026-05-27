@@ -24,7 +24,7 @@ from api.apps import login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
 from api.utils.tenant_utils import ensure_tenant_model_id_for_params
-from api.utils.validation_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 
 
 @manager.route("/memories", methods=["POST"])  # noqa: F821

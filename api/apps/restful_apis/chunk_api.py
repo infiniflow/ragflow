@@ -46,7 +46,7 @@ from api.utils.api_utils import (
     server_error_response,
     token_required,
 )
-from api.utils.validation_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,

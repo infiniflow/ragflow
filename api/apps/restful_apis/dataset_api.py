@@ -20,13 +20,13 @@ from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
+from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
     ListDatasetReq,
     SearchDatasetReq,
     SearchDatasetsReq,
-    validate_rest_api_page_size,
     UpdateDatasetReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,

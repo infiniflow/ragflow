@@ -29,17 +29,8 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
-
-
-REST_API_MAX_PAGE_SIZE = 100
-
-
-def validate_rest_api_page_size(page_size: int) -> int:
-    """Validate REST API page_size values against the public maximum."""
-    if page_size > REST_API_MAX_PAGE_SIZE:
-        raise ValueError(f"page_size must be less than or equal to {REST_API_MAX_PAGE_SIZE}")
-    return page_size
 
 
 async def validate_and_parse_json_request(

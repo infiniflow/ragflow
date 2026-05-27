@@ -30,7 +30,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
-from api.utils.validation_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 
 
 def _full_text_weight(vector_similarity_weight):

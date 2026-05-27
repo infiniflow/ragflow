@@ -58,7 +58,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.validation_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
