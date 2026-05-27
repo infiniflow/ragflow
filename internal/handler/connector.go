@@ -30,7 +30,9 @@ import (
 type connectorService interface {
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
-	GetConnector(connectorID string, userID string) (*entity.Connector, common.ErrorCode, error)
+	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
+	DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error)
+	RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error)
 }
 
 // ConnectorHandler connector handler
@@ -171,6 +173,81 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    connector,
+		"message": "success",
+	})
+}
+
+// DeleteConnector delete connector
+// @Description Detele Connector
+// @Tags connector
+// @Accept json
+// @Produce json
+func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	ok, code, err := h.connectorService.DeleteConnector(c.Param("connector_id"), user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    ok,
+		"message": "success",
+	})
+}
+
+// RebuildConnector rebuild connector
+// @Summary Rebuild Connector
+// @Description Trigger a rebuild for an accessible connector and knowledge base
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /connector/:connector_id/rebuild [post]
+func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Parse request body to get kb_id
+	var req struct {
+		KbID string `json:"kb_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "required argument is missing: kb_id",
+		})
+		return
+	}
+
+	if strings.TrimSpace(req.KbID) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "kb_id cannot be empty",
+		})
+		return
+	}
+
+	ok, code, err := h.connectorService.RebuildConnector(c.Param("connector_id"), user.ID, req.KbID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    ok,
 		"message": "success",
 	})
 }

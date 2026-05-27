@@ -21,6 +21,11 @@ type fakeConnectorService struct {
 	err       error
 }
 
+func (s fakeConnectorService) Rebuild() {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 }
@@ -36,11 +41,11 @@ func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, c
 	return s.connector, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) UpdateConnector(string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+func (s fakeConnectorService) DeleteConnector(string, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
-		return nil, s.code, s.err
+		return false, s.code, s.err
 	}
-	return s.connector, common.CodeSuccess, nil
+	return true, common.CodeSuccess, nil
 }
 
 func TestConnectorHandlerGetConnector(t *testing.T) {
@@ -102,6 +107,64 @@ func TestConnectorHandlerGetConnector(t *testing.T) {
 			}
 			if tt.wantID != "" && body["data"].(map[string]interface{})["id"] != tt.wantID {
 				t.Fatalf("data=%v", body["data"])
+			}
+		})
+	}
+}
+
+func TestConnectorHandlerDeleteConnector(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name     string
+		service  fakeConnectorService
+		wantCode common.ErrorCode
+		wantData interface{}
+		wantMsg  string
+	}{
+		{
+			name:     "success",
+			service:  fakeConnectorService{},
+			wantCode: common.CodeSuccess,
+			wantData: true,
+		},
+		{
+			name:     "unauthorized",
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			wantCode: common.CodeAuthenticationError,
+			wantData: nil,
+			wantMsg:  "No authorization.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &ConnectorHandler{connectorService: tt.service}
+			router := gin.New()
+			router.DELETE("/api/v1/connectors/:connector_id", func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "tenant-1"})
+				h.DeleteConnector(c)
+			})
+
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/connectors/connector-1", nil)
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v body=%v", body["code"], body)
+			}
+			if body["data"] != tt.wantData {
+				t.Fatalf("data=%v body=%v", body["data"], body)
+			}
+			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
+				t.Fatalf("message=%v", body["message"])
 			}
 		})
 	}
