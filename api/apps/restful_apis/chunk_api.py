@@ -143,6 +143,7 @@ async def parse(tenant_id, dataset_id):
     doc_list = unique_doc_ids
 
     not_found = []
+    already_running = []
     success_count = 0
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
@@ -162,7 +163,9 @@ async def parse(tenant_id, dataset_id):
             )
             == 0
         ):
-            return get_error_data_result("Can't parse document that is currently being processed")
+            # Document is already being processed, treat as idempotent success
+            already_running.append(id)
+            continue
         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
@@ -174,15 +177,15 @@ async def parse(tenant_id, dataset_id):
     if not_found:
         return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
     if duplicate_messages:
-        if success_count > 0:
+        if success_count > 0 or already_running:
             return get_result(
                 message=f"Partially parsed {success_count} documents with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages},
+                data={"success_count": success_count, "already_running_count": len(already_running), "errors": duplicate_messages},
             )
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
 
-    return get_result()
+    return get_result(data={"success_count": success_count, "already_running_count": len(already_running)})
 
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
@@ -198,31 +201,36 @@ async def stop_parsing(tenant_id, dataset_id):
     unique_doc_ids, duplicate_messages = check_duplicate_ids(doc_list, "document")
     doc_list = unique_doc_ids
 
+    not_found = []
+    already_stopped = []
     success_count = 0
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
+            not_found.append(id)
+            continue
+        if not doc:
             return get_error_data_result(message=f"You don't own the document {id}.")
         if doc[0].run != TaskStatus.RUNNING.value:
-            return construct_json_result(
-                code=RetCode.DATA_ERROR,
-                message=DOC_STOP_PARSING_INVALID_STATE_MESSAGE,
-                data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
-            )
+            # Document is not being parsed, treat as idempotent success
+            already_stopped.append(id)
+            continue
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
         success_count += 1
+    if not_found:
+        return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
     if duplicate_messages:
-        if success_count > 0:
+        if success_count > 0 or already_stopped:
             return get_result(
                 message=f"Partially stopped {success_count} documents with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages},
+                data={"success_count": success_count, "already_stopped_count": len(already_stopped), "errors": duplicate_messages},
             )
         else:
             return get_error_data_result(message=";".join(duplicate_messages))
-    return get_result()
+    return get_result(data={"success_count": success_count, "already_stopped_count": len(already_stopped)})
 
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
