@@ -411,27 +411,11 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body service.UpdateSettingsRequest true "user settings"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/user/setting [post]
+// @Router /api/v1/users/me [patch]
 func (h *UserHandler) Setting(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Missing Authorization header",
-			"data":    false,
-		})
-		return
-	}
-
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -447,8 +431,16 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	}
 
 	// Update user settings
-	code, err = h.userService.UpdateUserSettings(user, &req)
+	code, err := h.userService.UpdateUserSettings(user, &req)
 	if err != nil {
+		if code == common.CodeExceptionError {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    code,
+				"message": err.Error(),
+				"data":    nil,
+			})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
@@ -459,7 +451,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"message": "settings updated successfully",
+		"message": "success",
 		"data":    true,
 	})
 }
