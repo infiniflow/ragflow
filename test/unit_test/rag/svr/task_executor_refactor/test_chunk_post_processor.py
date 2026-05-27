@@ -270,11 +270,15 @@ class TestGenerateMetadata:
                     with patch("rag.svr.task_executor_refactor.chunk_post_processor.update_metadata_to") as mock_update:
                         mock_update.return_value = {"category": "test"}
 
-                        await generate_metadata(docs, ctx)
+                        with patch("rag.svr.task_executor_refactor.chunk_post_processor.DocMetadataService") as mock_meta:
+                            mock_meta.get_document_metadata.return_value = {}
+                            mock_meta.update_document_metadata = MagicMock()
 
-                        ctx.write_interceptor.intercept.assert_called_once_with(
-                            "DocMetadataService.update_document_metadata"
-                        )
+                            await generate_metadata(docs, ctx)
+
+                            ctx.write_interceptor.intercept.assert_called_once_with(
+                                "DocMetadataService.update_document_metadata"
+                            )
 
 
 class TestApplyTags:
