@@ -8,9 +8,10 @@ import {
 import { DocumentType } from '@/constants/knowledge';
 import { useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { downloadDatasetDocument } from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
-import { downloadDocument } from '@/utils/file-util';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { UseRenameDocumentShowType } from './use-rename-document';
@@ -34,12 +35,22 @@ export function DatasetActionCell({
 
   const { removeDocument } = useRemoveDocument();
 
-  const onDownloadDocument = useCallback(() => {
-    downloadDocument({
-      id,
-      filename: record.name,
-    });
-  }, [id, record.name]);
+  const onDownloadDocument = useCallback(async () => {
+    try {
+      const ext = record.name.split('.').pop()?.toLowerCase() || 'bin';
+      const response = await downloadDatasetDocument({
+        datasetId: record.dataset_id,
+        docId: id,
+        ext,
+      });
+      const blob = new Blob([response.data], {
+        type: response.data.type,
+      });
+      downloadFileFromBlob(blob, record.name);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+    }
+  }, [id, record.dataset_id, record.name]);
 
   const handleRemove = useCallback(() => {
     removeDocument(id);

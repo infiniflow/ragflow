@@ -47,7 +47,7 @@ const (
 	TokenPassword
 	TokenDataset
 	TokenDatasets
-	TokenDatasetTable
+	TokenChunkStore
 	TokenOf
 	TokenAgents
 	TokenRole
@@ -91,6 +91,7 @@ const (
 	TokenParse
 	TokenImport
 	TokenInto
+	TokenIn
 	TokenWith
 	TokenParser
 	TokenPipeline
@@ -102,9 +103,14 @@ const (
 	TokenASR
 	TokenTTS
 	TokenOCR
+	TokenDocParse
 	TokenEmbed
 	TokenText
 	TokenQuery
+	TokenFormat
+	TokenParam
+	TokenPlay
+	TokenSave
 	TokenTop
 	TokenDimension
 	TokenAsync
@@ -117,6 +123,7 @@ const (
 	TokenIndex
 	TokenVector
 	TokenSize
+	TokenStore
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenBalance
 	TokenInstance
@@ -140,15 +147,23 @@ const (
 	TokenFile
 	TokenMetadata
 	TokenTable
+	TokenGet
 	TokenUpdate
 	TokenRemove
 	TokenChunk
 	TokenChunks
 	TokenDocument
+	TokenDocuments
 	TokenTag
 	TokenRegion
 	TokenURL
+	TokenTask
 	TokenTasks
+	TokenIngestor
+	TokenIngestors
+	TokenStart
+	TokenStop
+	TokenIngestion
 	TokenLog
 	TokenLevel
 	TokenDebug
@@ -165,6 +180,7 @@ const (
 	TokenNumber = TokenInteger // Alias for integer tokens in path parsing (e.g., version numbers like 1.0.0)
 
 	// Special
+	_ = iota
 	TokenSemicolon
 	TokenComma
 	TokenSlash

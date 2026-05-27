@@ -137,11 +137,30 @@ def _load_doc_module(monkeypatch):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
+    apps_mod = ModuleType("api.apps")
+    apps_mod.login_required = lambda func: func
+    monkeypatch.setitem(sys.modules, "api.apps", apps_mod)
+
     common_settings_mod = ModuleType("common.settings")
     common_settings_mod.retriever = SimpleNamespace()
     common_settings_mod.kg_retriever = SimpleNamespace()
     common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=lambda *_args, **_kwargs: b"", rm=lambda *_args, **_kwargs: None)
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    common_misc_utils_mod = ModuleType("common.misc_utils")
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
+    common_misc_utils_mod.thread_pool_exec = _thread_pool_exec
+    monkeypatch.setitem(sys.modules, "common.misc_utils", common_misc_utils_mod)
+
+    common_string_utils_mod = ModuleType("common.string_utils")
+    common_string_utils_mod.is_content_empty = lambda content: content is None or not str(content).strip()
+    common_string_utils_mod.remove_redundant_spaces = lambda text: " ".join(str(text).split())
+    monkeypatch.setitem(sys.modules, "common.string_utils", common_string_utils_mod)
+
+    tag_feature_utils_mod = ModuleType("common.tag_feature_utils")
+    tag_feature_utils_mod.validate_tag_features = lambda value: value
+    monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     class _FakeExpr:
         def __or__(self, other):
@@ -219,6 +238,7 @@ def _load_doc_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
     api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
     api_utils_mod.construct_json_result = lambda code=0, message="success", data=None: {"code": code, "message": message, "data": data}
     api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=102: {"code": code, "message": message}
@@ -238,6 +258,32 @@ def _load_doc_module(monkeypatch):
 
     api_utils_mod.token_required = _token_required
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    image_utils_mod = ModuleType("api.utils.image_utils")
+    image_utils_mod.store_chunk_image = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.utils.image_utils", image_utils_mod)
+
+    reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
+    reference_metadata_utils_mod.resolve_reference_metadata_preferences = (
+        lambda req, *_args, **_kwargs: (
+            bool((req.get("reference_metadata") or {}).get("include")),
+            set((req.get("reference_metadata") or {}).get("fields") or []),
+        )
+    )
+    def _enrich_chunks_with_document_metadata(chunks, metadata_fields=None):
+        for chunk in chunks:
+            doc_id = chunk.get("doc_id") or chunk.get("document_id")
+            if not doc_id:
+                continue
+            metadata = doc_metadata_service_mod.DocMetadataService.get_metadata_for_documents([doc_id], chunk.get("kb_id"))
+            document_metadata = dict(metadata.get(doc_id, {}))
+            if metadata_fields:
+                document_metadata = {key: value for key, value in document_metadata.items() if key in metadata_fields}
+            if document_metadata:
+                chunk["document_metadata"] = document_metadata
+
+    reference_metadata_utils_mod.enrich_chunks_with_document_metadata = _enrich_chunks_with_document_metadata
+    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", reference_metadata_utils_mod)
 
     common_metadata_utils_mod = ModuleType("common.metadata_utils")
     common_metadata_utils_mod.convert_conditions = lambda conditions: conditions
@@ -417,8 +463,20 @@ def _load_doc_module(monkeypatch):
                 "id": self.id
             }
     
-    def _get_model_config_by_id(tenant_model_id: int) -> dict:
-        return _MockModelConfig2("tenant-1", "model-1").to_dict()
+    def _get_model_config_by_id(
+        tenant_model_id: int,
+        allowed_tenant_ids=None,
+        requester_tenant_id=None,
+    ) -> dict:
+        mock_tenant_id = "tenant-1"
+        if allowed_tenant_ids is not None:
+            if isinstance(allowed_tenant_ids, str):
+                allowed_tenant_ids = {allowed_tenant_ids}
+            else:
+                allowed_tenant_ids = {str(tenant_id) for tenant_id in allowed_tenant_ids if tenant_id}
+            if mock_tenant_id not in allowed_tenant_ids and str(requester_tenant_id) != mock_tenant_id:
+                raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
+        return _MockModelConfig2(mock_tenant_id, "model-1").to_dict()
     
     def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
@@ -434,7 +492,7 @@ def _load_doc_module(monkeypatch):
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
-    module_path = repo_root / "api" / "apps" / "sdk" / "doc.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "chunk_api.py"
     spec = importlib.util.spec_from_file_location("test_doc_sdk_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -705,6 +763,36 @@ class TestDocRoutesUnit:
         assert res["code"] == 0
         assert res["data"]["total"] == 1
         assert res["data"]["chunks"][0]["id"] == "chunk-1"
+
+    def test_list_chunks_uses_dataset_owner_index_for_team_dataset(self, monkeypatch):
+        module = _load_restful_chunk_module(monkeypatch)
+        seen = {}
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _dataset_id: (True, SimpleNamespace(tenant_id="owner-tenant")),
+        )
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(kb_id="ds-1")])
+        monkeypatch.setattr(module, "request", SimpleNamespace(args=_DummyArgs({})))
+
+        def _index_exist(index_name, dataset_id):
+            seen["index_exist"] = (index_name, dataset_id)
+            return True
+
+        class _Retriever:
+            async def search(self, _query, index_name, dataset_ids, *_args, **_kwargs):
+                seen["search"] = (index_name, dataset_ids)
+                return SimpleNamespace(total=0, ids=[], field={}, highlight={})
+
+        _patch_docstore(monkeypatch, module, index_exist=_index_exist)
+        monkeypatch.setattr(module.settings, "retriever", _Retriever())
+
+        res = _run(_route_core(module.list_chunks)("member-tenant", "ds-1", "doc-1"))
+
+        assert res["code"] == 0
+        assert seen["index_exist"] == ("idx-owner-tenant", "ds-1")
+        assert seen["search"] == ("idx-owner-tenant", ["ds-1"])
 
     def test_add_chunk_access_guard(self, monkeypatch):
         module = _load_restful_chunk_module(monkeypatch)

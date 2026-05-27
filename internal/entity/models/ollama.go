@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -78,9 +77,15 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
+		arr, _ := msg.Content.([]interface{})
+
+		first, _ := arr[0].(map[string]interface{})
+
+		text, _ := first["text"].(string)
+
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
-			"content": msg.Content,
+			"content": text,
 		}
 	}
 
@@ -113,15 +118,13 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
 
-		if chatModelConfig.Thinking != nil {
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
+				reqBody["think"] = *chatModelConfig.Effort
+			}
+		} else if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
+				reqBody["think"] = true
 			}
 		}
 	}
@@ -137,7 +140,6 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -160,35 +162,19 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
+	message, ok := result["message"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
+		return nil, fmt.Errorf("failed to parse response: message not found")
 	}
 
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
+	content, ok := message["content"].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid message format")
+		return nil, fmt.Errorf("failed to parse response: content not found")
 	}
 
-	content, ok := messageMap["content"].(string)
+	reasonContent, ok := message["thinking"].(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
-		}
+		return nil, fmt.Errorf("failed to parse response: thinking not found")
 	}
 
 	chatResponse := &ChatResponse{
@@ -218,9 +204,15 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	// Convert messages to API format (supporting multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
+		arr, _ := msg.Content.([]interface{})
+
+		first, _ := arr[0].(map[string]interface{})
+
+		text, _ := first["text"].(string)
+
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
-			"content": msg.Content,
+			"content": text,
 		}
 	}
 
@@ -255,15 +247,13 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		reqBody["stop"] = *modelConfig.Stop
 	}
 
-	if modelConfig.Thinking != nil {
+	if modelConfig.Effort != nil && *modelConfig.Effort != "" {
+		if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
+			reqBody["think"] = *modelConfig.Effort
+		}
+	} else if modelConfig.Thinking != nil {
 		if *modelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
+			reqBody["think"] = true
 		}
 	}
 
@@ -278,7 +268,6 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -294,82 +283,49 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
-		line := scanner.Text()
-		common.Info(line)
+		line := strings.TrimSpace(scanner.Text())
 
-		// SSE data line starts with "data:"
-		if !strings.HasPrefix(line, "data:") {
+		// ignore the blank
+		if line == "" {
 			continue
-		}
-
-		// Extract JSON after "data:"
-		data := strings.TrimSpace(line[5:])
-
-		// [DONE] marks the end of stream
-		if data == "[DONE]" {
-			break
 		}
 
 		// Parse the JSON event
 		var event map[string]interface{}
-		if err = json.Unmarshal([]byte(data), &event); err != nil {
+		if err = json.Unmarshal([]byte(line), &event); err != nil {
 			continue
 		}
 
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			continue
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
+		if messageMap, ok := event["message"].(map[string]interface{}); ok {
+			if reasoningContent, exists := messageMap["thinking"].(string); exists && reasoningContent != "" {
+				if err := sender(nil, &reasoningContent); err != nil {
+					return err
+				}
+			}
+			if content, exists := messageMap["content"].(string); exists && content != "" {
+				if err := sender(&content, nil); err != nil {
+					return err
+				}
 			}
 		}
 
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
+		if done, ok := event["done"].(bool); ok && done {
 			break
 		}
 	}
 
-	// Send [DONE] marker for OpenAI compatibility
+	// Send [DONE] marker for OpenAI compatibility with RAGFlow frontend
 	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
+	if err := sender(&endOfStream, nil); err != nil {
 		return err
 	}
 
 	return scanner.Err()
 }
 
-type ollamaEmbeddingResponse struct {
-	Data []struct {
-		Index     int           `json:"index"`
-		Embedding []interface{} `json:"embedding"`
-	} `json:"data"`
-}
-
-func (o *OllamaModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
-		return [][]float64{}, nil
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -432,38 +388,30 @@ func (o *OllamaModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("Ollama embeddings API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var parsed ollamaEmbeddingResponse
-	if err = json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	var embedResp struct {
+		Model      string      `json:"model"`
+		Embeddings [][]float64 `json:"embeddings"`
 	}
 
-	if len(parsed.Data) != len(texts) {
-		return nil, fmt.Errorf("ollama embeddings: expected %d results, got %d", len(texts), len(parsed.Data))
+	if err = json.Unmarshal(body, &embedResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	embeddings := make([][]float64, len(texts))
-	for _, item := range parsed.Data {
-		if item.Index < 0 || item.Index >= len(texts) {
-			return nil, fmt.Errorf("unexpected embedding index %d for %d inputs", item.Index, len(texts))
-		}
-		vec := make([]float64, len(item.Embedding))
-		for j, v := range item.Embedding {
-			switch val := v.(type) {
-			case float64:
-				vec[j] = val
-			case float32:
-				vec[j] = float64(val)
-			default:
-				return nil, fmt.Errorf("unexpected embedding value type at item %d index %d", item.Index, j)
-			}
-		}
-		embeddings[item.Index] = vec
+	if len(embedResp.Embeddings) == 0 {
+		return nil, fmt.Errorf("no embeddings returned")
 	}
 
-	for i, vec := range embeddings {
-		if vec == nil {
-			return nil, fmt.Errorf("missing embedding for input at index %d", i)
+	embeddings := make([]EmbeddingData, 0, len(embedResp.Embeddings))
+
+	for i, emb := range embedResp.Embeddings {
+		if len(emb) == 0 {
+			return nil, fmt.Errorf("empty embedding at index %d", i)
 		}
+
+		embeddings = append(embeddings, EmbeddingData{
+			Embedding: emb,
+			Index:     i,
+		})
 	}
 
 	return embeddings, nil
@@ -471,6 +419,34 @@ func (o *OllamaModel) Encode(modelName *string, texts []string, apiConfig *APICo
 
 func (o *OllamaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
+}
+
+// TranscribeAudio transcribe audio
+func (o *OllamaModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OllamaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (o *OllamaModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (z *OllamaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (m *OllamaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+// ParseFile parse file
+func (z *OllamaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -489,7 +465,6 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
-
 	reqBody := map[string]interface{}{}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -503,12 +478,6 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	// Ollama is a local provider and the API key is optional. Only set
-	// the Authorization header when a non-empty key was supplied. This
-	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
 
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -533,9 +502,9 @@ func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	// convert result["data"] to []map[string]interface{}
 	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
+	for _, model := range result["models"].([]interface{}) {
 		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
+		modelName := modelMap["name"].(string)
 		models = append(models, modelName)
 	}
 
@@ -550,4 +519,12 @@ func (o *OllamaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 func (o *OllamaModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := o.ListModels(apiConfig)
 	return err
+}
+
+func (z *OllamaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *OllamaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

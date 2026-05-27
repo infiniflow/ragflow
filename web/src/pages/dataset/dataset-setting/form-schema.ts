@@ -42,11 +42,14 @@ export const formSchema = z
           .object({
             use_raptor: z.boolean().optional(),
             prompt: z.string().optional(),
-            max_token: z.number().optional(),
-            threshold: z.number().optional(),
-            max_cluster: z.number().optional(),
-            random_seed: z.number().optional(),
+            max_token: z.coerce.number().optional(),
+            threshold: z.coerce.number().optional(),
+            max_cluster: z.coerce.number().optional(),
+            random_seed: z.coerce.number().optional(),
             scope: z.string().optional(),
+            clustering_method: z.enum(['gmm', 'ahc']).optional(),
+            tree_builder: z.enum(['raptor', 'psi']).optional(),
+            ext: z.record(z.string(), z.any()).optional(),
           })
           .refine(
             (data) => {
@@ -67,6 +70,12 @@ export const formSchema = z
             method: z.string().optional(),
             resolution: z.boolean().optional(),
             community: z.boolean().optional(),
+            batch_chunk_token_size: z
+              .number()
+              .int()
+              .min(512)
+              .max(8196)
+              .optional(),
           })
           .refine(
             (data) => {

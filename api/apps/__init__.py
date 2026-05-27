@@ -130,6 +130,7 @@ def _load_user():
     jwt = Serializer(secret_key=settings.get_secret_key())
     authorization = request.headers.get("Authorization")
     g.user = None
+    g.auth_via_api_token = False
     if not authorization:
         return _load_user_from_session()
 
@@ -175,6 +176,7 @@ def _load_user():
                 if not user[0].access_token or not user[0].access_token.strip():
                     logging.warning(f"User {user[0].email} has empty access_token in database")
                     return _load_user_from_session()
+                g.auth_via_api_token = True
                 g.user = user[0]
                 return user[0]
             logging.warning(f"load_user: No user found for tenant_id={objs[0].tenant_id} from APIToken")
@@ -306,9 +308,8 @@ def register_page(page_path):
     sys.modules[module_name] = page
     spec.loader.exec_module(page)
     page_name = getattr(page, "page_name", page_name)
-    sdk_path = "\\sdk\\" if sys.platform.startswith("win") else "/sdk/"
     restful_api_path = "\\restful_apis\\" if sys.platform.startswith("win") else "/restful_apis/"
-    url_prefix = f"/api/{API_VERSION}" if sdk_path in path or restful_api_path in path else f"/{API_VERSION}/{page_name}"
+    url_prefix = f"/api/{API_VERSION}" if restful_api_path in path else f"/{API_VERSION}/{page_name}"
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix

@@ -20,6 +20,7 @@ import threading
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from dataclasses import dataclass
 from string import Template
 from typing import Any, Literal, Protocol
 
@@ -36,7 +37,13 @@ MCPTask = tuple[MCPTaskType, dict[str, Any], asyncio.Queue[Any]]
 
 
 class ToolCallSession(Protocol):
-    def tool_call(self, name: str, arguments: dict[str, Any]) -> str: ...
+    def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> str: ...
+
+
+@dataclass(frozen=True)
+class MCPToolBinding:
+    session: ToolCallSession
+    original_name: str
 
 
 class MCPToolCallSession(ToolCallSession):
@@ -316,12 +323,12 @@ def shutdown_all_mcp_sessions():
     logging.info("All MCPToolCallSession instances have been closed.")
 
 
-def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict) -> dict[str, Any]:
+def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict, function_name: str | None = None) -> dict[str, Any]:
     if isinstance(mcp_tool, dict):
         return {
             "type": "function",
             "function": {
-                "name": mcp_tool["name"],
+                "name": function_name or mcp_tool["name"],
                 "description": mcp_tool["description"],
                 "parameters": mcp_tool["inputSchema"],
             },
@@ -330,7 +337,7 @@ def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": mcp_tool.name,
+            "name": function_name or mcp_tool.name,
             "description": mcp_tool.description,
             "parameters": mcp_tool.inputSchema,
         },

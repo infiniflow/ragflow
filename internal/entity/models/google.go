@@ -85,15 +85,15 @@ func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel
 	}
 }
 
-func (z *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (g *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return nil
 }
 
-func (z *GoogleModel) Name() string {
+func (g *GoogleModel) Name() string {
 	return "google"
 }
 
-func (z *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is nil or empty")
 	}
@@ -167,7 +167,7 @@ func (z *GoogleModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -259,9 +259,9 @@ func (z *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return err
 }
 
-// Encode generates embeddings for a batch of texts using the Gemini embeddings API.
+// Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
-func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([][]float64, error) {
+func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -303,19 +303,22 @@ func (z *GoogleModel) Encode(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(resp.Embeddings))
 	}
 
-	result := make([][]float64, len(resp.Embeddings))
+	result := make([]EmbeddingData, len(resp.Embeddings))
 	for i, emb := range resp.Embeddings {
 		vec := make([]float64, len(emb.Values))
 		for j, v := range emb.Values {
 			vec[j] = float64(v)
 		}
-		result[i] = vec
+		result[i] = EmbeddingData{
+			Embedding: vec,
+			Index:     i,
+		}
 	}
 
 	return result, nil
 }
 
-func (z *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -323,16 +326,52 @@ func (z *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return googleListModels(context.Background(), *apiConfig.ApiKey)
 }
 
-func (z *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (g *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (z *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
+func (g *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := g.ListModels(apiConfig)
 	return err
 }
 
 // Rerank calculates similarity scores between query and documents
-func (z *GoogleModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+func (g *GoogleModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", g.Name())
+}
+
+// TranscribeAudio transcribe audio
+func (g *GoogleModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (z *GoogleModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// AudioSpeech convert text to audio
+func (g *GoogleModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (z *GoogleModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", z.Name())
+}
+
+// OCRFile OCR file
+func (g *GoogleModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+// ParseFile parse file
+func (z *GoogleModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *GoogleModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *GoogleModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

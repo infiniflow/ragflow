@@ -69,8 +69,7 @@ class ESConnection(ESConnectionBase):
             index=index_names,
             body=query,
             timeout="600s",
-            track_total_hits=track_total_hits,
-            _source=True,
+            track_total_hits=track_total_hits
         )
 
     def _search_with_search_after(self, index_names: list[str], query: dict, offset: int, limit: int):
@@ -324,7 +323,7 @@ class ESConnection(ESConnectionBase):
             try:
                 res = []
                 r = self.es.bulk(index=index_name, operations=operations,
-                                 refresh=False, timeout="60s")
+                                 refresh="wait_for", timeout="60s")
                 if re.search(r"False", str(r["errors"]), re.IGNORECASE):
                     return res
 

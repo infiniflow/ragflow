@@ -772,6 +772,11 @@ export default {
       maxTokenMessage: '最大token数是必填项',
       threshold: '阈值',
       thresholdMessage: '阈值是必填项',
+      clusteringMethod: '聚类方法',
+      clusteringMethodTip:
+        '选择 RAPTOR 聚类方法。AHC 可以使用更大的最大聚类数，但在大规模输入时可能占用更多内存。',
+      clusteringMethodGmm: 'GMM',
+      clusteringMethodAhc: 'AHC',
       maxCluster: '最大聚类数',
       maxClusterMessage: '最大聚类数是必填项',
       randomSeed: '随机种子',
@@ -813,6 +818,9 @@ export default {
       graphRagMethodTip: `Light：实体和关系提取提示来自 GitHub - HKUDS/LightRAG：“LightRAG：简单快速的检索增强生成”<br>
 General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于图的模块化检索增强生成 (RAG) 系统<br>
 NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系，无需 LLM 参与提取过程，速度快且资源消耗低`,
+      graphRagBatchChunkTokenSize: '批量chunk token 大小',
+      graphRagBatchChunkTokenSizeTip:
+        '发送给 LLM 进行知识图谱实体和关系抽取时，每批文本块的 token 上限。NER 不适用。',
       resolution: '实体归一化',
       resolutionTip: `解析过程会将具有相同含义的实体合并在一起，从而使知识图谱更简洁、更准确。应合并以下实体：特朗普总统、唐纳德·特朗普、唐纳德·J·特朗普、唐纳德·约翰·特朗普`,
       community: '社区报告生成',
@@ -1232,8 +1240,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用腾讯云语音识别',
       volcModelNameMessage: '请输入模型名称！',
-      addEndpointID: '模型 EndpointID',
-      endpointIDMessage: '请输入模型对应的EndpointID',
+      addEndpointID: '模型 ID',
+      endpointIDMessage: '请输入模型 ID',
       addArkApiKey: '火山 ARK_API_KEY',
       ArkApiKeyMessage: '请输入火山创建的ARK_API_KEY',
       bedrockModelNameMessage: '请输入名称！',
@@ -1420,6 +1428,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         author: '作者',
         sectionTitle: '章节标题',
       },
+      editTags: '编辑标签',
+      editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
+      tagsPlaceholder: '输入标签后按回车',
+      tagSuggestionsLabel: '现有标签',
+      removeTagAriaLabel: '删除 {{tag}}',
       includeHeadingContent: '分离上级标题正文',
       includeHeadingContentTip:
         '启用后，每个分块仅保留标题路径和自身内容，与上级标题紧挨着的内容将作为一个独立的块保留。',
@@ -1516,6 +1529,20 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       maxRounds: '最大反思轮数',
       delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
+      maxSteps: '最大步数',
+      headless: '无头模式',
+      enableDefaultExtensions: '启用默认扩展',
+      enableDefaultExtensionsTip:
+        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
+      chromiumSandbox: 'Chromium 沙箱',
+      chromiumSandboxTip:
+        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
+      persistSession: '持久化登录态',
+      persistSessionTip:
+        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
+      uploadSources: '上传来源',
+      uploadSourcesTip:
+        '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -1630,6 +1657,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '该组件通过您提供的 SearXNG 实例地址进行搜索。请设置 Top N 和实例 URL。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
+      browser: 'Browser',
+      browserDescription:
+        '使用 Browser 自动执行浏览器任务。支持模型与提示词配置，上传来源支持文件 ID 与 URL，并可将下载文件保存到指定目录。',
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
