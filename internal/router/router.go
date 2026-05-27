@@ -307,6 +307,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.PATCH("/:connector_id", r.connectorHandler.UpdateConnector)
+				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
+				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
+				connector.POST("/:connector_id/rebuild", r.connectorHandler.Rebuild)
+				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
 			system := v1.Group("/system")
