@@ -623,10 +623,10 @@ func (p *Parser) parseCreateCommand() (*Command, error) {
 		return p.parseCreateChat()
 	case TokenToken:
 		return p.parseCreateToken()
-	case TokenDatasetTable:
-		return p.parseCreateDatasetTable()
+	case TokenChunkStore:
+		return p.parseCreateChunkStore()
 	case TokenMetadata:
-		return p.parseCreateMetadataTable()
+		return p.parseCreateMetadataStore()
 	case TokenProvider:
 		return p.parseCreateProviderInstance()
 	default:
@@ -658,9 +658,21 @@ func (p *Parser) parseCreateToken() (*Command, error) {
 }
 
 // Internal CLI for GO
-// parseCreateDatasetTable parses: CREATE DATASET TABLE 'name' VECTOR SIZE N
-func (p *Parser) parseCreateDatasetTable() (*Command, error) {
-	p.nextToken() // consume DATASET TABLE compound token
+// parseCreateChunkStore parses: CREATE CHUNK STORE for Dataset 'name' VECTOR SIZE N
+func (p *Parser) parseCreateChunkStore() (*Command, error) {
+	p.nextToken() // consume CHUNK STORE compound token
+
+	// Expect FOR
+	if p.curToken.Type != TokenFor {
+		return nil, fmt.Errorf("expected FOR after CHUNK STORE, got %s", p.curToken.Value)
+	}
+	p.nextToken()
+
+	// Expect Dataset
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected Dataset after FOR, got %s", p.curToken.Value)
+	}
+	p.nextToken()
 
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
@@ -690,20 +702,20 @@ func (p *Parser) parseCreateDatasetTable() (*Command, error) {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("create_dataset_table")
+	cmd := NewCommand("create_chunk_store")
 	cmd.Params["dataset_name"] = datasetName
 	cmd.Params["vector_size"] = vectorSize
 	return cmd, nil
 }
 
 // Internal CLI for GO
-// parseCreateMetadataTable parses: CREATE METADATA TABLE
-func (p *Parser) parseCreateMetadataTable() (*Command, error) {
-	// CREATE METADATA TABLE
+// parseCreateMetadataStore parses: CREATE METADATA STORE
+func (p *Parser) parseCreateMetadataStore() (*Command, error) {
+	// CREATE METADATA STORE
 	p.nextToken() // consume METADATA
 
-	if p.curToken.Type != TokenTable {
-		return nil, fmt.Errorf("expected TABLE after METADATA, got %s", p.curToken.Value)
+	if p.curToken.Type != TokenStore {
+		return nil, fmt.Errorf("expected STORE after METADATA, got %s", p.curToken.Value)
 	}
 	p.nextToken()
 
@@ -711,7 +723,7 @@ func (p *Parser) parseCreateMetadataTable() (*Command, error) {
 		p.nextToken()
 	}
 
-	return NewCommand("create_metadata_table"), nil
+	return NewCommand("create_metadata_store"), nil
 }
 
 func (p *Parser) parseCreateUser() (*Command, error) {
@@ -1041,10 +1053,10 @@ func (p *Parser) parseDropCommand() (*Command, error) {
 		return p.parseDropChat()
 	case TokenToken:
 		return p.parseDropToken()
-	case TokenDatasetTable:
-		return p.parseDropDatasetTable()
+	case TokenChunkStore:
+		return p.parseDropChunkStore()
 	case TokenMetadata:
-		return p.parseDropMetadataTable()
+		return p.parseDropMetadataStore()
 	case TokenInstance:
 		return p.parseDropInstance()
 	case TokenModel:
@@ -1060,8 +1072,10 @@ func (p *Parser) parseDeleteCommand() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenProvider:
 		return p.parseDeleteProvider()
+	case TokenMetadata:
+		return p.parseDeleteMeta()
 	default:
-		return nil, fmt.Errorf("unknown DROP target: %s", p.curToken.Value)
+		return nil, fmt.Errorf("unknown DELETE target: %s", p.curToken.Value)
 	}
 }
 
@@ -1110,9 +1124,21 @@ func (p *Parser) parseDropToken() (*Command, error) {
 }
 
 // Internal CLI for GO
-// parseDropDatasetTable parses: DROP DATASET TABLE 'name'
-func (p *Parser) parseDropDatasetTable() (*Command, error) {
-	p.nextToken() // consume DATASET TABLE
+// parseDropChunkStore parses: DROP CHUNK STORE for Dataset 'name'
+func (p *Parser) parseDropChunkStore() (*Command, error) {
+	p.nextToken() // consume CHUNK STORE
+
+	// Expect FOR
+	if p.curToken.Type != TokenFor {
+		return nil, fmt.Errorf("expected FOR after CHUNK STORE, got %s", p.curToken.Value)
+	}
+	p.nextToken()
+
+	// Expect Dataset
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected Dataset after FOR, got %s", p.curToken.Value)
+	}
+	p.nextToken()
 
 	datasetName, err := p.parseQuotedString()
 	if err != nil {
@@ -1124,26 +1150,25 @@ func (p *Parser) parseDropDatasetTable() (*Command, error) {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("drop_dataset_table")
+	cmd := NewCommand("drop_chunk_store")
 	cmd.Params["dataset_name"] = datasetName
 	return cmd, nil
 }
 
-// Internal CLI for GO
-// parseDropMetadataTable parses: DROP METADATA TABLE
-func (p *Parser) parseDropMetadataTable() (*Command, error) {
-	// DROP METADATA TABLE
+// parseDropMetadataStore parses: DROP METADATA STORE
+func (p *Parser) parseDropMetadataStore() (*Command, error) {
+	// DROP METADATA STORE
 	p.nextToken() // consume METADATA
 
-	if p.curToken.Type != TokenTable {
-		return nil, fmt.Errorf("expected TABLE after METADATA, got %s", p.curToken.Value)
+	if p.curToken.Type != TokenStore {
+		return nil, fmt.Errorf("expected STORE after METADATA, got %s", p.curToken.Value)
 	}
 	p.nextToken()
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("drop_metadata_table")
+	cmd := NewCommand("drop_metadata_store")
 	return cmd, nil
 }
 
@@ -1547,7 +1572,7 @@ func (p *Parser) parseShowInstance() (*Command, error) {
 	return cmd, nil
 }
 
-// parseShowInstance parses SHOW BALANCE FROM <provider_name> <instance_name>
+// parseShowBalance parses SHOW BALANCE FROM <provider_name> <instance_name>
 func (p *Parser) parseShowBalance() (*Command, error) {
 	p.nextToken() // consume INSTANCE
 
@@ -2168,20 +2193,20 @@ func (p *Parser) parseImportCommand() (*Command, error) {
 func (p *Parser) parseInsertCommand() (*Command, error) {
 	p.nextToken() // consume INSERT
 
-	// Expect DATASET or METADATA
-	if p.curToken.Type == TokenDataset {
-		return p.parseInsertDatasetFromFile()
+	// Expect CHUNKS or METADATA
+	if p.curToken.Type == TokenChunks {
+		return p.parseInsertChunksFromFile()
 	}
 	if p.curToken.Type == TokenMetadata {
 		return p.parseInsertMetadataFromFile()
 	}
-	return nil, fmt.Errorf("expected DATASET or METADATA after INSERT, got %s", p.curToken.Value)
+	return nil, fmt.Errorf("expected CHUNKS or METADATA after INSERT, got %s", p.curToken.Value)
 }
 
 // Internal CLI for GO
-// parseInsertDatasetFromFile parses: INSERT DATASET FROM FILE "file_path"
-func (p *Parser) parseInsertDatasetFromFile() (*Command, error) {
-	p.nextToken() // consume DATASET
+// parseInsertChunksFromFile parses: INSERT CHUNKS FROM FILE "file_path"
+func (p *Parser) parseInsertChunksFromFile() (*Command, error) {
+	p.nextToken() // consume CHUNKS
 
 	// Expect FROM
 	if p.curToken.Type != TokenFrom {
@@ -2201,7 +2226,7 @@ func (p *Parser) parseInsertDatasetFromFile() (*Command, error) {
 		return nil, err
 	}
 
-	cmd := NewCommand("insert_dataset_from_file")
+	cmd := NewCommand("insert_chunks_from_file")
 	cmd.Params["file_path"] = filePath
 
 	p.nextToken()
@@ -3263,6 +3288,8 @@ func (p *Parser) parseUserStatement() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenPing:
 		return p.parsePingServer()
+	case TokenDelete:
+		return p.parseDeleteCommand()
 	case TokenShow:
 		return p.parseShowCommand()
 	case TokenCreate:
@@ -3391,7 +3418,7 @@ func (p *Parser) parseGetCommand() (*Command, error) {
 	return nil, fmt.Errorf("unknown GET target: %s", p.curToken.Value)
 }
 
-// parseGetChunk parses: GET CHUNK 'chunk_id' OF DATASET 'dataset_name' DOCUMENT 'doc_id'
+// parseGetChunk parses: GET CHUNK 'chunk_id' OF DOCUMENT 'doc_id' IN DATASET 'dataset_id'
 func (p *Parser) parseGetChunk() (*Command, error) {
 	p.nextToken() // consume CHUNK
 
@@ -3410,21 +3437,8 @@ func (p *Parser) parseGetChunk() (*Command, error) {
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenDataset {
-		return nil, fmt.Errorf("expected DATASET after OF")
-	}
-	p.nextToken()
-
-	// Parse dataset_name
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected dataset_name: %w", err)
-	}
-	cmd.Params["dataset_name"] = datasetName
-
-	p.nextToken()
 	if p.curToken.Type != TokenDocument {
-		return nil, fmt.Errorf("expected DOCUMENT after dataset_name")
+		return nil, fmt.Errorf("expected DOCUMENT after OF")
 	}
 	p.nextToken()
 
@@ -3434,6 +3448,24 @@ func (p *Parser) parseGetChunk() (*Command, error) {
 		return nil, fmt.Errorf("expected doc_id: %w", err)
 	}
 	cmd.Params["doc_id"] = docID
+
+	p.nextToken()
+	if p.curToken.Type != TokenIn {
+		return nil, fmt.Errorf("expected IN after doc_id")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected DATASET after IN")
+	}
+	p.nextToken()
+
+	// Parse dataset_id
+	datasetID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected dataset_id: %w", err)
+	}
+	cmd.Params["dataset_id"] = datasetID
 
 	p.nextToken()
 	// Semicolon is optional
@@ -3457,7 +3489,7 @@ func (p *Parser) parseUpdateCommand() (*Command, error) {
 }
 
 // Internal CLI for GO
-// parseUpdateChunk parses: UPDATE CHUNK 'chunk_id' OF DATASET 'dataset_name' SET '{"content": "..."}'
+// parseUpdateChunk parses: UPDATE CHUNK 'chunk_id' OF DOCUMENT 'doc_id' IN DATASET 'dataset_id' SET '{"content": "..."}'
 func (p *Parser) parseUpdateChunk() (*Command, error) {
 	p.nextToken() // consume CHUNK
 
@@ -3476,8 +3508,26 @@ func (p *Parser) parseUpdateChunk() (*Command, error) {
 	}
 	p.nextToken()
 
+	if p.curToken.Type != TokenDocument {
+		return nil, fmt.Errorf("expected DOCUMENT after OF")
+	}
+	p.nextToken()
+
+	// Parse doc_id
+	docID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected doc_id: %w", err)
+	}
+	cmd.Params["doc_id"] = docID
+
+	p.nextToken()
+	if p.curToken.Type != TokenIn {
+		return nil, fmt.Errorf("expected IN after doc_id")
+	}
+	p.nextToken()
+
 	if p.curToken.Type != TokenDataset {
-		return nil, fmt.Errorf("expected DATASET after OF")
+		return nil, fmt.Errorf("expected DATASET after IN")
 	}
 	p.nextToken()
 
@@ -3557,6 +3607,65 @@ func (p *Parser) parseSetMeta() (*Command, error) {
 	return cmd, nil
 }
 
+// parseDeleteMeta parses: DELETE METADATA OF DOCUMENT 'doc_id' [KEYS '["key1", "key2"]']
+// If KEYS is not provided, deletes entire document metadata
+func (p *Parser) parseDeleteMeta() (*Command, error) {
+	p.nextToken() // consume METADATA
+
+	// Expect OF
+	if p.curToken.Type != TokenOf {
+		return nil, fmt.Errorf("expected OF after DELETE METADATA")
+	}
+	p.nextToken()
+
+	// Expect DOCUMENT
+	if p.curToken.Type != TokenDocument {
+		return nil, fmt.Errorf("expected DOCUMENT after DELETE METADATA OF")
+	}
+	p.nextToken()
+
+	// Parse doc_id
+	docID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected doc_id: %w", err)
+	}
+	cmd := NewCommand("delete_meta")
+	cmd.Params["doc_id"] = docID
+
+	p.nextToken()
+	// KEYS is optional - if not provided, delete entire document metadata
+	if p.curToken.Type != TokenKeys {
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+			return cmd, nil
+		}
+		if p.curToken.Type == TokenEOF {
+			return cmd, nil
+		}
+		return nil, fmt.Errorf("expected KEYS or end of command after doc_id")
+	}
+
+	// Parse keys JSON array
+	p.nextToken()
+	keys, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected keys JSON array: %w", err)
+	}
+	cmd.Params["keys"] = keys
+
+	p.nextToken()
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+		return cmd, nil
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("expected end of command after KEYS")
+	}
+
+	return cmd, nil
+}
+
 // parseRemoveTags parses: REMOVE TAGS 'tag1', 'tag2' from DATASET 'dataset_name';
 func (p *Parser) parseRemoveTags() (*Command, error) {
 	p.nextToken() // consume TAGS
@@ -3613,8 +3722,8 @@ func (p *Parser) parseRemoveTags() (*Command, error) {
 }
 
 // parseRemoveChunk parses:
-//   - REMOVE CHUNKS 'chunk_id1', 'chunk_id2' FROM DOCUMENT 'doc_id';
-//   - REMOVE ALL CHUNKS FROM DOCUMENT 'doc_id';
+//   - REMOVE CHUNKS 'chunk_id1', 'chunk_id2' FROM DOCUMENT 'doc_id' IN DATASET 'dataset_name';
+//   - REMOVE ALL CHUNKS FROM DOCUMENT 'doc_id' IN DATASET 'dataset_name';
 func (p *Parser) parseRemoveChunk() (*Command, error) {
 	cmd := NewCommand("remove_chunks")
 
@@ -3629,7 +3738,7 @@ func (p *Parser) parseRemoveChunk() (*Command, error) {
 	} else {
 		// curToken is TokenChunks, consume it first
 		p.nextToken()
-		// Multiple chunks: REMOVE CHUNKS 'id1' 'id2' FROM DOCUMENT 'doc_id' (space-separated)
+		// Multiple chunks: REMOVE CHUNKS 'id1' 'id2' FROM DOCUMENT 'doc_id' IN DATASET 'dataset_name' (space-separated)
 		// Parse first chunk ID
 		chunkID, err := p.parseQuotedString()
 		if err != nil {
@@ -3671,6 +3780,28 @@ func (p *Parser) parseRemoveChunk() (*Command, error) {
 		return nil, fmt.Errorf("expected doc_id: %w", err)
 	}
 	cmd.Params["doc_id"] = docID
+
+	p.nextToken()
+
+	// Expect IN
+	if p.curToken.Type != TokenIn {
+		return nil, fmt.Errorf("expected IN after doc_id")
+	}
+	p.nextToken()
+
+	// Expect DATASET
+	if p.curToken.Type != TokenDataset {
+		return nil, fmt.Errorf("expected DATASET after IN")
+	}
+	p.nextToken()
+
+	// Parse dataset_name (quoted string)
+	datasetName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected dataset_name: %w", err)
+	}
+	cmd.Params["dataset_name"] = datasetName
+
 	p.nextToken()
 
 	// Semicolon is optional
