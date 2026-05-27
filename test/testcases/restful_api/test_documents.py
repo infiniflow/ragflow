@@ -886,14 +886,24 @@ def test_documents_metadata_batch_update_contract(rest_client, create_dataset, t
         ("document ids not list", {"selector": {"document_ids": "doc-1"}, "updates": [], "deletes": []}, 102, "document_ids must be a list."),
         ("update missing key", {"selector": {}, "updates": [{"key": ""}], "deletes": []}, 102, "Each update requires key and value."),
         ("delete missing key", {"selector": {}, "updates": [], "deletes": [{"x": "y"}]}, 102, "Each delete requires key."),
-        ("document ids wrong dataset", {"selector": {"document_ids": ["doc-does-not-exist-1", "doc-does-not-exist-2"]}, "updates": [{"key": "author", "value": "test"}], "deletes": []}, 102, f"These documents do not belong to dataset {dataset_id}: doc-does-not-exist-1, doc-does-not-exist-2"),
+        (
+            "document ids wrong dataset",
+            {"selector": {"document_ids": ["doc-does-not-exist-1", "doc-does-not-exist-2"]}, "updates": [{"key": "author", "value": "test"}], "deletes": []},
+            102,
+            f"These documents do not belong to dataset {dataset_id}: ",
+        ),
     ]
     for scenario_name, payload, expected_code, expected_message in validation_cases:
         res = rest_client.patch(f"/datasets/{dataset_id}/documents/metadatas", json=payload)
         assert res.status_code == 200, (scenario_name, res.text)
         body = res.json()
         assert body["code"] == expected_code, (scenario_name, body)
-        assert body["message"] == expected_message, (scenario_name, body)
+        if scenario_name == "document ids wrong dataset":
+            assert body["message"].startswith(expected_message), (scenario_name, body)
+            invalid_ids = set(body["message"][len(expected_message) :].split(", "))
+            assert invalid_ids == {"doc-does-not-exist-1", "doc-does-not-exist-2"}, (scenario_name, body)
+        else:
+            assert body["message"] == expected_message, (scenario_name, body)
 
     update_by_ids_res = rest_client.patch(
         f"/datasets/{dataset_id}/documents/metadatas",
