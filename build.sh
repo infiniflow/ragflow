@@ -84,11 +84,14 @@ build_go() {
         exit 1
     fi
 
-    # Check for pcre2 library — known Linux paths + macOS Homebrew (Apple Silicon
-    # at /opt/homebrew, Intel Macs at /usr/local).
+    # Check for pcre2 library — accept either the static archive, a shared
+    # library symlink, or caller-provided linker flags.
     if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
+       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so" ] \
+       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0" ] \
        || [ -f "/usr/local/lib/libpcre2-8.a" ] \
-       || [ -f "/opt/homebrew/lib/libpcre2-8.a" ]; then
+       || [ -f "/opt/homebrew/lib/libpcre2-8.a" ] \
+       || [ -n "${CGO_LDFLAGS:-}" ]; then
         echo "✓ pcre2 library found"
     else
         if [ "$(uname)" = "Darwin" ]; then

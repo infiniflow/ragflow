@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -30,6 +31,7 @@ import (
 type TenantService struct {
 	tenantDAO            *dao.TenantDAO
 	userTenantDAO        *dao.UserTenantDAO
+	userDAO              *dao.UserDAO
 	modelProviderDAO     *dao.TenantModelProviderDAO
 	modelInstanceDAO     *dao.TenantModelInstanceDAO
 	modelDAO             *dao.TenantModelDAO
@@ -44,6 +46,7 @@ func NewTenantService() *TenantService {
 	return &TenantService{
 		tenantDAO:            dao.NewTenantDAO(),
 		userTenantDAO:        dao.NewUserTenantDAO(),
+		userDAO:              dao.NewUserDAO(),
 		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
 		modelDAO:             dao.NewTenantModelDAO(),
@@ -102,6 +105,14 @@ type TenantListItem struct {
 	Avatar       string  `json:"avatar"`
 	UpdateDate   string  `json:"update_date"`
 	DeltaSeconds float64 `json:"delta_seconds"`
+}
+
+// TenantInvitedUserResponse is the invited-user payload returned by POST /api/v1/tenants/:tenant_id/users.
+type TenantInvitedUserResponse struct {
+	ID       string  `json:"id"`
+	Avatar   *string `json:"avatar,omitempty"`
+	Email    string  `json:"email"`
+	Nickname string  `json:"nickname"`
 }
 
 // TenantLLMService tenant LLM service
@@ -265,6 +276,62 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	}
 
 	return result, nil
+}
+
+// InviteTenantUser creates an invite relation for an existing user in the owner's team.
+// Equivalent to Python's create() in api/apps/restful_apis/tenant_api.py.
+func (s *TenantService) InviteTenantUser(tenantID, currentUserID, email string) (*TenantInvitedUserResponse, common.ErrorCode, error) {
+	if strings.TrimSpace(tenantID) == "" {
+		return nil, common.CodeDataError, errors.New("tenant_id is required")
+	}
+	if strings.TrimSpace(email) == "" {
+		return nil, common.CodeDataError, errors.New("email is required")
+	}
+	if currentUserID != tenantID {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	inviteUser, err := s.userDAO.GetByEmail(email)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("User not found.")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	userTenant, err := s.userTenantDAO.FilterByUserIDAndTenantID(inviteUser.ID, tenantID)
+	if err == nil {
+		switch userTenant.Role {
+		case "normal":
+			return nil, common.CodeDataError, fmt.Errorf("%s is already in the team.", email)
+		case "owner":
+			return nil, common.CodeDataError, fmt.Errorf("%s is the owner of the team.", email)
+		default:
+			return nil, common.CodeDataError, fmt.Errorf("%s is in the team, but the role: %s is invalid.", email, userTenant.Role)
+		}
+	}
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return nil, common.CodeServerError, err
+	}
+
+	status := string(entity.StatusValid)
+	if err := s.userTenantDAO.Create(&entity.UserTenant{
+		ID:        common.GenerateUUID(),
+		UserID:    inviteUser.ID,
+		TenantID:  tenantID,
+		InvitedBy: currentUserID,
+		Role:      "invite",
+		Status:    &status,
+	}); err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	return &TenantInvitedUserResponse{
+		ID:       inviteUser.ID,
+		Avatar:   inviteUser.Avatar,
+		Email:    inviteUser.Email,
+		Nickname: inviteUser.Nickname,
+	}, common.CodeSuccess, nil
 }
 
 // CreateMetadataStore creates the metadata store for a tenant
