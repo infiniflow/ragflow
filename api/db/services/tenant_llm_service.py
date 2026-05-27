@@ -17,7 +17,7 @@ import os
 import json
 import logging
 from peewee import IntegrityError
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from common import settings
 from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, OPENDATALOADER_DEFAULT_CONFIG, OPENDATALOADER_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
@@ -507,6 +507,8 @@ class LLM4Tenant:
 
         self.is_tools = model_config.get("is_tools", False)
         self.verbose_tool_use = kwargs.get("verbose_tool_use")
+        user_id = kwargs.get("user_id")
+        self.user_id = str(user_id) if user_id else tenant_id
 
         langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
         self.langfuse = None
@@ -520,3 +522,24 @@ class LLM4Tenant:
             except Exception:
                 # Skip langfuse tracing if connection fails
                 pass
+
+    def _start_langfuse_observation(self, **kwargs):
+        if not self.langfuse:
+            return None, None
+        kwargs.setdefault("trace_context", self.trace_context)
+        ctx = None
+        if self.user_id:
+            ctx = propagate_attributes(user_id=self.user_id)
+            ctx.__enter__()
+        try:
+            return self.langfuse.start_observation(**kwargs), ctx
+        except Exception:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
+            raise
+
+    def _end_langfuse_observation(self, generation, ctx) -> None:
+        if generation is not None:
+            generation.end()
+        if ctx is not None:
+            ctx.__exit__(None, None, None)

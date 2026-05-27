@@ -518,7 +518,11 @@ class Canvas(Graph):
                 if cpn_obj.component_name.lower() == "message":
                     if cpn_obj.get_param("auto_play"):
                         tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
-                        tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
+                        tts_mdl = LLMBundle(
+                            self._tenant_id,
+                            tts_model_config,
+                            user_id=self.globals.get("sys.user_id"),
+                        )
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
                         buff_m = ""

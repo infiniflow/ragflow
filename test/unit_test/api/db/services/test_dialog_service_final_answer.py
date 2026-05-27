@@ -358,7 +358,7 @@ def test_async_chat_final_event_carries_decorated_answer(monkeypatch):
     # get_models returns (kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl)
     monkeypatch.setattr(
         dialog_service, "get_models",
-        lambda _dialog: ([_KB], chat_mdl, None, chat_mdl, None),
+        lambda _dialog, user_id=None: ([_KB], chat_mdl, None, chat_mdl, None),
     )
     monkeypatch.setattr(
         dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {}
@@ -424,7 +424,7 @@ def test_async_chat_langfuse_uses_start_observation(monkeypatch):
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda _dialog: ([_KB], chat_mdl, None, chat_mdl, None),
+        lambda _dialog, user_id=None: ([_KB], chat_mdl, None, chat_mdl, None),
     )
     monkeypatch.setattr(
         dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {}
@@ -493,7 +493,7 @@ def test_async_chat_continues_when_langfuse_observation_start_fails(monkeypatch)
     monkeypatch.setattr(
         dialog_service,
         "get_models",
-        lambda _dialog: ([_KB], chat_mdl, None, chat_mdl, None),
+        lambda _dialog, user_id=None: ([_KB], chat_mdl, None, chat_mdl, None),
     )
     monkeypatch.setattr(
         dialog_service.KnowledgebaseService, "get_field_map", lambda _kb_ids: {}
