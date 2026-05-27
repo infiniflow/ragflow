@@ -201,7 +201,11 @@ def _load_connector_app(monkeypatch):
             return []
 
         @staticmethod
-        def resume(*_args, **_kwargs):
+        def accessible(*_args, **_kwargs):
+            return True
+
+        @staticmethod
+        def cancel_tasks(*_args, **_kwargs):
             return True
 
         @staticmethod
@@ -246,6 +250,7 @@ def _load_connector_app(monkeypatch):
         SERVER_ERROR=500,
         RUNNING=102,
         PERMISSION_ERROR=403,
+        AUTHENTICATION_ERROR=109,
     )
     constants_mod.TaskStatus = SimpleNamespace(SCHEDULE="schedule", CANCEL="cancel")
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
@@ -344,7 +349,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     records = {"conn-1": _FakeConnectorRecord({"id": "conn-1", "source": "drive"})}
     update_calls = []
     save_calls = []
-    resume_calls = []
+    cancel_calls = []
     delete_calls = []
 
     monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda cid, payload: update_calls.append((cid, payload)))
@@ -357,7 +362,7 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda cid: (True, records[cid]))
     monkeypatch.setattr(module.ConnectorService, "list", lambda tenant_id: [{"id": "listed", "tenant": tenant_id}])
     monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda cid, page, page_size: ([{"id": "log-1"}], 9))
-    monkeypatch.setattr(module.ConnectorService, "resume", lambda cid, status: resume_calls.append((cid, status)))
+    monkeypatch.setattr(module.ConnectorService, "cancel_tasks", lambda cid: cancel_calls.append(cid))
     monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda cid: delete_calls.append(cid))
     monkeypatch.setattr(module, "get_uuid", lambda: "generated-id")
 
@@ -396,14 +401,6 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
     logs_res = module.list_logs("conn-log")
     assert logs_res["data"] == {"total": 9, "logs": [{"id": "log-1"}]}
 
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"resume": True}))
-    assert _run(module.resume("conn-r1"))["data"] is True
-
-    monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"resume": False}))
-    assert _run(module.resume("conn-r2"))["data"] is True
-    assert ("conn-r1", module.TaskStatus.SCHEDULE) in resume_calls
-    assert ("conn-r2", module.TaskStatus.CANCEL) in resume_calls
-
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"kb_id": "kb-1"}))
     monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: "rebuild-failed")
     failed_rebuild = _run(module.rebuild("conn-rb"))
@@ -416,8 +413,43 @@ def test_connector_basic_routes_and_task_controls(monkeypatch):
 
     rm_res = module.rm_connector("conn-rm")
     assert rm_res["data"] is True
-    assert ("conn-rm", module.TaskStatus.CANCEL) in resume_calls
+    assert cancel_calls == ["conn-rm"]
     assert delete_calls == ["conn-rm"]
+
+
+@pytest.mark.p2
+def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
+    """Verify per-id connector routes stop before body parsing or service access."""
+    module = _load_connector_app(monkeypatch)
+
+    touched = []
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda cid, uid: False)
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda *_args: touched.append("get_by_id"))
+    monkeypatch.setattr(module.SyncLogsService, "list_sync_tasks", lambda *_args: touched.append("list_sync_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "cancel_tasks", lambda *_args: touched.append("cancel_tasks"))
+    monkeypatch.setattr(module.ConnectorService, "delete_by_id", lambda *_args: touched.append("delete_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "update_by_id", lambda *_args: touched.append("update_by_id"))
+    monkeypatch.setattr(module.ConnectorService, "rebuild", lambda *_args: touched.append("rebuild"))
+
+    def _get_request_json():
+        touched.append("get_request_json")
+        return _AwaitableValue({"config": {"x": 1}})
+
+    monkeypatch.setattr(module, "get_request_json", _get_request_json)
+
+    responses = [
+        _run(module.update_connector("conn-victim")),
+        module.get_connector("conn-victim"),
+        module.list_logs("conn-victim"),
+        _run(module.rebuild("conn-victim")),
+        module.rm_connector("conn-victim"),
+        _run(module.test_connector("conn-victim")),
+    ]
+
+    assert all(res["code"] == module.RetCode.AUTHENTICATION_ERROR for res in responses)
+    assert all(res["message"] == "No authorization." for res in responses)
+    assert all(res["data"] is False for res in responses)
+    assert touched == []
 
 
 @pytest.mark.p2

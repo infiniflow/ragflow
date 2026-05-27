@@ -559,21 +559,6 @@ async def get_knowledge_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/graph", methods=["DELETE"])  # noqa: F821
-@login_required
-@add_tenant_id_to_kwargs
-def delete_knowledge_graph(tenant_id, dataset_id):
-    try:
-        success, result = dataset_api_service.delete_knowledge_graph(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
-    except Exception as e:
-        logging.exception(e)
-        return get_error_data_result(message="Internal server error")
-
-
 @manager.route("/datasets/<dataset_id>/index", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -613,14 +598,15 @@ def trace_index(tenant_id, dataset_id):
 
 
 @manager.route("/datasets/<dataset_id>/<index_type>", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/index", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def delete_index(tenant_id, dataset_id, index_type):
-    index_type = index_type.lower()
+def delete_index(tenant_id, dataset_id, index_type=None):
+    index_type = (index_type or request.args.get("type", "")).lower()
     if index_type not in dataset_api_service._VALID_INDEX_TYPES:
         return get_error_argument_result(f"Invalid index type '{index_type}'")
     # `wipe` controls whether the persisted index artefacts (graph rows /
-    # raptor summaries) are removed.  Default true preserves historical
+    # raptor summaries) are removed. Default true preserves historical
     # behaviour; pass wipe=false to cancel the running task while keeping
     # prior progress so it can be resumed later.
     wipe_arg = (request.args.get("wipe", "true") or "true").strip().lower()

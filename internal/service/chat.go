@@ -19,12 +19,10 @@ package service
 import (
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
-	"time"
 	"unicode/utf8"
-
-	"github.com/google/uuid"
 
 	"ragflow/internal/dao"
 )
@@ -447,15 +445,7 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 
 	if isCreate {
 		// Generate UUID for new chat
-		newID := uuid.New().String()
-		newID = strings.ReplaceAll(newID, "-", "")
-		if len(newID) > 32 {
-			newID = newID[:32]
-		}
-
-		// Get current time
-		now := time.Now().Truncate(time.Second)
-		createTime := now.UnixMilli()
+		newID := common.GenerateUUID()
 
 		// Set default language
 		language := "English"
@@ -480,10 +470,6 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 			KBIDs:                  kbIDsJSON,
 			Status:                 strPtr("1"),
 		}
-		chat.CreateTime = &createTime
-		chat.CreateDate = &now
-		chat.UpdateTime = &createTime
-		chat.UpdateDate = &now
 
 		if err := s.chatDAO.Create(chat); err != nil {
 			return nil, errors.New("Fail to new a chat")
@@ -498,9 +484,6 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		}, nil
 	}
 
-	// Update existing chat - also update update_time
-	now := time.Now().Truncate(time.Second)
-	updateTime := now.UnixMilli()
 	updateData := map[string]interface{}{
 		"name":                     name,
 		"description":              description,
@@ -515,8 +498,6 @@ func (s *ChatService) SetDialog(userID string, req *SetDialogRequest) (*SetDialo
 		"similarity_threshold":     similarityThreshold,
 		"vector_similarity_weight": vectorSimilarityWeight,
 		"kb_ids":                   kbIDsJSON,
-		"update_time":              updateTime,
-		"update_date":              now,
 	}
 
 	if err := s.chatDAO.UpdateByID(req.DialogID, updateData); err != nil {

@@ -9,7 +9,11 @@
     "async_result": "async-result",
     "embedding": "embeddings",
     "rerank": "rerank",
-    "files": "files"
+    "ocr": "layout_parsing",
+    "asr": "audio/transcriptions",
+    "tts": "audio/speech",
+    "files": "files",
+    "models": "models"
   },
   "class": "glm",
   "models": [
