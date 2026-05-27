@@ -551,8 +551,12 @@ func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
 	}
+	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	if modelsSuffix == "" {
+		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
+	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
