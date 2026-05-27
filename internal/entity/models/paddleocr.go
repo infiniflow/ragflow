@@ -51,7 +51,7 @@ func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (p *PaddleOCRModel) Name() string {
-	return "paddle_ocr"
+	return "paddle_ocr.net"
 }
 
 func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
