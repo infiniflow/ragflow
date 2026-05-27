@@ -62,11 +62,18 @@ def _sanitize_json_floats(obj):
     term_similarity) can become NaN when an aggregation runs over an empty
     set or when a similarity denominator is zero, so the chat completions
     stream is the realistic trigger.
+
+    `isinstance(obj, float)` alone catches Python float and numpy.float64
+    (a float subclass) but misses numpy.float32 / numpy.float16 and any
+    other duck-typed numeric. Probe via math.isnan/isinf in a try/except
+    so any object math can evaluate gets sanitized — without changing
+    upstream callers like chunks_format or rag/nlp/search.py.
     """
-    if isinstance(obj, float):
+    try:
         if math.isnan(obj) or math.isinf(obj):
             return None
-        return obj
+    except TypeError:
+        pass
     if isinstance(obj, dict):
         return {k: _sanitize_json_floats(v) for k, v in obj.items()}
     if isinstance(obj, list):
