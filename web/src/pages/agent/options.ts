@@ -2141,6 +2141,7 @@ export const ExeSQLOptions = [
   'IBM DB2',
   'trino',
   'oceanbase',
+  'BigQuery',
 ].map((x) => ({
   label: upperFirst(x),
   value: x,
