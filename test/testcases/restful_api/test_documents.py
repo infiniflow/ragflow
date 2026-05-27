@@ -856,6 +856,177 @@ def test_documents_parse_and_stop(rest_client, create_document):
 
 
 @pytest.mark.p2
+def test_documents_metadata_batch_update_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=5)
+    document_ids = [doc["id"] for doc in uploaded_docs]
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        res = client.patch(
+            f"/datasets/{dataset_id}/documents/metadatas",
+            json={"selector": {"document_ids": document_ids[:1]}, "updates": [], "deletes": []},
+        )
+        assert res.status_code == 401, (scenario_name, res.text)
+        payload = res.json()
+        assert payload["code"] == 401, (scenario_name, payload)
+        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+
+    invalid_dataset_res = rest_client.patch(
+        "/datasets/invalid_dataset_id/documents/metadatas",
+        json={"selector": {"document_ids": []}, "updates": [], "deletes": []},
+    )
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "You don't own the dataset invalid_dataset_id.", invalid_dataset_payload
+
+    validation_cases = [
+        ("selector not object", {"selector": [1], "updates": [], "deletes": []}, 102, "selector must be an object."),
+        ("updates not list", {"selector": {}, "updates": {"key": "value"}, "deletes": []}, 102, "updates and deletes must be lists."),
+        ("metadata condition not object", {"selector": {"metadata_condition": [1]}, "updates": [], "deletes": []}, 102, "metadata_condition must be an object."),
+        ("document ids not list", {"selector": {"document_ids": "doc-1"}, "updates": [], "deletes": []}, 102, "document_ids must be a list."),
+        ("update missing key", {"selector": {}, "updates": [{"key": ""}], "deletes": []}, 102, "Each update requires key and value."),
+        ("delete missing key", {"selector": {}, "updates": [], "deletes": [{"x": "y"}]}, 102, "Each delete requires key."),
+        ("document ids wrong dataset", {"selector": {"document_ids": ["doc-does-not-exist-1", "doc-does-not-exist-2"]}, "updates": [{"key": "author", "value": "test"}], "deletes": []}, 102, f"These documents do not belong to dataset {dataset_id}: doc-does-not-exist-1, doc-does-not-exist-2"),
+    ]
+    for scenario_name, payload, expected_code, expected_message in validation_cases:
+        res = rest_client.patch(f"/datasets/{dataset_id}/documents/metadatas", json=payload)
+        assert res.status_code == 200, (scenario_name, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (scenario_name, body)
+        assert body["message"] == expected_message, (scenario_name, body)
+
+    update_by_ids_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/metadatas",
+        json={
+            "selector": {"document_ids": document_ids},
+            "updates": [{"key": "author", "value": "test_author"}, {"key": "status", "value": "processed"}],
+            "deletes": [],
+        },
+    )
+    assert update_by_ids_res.status_code == 200
+    update_by_ids_payload = update_by_ids_res.json()
+    assert update_by_ids_payload["code"] == 0, update_by_ids_payload
+    assert update_by_ids_payload["data"] == {"updated": 5, "matched_docs": 5}, update_by_ids_payload
+
+    filtered_update_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/metadatas",
+        json={
+            "selector": {
+                "document_ids": document_ids,
+                "metadata_condition": {"conditions": [{"comparison_operator": "is", "name": "status", "value": "processed"}]},
+            },
+            "updates": [{"key": "author", "value": "filtered_author"}],
+            "deletes": [],
+        },
+    )
+    assert filtered_update_res.status_code == 200
+    filtered_update_payload = filtered_update_res.json()
+    assert filtered_update_payload["code"] == 0, filtered_update_payload
+    assert filtered_update_payload["data"] == {"updated": 5, "matched_docs": 5}, filtered_update_payload
+
+    delete_metadata_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/metadatas",
+        json={
+            "selector": {"document_ids": document_ids},
+            "updates": [],
+            "deletes": [{"key": "author"}],
+        },
+    )
+    assert delete_metadata_res.status_code == 200
+    delete_metadata_payload = delete_metadata_res.json()
+    assert delete_metadata_payload["code"] == 0, delete_metadata_payload
+    assert delete_metadata_payload["data"] == {"updated": 5, "matched_docs": 5}, delete_metadata_payload
+
+    combined_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/metadatas",
+        json={
+            "selector": {"document_ids": document_ids},
+            "updates": [{"key": "author", "value": "new_author"}],
+            "deletes": [{"key": "status"}],
+        },
+    )
+    assert combined_res.status_code == 200
+    combined_payload = combined_res.json()
+    assert combined_payload["code"] == 0, combined_payload
+    assert combined_payload["data"] == {"updated": 5, "matched_docs": 5}, combined_payload
+
+    empty_ids_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/metadatas",
+        json={"selector": {"document_ids": []}, "updates": [{"key": "author", "value": "test"}], "deletes": []},
+    )
+    assert empty_ids_res.status_code == 200
+    empty_ids_payload = empty_ids_res.json()
+    assert empty_ids_payload["code"] == 0, empty_ids_payload
+    assert empty_ids_payload["data"] == {"updated": 0, "matched_docs": 0}, empty_ids_payload
+
+    no_match_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/metadatas",
+        json={
+            "selector": {
+                "document_ids": document_ids,
+                "metadata_condition": {"conditions": [{"comparison_operator": "is", "name": "nonexistent_key", "value": "nonexistent_value"}]},
+            },
+            "updates": [{"key": "author", "value": "test"}],
+            "deletes": [],
+        },
+    )
+    assert no_match_res.status_code == 200
+    no_match_payload = no_match_res.json()
+    assert no_match_payload["code"] == 0, no_match_payload
+    assert no_match_payload["data"] == {"updated": 0, "matched_docs": 0}, no_match_payload
+
+
+@pytest.mark.p2
+def test_document_metadata_config_contract(rest_client, create_document):
+    dataset_id, document_id = create_document("document_metadata_config_contract.txt")
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        res = client.put(
+            f"/datasets/{dataset_id}/documents/{document_id}/metadata/config",
+            json={"metadata": {"author": "alice"}},
+        )
+        assert res.status_code == 401, (scenario_name, res.text)
+        payload = res.json()
+        assert payload["code"] == 401, (scenario_name, payload)
+        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+
+    missing_payload_res = rest_client.put(f"/datasets/{dataset_id}/documents/{document_id}/metadata/config", json={})
+    assert missing_payload_res.status_code == 200
+    missing_payload = missing_payload_res.json()
+    assert missing_payload["code"] == 101, missing_payload
+    assert missing_payload["message"] == "metadata is required", missing_payload
+
+    invalid_dataset_res = rest_client.put(
+        f"/datasets/{INVALID_ID_32}/documents/{document_id}/metadata/config",
+        json={"metadata": {"author": "alice"}},
+    )
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "You don't own the dataset.", invalid_dataset_payload
+
+    invalid_document_res = rest_client.put(
+        f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/metadata/config",
+        json={"metadata": {"author": "alice"}},
+    )
+    assert invalid_document_res.status_code == 200
+    invalid_document_payload = invalid_document_res.json()
+    assert invalid_document_payload["code"] == 102, invalid_document_payload
+    assert invalid_document_payload["message"] == f"Document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
+
+    update_payload = {"metadata": {"author": "alice", "tags": ["one", "two"]}}
+    update_res = rest_client.put(
+        f"/datasets/{dataset_id}/documents/{document_id}/metadata/config",
+        json=update_payload,
+    )
+    assert update_res.status_code == 200
+    update_body = update_res.json()
+    assert update_body["code"] == 0, update_body
+    parser_config = update_body["data"]["parser_config"]
+    assert parser_config["metadata"] == update_payload["metadata"], update_body
+
+
+@pytest.mark.p2
 def test_documents_metadata_update_path(rest_client, create_document):
     dataset_id, document_id = create_document("metadata_target.txt")
 
