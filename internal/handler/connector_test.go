@@ -25,7 +25,18 @@ func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsRes
 	return &service.ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 }
 
+func (s fakeConnectorService) CreateConnector(string, *service.CreateConnectorRequest) (*entity.Connector, error) {
+	return s.connector, s.err
+}
+
 func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return s.connector, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) UpdateConnector(string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
