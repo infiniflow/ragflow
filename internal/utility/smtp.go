@@ -19,8 +19,11 @@
 // uses the same conf/service_conf.yaml `smtp` block so a single config
 // powers both backends.
 //
-// Intentionally tiny — we don't templating anything we wouldn't also
-// templating in Python, no HTML rendering beyond a small registry.
+// The config is passed in as a parameter rather than read via
+// server.GetConfig() — internal/server already imports internal/utility
+// (via variable.go), so importing server from here would close an
+// import cycle. The SMTPConfig type lives in internal/common for the
+// same reason.
 package utility
 
 import (
@@ -31,7 +34,6 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
-	"ragflow/internal/server"
 
 	"go.uber.org/zap"
 )
@@ -43,6 +45,15 @@ type SMTPNotConfiguredError struct{}
 
 func (SMTPNotConfiguredError) Error() string {
 	return "smtp is not configured"
+}
+
+// SMTPInsecureAuthError is returned when authentication is requested over
+// an unencrypted SMTP connection (neither MailUseSSL nor MailUseTLS set).
+// Sending credentials in the clear is refused on principle.
+type SMTPInsecureAuthError struct{}
+
+func (SMTPInsecureAuthError) Error() string {
+	return "smtp authentication refused over plaintext connection (set mail_use_ssl or mail_use_tls)"
 }
 
 // SendResetCodeEmail delivers the password-reset OTP email. It is the Go
@@ -58,10 +69,8 @@ func (SMTPNotConfiguredError) Error() string {
 //
 // — same subject, same plaintext body shape (see RESET_CODE_EMAIL_TMPL in
 // api/utils/email_templates.py).
-func SendResetCodeEmail(toEmail, otp string, ttlMinutes int) error {
-	cfg := server.GetConfig()
-	smtpCfg := cfg.SMTP
-	if smtpCfg.MailServer == "" || smtpCfg.MailPort == 0 {
+func SendResetCodeEmail(cfg common.SMTPConfig, toEmail, otp string, ttlMinutes int) error {
+	if cfg.MailServer == "" || cfg.MailPort == 0 {
 		return SMTPNotConfiguredError{}
 	}
 
@@ -71,22 +80,22 @@ func SendResetCodeEmail(toEmail, otp string, ttlMinutes int) error {
 		otp, ttlMinutes,
 	)
 
-	fromAddr := smtpCfg.MailFromAddress
+	fromAddr := cfg.MailFromAddress
 	if fromAddr == "" {
-		fromAddr = smtpCfg.MailUsername
+		fromAddr = cfg.MailUsername
 	}
-	fromName := smtpCfg.MailFromName
+	fromName := cfg.MailFromName
 	if fromName == "" {
 		fromName = "RAGFlow"
 	}
 	fromHeader := fmt.Sprintf("%s <%s>", fromName, fromAddr)
 
 	msg := buildPlainEmail(fromHeader, toEmail, subject, body)
-	if err := sendMail(smtpCfg, fromAddr, toEmail, msg); err != nil {
+	if err := sendMail(cfg, fromAddr, toEmail, msg); err != nil {
 		common.Warn("smtp send failed",
 			zap.String("to", toEmail),
-			zap.String("server", smtpCfg.MailServer),
-			zap.Int("port", smtpCfg.MailPort),
+			zap.String("server", cfg.MailServer),
+			zap.Int("port", cfg.MailPort),
 			zap.Error(err),
 		)
 		return err
@@ -111,7 +120,15 @@ func buildPlainEmail(from, to, subject, body string) []byte {
 // sendMail dispatches the message over implicit TLS, STARTTLS, or plain
 // — matching how the Python aiosmtplib client is configured by the
 // `mail_use_ssl` / `mail_use_tls` flags.
-func sendMail(cfg server.SMTPConfig, from, to string, msg []byte) error {
+//
+// Authentication is only attempted over an encrypted session. If the
+// caller asks for auth (MailUsername set) on a plaintext connection,
+// SMTPInsecureAuthError is returned before any credential is written.
+func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
+	if cfg.MailUsername != "" && !cfg.MailUseSSL && !cfg.MailUseTLS {
+		return SMTPInsecureAuthError{}
+	}
+
 	addr := net.JoinHostPort(cfg.MailServer, fmt.Sprintf("%d", cfg.MailPort))
 	auth := smtp.PlainAuth("", cfg.MailUsername, cfg.MailPassword, cfg.MailServer)
 
@@ -136,7 +153,7 @@ func sendMail(cfg server.SMTPConfig, from, to string, msg []byte) error {
 		return deliverMail(client, from, to, msg)
 	}
 
-	// STARTTLS (typical port 587) or plain.
+	// STARTTLS (typical port 587) or plain (auth refused above).
 	client, err := smtp.Dial(addr)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
@@ -147,12 +164,13 @@ func sendMail(cfg server.SMTPConfig, from, to string, msg []byte) error {
 		if err := client.StartTLS(tlsCfg); err != nil {
 			return fmt.Errorf("smtp starttls: %w", err)
 		}
-	}
-	if cfg.MailUsername != "" {
-		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("smtp auth: %w", err)
+		if cfg.MailUsername != "" {
+			if err := client.Auth(auth); err != nil {
+				return fmt.Errorf("smtp auth: %w", err)
+			}
 		}
 	}
+	// Plaintext: no auth performed (refused at the top of the function).
 	return deliverMail(client, from, to, msg)
 }
 

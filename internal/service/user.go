@@ -1242,6 +1242,14 @@ func (s *UserService) ForgotSendOTP(email, captcha string) (common.ErrorCode, er
 
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
+	// Lockout — a previous verify burst already locked this email; do not
+	// let a request for a new OTP wipe the lock (deliberate divergence
+	// from the Python implementation, which deletes the lock here and so
+	// allows a locked attacker to clear their own lockout by re-requesting).
+	if locked, _ := rc.Get(lockKey); locked != "" {
+		return common.CodeNotEffective, fmt.Errorf("too many attempts, try later")
+	}
+
 	// Resend cooldown — refuse if we already sent within the window.
 	if lastSent, _ := rc.Get(lastSentKey); lastSent != "" {
 		ts, parseErr := strconv.ParseInt(lastSent, 10, 64)
@@ -1265,15 +1273,43 @@ func (s *UserService) ForgotSendOTP(email, captcha string) (common.ErrorCode, er
 	codeHash := utility.HashOTPCode(otp, salt)
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 
+	// Snapshot the previous OTP-flow state so we can restore it if email
+	// delivery fails — otherwise the user is throttled by lastSentKey
+	// even though they never received the code.
+	prevCode, _ := rc.Get(codeKey)
+	prevAttempts, _ := rc.Get(attemptsKey)
+	prevLastSent, _ := rc.Get(lastSentKey)
+
 	if !rc.Set(codeKey, utility.EncodeOTPStorageValue(codeHash, salt), utility.OTPTTL) {
 		return common.CodeServerError, fmt.Errorf("failed to store otp")
 	}
 	rc.Set(attemptsKey, "0", utility.OTPTTL)
 	rc.Set(lastSentKey, now, utility.OTPTTL)
-	rc.Delete(lockKey)
+	// Note: lockKey is intentionally not cleared here. If the user has
+	// been locked out by a previous verify burst, requesting a new OTP
+	// does not lift the lock — we already refused above.
 
 	ttlMin := int(utility.OTPTTL.Minutes())
-	if err := utility.SendResetCodeEmail(email, otp, ttlMin); err != nil {
+	cfg := server.GetConfig()
+	if err := utility.SendResetCodeEmail(cfg.SMTP, email, otp, ttlMin); err != nil {
+		// Roll back: restore prior code/attempts/last-sent or remove the
+		// keys we just wrote so the next attempt isn't blocked by the
+		// resend cooldown a failed send just installed.
+		if prevCode != "" {
+			rc.Set(codeKey, prevCode, utility.OTPTTL)
+		} else {
+			rc.Delete(codeKey)
+		}
+		if prevAttempts != "" {
+			rc.Set(attemptsKey, prevAttempts, utility.OTPTTL)
+		} else {
+			rc.Delete(attemptsKey)
+		}
+		if prevLastSent != "" {
+			rc.Set(lastSentKey, prevLastSent, utility.OTPTTL)
+		} else {
+			rc.Delete(lastSentKey)
+		}
 		return common.CodeServerError, fmt.Errorf("failed to send email")
 	}
 	return common.CodeSuccess, nil

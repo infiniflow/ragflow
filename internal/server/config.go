@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -44,7 +46,7 @@ type Config struct {
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
 	RegisterEnabled  int                    `mapstructure:"register_enabled"`
 	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
-	SMTP             SMTPConfig             `mapstructure:"smtp"`
+	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
 	Admin            AdminConfig            `mapstructure:"admin"`
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
@@ -61,22 +63,6 @@ type AdminConfig struct {
 type AuthenticationConfig struct {
 	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
 	RegisterEnabled      bool `mapstructure:"register_enabled"`
-}
-
-// SMTPConfig SMTP configuration for outgoing transactional email
-// (forgot-password OTP, invitation, etc.). Mirrors the Python
-// common.settings smtp section so a single conf/service_conf.yaml
-// powers both backends.
-type SMTPConfig struct {
-	MailServer        string `mapstructure:"mail_server"`
-	MailPort          int    `mapstructure:"mail_port"`
-	MailUseSSL        bool   `mapstructure:"mail_use_ssl"`
-	MailUseTLS        bool   `mapstructure:"mail_use_tls"`
-	MailUsername      string `mapstructure:"mail_username"`
-	MailPassword      string `mapstructure:"mail_password"`
-	MailFromName      string `mapstructure:"mail_from_name"`
-	MailFromAddress   string `mapstructure:"mail_from_address"`
-	MailFrontendURL   string `mapstructure:"mail_frontend_url"`
 }
 
 type DefaultSuperUser struct {
