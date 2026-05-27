@@ -15,6 +15,8 @@
 
 import time
 
+from rag.flow.extractor.extractor import compile_structure_from_text, merge_compiled_structures
+
 start_ts = time.time()
 
 # LiteLLM fetches a model cost map from GitHub during import unless this is set.
@@ -52,7 +54,7 @@ from rag.utils.raptor_utils import (
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.prompts.generator import compile_structure_from_text, keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
+from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
     gen_metadata
 import logging
 import os
@@ -637,7 +639,13 @@ def knowledge_compilation(task, docs, embedding_model, progress_callback):
         d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
     ))
     struts: list[dict] = asyncio.run(
-        compile_structure_from_text(docs, task["parser_config"], chat_mdl, embedding_model, task["doc_id"], callback=progress_callback))
+        compile_structure_from_text(docs, 
+                                    task["parser_config"].get("knowledge_compilation"), 
+                                    chat_mdl, embedding_model, 
+                                    task["doc_id"], 
+                                    callback=progress_callback))
+    logging.info("------------ Knowledge Compilation -------------\n")
+    merge_compiled_structures(struts, chat_mdl, embedding_model, task["tenant_id"], task["kb_id"])
     logging.info("------------ Knowledge Compilation -------------\n" + json.dumps(struts, ensure_ascii=False, indent='  '))
     return None
 
@@ -1481,7 +1489,8 @@ async def do_handle_task(task):
         
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
             toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
-            # toc_thread = asyncio.create_task(asyncio.to_thread(knowledge_compilation, task, chunks, embedding_model, progress_callback))
+        if task["parser_id"].lower() == "naive" and task["parser_config"].get("knowledge_compilation"):
+            kc_thread = asyncio.create_task(asyncio.to_thread(knowledge_compilation, task, chunks, embedding_model, progress_callback))
             
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
