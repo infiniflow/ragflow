@@ -323,23 +323,31 @@ class TenantModelProviderStage(MigrationStage):
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             return len(records), self.target_tables
         
-        # Insert records in batches
+        # Insert records in batches with parameterized SQL to avoid quote breakage/injection
         batch_size = 100
         for i in range(0, len(records), batch_size):
             batch = records[i:i + batch_size]
-            values = []
+            placeholders = []
+            params = []
             for tenant_id, llm_factory in batch:
                 record_id = self.generate_uuid()
-                values.append(f"('{record_id}', '{llm_factory}', '{tenant_id}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
-            
+                placeholders.append("(%s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))")
+                params.extend([
+                    record_id,
+                    llm_factory,
+                    tenant_id,
+                    current_ts,
+                    current_ts,
+                    current_ts,
+                    current_ts,
+                ])
+
             insert_sql = f"""
                 INSERT INTO tenant_model_provider 
                 (id, provider_name, tenant_id, create_time, create_date, update_time, update_date)
-                VALUES {', '.join(values)}
+                VALUES {', '.join(placeholders)}
             """
-            self.db.execute_sql(insert_sql)
+            self.db.execute_sql(insert_sql, params)
             rows_inserted += len(batch)
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
         
