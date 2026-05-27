@@ -32,6 +32,16 @@ from api.db import FileType
 from common.constants import RetCode
 
 
+REST_API_MAX_PAGE_SIZE = 100
+
+
+def validate_rest_api_page_size(page_size: int) -> int:
+    """Validate REST API page_size values against the public maximum."""
+    if page_size > REST_API_MAX_PAGE_SIZE:
+        raise ValueError(f"page_size must be less than or equal to {REST_API_MAX_PAGE_SIZE}")
+    return page_size
+
+
 async def validate_and_parse_json_request(
     request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False
 ) -> tuple[dict[str, Any] | None, str | None]:
@@ -960,6 +970,11 @@ class BaseListReq(BaseModel):
         """Validate and normalize an optional list filter id."""
         return validate_uuid1_hex(v)
 
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
+
 
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
@@ -1010,9 +1025,14 @@ class ListFileReq(BaseModel):
     parent_id: Annotated[str | None, Field(default=None)]
     keywords: Annotated[str, Field(default="")]
     page: Annotated[int, Field(default=1, ge=1)]
-    page_size: Annotated[int, Field(default=15, ge=1, le=100)]
+    page_size: Annotated[int, Field(default=15, ge=1)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
 
 
 def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):

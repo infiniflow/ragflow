@@ -26,6 +26,7 @@ from api.utils.validation_utils import (
     ListDatasetReq,
     SearchDatasetReq,
     SearchDatasetsReq,
+    validate_rest_api_page_size,
     UpdateDatasetReq,
     validate_and_parse_json_request,
     validate_and_parse_request_args,
@@ -665,7 +666,7 @@ async def check_embedding(tenant_id, dataset_id):
 def list_ingestion_logs(tenant_id, dataset_id):
     try:
         page = int(request.args.get("page", 0))
-        page_size = int(request.args.get("page_size", 0))
+        page_size = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         operation_status = request.args.getlist("operation_status")

@@ -30,6 +30,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.validation_utils import validate_rest_api_page_size
 
 
 def _full_text_weight(vector_similarity_weight):
@@ -77,7 +78,7 @@ async def create():
 def list_searches():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
+    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
     owner_ids = request.args.getlist("owner_ids")
