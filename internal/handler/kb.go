@@ -141,8 +141,12 @@ func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.kbService.UpdateMetadataSetting(&req)
+	result, code, err := h.kbService.UpdateMetadataSetting(&req, user.ID)
 	if err != nil {
+		if strings.Contains(err.Error(), "authorized") {
+			jsonError(c, common.CodeAuthenticationError, err.Error())
+			return
+		}
 		jsonError(c, code, err.Error())
 		return
 	}
