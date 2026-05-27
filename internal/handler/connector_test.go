@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -105,4 +106,38 @@ func TestConnectorHandlerGetConnector(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGoogleGmailWebOAuthCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ConnectorHandler{}
+	router := gin.New()
+	router.GET("/api/v1/connectors/gmail/oauth/web/callback", h.GoogleGmailWebOAuthCallback)
+
+	t.Run("missing_state", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/gmail/oauth/web/callback", nil)
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "Missing OAuth state parameter.") {
+			t.Fatalf("unexpected body: %s", resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "ragflow-gmail-oauth") {
+			t.Fatalf("missing popup payload type: %s", resp.Body.String())
+		}
+	})
+
+	t.Run("expired_state_without_redis", func(t *testing.T) {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/gmail/oauth/web/callback?state=fake-state", nil)
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "Authorization session expired. Please restart from the main window.") {
+			t.Fatalf("unexpected body: %s", resp.Body.String())
+		}
+	})
 }

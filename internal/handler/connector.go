@@ -17,10 +17,18 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"html"
+	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"ragflow/internal/cache"
 	"ragflow/internal/entity"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -38,6 +46,12 @@ type ConnectorHandler struct {
 	connectorService connectorService
 	userService      *service.UserService
 }
+
+const (
+	gmailWebFlowTTLSeconds         = 15 * 60
+	gmailWebOAuthTokenURL          = "https://oauth2.googleapis.com/token"
+	defaultGmailWebOAuthRedirectURI = "http://localhost:9380/v1/connector/gmail/oauth/web/callback"
+)
 
 // NewConnectorHandler create connector handler
 func NewConnectorHandler(connectorService *service.ConnectorService, userService *service.UserService) *ConnectorHandler {
@@ -173,4 +187,166 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		"data":    connector,
 		"message": "success",
 	})
+}
+
+func gmailWebStateCacheKey(flowID string) string {
+	return "gmail_web_flow_state:" + flowID
+}
+
+func gmailWebResultCacheKey(flowID string) string {
+	return "gmail_web_flow_result:" + flowID
+}
+
+func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, message string, source string) {
+	status := "error"
+	autoClose := ""
+	if success {
+		status = "success"
+		autoClose = "window.close();"
+	}
+	payloadType := fmt.Sprintf("ragflow-%s-oauth", source)
+	payloadJSON := fmt.Sprintf(
+		`{"type":"%s","status":"%s","flowId":"%s","message":%q}`,
+		payloadType,
+		status,
+		flowID,
+		message,
+	)
+	page := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Google %s Authorization</title></head>
+<body style="font-family: Arial, sans-serif; background: #f8fafc; color: #0f172a; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0;">
+  <div style="background:white; padding:32px; border-radius:12px; box-shadow:0 8px 30px rgba(15,23,42,0.1); max-width:420px; text-align:center;">
+    <h1>%s</h1>
+    <p>%s</p>
+    <p>You can close this window.</p>
+  </div>
+  <script>
+    (function(){
+      if (window.opener) { window.opener.postMessage(%s, "*"); }
+      %s
+    })();
+  </script>
+</body>
+</html>`,
+		strings.Title(source),
+		map[bool]string{true: "Authorization complete", false: "Authorization failed"}[success],
+		html.EscapeString(message),
+		payloadJSON,
+		autoClose,
+	)
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusOK, page)
+}
+
+// GoogleGmailWebOAuthCallback handles GET /api/v1/connectors/gmail/oauth/web/callback.
+func (h *ConnectorHandler) GoogleGmailWebOAuthCallback(c *gin.Context) {
+	stateID := c.Query("state")
+	errVal := c.Query("error")
+	errorDescription := c.Query("error_description")
+	if errorDescription == "" {
+		errorDescription = errVal
+	}
+
+	if stateID == "" {
+		renderGoogleWebOAuthPopup(c, "", false, "Missing OAuth state parameter.", "gmail")
+		return
+	}
+
+	redisClient := cache.Get()
+	if redisClient == nil {
+		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session expired. Please restart from the main window.", "gmail")
+		return
+	}
+
+	var stateObj map[string]interface{}
+	if ok := redisClient.GetObj(gmailWebStateCacheKey(stateID), &stateObj); !ok {
+		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session expired. Please restart from the main window.", "gmail")
+		return
+	}
+
+	clientConfigAny, hasClientConfig := stateObj["client_config"]
+	clientConfig, okClientCfg := clientConfigAny.(map[string]interface{})
+	if !hasClientConfig || !okClientCfg {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session was invalid. Please retry.", "gmail")
+		return
+	}
+
+	webConfigAny, hasWeb := clientConfig["web"]
+	webConfig, okWebCfg := webConfigAny.(map[string]interface{})
+	if !hasWeb || !okWebCfg {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session was invalid. Please retry.", "gmail")
+		return
+	}
+
+	if errVal != "" {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		msg := errorDescription
+		if msg == "" {
+			msg = "Authorization was cancelled."
+		}
+		renderGoogleWebOAuthPopup(c, stateID, false, msg, "gmail")
+		return
+	}
+
+	code := c.Query("code")
+	if code == "" {
+		renderGoogleWebOAuthPopup(c, stateID, false, "Missing authorization code from Google.", "gmail")
+		return
+	}
+
+	redirectURI := defaultGmailWebOAuthRedirectURI
+	if rawRedirectURI, ok := stateObj["redirect_uri"].(string); ok && strings.TrimSpace(rawRedirectURI) != "" {
+		redirectURI = strings.TrimSpace(rawRedirectURI)
+	}
+	clientID, _ := webConfig["client_id"].(string)
+	clientSecret, _ := webConfig["client_secret"].(string)
+	codeVerifier, _ := stateObj["code_verifier"].(string)
+
+	form := url.Values{}
+	form.Set("code", code)
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+	form.Set("redirect_uri", redirectURI)
+	form.Set("grant_type", "authorization_code")
+	if codeVerifier != "" {
+		form.Set("code_verifier", codeVerifier)
+	}
+	req, _ := http.NewRequest(http.MethodPost, gmailWebOAuthTokenURL, bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
+		return
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
+		return
+	}
+
+	var tokenMap map[string]interface{}
+	if err := json.Unmarshal(body, &tokenMap); err != nil {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
+		return
+	}
+	tokenMap["client_id"] = clientID
+	tokenMap["client_secret"] = clientSecret
+	tokenBytes, _ := json.Marshal(tokenMap)
+
+	resultPayload := map[string]interface{}{
+		"user_id":      stateObj["user_id"],
+		"credentials": string(tokenBytes),
+	}
+	redisClient.SetObj(gmailWebResultCacheKey(stateID), resultPayload, time.Duration(gmailWebFlowTTLSeconds)*time.Second)
+	redisClient.Delete(gmailWebStateCacheKey(stateID))
+
+	renderGoogleWebOAuthPopup(c, stateID, true, "Authorization completed successfully.", "gmail")
 }
