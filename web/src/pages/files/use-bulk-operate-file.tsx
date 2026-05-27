@@ -36,6 +36,14 @@ export function useBulkOperateFile({
       },
     },
     {
+      id: 'link',
+      label: t('fileManager.addToKnowledge'),
+      icon: <Link2 />,
+      onClick: async () => {
+        showConnectToKnowledgeModal(selectedIds);
+      },
+    },
+    {
       id: 'delete',
       label: t('common.delete'),
       icon: <Trash2 />,
@@ -44,14 +52,6 @@ export function useBulkOperateFile({
         if (code === 0) {
           setRowSelection({});
         }
-      },
-    },
-    {
-      id: 'link',
-      label: t('fileManager.addToKnowledge'),
-      icon: <Link2 />,
-      onClick: async () => {
-        showConnectToKnowledgeModal(selectedIds);
       },
     },
   ];
