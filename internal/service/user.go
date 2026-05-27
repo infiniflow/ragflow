@@ -1187,3 +1187,209 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 	return user, common.CodeSuccess, nil
 
 }
+
+// ---- Forgot-password flow (mirrors api/apps/restful_apis/user_api.py
+// `/auth/password/...` endpoints, fixes #15282) -------------------------
+
+// ForgotIssueCaptcha mints a captcha for the given email and stores it in
+// Redis under utility.CaptchaRedisKey with a 60s TTL. Returns the
+// captcha text so the handler can render it (image or JSON depending on
+// the handler's contract — the service does not commit either way).
+//
+// Refuses unknown emails to avoid leaking the user list — matches Python.
+func (s *UserService) ForgotIssueCaptcha(email string) (string, common.ErrorCode, error) {
+	if email == "" {
+		return "", common.CodeArgumentError, fmt.Errorf("email is required")
+	}
+	if _, err := s.userDAO.GetByEmail(email); err != nil {
+		return "", common.CodeDataError, fmt.Errorf("invalid email")
+	}
+
+	code, err := utility.GenerateCaptchaCode()
+	if err != nil {
+		return "", common.CodeServerError, err
+	}
+	if ok := cache.Get().Set(utility.CaptchaRedisKey(email), code, 60*time.Second); !ok {
+		return "", common.CodeServerError, fmt.Errorf("failed to store captcha")
+	}
+	return code, common.CodeSuccess, nil
+}
+
+// ForgotSendOTP verifies the captcha, then issues an OTP and emails it.
+// Hash-and-salt is stored in Redis under the keys returned by
+// utility.OTPRedisKeys; resend cooldown and per-email lockout behaviour
+// match the Python implementation byte-for-byte.
+func (s *UserService) ForgotSendOTP(email, captcha string) (common.ErrorCode, error) {
+	if email == "" || captcha == "" {
+		return common.CodeArgumentError, fmt.Errorf("email and captcha required")
+	}
+	if _, err := s.userDAO.GetByEmail(email); err != nil {
+		return common.CodeDataError, fmt.Errorf("invalid email")
+	}
+
+	rc := cache.Get()
+	captchaKey := utility.CaptchaRedisKey(email)
+	stored, _ := rc.Get(captchaKey)
+	if stored == "" {
+		return common.CodeNotEffective, fmt.Errorf("invalid or expired captcha")
+	}
+	if !strings.EqualFold(strings.TrimSpace(stored), strings.TrimSpace(captcha)) {
+		return common.CodeAuthenticationError, fmt.Errorf("invalid or expired captcha")
+	}
+	// One-shot: consume the captcha so a leaked stream of OTP requests
+	// cannot reuse the same image.
+	_ = rc.Set(captchaKey, "", time.Second)
+
+	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
+
+	// Resend cooldown — refuse if we already sent within the window.
+	if lastSent, _ := rc.Get(lastSentKey); lastSent != "" {
+		ts, parseErr := strconv.ParseInt(lastSent, 10, 64)
+		if parseErr == nil {
+			elapsed := time.Since(time.Unix(ts, 0))
+			remaining := utility.OTPResendCooldown - elapsed
+			if remaining > 0 {
+				return common.CodeNotEffective, fmt.Errorf("you still have to wait %d seconds", int(remaining.Seconds()))
+			}
+		}
+	}
+
+	otp, err := utility.GenerateOTPCode()
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	salt, err := utility.GenerateOTPSalt()
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	codeHash := utility.HashOTPCode(otp, salt)
+	now := strconv.FormatInt(time.Now().Unix(), 10)
+
+	if !rc.Set(codeKey, utility.EncodeOTPStorageValue(codeHash, salt), utility.OTPTTL) {
+		return common.CodeServerError, fmt.Errorf("failed to store otp")
+	}
+	rc.Set(attemptsKey, "0", utility.OTPTTL)
+	rc.Set(lastSentKey, now, utility.OTPTTL)
+	rc.Delete(lockKey)
+
+	ttlMin := int(utility.OTPTTL.Minutes())
+	if err := utility.SendResetCodeEmail(email, otp, ttlMin); err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to send email")
+	}
+	return common.CodeSuccess, nil
+}
+
+// ForgotVerifyOTP checks an OTP submitted by the user. On success it
+// consumes the OTP/attempt counters and writes a short-lived "verified"
+// flag the reset endpoint will gate on.
+func (s *UserService) ForgotVerifyOTP(email, otp string) (common.ErrorCode, error) {
+	if email == "" || otp == "" {
+		return common.CodeArgumentError, fmt.Errorf("email and otp are required")
+	}
+	if _, err := s.userDAO.GetByEmail(email); err != nil {
+		return common.CodeDataError, fmt.Errorf("invalid email")
+	}
+
+	rc := cache.Get()
+	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
+
+	if locked, _ := rc.Get(lockKey); locked != "" {
+		return common.CodeNotEffective, fmt.Errorf("too many attempts, try later")
+	}
+
+	stored, _ := rc.Get(codeKey)
+	if stored == "" {
+		return common.CodeNotEffective, fmt.Errorf("expired otp")
+	}
+	storedHash, salt, err := utility.DecodeOTPStorageValue(stored)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("otp storage corrupted")
+	}
+
+	if utility.HashOTPCode(strings.ToUpper(strings.TrimSpace(otp)), salt) != storedHash {
+		// bump attempts; lock on >= limit
+		attempts := 0
+		if cur, _ := rc.Get(attemptsKey); cur != "" {
+			if n, perr := strconv.Atoi(cur); perr == nil {
+				attempts = n
+			}
+		}
+		attempts++
+		rc.Set(attemptsKey, strconv.Itoa(attempts), utility.OTPTTL)
+		if attempts >= utility.OTPAttemptLimit {
+			rc.Set(lockKey, strconv.FormatInt(time.Now().Unix(), 10), utility.OTPAttemptLockDuration)
+		}
+		return common.CodeAuthenticationError, fmt.Errorf("expired otp")
+	}
+
+	// Success: clear OTP state, mark email verified.
+	rc.Delete(codeKey)
+	rc.Delete(attemptsKey)
+	rc.Delete(lastSentKey)
+	rc.Delete(lockKey)
+	if !rc.Set(utility.OTPVerifiedRedisKey(email), "1", utility.OTPTTL) {
+		return common.CodeServerError, fmt.Errorf("failed to set verification state")
+	}
+	return common.CodeSuccess, nil
+}
+
+// ForgotResetPasswordRequest carries the JSON body of /auth/password/reset.
+type ForgotResetPasswordRequest struct {
+	Email              string `json:"email" binding:"required,email"`
+	NewPassword        string `json:"new_password" binding:"required"`
+	ConfirmNewPassword string `json:"confirm_new_password" binding:"required"`
+}
+
+// ForgotResetPassword finalises the reset: only proceeds if the verified
+// flag is set, validates the two ciphertexts match after RSA decryption,
+// updates the password hash, and clears the verified flag. Returns the
+// user so the handler can auto-login (matching Python's
+// `construct_response(auth=user.get_id())`).
+func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*entity.User, common.ErrorCode, error) {
+	if req.Email == "" || req.NewPassword == "" || req.ConfirmNewPassword == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
+	}
+
+	rc := cache.Get()
+	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
+	if v, _ := rc.Get(verifiedKey); v != "1" {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")
+	}
+
+	plain, err := s.decryptPassword(req.NewPassword)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
+	}
+	confirm, err := s.decryptPassword(req.ConfirmNewPassword)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
+	}
+	if plain != confirm {
+		return nil, common.CodeArgumentError, fmt.Errorf("passwords do not match")
+	}
+
+	user, err := s.userDAO.GetByEmail(req.Email)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("invalid email")
+	}
+
+	hashed, err := s.HashPassword(plain)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
+	}
+	user.Password = &hashed
+
+	// Auto-login: rotate the access token like LoginByEmail does so the
+	// handler can immediately mint an Authorization header.
+	token := utility.GenerateToken()
+	user.AccessToken = &token
+	now := time.Now().Truncate(time.Second)
+	user.LastLoginTime = &now
+
+	if err := s.userDAO.Update(user); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to reset password: %w", err)
+	}
+
+	rc.Delete(verifiedKey)
+	return user, common.CodeSuccess, nil
+}
