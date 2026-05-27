@@ -30,6 +30,7 @@ import (
 type TenantService struct {
 	tenantDAO            *dao.TenantDAO
 	userTenantDAO        *dao.UserTenantDAO
+	userDAO              *dao.UserDAO
 	modelProviderDAO     *dao.TenantModelProviderDAO
 	modelInstanceDAO     *dao.TenantModelInstanceDAO
 	modelDAO             *dao.TenantModelDAO
@@ -43,6 +44,7 @@ func NewTenantService() *TenantService {
 	return &TenantService{
 		tenantDAO:            dao.NewTenantDAO(),
 		userTenantDAO:        dao.NewUserTenantDAO(),
+		userDAO:              dao.NewUserDAO(),
 		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
 		modelDAO:             dao.NewTenantModelDAO(),
@@ -580,4 +582,143 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 	})
 
 	return nil
+}
+
+// Tenant member role constants.
+const (
+	TenantRoleOwner  = "owner"
+	TenantRoleNormal = "normal"
+	TenantRoleInvite = "invite"
+	TenantRoleAdmin  = "admin"
+)
+
+// TenantMemberResponse is one entry in the member list response.
+type TenantMemberResponse struct {
+	ID              string  `json:"id"`
+	UserID          string  `json:"user_id"`
+	Role            string  `json:"role"`
+	Nickname        string  `json:"nickname"`
+	Email           string  `json:"email"`
+	Avatar          string  `json:"avatar"`
+	IsAuthenticated bool    `json:"is_authenticated"`
+	IsActive        string  `json:"is_active"`
+	IsAnonymous     bool    `json:"is_anonymous"`
+	IsSuperuser     bool    `json:"is_superuser"`
+	UpdateDate      string  `json:"update_date"`
+	DeltaSeconds    float64 `json:"delta_seconds"`
+}
+
+// ListMembers returns all non-owner members of tenantID.
+// Only the tenant owner (userID == tenantID) may call this.
+func (s *TenantService) ListMembers(userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
+	if userID != tenantID {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	rows, err := s.userTenantDAO.GetMembersByTenantID(tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	result := make([]*TenantMemberResponse, 0, len(rows))
+	for _, r := range rows {
+		delta, _ := common.DeltaSeconds(r.UpdateDate)
+		result = append(result, &TenantMemberResponse{
+			ID:              r.ID,
+			UserID:          r.UserID,
+			Role:            r.Role,
+			Nickname:        r.Nickname,
+			Email:           r.Email,
+			Avatar:          r.Avatar,
+			IsAuthenticated: r.IsAuthenticated,
+			IsActive:        r.IsActive,
+			IsAnonymous:     r.IsAnonymous,
+			IsSuperuser:     r.IsSuperuser,
+			UpdateDate:      r.UpdateDate,
+			DeltaSeconds:    delta,
+		})
+	}
+	return result, common.CodeSuccess, nil
+}
+
+// AddMemberRequest holds the invite payload.
+type AddMemberRequest struct {
+	Email string `json:"email"`
+}
+
+// AddMemberResponse holds the new member's public data.
+type AddMemberResponse struct {
+	ID       string `json:"id"`
+	Avatar   string `json:"avatar"`
+	Email    string `json:"email"`
+	Nickname string `json:"nickname"`
+}
+
+// AddMember invites a user (by email) to the tenant.
+// Only the tenant owner (userID == tenantID) may call this.
+func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
+	if userID != tenantID {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	if req.Email == "" {
+		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
+	}
+
+	invitee, err := s.userDAO.GetByEmail(req.Email)
+	if err != nil {
+		return nil, common.CodeDataError, fmt.Errorf("user not found")
+	}
+
+	// Reject if already a member (owner or normal).
+	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(invitee.ID, tenantID)
+	if existing != nil {
+		switch existing.Role {
+		case TenantRoleOwner:
+			return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
+		case TenantRoleNormal, TenantRoleAdmin:
+			return nil, common.CodeDataError, fmt.Errorf("user is already a member")
+		}
+	}
+
+	status := "1"
+	ut := &entity.UserTenant{
+		ID:        common.GenerateUUID(),
+		UserID:    invitee.ID,
+		TenantID:  tenantID,
+		Role:      TenantRoleInvite,
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	if err := s.userTenantDAO.Create(ut); err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
+	}
+
+	avatar := ""
+	if invitee.Avatar != nil {
+		avatar = *invitee.Avatar
+	}
+	return &AddMemberResponse{
+		ID:       invitee.ID,
+		Avatar:   avatar,
+		Email:    invitee.Email,
+		Nickname: invitee.Nickname,
+	}, common.CodeSuccess, nil
+}
+
+// RemoveMember removes a user from the tenant.
+// Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
+func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (common.ErrorCode, error) {
+	if userID != tenantID && userID != targetUserID {
+		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	if err := s.userTenantDAO.DeleteByUserAndTenant(targetUserID, tenantID); err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)
+	}
+	return common.CodeSuccess, nil
+}
+
+// AcceptInvite transitions the calling user's role from "invite" → "normal" for the given tenant.
+func (s *TenantService) AcceptInvite(userID, tenantID string) (common.ErrorCode, error) {
+	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(userID, tenantID, TenantRoleNormal); err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to accept invitation: %w", err)
+	}
+	return common.CodeSuccess, nil
 }

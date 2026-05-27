@@ -345,3 +345,128 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// ListTenantMembers lists all non-owner members of a tenant.
+// @Summary List tenant members
+// @Tags tenants
+// @Produce json
+// @Param tenant_id path string true "Tenant ID"
+// @Router /api/v1/tenants/{tenant_id}/users [get]
+func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	tenantID := c.Param("tenant_id")
+	if tenantID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		return
+	}
+
+	members, code, err := h.tenantService.ListMembers(user.ID, tenantID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": members, "message": "success"})
+}
+
+// AddTenantMember invites a user (by email) to the tenant.
+// @Summary Invite a user to a tenant
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Param tenant_id path string true "Tenant ID"
+// @Param request body service.AddMemberRequest true "Invite request"
+// @Router /api/v1/tenants/{tenant_id}/users [post]
+func (h *TenantHandler) AddTenantMember(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	tenantID := c.Param("tenant_id")
+	if tenantID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		return
+	}
+
+	var req service.AddMemberRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "invalid request body: " + err.Error()})
+		return
+	}
+
+	resp, code, err := h.tenantService.AddMember(user.ID, tenantID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": resp, "message": "success"})
+}
+
+// RemoveTenantMember removes a user from the tenant.
+// @Summary Remove a user from a tenant
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Param tenant_id path string true "Tenant ID"
+// @Router /api/v1/tenants/{tenant_id}/users [delete]
+func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	tenantID := c.Param("tenant_id")
+	if tenantID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		return
+	}
+
+	var body struct {
+		UserID string `json:"user_id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "user_id is required"})
+		return
+	}
+
+	code, err := h.tenantService.RemoveMember(user.ID, tenantID, body.UserID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+}
+
+// AcceptTenantInvite accepts a pending team invitation, transitioning role invite → normal.
+// @Summary Accept tenant invitation
+// @Tags tenants
+// @Produce json
+// @Param tenant_id path string true "Tenant ID"
+// @Router /api/v1/tenants/{tenant_id} [patch]
+func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	tenantID := c.Param("tenant_id")
+	if tenantID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "tenant_id is required"})
+		return
+	}
+
+	code, err := h.tenantService.AcceptInvite(user.ID, tenantID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": nil, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+}

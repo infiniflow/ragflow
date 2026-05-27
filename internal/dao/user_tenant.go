@@ -114,6 +114,35 @@ type TenantInfoByUserID struct {
 	UpdateDate string `json:"update_date"`
 }
 
+// TenantMemberItem holds user details for a tenant member listing.
+type TenantMemberItem struct {
+	ID             string `json:"id"`
+	UserID         string `json:"user_id"`
+	Role           string `json:"role"`
+	Nickname       string `json:"nickname"`
+	Email          string `json:"email"`
+	Avatar         string `json:"avatar"`
+	IsAuthenticated bool  `json:"is_authenticated"`
+	IsActive       string `json:"is_active"`
+	IsAnonymous    bool   `json:"is_anonymous"`
+	IsSuperuser    bool   `json:"is_superuser"`
+	UpdateDate     string `json:"update_date"`
+}
+
+// GetMembersByTenantID returns all non-owner members of a tenant with user details.
+func (dao *UserTenantDAO) GetMembersByTenantID(tenantID string) ([]*TenantMemberItem, error) {
+	var results []*TenantMemberItem
+	err := DB.Table("user_tenant").
+		Select("user_tenant.id, user_tenant.user_id, user_tenant.role, "+
+			"user.nickname, user.email, user.avatar, user.is_authenticated, "+
+			"user.status AS is_active, user.is_anonymous, user.is_superuser, user.update_date").
+		Joins("JOIN user ON user_tenant.user_id = user.id").
+		Where("user_tenant.tenant_id = ? AND user_tenant.status = ? AND user_tenant.role != ?",
+			tenantID, "1", "owner").
+		Scan(&results).Error
+	return results, err
+}
+
 // GetTenantsByUserID get tenants by user ID with user details
 func (dao *UserTenantDAO) GetTenantsByUserID(userID string) ([]*TenantInfoByUserID, error) {
 	var results []*TenantInfoByUserID
@@ -142,4 +171,18 @@ func (dao *UserTenantDAO) GetByUserIDAll(userID string) ([]*entity.UserTenant, e
 	var relations []*entity.UserTenant
 	err := DB.Where("user_id = ?", userID).Find(&relations).Error
 	return relations, err
+}
+
+// DeleteByUserAndTenant hard-deletes the join record for a specific user+tenant pair.
+func (dao *UserTenantDAO) DeleteByUserAndTenant(userID, tenantID string) error {
+	return DB.Unscoped().
+		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
+		Delete(&entity.UserTenant{}).Error
+}
+
+// UpdateRoleByUserAndTenant updates the role for a specific user+tenant pair.
+func (dao *UserTenantDAO) UpdateRoleByUserAndTenant(userID, tenantID, role string) error {
+	return DB.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ? AND status = ?", userID, tenantID, "1").
+		Update("role", role).Error
 }
