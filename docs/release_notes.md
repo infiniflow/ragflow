@@ -9,6 +9,38 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.6
+
+Released on May 26, 2026.
+
+### New features
+
+- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
+
+### Improvements
+
+- RAG: RAPTOR construction now introduces AHC mode (Ψ-RAG), which expands semantics from the document level to the dataset level. Not only is index construction performance significantly higher than the previous RAPTOR, but it also outperforms the old RAPTOR on Recall@5 and average F1. Users can switch between AHC and GMM modes. This feature was introduced in v0.25.3, and this release fixes several bugs. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
+- Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/infiniflow/ragflow/pull/15047)
+- Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/infiniflow/ragflow/pull/15212)
+- Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
+- Agent: Allows developers to pass `chat_template_kwargs` to agent chat completion endpoint. [#14182](https://github.com/infiniflow/ragflow/issues/14182)[#14542](https://github.com/infiniflow/ragflow/pull/14542)
+
+### Bug fixes
+
+- Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/infiniflow/ragflow/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+- Weight assigned to vector similarity was not applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
+- Fixes parser configs not saving on dataset configuration page.
+- Logs wer not fully displayed on data source details page.
+- Fixes document status filtering failure.
+- Fixes crash guard for empty LLM choices responses.
+- RAG: RAPTOR construction process halted when using the [Infinity](https://github.com/infiniflow/infinity) document engine. [#14998](https://github.com/infiniflow/ragflow/pull/14998)
+- Fixes streaming response parsing for Mistral/Upstage reasoning models.
+- Fixes HTML tags in ingestion pipeline parser output.
+- Fixes table parser metadata.
+- Fixes asyncio event loop nesting and fire-and-forget task issues.
+- Fixes asyncio.Semaphore bound to different event loop error.
+- Agent: Fixes **Agent** component prompt variable disappearing and search vector_similarity_weight issues.
+
 ## v0.25.5
 
 Released on May 20, 2026.
@@ -36,8 +68,8 @@ Released on May 20, 2026.
 - Agent: Fixed MCP tool name duplication.[#14217](https://github.com/infiniflow/ragflow/pull/14217)
 - Agent: top_k passing issues [#14760](https://github.com/infiniflow/ragflow/pull/14760)
 - Chat file attachment loss. [#13993](https://github.com/infiniflow/ragflow/pull/13993)
-- IMAP multi-address parsing [#15006](https://github.com/infiniflow/ragflow/pull/15006)
-- Langfuse token usage reporting. [#13294](https://github.com/infiniflow/ragflow/pull/13294)
+- IMAP synchronization process crashed when multiple email addresses or quoted commas were detected in "From" header. [#14963](https://github.com/infiniflow/ragflow/issues/14963)[#14964](https://github.com/infiniflow/ragflow/issues/14964)[#15006](https://github.com/infiniflow/ragflow/pull/15006)
+- Langfuse integration failed to track token consumption. [#9837](https://github.com/infiniflow/ragflow/issues/9837)[#13294](https://github.com/infiniflow/ragflow/pull/13294)
 - Enhances the stability and fault tolerance of the reranking module by implementing network timeouts, crash-prevention safeguards, and specific provider bug fixes. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
 - Increases minimum supported Nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
 
@@ -68,7 +100,6 @@ Released on May 13, 2026.
 
 ### New features
 
-- Data source and parsing: Added column-level semantic/metadata control for the spreadsheet file parser; introduced ETag optimization for incremental synchronization of S3 data sources to avoid unnecessary file transfers.
 - Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/infiniflow/ragflow/pull/13710)
 
 ### Improvements
