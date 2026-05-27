@@ -169,6 +169,73 @@ async def _create_session_for_completion(chat_id, dialog, user_id):
     return conv_obj
 
 
+def _get_bool_request_flag(req, *names, default=False):
+    for name in names:
+        if name not in req:
+            continue
+        value = req.pop(name)
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+    return default
+
+
+def _normalize_completion_messages(req):
+    messages = req.get("messages")
+    if messages is None:
+        question = req.get("question")
+        if question is None:
+            return None, get_data_error_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="required argument are missing: messages",
+            )
+        messages = [{"role": "user", "content": question}]
+        if req.get("files"):
+            messages[-1]["files"] = req["files"]
+
+    if not isinstance(messages, list) or not messages:
+        return None, get_data_error_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="`messages` must be a non-empty list.",
+        )
+
+    for message in messages:
+        if not isinstance(message, dict):
+            return None, get_data_error_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="Every item in `messages` must be an object.",
+            )
+        if "role" not in message or "content" not in message:
+            return None, get_data_error_result(
+                code=RetCode.ARGUMENT_ERROR,
+                message="Every item in `messages` must include `role` and `content`.",
+            )
+
+    msg = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "assistant" and not msg:
+            continue
+        msg.append(m)
+
+    if not msg:
+        return None, get_data_error_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="`messages` must contain a user message.",
+        )
+    if msg[-1]["role"] != "user":
+        return None, get_data_error_result(
+            code=RetCode.ARGUMENT_ERROR,
+            message="The last message must be from user.",
+        )
+    if not msg[-1].get("id"):
+        msg[-1]["id"] = get_uuid()
+
+    # till now, message and msg are sharing the same copy
+    return (messages, msg), None
+
+
 async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
@@ -662,6 +729,7 @@ async def bulk_delete_chats():
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @login_required
 async def create_session(chat_id):
+    """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -678,7 +746,7 @@ async def create_session(chat_id):
             "dialog_id": chat_id,
             "name": name,
             "message": [{"role": "assistant", "content": dia.prompt_config.get("prologue", "")}],
-            "user_id": req.get("user_id", current_user.id),
+            "user_id": current_user.id,
             "reference": [],
         }
         ConversationService.save(**conv)
@@ -1056,20 +1124,19 @@ async def recommendation():
 
 @manager.route("/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("messages")
 async def session_completion(chat_id_in_arg=""):
+    """Handle chat completion requests, streaming or non-streaming, scoped to the authenticated user."""
     req = await get_request_json()
-    msg = []
-    for m in req["messages"]:
-        if m["role"] == "system":
-            continue
-        if m["role"] == "assistant" and not msg:
-            continue
-        msg.append(m)
-    message_id = msg[-1].get("id") if msg else None
+    normalized, error = _normalize_completion_messages(req)
+    if error:
+        return error
+    request_messages, request_msg = normalized
+    pass_all_history_messages = _get_bool_request_flag(req, "pass_all_history_messages", "pass_all_history", default=False)
+    msg = request_msg
+    message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""
     chat_id = chat_id or chat_id_in_arg
-    session_id = req.pop("session_id", "") or ""
+    session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
     chat_model_config = {}
@@ -1100,14 +1167,29 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, req.get("user_id", current_user.id))
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
                 session_id = conv.id
-            conv.message = deepcopy(req["messages"])
+
+            if pass_all_history_messages:
+                conv.message = deepcopy(request_messages)
+                msg = request_msg
+            else:
+                if not conv.message:
+                    conv.message = []
+                conv.message.append(deepcopy(request_msg[-1]))
+                msg = []
+                for m in conv.message:
+                    if m["role"] == "system":
+                        continue
+                    if m["role"] == "assistant" and not msg:
+                        continue
+                    msg.append(m)
         else:
             dia = _build_default_completion_dialog()
             dia.llm_setting = chat_model_config
 
-        del req["messages"]
+        req.pop("messages", None)
+        req.pop("question", None)
 
         if conv is not None:
             if not conv.reference:
@@ -1124,12 +1206,14 @@ async def session_completion(chat_id_in_arg=""):
         stream_mode = req.pop("stream", True)
 
         def _format_answer(ans):
+            """Wrap a raw answer dict with session and chat identifiers."""
             formatted = structure_answer(conv, ans, message_id, session_id)
             if chat_id:
                 formatted["chat_id"] = chat_id
             return formatted
 
         async def stream():
+            """Yield SSE-formatted chunks from the async chat generator."""
             nonlocal dia, msg, req, conv
             try:
                 async for ans in async_chat(dia, msg, True, **req):
@@ -1151,7 +1235,7 @@ async def session_completion(chat_id_in_arg=""):
             return resp
 
         answer = None
-        async for ans in async_chat(dia, msg, **req):
+        async for ans in async_chat(dia, msg, False, **req):
             answer = _format_answer(ans)
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())

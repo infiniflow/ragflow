@@ -20,10 +20,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -490,7 +495,78 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 }
 
 func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+
+	var region = "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Rerank)
+
+	var topN = rerankConfig.TopN
+	if rerankConfig.TopN != 0 {
+		topN = rerankConfig.TopN
+	}
+
+	reqBody := map[string]interface{}{
+		"model":     *modelName,
+		"query":     query,
+		"documents": documents,
+		"top_n":     topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("TogetherAI Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var rerankResp struct {
+		Results []struct {
+			Index          int     `json:"index"`
+			RelevanceScore float64 `json:"relevance_score"`
+		} `json:"results"`
+	}
+
+	if err = json.Unmarshal(body, &rerankResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	var rerankResponse RerankResponse
+	for _, result := range rerankResp.Results {
+		rerankResult := RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
+		}
+		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
+	}
+
+	return &rerankResponse, nil
 }
 
 func (t *TogetherAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -498,7 +574,105 @@ func (t *TogetherAIModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 }
 
 func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("TogetherAI API key is missing")
+	}
+
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.ASR)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// audio file
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	part, err := writer.CreateFormFile("file", filepath.Base(*file))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file: %w", err)
+	}
+
+	if _, err = io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", err)
+	}
+
+	// extra params
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+
+			var val string
+
+			switch v := value.(type) {
+			case string:
+				val = v
+			case bool:
+				val = strconv.FormatBool(v)
+			case int:
+				val = strconv.Itoa(v)
+			case float64:
+				val = strconv.FormatFloat(v, 'f', -1, 64)
+			default:
+				val = fmt.Sprintf("%v", v)
+			}
+
+			if err := writer.WriteField(key, val); err != nil {
+				return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+			}
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// request
+	req, err := http.NewRequest("POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("TogetherAI ASR error: %s - %s", resp.Status, string(respBody))
+	}
+
+	// result
+	var result struct {
+		Text string `json:"text"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &ASRResponse{
+		Text: result.Text,
+	}, nil
 }
 
 func (t *TogetherAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
@@ -506,11 +680,174 @@ func (t *TogetherAIModel) TranscribeAudioWithSender(modelName *string, file *str
 }
 
 func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("TogetherAI API key is missing")
+	}
+
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("text content is missing")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": *audioContent,
+	}
+
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
+	}
+
+	return &TTSResponse{Audio: body}, nil
 }
 
 func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", t.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("TogetherAI API key is missing")
+	}
+
+	if audioContent == nil || *audioContent == "" {
+		return fmt.Errorf("text content is missing")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	cleanBaseURL := strings.TrimRight(t.BaseURL[region], "/")
+	cleanSuffix := strings.TrimLeft(t.URLSuffix.TTS, "/")
+	url := fmt.Sprintf("%s/%s", cleanBaseURL, cleanSuffix)
+
+	// Build Request body
+	reqBody := map[string]interface{}{
+		"model":  *modelName,
+		"input":  *audioContent,
+		"stream": true,
+	}
+
+	if ttsConfig != nil {
+		if ttsConfig.Format != "" {
+			reqBody["response_format"] = ttsConfig.Format
+		}
+		if ttsConfig.Params != nil {
+			for key, value := range ttsConfig.Params {
+				reqBody[key] = value
+			}
+		}
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Build Request
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		buf := make([]byte, 1024)
+		n, _ := resp.Body.Read(buf)
+		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		dataStr := strings.TrimSpace(line[6:])
+		if dataStr == "" {
+			continue
+		}
+
+		// End
+		if dataStr == "[DONE]" {
+			break
+		}
+
+		var event struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		}
+
+		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+			continue
+		}
+
+		// Parse delta audio
+		if event.Type == "conversation.item.audio_output.delta" && event.Delta != "" {
+			audioBytes, err := base64.StdEncoding.DecodeString(event.Delta)
+			if err == nil && len(audioBytes) > 0 {
+				chunk := string(audioBytes)
+				if errSend := sender(&chunk, nil); errSend != nil {
+					return errSend
+				}
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading TogetherAI stream: %w", err)
+	}
+
+	return nil
 }
 
 func (t *TogetherAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {

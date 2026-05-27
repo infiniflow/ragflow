@@ -1281,3 +1281,162 @@ func (c *RAGFlowClient) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
+func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+	resp, err := c.HTTPClient.Request("GET", "/admin/ingestors", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ingestors: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list ingestors: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list ingestors failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+func (c *RAGFlowClient) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/admin/ingestion/tasks", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list admin tasks: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list admin tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list admin tasks failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	fileURI, ok := cmd.Params["uri"].(string)
+	if !ok {
+		return nil, fmt.Errorf("uri not provided")
+	}
+	payload := map[string]interface{}{
+		"uri":  fileURI,
+		"from": "CLI",
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/admin/ingestion", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	taskID, ok := cmd.Params["task_id"].(string)
+	if !ok {
+		return nil, fmt.Errorf("uri not provided")
+	}
+	payload := map[string]interface{}{
+		"task_id": taskID,
+		"from":    "CLI",
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/admin/ingestion", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	ingestorName, ok := cmd.Params["ingestor_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("ingestor_name not provided")
+	}
+	payload := map[string]interface{}{
+		"ingestor_name": ingestorName,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/admin/ingestors", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to shutdown ingestor: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to shutdown ingestor: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("shutdown ingestor failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}

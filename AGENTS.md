@@ -34,7 +34,7 @@ The project uses **uv** for dependency management.
 
 1. **Setup Environment**:
    ```bash
-   uv sync --python 3.12 --all-extras
+   uv sync --python 3.13 --all-extras
    uv run python3 download_deps.py
    ```
 

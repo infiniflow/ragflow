@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -566,13 +567,308 @@ func (r *ReplicateModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+// replicateEmbedInput shapes the request body for Replicate's standard
+// embedding models (e.g. replicate/all-mpnet-base-v2). Per the
+// canonical Replicate embedding schema published in the model's
+// openapi_schema, the two input fields are:
+//
+//	text       — single string to encode (used when len(texts) == 1)
+//	text_batch — JSON-formatted list of strings (used when len > 1)
+//
+// `text_batch` is `type: string` in the schema, so the JSON-encoded
+// list itself is sent as a string value, NOT as a JSON array. Models
+// that use different field names (e.g. nateraw/bge-large-en-v1.5's
+// `texts`) are not currently supported by this driver; tenants on
+// those should consult Replicate's OpenAPI schema and configure a
+// compatible model in conf/models/replicate.json.
+func replicateEmbedInput(texts []string) (map[string]interface{}, error) {
+	switch len(texts) {
+	case 0:
+		return nil, fmt.Errorf("replicate: texts is empty")
+	case 1:
+		return map[string]interface{}{"text": texts[0]}, nil
+	default:
+		encoded, err := json.Marshal(texts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode text_batch: %w", err)
+		}
+		return map[string]interface{}{"text_batch": string(encoded)}, nil
+	}
 }
 
-func (r *ReplicateModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+// replicateEmbedOutputToVectors normalizes Replicate's two observed
+// embedding-output shapes into []EmbeddingData aligned with the
+// caller's input order:
+//
+//	[]{embedding: [floats]}   — the documented Embedding schema used
+//	                            by replicate/all-mpnet-base-v2
+//	[][floats]                — bare nested array used by some
+//	                            community models
+//
+// The driver rejects mismatched cardinality (output length != input
+// length) and non-numeric vector entries rather than silently
+// truncate or pad, matching the defensive posture the n1n / CometAPI
+// drivers already use.
+func replicateEmbedOutputToVectors(output interface{}, n int) ([]EmbeddingData, error) {
+	outputs, ok := output.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("replicate: expected output to be an array, got %T", output)
+	}
+	if len(outputs) != n {
+		return nil, fmt.Errorf("replicate: expected %d embeddings, got %d", n, len(outputs))
+	}
+
+	vectors := make([]EmbeddingData, n)
+	for i, item := range outputs {
+		vec, err := replicateExtractEmbeddingVector(item)
+		if err != nil {
+			return nil, fmt.Errorf("replicate: output[%d]: %w", i, err)
+		}
+		vectors[i] = EmbeddingData{Embedding: vec, Index: i}
+	}
+	return vectors, nil
 }
+
+func replicateExtractEmbeddingVector(item interface{}) ([]float64, error) {
+	switch v := item.(type) {
+	case []interface{}:
+		return replicateFloatsFromInterface(v)
+	case map[string]interface{}:
+		raw, ok := v["embedding"]
+		if !ok {
+			return nil, fmt.Errorf("missing 'embedding' field; got keys %v", replicateKeys(v))
+		}
+		arr, ok := raw.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("embedding field is %T, expected array", raw)
+		}
+		return replicateFloatsFromInterface(arr)
+	default:
+		return nil, fmt.Errorf("unsupported item type %T", item)
+	}
+}
+
+func replicateFloatsFromInterface(arr []interface{}) ([]float64, error) {
+	floats := make([]float64, len(arr))
+	for i, v := range arr {
+		f, ok := v.(float64)
+		if !ok {
+			return nil, fmt.Errorf("element %d is %T, expected number", i, v)
+		}
+		floats[i] = f
+	}
+	return floats, nil
+}
+
+func replicateKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Embed turns a list of texts into embedding vectors via Replicate's
+// prediction API. Replicate's embedding surface is the same async
+// /v1/predictions or /v1/models/{owner}/{name}/predictions endpoint
+// the chat path already uses: create a prediction with `Prefer: wait`
+// to skip the polling round-trip when possible, fall back to
+// waitForPrediction for predictions that don't finish in the wait
+// window. The driver targets the canonical Replicate embedding
+// schema (input.text / input.text_batch, output is an array of
+// {embedding: [floats]} objects); see replicateEmbedInput and
+// replicateEmbedOutputToVectors for details.
+func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	if err != nil {
+		return nil, err
+	}
+
+	input, err := replicateEmbedInput(texts)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	if err != nil {
+		return nil, err
+	}
+	prediction, err = r.waitForPrediction(ctx, prediction, *apiConfig.ApiKey)
+	if err != nil {
+		return nil, err
+	}
+	if !replicatePredictionSucceeded(prediction.Status) {
+		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
+	}
+
+	return replicateEmbedOutputToVectors(prediction.Output, len(texts))
+}
+
+// replicateRerankInput shapes the request body for Replicate's
+// canonical bge-style reranker schema. The documented input is a
+// single string field `input_list` carrying a JSON-encoded list of
+// `[query, passage]` pairs; the model returns a flat list of
+// numeric scores, one per pair, in the same order.
+//
+// See yxzwayne/bge-reranker-v2-m3's openapi_schema + default_example
+// at https://replicate.com/yxzwayne/bge-reranker-v2-m3. Other
+// reranker models on Replicate (sesamo-srl/bge-reranker-v2-m3,
+// ninehills/bge-reranker-large) follow compatible
+// pair-list-in-string conventions; this driver targets the
+// canonical shape and leaves model-specific adapters for future
+// PRs if other schemas are needed.
+func replicateRerankInput(query string, documents []string) (map[string]interface{}, error) {
+	if len(documents) == 0 {
+		return nil, fmt.Errorf("replicate: documents is empty")
+	}
+	pairs := make([][2]string, len(documents))
+	for i, doc := range documents {
+		pairs[i] = [2]string{query, doc}
+	}
+	encoded, err := json.Marshal(pairs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode input_list: %w", err)
+	}
+	return map[string]interface{}{"input_list": string(encoded)}, nil
+}
+
+// replicateRerankOutputToScores normalizes Replicate's two observed
+// rerank-output shapes into a []float64 aligned with the caller's
+// document order:
+//
+//	[]float64        — flat scores array, used by
+//	                   yxzwayne/bge-reranker-v2-m3 (canonical)
+//	{ "scores": [..] } — wrapped object, used by ninehills/bge-reranker-large
+//
+// Rejects mismatched cardinality and non-numeric scores rather than
+// silently truncate, matching the defensive posture the Embed
+// implementation already uses.
+func replicateRerankOutputToScores(output interface{}, n int) ([]float64, error) {
+	if scores, ok := output.([]interface{}); ok {
+		return replicateScoresFromInterface(scores, n)
+	}
+	if obj, ok := output.(map[string]interface{}); ok {
+		raw, present := obj["scores"]
+		if !present {
+			return nil, fmt.Errorf("replicate: rerank output missing 'scores' field; got keys %v", replicateKeys(obj))
+		}
+		arr, ok := raw.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("replicate: rerank output.scores is %T, expected array", raw)
+		}
+		return replicateScoresFromInterface(arr, n)
+	}
+	return nil, fmt.Errorf("replicate: expected rerank output to be an array or object, got %T", output)
+}
+
+func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
+	if len(arr) != n {
+		return nil, fmt.Errorf("replicate: expected %d rerank scores, got %d", n, len(arr))
+	}
+	out := make([]float64, n)
+	for i, v := range arr {
+		f, ok := v.(float64)
+		if !ok {
+			return nil, fmt.Errorf("replicate: rerank score %d is %T, expected number", i, v)
+		}
+		out[i] = f
+	}
+	return out, nil
+}
+
+// Rerank scores a query against a list of documents via Replicate's
+// prediction API. The driver targets bge-reranker-v2-m3-style models
+// (the most widely-published rerank schema on Replicate) and reuses
+// the existing createPrediction + waitForPrediction plumbing from
+// the chat and embed paths.
+//
+// Replicate rerank model outputs are raw similarity scores — they
+// are NOT normalized to [0, 1] like Cohere or Voyage rerank
+// responses. Higher scores still indicate stronger relevance; the
+// driver passes the raw value through without rescaling so callers
+// can compare against per-model thresholds, but the RelevanceScore
+// field should not be assumed to be a probability.
+func (r *ReplicateModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	url, version, err := r.predictionEndpoint(apiConfig, *modelName)
+	if err != nil {
+		return nil, err
+	}
+
+	input, err := replicateRerankInput(query, documents)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
+	if err != nil {
+		return nil, err
+	}
+	prediction, err = r.waitForPrediction(ctx, prediction, *apiConfig.ApiKey)
+	if err != nil {
+		return nil, err
+	}
+	if !replicatePredictionSucceeded(prediction.Status) {
+		return nil, fmt.Errorf("replicate: prediction ended with status %q", prediction.Status)
+	}
+
+	scores, err := replicateRerankOutputToScores(prediction.Output, len(documents))
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the canonical RerankResponse with one entry per input
+	// document. Optional top_n trimming sorts by score descending
+	// and keeps the highest-ranking documents; otherwise return all
+	// scores in original document order, matching how Voyage's
+	// driver in this package surfaces its results.
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+	results := make([]RerankResult, len(documents))
+	for i, score := range scores {
+		results[i] = RerankResult{Index: i, RelevanceScore: score}
+	}
+	if topN < len(results) {
+		// Sort by score descending, stable on index to keep deterministic
+		// ordering for ties.
+		sort.SliceStable(results, func(a, b int) bool {
+			if results[a].RelevanceScore == results[b].RelevanceScore {
+				return results[a].Index < results[b].Index
+			}
+			return results[a].RelevanceScore > results[b].RelevanceScore
+		})
+		results = results[:topN]
+	}
+	return &RerankResponse{Data: results}, nil
+}
+
 
 func (r *ReplicateModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())

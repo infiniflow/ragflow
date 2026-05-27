@@ -33,6 +33,7 @@ from enum import StrEnum
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
+from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 
 
@@ -350,7 +351,29 @@ class Base(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
@@ -373,7 +396,7 @@ class Base(ABC):
                     logging.info(f"{self.tools=}")
                     response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
                     tk_count += total_token_count_from_response(response)
-                    if any([not response.choices, not response.choices[0].message]):
+                    if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
@@ -662,6 +685,8 @@ class BaiChuanChat(Base):
             extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
             **gen_conf,
         )
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
             if is_chinese([ans]):
@@ -741,9 +766,9 @@ class LocalLLM(Base):
         from rag.svr.jina_server import Generation
 
         answer = ""
+        loop = asyncio.new_event_loop()
         try:
             res = self.client.stream_doc(on=endpoint, inputs=prompt, return_type=Generation)
-            loop = asyncio.get_event_loop()
             try:
                 while True:
                     answer = loop.run_until_complete(res.__anext__()).text
@@ -752,6 +777,8 @@ class LocalLLM(Base):
                 pass
         except Exception as e:
             yield answer + "\n**ERROR**: " + str(e)
+        finally:
+            loop.close()
         yield num_tokens_from_string(answer)
 
     def chat(self, system, history, gen_conf=None, **kwargs):
@@ -808,6 +835,8 @@ class MistralChat(Base):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
         response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        if not response.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
         if response.choices[0].finish_reason == "length":
             if is_chinese(ans):
@@ -1396,7 +1425,7 @@ class LiteLLMBase(ABC):
                     timeout=self.timeout,
                 )
 
-                if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+                if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
                     return "", 0
                 ans = response.choices[0].message.content.strip()
                 if response.choices[0].finish_reason == "length":
@@ -1565,7 +1594,29 @@ class LiteLLMBase(ABC):
             hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
         return hist
 
-    def bind_tools(self, toolcall_session, tools):
+    def bind_tools(self, toolcall_session=None, tools=None):
+        """Register tools the LLM can call.
+
+        Two calling styles are accepted:
+
+        * Legacy: ``bind_tools(toolcall_session, tools_schemas)`` where
+          ``toolcall_session`` implements :class:`ToolCallSession` and
+          ``tools_schemas`` is a pre-built list of OpenAI function-schema
+          dicts (used by the agent/dialog layer).
+        * Decorator: ``bind_tools(tools=[fn1, fn2, ...])`` where each ``fn``
+          is decorated with :func:`rag.llm.tool_decorator.tool`. The session
+          and schemas are derived from the callables automatically.
+        """
+        if tools is None and isinstance(toolcall_session, list):
+            tools, toolcall_session = toolcall_session, None
+
+        if tools and toolcall_session is None and all(is_tool(t) for t in tools):
+            session = FunctionToolSession(tools)
+            self.is_tools = True
+            self.toolcall_session = session
+            self.tools = session.schemas
+            return
+
         if not (toolcall_session and tools):
             return
         self.is_tools = True
