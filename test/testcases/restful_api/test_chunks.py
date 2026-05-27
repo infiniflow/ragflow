@@ -22,6 +22,23 @@ from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
 
 
+def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
+    env_engine = (os.getenv("DOC_ENGINE") or "").strip().lower()
+    if env_engine:
+        return env_engine == "infinity"
+    try:
+        res = rest_client.get("/system/status")
+        if res.status_code != 200:
+            return False
+        payload = res.json()
+        if payload.get("code") != 0:
+            return False
+        engine = str(payload.get("data", {}).get("doc_engine", {}).get("type", "")).strip().lower()
+        return engine == "infinity"
+    except Exception:
+        return False
+
+
 def _assert_created_chunk_id(payload):
     chunk_id = payload["data"]["chunk"].get("id")
     assert chunk_id, payload
@@ -549,8 +566,9 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_document):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("infinity")
     dataset_id, document_id = create_document("chunk_list_keywords.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
     _reset_chunk_batch(rest_client, base_path)
@@ -575,8 +593,9 @@ def test_chunk_list_keyword_and_invalid_param_contract(rest_client, create_docum
 
 
 @pytest.mark.p2
-@pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")
 def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
+    if _is_infinity_doc_engine(rest_client):
+        pytest.skip("infinity")
     dataset_id, document_id = create_document("chunk_list_paging.txt")
     base_path = f"/datasets/{dataset_id}/documents/{document_id}/chunks"
     _reset_chunk_batch(rest_client, base_path)
