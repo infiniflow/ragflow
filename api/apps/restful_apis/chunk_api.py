@@ -39,7 +39,6 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
-    construct_json_result,
     get_error_data_result,
     get_request_json,
     get_result,
