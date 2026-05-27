@@ -310,6 +310,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.GET("/", r.connectorHandler.ListConnectors)
 				connector.POST("/", r.connectorHandler.CreateConnector)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 			}
 
 			system := v1.Group("/system")
