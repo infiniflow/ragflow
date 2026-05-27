@@ -2,9 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -16,124 +16,93 @@ import (
 )
 
 type fakeConnectorService struct {
-	gotConnectorID string
-	gotUserID      string
-	gotUpdateReq   *service.UpdateConnectorRequest
+	connector *entity.Connector
+	code      common.ErrorCode
+	err       error
 }
 
-func (f *fakeConnectorService) GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
-	f.gotConnectorID = connectorID
-	f.gotUserID = userID
-	return &entity.Connector{
-		ID:          connectorID,
-		TenantID:    userID,
-		Name:        "REST source",
-		Source:      "rest_api",
-		InputType:   "poll",
-		Config:      entity.JSONMap{"url": "https://example.com/feed"},
-		RefreshFreq: 5,
-		PruneFreq:   5,
-		TimeoutSecs: 1740,
-		Status:      "0",
-	}, common.CodeSuccess, nil
-}
-
-func (f *fakeConnectorService) ListConnectors(userID string) (*service.ListConnectorsResponse, error) {
+func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 }
 
-func (f *fakeConnectorService) UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
-	f.gotConnectorID = connectorID
-	f.gotUserID = userID
-	f.gotUpdateReq = req
-	return &entity.Connector{
-		ID:          connectorID,
-		TenantID:    userID,
-		Name:        "REST source",
-		Source:      "rest_api",
-		InputType:   "poll",
-		Config:      entity.JSONMap{"url": "https://example.com/feed"},
-		RefreshFreq: 15,
-		PruneFreq:   7,
-		TimeoutSecs: 1740,
-		Status:      "5",
-	}, common.CodeSuccess, nil
+func (s fakeConnectorService) CreateConnector(string, *service.CreateConnectorRequest) (*entity.Connector, error) {
+	return s.connector, s.err
 }
 
-func TestGetConnector(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	connectorService := &fakeConnectorService{}
-	h := &ConnectorHandler{connectorService: connectorService}
-	r := gin.New()
-	r.GET("/api/v1/connectors/:connector_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant123"})
-		h.GetConnector(c)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/conn123", nil)
-	w := httptest.NewRecorder()
-
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
 	}
-	if connectorService.gotConnectorID != "conn123" {
-		t.Fatalf("connectorID = %q, want conn123", connectorService.gotConnectorID)
-	}
-	if connectorService.gotUserID != "tenant123" {
-		t.Fatalf("userID = %q, want tenant123", connectorService.gotUserID)
-	}
-
-	var resp struct {
-		Code common.ErrorCode `json:"code"`
-		Data entity.Connector `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if resp.Code != common.CodeSuccess {
-		t.Fatalf("code = %d, want %d, body: %s", resp.Code, common.CodeSuccess, w.Body.String())
-	}
-	if resp.Data.ID != "conn123" || resp.Data.TenantID != "tenant123" {
-		t.Fatalf("response connector = %+v", resp.Data)
-	}
-	if resp.Data.Config["url"] != "https://example.com/feed" {
-		t.Fatalf("config url = %v", resp.Data.Config["url"])
-	}
+	return s.connector, common.CodeSuccess, nil
 }
 
-func TestUpdateConnector(t *testing.T) {
+func (s fakeConnectorService) UpdateConnector(string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return s.connector, common.CodeSuccess, nil
+}
+
+func TestConnectorHandlerGetConnector(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	connectorService := &fakeConnectorService{}
-	h := &ConnectorHandler{connectorService: connectorService}
-	r := gin.New()
-	r.PATCH("/api/v1/connectors/:connector_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant123"})
-		h.UpdateConnector(c)
-	})
+	tests := []struct {
+		name     string
+		service  fakeConnectorService
+		wantCode common.ErrorCode
+		wantID   string
+		wantMsg  string
+	}{
+		{
+			name: "success",
+			service: fakeConnectorService{connector: &entity.Connector{
+				ID:       "connector-1",
+				TenantID: "tenant-1",
+				Name:     "Docs",
+				Source:   "google_drive",
+				Status:   "unstart",
+				Config:   entity.JSONMap{"folder": "docs"},
+			}},
+			wantCode: common.CodeSuccess,
+			wantID:   "connector-1",
+		},
+		{
+			name:     "unauthorized",
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			wantCode: common.CodeAuthenticationError,
+			wantMsg:  "No authorization.",
+		},
+	}
 
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/connectors/conn123", strings.NewReader(`{"data":{"refresh_freq":15,"status":"schedule"}}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &ConnectorHandler{connectorService: tt.service}
+			router := gin.New()
+			router.GET("/api/v1/connectors/:connector_id", func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "tenant-1"})
+				h.GetConnector(c)
+			})
 
-	r.ServeHTTP(w, req)
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/connector-1", nil)
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if connectorService.gotConnectorID != "conn123" {
-		t.Fatalf("connectorID = %q, want conn123", connectorService.gotConnectorID)
-	}
-	if connectorService.gotUserID != "tenant123" {
-		t.Fatalf("userID = %q, want tenant123", connectorService.gotUserID)
-	}
-	if connectorService.gotUpdateReq == nil || connectorService.gotUpdateReq.RefreshFreq == nil || *connectorService.gotUpdateReq.RefreshFreq != 15 {
-		t.Fatalf("update request = %+v", connectorService.gotUpdateReq)
-	}
-	if connectorService.gotUpdateReq.Status != "schedule" {
-		t.Fatalf("status = %q, want schedule", connectorService.gotUpdateReq.Status)
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v body=%v", body["code"], body)
+			}
+			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
+				t.Fatalf("message=%v", body["message"])
+			}
+			if tt.wantID != "" && body["data"].(map[string]interface{})["id"] != tt.wantID {
+				t.Fatalf("data=%v", body["data"])
+			}
+		})
 	}
 }

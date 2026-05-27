@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,16 +32,9 @@ import (
 )
 
 type connectorService interface {
-	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
-	UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error)
-}
-
-// ConnectorResponse describes the standard JSON envelope for connector details.
-type ConnectorResponse struct {
-	Code    common.ErrorCode  `json:"code"`
-	Data    *entity.Connector `json:"data"`
-	Message string            `json:"message"`
+	CreateConnector(userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
+	GetConnector(connectorID string, userID string) (*entity.Connector, common.ErrorCode, error)
 }
 
 // ConnectorHandler connector handler
@@ -114,66 +108,97 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	})
 }
 
-// UpdateConnector updates connector settings.
-// @Summary Update Connector
-// @Description Update connector details when the current user can access it
+// GetConnector get connector
+// @Summary Get Connector
+// @Description Get connector details for the current user
 // @Tags connector
 // @Accept json
 // @Produce json
-// @Success 200 {object} ConnectorResponse
-// @Router /api/v1/connectors/{connector_id} [patch]
-func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/{connector_id} [get]
+func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-	body, err = unwrapConnectorPayload(body)
-	if err != nil {
-		jsonError(c, common.CodeDataError, err.Error())
-		return
-	}
-	c.Request.Body = io.NopCloser(bytes.NewReader(body))
-
-	var req service.UpdateConnectorRequest
-	if len(bytes.TrimSpace(body)) > 0 {
-		if err := json.Unmarshal(body, &req); err != nil {
-			jsonError(c, common.CodeDataError, err.Error())
-			return
-		}
-	}
-
-	result, code, err := h.connectorService.UpdateConnector(c.Param("connector_id"), user.ID, &req)
+	connector, code, err := h.connectorService.GetConnector(c.Param("connector_id"), user.ID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
 	}
 
-	jsonResponse(c, common.CodeSuccess, result, "success")
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    connector,
+		"message": "success",
+	})
 }
 
-func unwrapConnectorPayload(body []byte) ([]byte, error) {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 {
-		return body, nil
+// CreateConnector create connector
+// @Summary create Connectors
+// @Description create a connectors for the current user
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} service.ListConnectorsResponse
+// @Router /connector/ [post]
+func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
 	}
 
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &payload); err != nil {
-		return nil, err
+	var req service.CreateConnectorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": "Invalid request body: " + err.Error(),
+		})
+		return
 	}
-	if data, ok := payload["data"]; ok {
-		var dataObj map[string]json.RawMessage
-		if err := json.Unmarshal(data, &dataObj); err == nil && dataObj != nil {
-			return data, nil
-		}
-		return nil, errors.New("field 'data' must be a JSON object")
+
+	if strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "name is required",
+		})
+		return
 	}
-	return trimmed, nil
+	if strings.TrimSpace(req.Source) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "source is required",
+		})
+		return
+	}
+	if req.Config == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "config is required",
+		})
+		return
+	}
+
+	connector, err := h.connectorService.CreateConnector(user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    connector,
+		"message": "success",
+	})
 }
