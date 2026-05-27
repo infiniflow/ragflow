@@ -124,7 +124,7 @@ func (h *KnowledgebaseHandler) UpdateKB(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/kb/update_metadata_setting [post]
 func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
@@ -133,6 +133,11 @@ func (h *KnowledgebaseHandler) UpdateMetadataSetting(c *gin.Context) {
 	var req service.UpdateMetadataSettingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
 		return
 	}
 
