@@ -1023,6 +1023,8 @@ class OBConnection(OBConnectionBase):
                         if field not in column_types:
                             continue
                         if isinstance(column_types[field], ARRAY):
+                            if isinstance(column_types[field].item_type, ARRAY):
+                                continue
                             f = field + "_sort"
                             fields_expr += f", array_avg({field}) AS {f}"
                             field = f
