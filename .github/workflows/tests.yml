@@ -171,26 +171,28 @@ jobs:
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
                RUNNER_NUM=${RUNNER_NUM:-1}
 
-          # Compute port numbers using bash arithmetic
-               ES_PORT=$((1200 + RUNNER_NUM * 10))
-               OS_PORT=$((1201 + RUNNER_NUM * 10))
-               INFINITY_THRIFT_PORT=$((23817 + RUNNER_NUM * 10))
-               INFINITY_HTTP_PORT=$((23820 + RUNNER_NUM * 10))
-               INFINITY_PSQL_PORT=$((5432 + RUNNER_NUM * 10))
-               EXPOSE_MYSQL_PORT=$((5455 + RUNNER_NUM * 10))
-               MINIO_PORT=$((9000 + RUNNER_NUM * 10))
-               MINIO_CONSOLE_PORT=$((9001 + RUNNER_NUM * 10))
-               REDIS_PORT=$((6379 + RUNNER_NUM * 10))
-               TEI_PORT=$((6380 + RUNNER_NUM * 10))
-               KIBANA_PORT=$((6601 + RUNNER_NUM * 10))
-               SVR_HTTP_PORT=$((9380 + RUNNER_NUM * 10))
-               ADMIN_SVR_HTTP_PORT=$((9381 + RUNNER_NUM * 10))
-               SVR_MCP_PORT=$((9382 + RUNNER_NUM * 10))
-               GO_HTTP_PORT=$((9384 + RUNNER_NUM * 10))
-               GO_ADMIN_PORT=$((9383 + RUNNER_NUM * 10))
-               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + RUNNER_NUM * 10))
-               SVR_WEB_HTTP_PORT=$((80 + RUNNER_NUM * 10))
-               SVR_WEB_HTTPS_PORT=$((443 + RUNNER_NUM * 10))
+          # Per-runner base plus per-workflow-run offset avoids port clashes when
+          # multiple CI jobs share the same self-hosted runner concurrently.
+               PORT_OFFSET=$(( (GITHUB_RUN_ID % 400) + RUNNER_NUM * 10 ))
+               ES_PORT=$((1200 + PORT_OFFSET))
+               OS_PORT=$((1201 + PORT_OFFSET))
+               INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
+               INFINITY_HTTP_PORT=$((23820 + PORT_OFFSET))
+               INFINITY_PSQL_PORT=$((5432 + PORT_OFFSET))
+               EXPOSE_MYSQL_PORT=$((5455 + PORT_OFFSET))
+               MINIO_PORT=$((9000 + PORT_OFFSET))
+               MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
+               REDIS_PORT=$((6379 + PORT_OFFSET))
+               TEI_PORT=$((6380 + PORT_OFFSET))
+               KIBANA_PORT=$((6601 + PORT_OFFSET))
+               SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
+               ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
+               SVR_MCP_PORT=$((9382 + PORT_OFFSET))
+               GO_HTTP_PORT=$((9384 + PORT_OFFSET))
+               GO_ADMIN_PORT=$((9383 + PORT_OFFSET))
+               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
+               SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
+               SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings
                echo "" >> .env
@@ -228,6 +230,8 @@ jobs:
       - name: Start ragflow:nightly for Infinity
         run: |
           sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=infinity/' docker/.env
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Infinity
@@ -442,6 +446,8 @@ jobs:
       - name: Start ragflow:nightly for Elasticsearch
         run: |
           sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=elasticsearch/' docker/.env
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Run sdk tests against Elasticsearch

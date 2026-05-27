@@ -1,0 +1,419 @@
+{
+  "name": "Qiniu",
+  "url": {
+    "default": "https://api.qnaigc.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "qiniu",
+  "models": [
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.6",
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.5",
+      "model_types": ["vision"]
+    },
+    {
+      "name": "z-ai/glm-5.1",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.7",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.5",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.5-highspeed",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m2.1",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k2-thinking",
+      "max_tokens": 262144,
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "meituan/longcat-flash-lite",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-max",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "z-ai/glm-4.6",
+      "max_tokens": 204800,
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "z-ai/glm-4.7",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek/deepseek-v3.2-251201",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.2-exp-thinking",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.1-terminus",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek/deepseek-v3.1-terminus-thinking",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-v3.1",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-r1-0528",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-r1",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "doubao-seed-1.6-flash",
+      "max_tokens": 262144,
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "doubao-1.5-pro-32k",
+      "max_tokens": 131072,
+      "model_types": ["vision"]
+    },
+    {
+      "name": "doubao-seed-1.6",
+      "max_tokens": 262144,
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "doubao-seed-2.0-pro",
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "doubao-seed-2.0-lite",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "doubao-seed-2.0-mini",
+      "max_tokens": 262144,
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "doubao-seed-2.0-code",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-next-80b-a3b-thinking",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-235b-a22b-thinking-2507",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-max-2026-01-23",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-next-80b-a3b-instruct",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-max-preview",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen-2.5-vl-72b-instruct",
+      "model_types": ["vision"]
+    },
+    {
+      "name": "qwen3-coder-480b-a35b-instruct",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen-turbo",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-235b-a22b-instruct-2507",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-32b",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-30b-a3b",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-235b-a22b",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen-2.5-vl-7b-instruct",
+      "model_types": ["vision"]
+    },
+    {
+      "name": "qwen-vl-max-2025-01-25",
+      "model_types": ["vision"]
+    },
+    {
+      "name": "qwen2.5-max-2025-01-25",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "minimax-m1",
+      "max_tokens": 1048576,
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "glm-4.5",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-vl-30b-a3b-instruct",
+      "model_types": ["vision"]
+    },
+    {
+      "name": "deepseek-v3",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-30b-a3b-thinking-2507",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "glm-4.5-air",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3.5-397b-a17b",
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.5-plus",
+      "model_types": ["vision"]
+    },
+    {
+      "name": "qwen/qwen3.6-plus",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.2-exp",
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen/qwen3.7-max",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.6-27b",
+      "max_tokens": 262144,
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "tencent/hy3-preview",
+      "model_types": ["chat"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3.5-35b-a3b",
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-vl-30b-a3b-thinking",
+      "model_types": ["vision"],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "qwen3-30b-a3b-instruct-2507",
+      "model_types": ["chat"]
+    }
+  ]
+}

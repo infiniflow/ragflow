@@ -47,7 +47,7 @@ const (
 	TokenPassword
 	TokenDataset
 	TokenDatasets
-	TokenDatasetTable
+	TokenChunkStore
 	TokenOf
 	TokenAgents
 	TokenRole
@@ -91,6 +91,7 @@ const (
 	TokenParse
 	TokenImport
 	TokenInto
+	TokenIn
 	TokenWith
 	TokenParser
 	TokenPipeline
@@ -122,6 +123,7 @@ const (
 	TokenIndex
 	TokenVector
 	TokenSize
+	TokenStore
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenBalance
 	TokenInstance
