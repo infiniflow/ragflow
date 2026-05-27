@@ -24,7 +24,7 @@ from openpyxl import Workbook
 import pytest
 import requests
 from requests_toolbelt import MultipartEncoder
-from test.testcases.configs import DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, VERSION
+from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, VERSION
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import compare_by_hash
 from test.testcases.utils.file_utils import (
@@ -78,6 +78,19 @@ def _seed_documents(rest_client, create_dataset, tmp_path, count=5):
     payload = res.json()
     assert payload["code"] == 0, payload
     assert len(payload["data"]) == count, payload
+    return dataset_id, payload["data"]
+
+
+def _seed_documents_for_update(rest_client, create_dataset, tmp_path):
+    dataset_id = create_dataset("dataset_update_contract")
+    file_paths = [
+        create_txt_file(tmp_path / "ragflow_test_upload_0.txt"),
+        create_txt_file(tmp_path / "ragflow_test_upload_1.txt"),
+    ]
+    res = _upload_files(rest_client, dataset_id, file_paths)
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["code"] == 0, payload
     return dataset_id, payload["data"]
 
 
@@ -507,6 +520,315 @@ def test_documents_update_patch_and_delete(rest_client, create_document):
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
     assert all(doc["id"] != document_id for doc in list_payload["data"]["docs"]), list_payload
+
+
+@pytest.mark.p2
+def test_documents_update_requires_auth(create_document):
+    dataset_id, document_id = create_document("update_auth_target.txt")
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        res = client.patch(
+            f"/datasets/{dataset_id}/documents/{document_id}",
+            json={"name": "updated_auth_target.txt"},
+        )
+        assert res.status_code == 401, (scenario_name, res.text)
+        body = res.json()
+        assert body["code"] == 401, (scenario_name, body)
+        assert body["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, body)
+
+
+@pytest.mark.p2
+def test_documents_update_name_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
+    first_document_id = uploaded_docs[0]["id"]
+
+    long_name = f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt"
+    name_cases = [
+        ("new_name.txt", 0, ""),
+        (long_name, 0, ""),
+        (0, 102, "Field: <name> - Message: <Input should be a valid string> - Value: <0>"),
+        (None, 100, "AttributeError('NoneType' object has no attribute 'encode')"),
+        ("", 101, "The extension of file can't be changed"),
+        ("ragflow_test_upload_0", 101, "The extension of file can't be changed"),
+        ("ragflow_test_upload_1.txt", 102, "Duplicated document name in the same dataset."),
+        ("RAGFLOW_TEST_UPLOAD_1.TXT", 0, ""),
+    ]
+    for name, expected_code, expected_message in name_cases:
+        res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{first_document_id}",
+            json={"name": name},
+        )
+        assert res.status_code == 200, (name, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (name, body)
+        if expected_code == 0:
+            assert body["data"]["name"] == name, (name, body)
+            list_res = rest_client.get(f"/datasets/{dataset_id}/documents", params={"id": first_document_id})
+            assert list_res.status_code == 200, (name, list_res.text)
+            list_body = list_res.json()
+            assert list_body["code"] == 0, (name, list_body)
+            assert list_body["data"]["docs"][0]["name"] == name, (name, list_body)
+        else:
+            assert body["message"] == expected_message, (name, body)
+
+
+@pytest.mark.p2
+def test_documents_update_invalid_dataset_and_document_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
+    first_document_id = uploaded_docs[0]["id"]
+
+    invalid_dataset_res = rest_client.patch(
+        f"/datasets/{INVALID_ID_32}/documents/{first_document_id}",
+        json={"name": "new_name.txt"},
+    )
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_body = invalid_dataset_res.json()
+    assert invalid_dataset_body["code"] == 102, invalid_dataset_body
+    assert "You don't own the dataset." in invalid_dataset_body["message"], invalid_dataset_body
+
+    invalid_document_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/{INVALID_ID_32}",
+        json={"name": "new_name.txt"},
+    )
+    assert invalid_document_res.status_code == 200
+    invalid_document_body = invalid_document_res.json()
+    assert invalid_document_body["code"] == 102, invalid_document_body
+    assert invalid_document_body["message"] == "The dataset doesn't own the document.", invalid_document_body
+
+
+@pytest.mark.p2
+def test_documents_update_chunk_method_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
+    first_document_id = uploaded_docs[0]["id"]
+
+    chunk_method_cases = [
+        ("naive", 0, ""),
+        ("manual", 0, ""),
+        ("qa", 0, ""),
+        ("table", 0, ""),
+        ("paper", 0, ""),
+        ("book", 0, ""),
+        ("laws", 0, ""),
+        ("presentation", 0, ""),
+        ("picture", 0, ""),
+        ("one", 0, ""),
+        ("knowledge_graph", 0, ""),
+        ("email", 0, ""),
+        ("tag", 0, ""),
+        ("", 102, "`chunk_method` (empty string) is not valid"),
+        (
+            "other_chunk_method",
+            102,
+            "Field: <chunk_method> - Message: <`chunk_method` other_chunk_method doesn't exist> - Value: <other_chunk_method>",
+        ),
+    ]
+    for chunk_method, expected_code, expected_message in chunk_method_cases:
+        res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{first_document_id}",
+            json={"chunk_method": chunk_method},
+        )
+        assert res.status_code == 200, (chunk_method, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (chunk_method, body)
+        if expected_code == 0:
+            list_res = rest_client.get(f"/datasets/{dataset_id}/documents", params={"id": first_document_id})
+            assert list_res.status_code == 200, (chunk_method, list_res.text)
+            list_body = list_res.json()
+            assert list_body["code"] == 0, (chunk_method, list_body)
+            assert list_body["data"]["docs"][0]["chunk_method"] == chunk_method, (chunk_method, list_body)
+        else:
+            assert body["message"] == expected_message, (chunk_method, body)
+
+
+@pytest.mark.p2
+def test_documents_update_meta_fields_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
+    first_document_id = uploaded_docs[0]["id"]
+
+    meta_fields_cases = [
+        ({"test": "test"}, 0, ""),
+        ({"author": "alice", "year": 2024}, 0, ""),
+        ({"tags": ["tag1", "tag2"]}, 0, ""),
+        ({"count": 42, "price": 19.99}, 0, ""),
+        ("test", 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <test>"),
+        ([], 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
+        ({"tags": [{"x": {"a": "b"}}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': {'a': 'b'}}]> - Value: <{'tags': [{'x': {'a': 'b'}}]}>"),
+        ({"tags": [{"x": 1}]}, 102, "Field: <meta_fields> - Message: <The type is not supported in list: [{'x': 1}]> - Value: <{'tags': [{'x': 1}]}>"),
+        ({"obj": {"x": 1}}, 102, "Field: <meta_fields> - Message: <The type is not supported: {'x': 1}> - Value: <{'obj': {'x': 1}}>"),
+        ({"tags": [2, 1]}, 0, ""),
+    ]
+    for meta_fields, expected_code, expected_message in meta_fields_cases:
+        res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{first_document_id}",
+            json={"meta_fields": meta_fields},
+        )
+        assert res.status_code == 200, (meta_fields, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (meta_fields, body)
+        if expected_code == 0:
+            list_res = rest_client.get(f"/datasets/{dataset_id}/documents", params={"id": first_document_id})
+            assert list_res.status_code == 200, (meta_fields, list_res.text)
+            list_body = list_res.json()
+            assert list_body["code"] == 0, (meta_fields, list_body)
+            assert list_body["data"]["docs"][0]["meta_fields"] == meta_fields, (meta_fields, list_body)
+        else:
+            assert expected_message in body["message"] or body["message"] == expected_message, (meta_fields, body)
+
+    invalid_meta_doc_res = rest_client.patch(
+        f"/datasets/{dataset_id}/documents/invalid_doc_id_12345678901234567890",
+        json={"meta_fields": {"author": "alice"}},
+    )
+    assert invalid_meta_doc_res.status_code == 200
+    invalid_meta_doc_body = invalid_meta_doc_res.json()
+    assert invalid_meta_doc_body["code"] == 102, invalid_meta_doc_body
+    assert "The dataset doesn't own the document." in invalid_meta_doc_body["message"], invalid_meta_doc_body
+
+
+@pytest.mark.p2
+def test_documents_update_invalid_field_and_guard_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
+    first_document_id = uploaded_docs[0]["id"]
+
+    strict_guard_cases = [
+        ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
+        ({"token_count": 1}, 102, "Can't change `token_count`."),
+        ({"chunk_count": 100}, 102, "Can't change `chunk_count`."),
+        ({"token_count": 100}, 102, "Can't change `token_count`."),
+        ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
+        ({"progress": 1.0}, 102, "Can't change `progress`."),
+        ({"meta_fields": []}, 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
+    ]
+    for payload, expected_code, expected_message in strict_guard_cases:
+        res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{first_document_id}",
+            json=payload,
+        )
+        assert res.status_code == 200, (payload, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (payload, body)
+        assert expected_message in body["message"] or body["message"] == expected_message, (payload, body)
+
+    legacy_invalid_field_cases = [
+        {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
+        {"create_time": 1},
+        {"created_by": "ragflow_test"},
+        {"dataset_id": "ragflow_test"},
+        {"id": "ragflow_test"},
+        {"location": "ragflow_test.txt"},
+        {"process_begin_at": 1},
+        {"process_duration": 1.0},
+        {"progress_msg": "ragflow_test"},
+        {"run": "ragflow_test"},
+        {"size": 1},
+        {"source_type": "ragflow_test"},
+        {"thumbnail": "ragflow_test"},
+        {"type": "ragflow_test"},
+        {"update_date": "Fri, 14 Mar 2025 16:33:17 GMT"},
+        {"update_time": 1},
+    ]
+    for payload in legacy_invalid_field_cases:
+        res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{first_document_id}",
+            json=payload,
+        )
+        assert res.status_code == 200, (payload, res.text)
+        body = res.json()
+        assert body["code"] in (0, 102), (payload, body)
+        if body["code"] == 102:
+            assert "invalid" in body["message"].lower(), (payload, body)
+        else:
+            assert "data" in body, (payload, body)
+
+
+@pytest.mark.p2
+def test_documents_update_parser_config_contract(rest_client, create_dataset, tmp_path):
+    dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
+    first_document_id = uploaded_docs[0]["id"]
+    default_parser_config_for_test = {
+        "layout_recognize": "DeepDOC",
+        "chunk_token_num": 512,
+        "delimiter": "\n",
+        "auto_keywords": 0,
+        "auto_questions": 0,
+        "html4excel": False,
+        "topn_tags": 3,
+        "raptor": {
+            "use_raptor": True,
+            "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
+            "max_token": 256,
+            "threshold": 0.1,
+            "max_cluster": 64,
+            "random_seed": 0,
+        },
+        "graphrag": {
+            "use_graphrag": True,
+            "entity_types": ["organization", "person", "geo", "event", "category"],
+            "method": "light",
+            "batch_chunk_token_size": 4096,
+        },
+    }
+
+    parser_cases = [
+        ({}, 0, ""),
+        (default_parser_config_for_test, 0, ""),
+        ({"chunk_token_num": -1}, 102, "Field: <parser_config.chunk_token_num> - Message: <Input should be greater than or equal to 1> - Value: <-1>"),
+        ({"chunk_token_num": 0}, 102, "Field: <parser_config.chunk_token_num> - Message: <Input should be greater than or equal to 1> - Value: <0>"),
+        ({"chunk_token_num": 100000000}, 102, "Field: <parser_config.chunk_token_num> - Message: <Input should be less than or equal to 2048> - Value: <100000000>"),
+        ({"chunk_token_num": 3.14}, 102, "Field: <parser_config.chunk_token_num> - Message: <Input should be a valid integer> - Value: <3.14>"),
+        ({"chunk_token_num": "1024"}, 102, "Field: <parser_config.chunk_token_num> - Message: <Input should be a valid integer> - Value: <1024>"),
+        ({"layout_recognize": "DeepDOC"}, 0, ""),
+        ({"layout_recognize": "Naive"}, 0, ""),
+        ({"html4excel": True}, 0, ""),
+        ({"html4excel": False}, 0, ""),
+        ({"html4excel": 1}, 102, "Field: <parser_config.html4excel> - Message: <Input should be a valid boolean> - Value: <1>"),
+        ({"delimiter": ""}, 102, "Field: <parser_config.delimiter> - Message: <String should have at least 1 character> - Value: <>"),
+        ({"delimiter": "`##`"}, 0, ""),
+        ({"delimiter": 1}, 102, "Field: <parser_config.delimiter> - Message: <Input should be a valid string> - Value: <1>"),
+        ({"task_page_size": -1}, 102, "Field: <parser_config.task_page_size> - Message: <Input should be greater than or equal to 1> - Value: <-1>"),
+        ({"task_page_size": 0}, 102, "Field: <parser_config.task_page_size> - Message: <Input should be greater than or equal to 1> - Value: <0>"),
+        ({"task_page_size": 100000000}, 0, ""),
+        ({"task_page_size": 3.14}, 102, "Field: <parser_config.task_page_size> - Message: <Input should be a valid integer> - Value: <3.14>"),
+        ({"task_page_size": "1024"}, 102, "Field: <parser_config.task_page_size> - Message: <Input should be a valid integer> - Value: <1024>"),
+        ({"raptor": {"use_raptor": {"a": "b"}}}, 102, "Field: <parser_config.raptor.use_raptor> - Message: <Input should be a valid boolean> - Value: <{'a': 'b'}>"),
+        ({"raptor": {"use_raptor": False}}, 0, ""),
+        ({"invalid_key": "invalid_value"}, 102, "Field: <parser_config.invalid_key> - Message: <Extra inputs are not permitted> - Value: <invalid_value>"),
+        ({"auto_keywords": -1}, 102, "Field: <parser_config.auto_keywords> - Message: <Input should be greater than or equal to 0> - Value: <-1>"),
+        ({"auto_keywords": 32}, 0, ""),
+        ({"auto_keywords": "1024"}, 102, "Field: <parser_config.auto_keywords> - Message: <Input should be a valid integer> - Value: <1024>"),
+        ({"auto_keywords": 3.14}, 102, "Field: <parser_config.auto_keywords> - Message: <Input should be a valid integer> - Value: <3.14>"),
+        ({"auto_questions": -1}, 102, "Field: <parser_config.auto_questions> - Message: <Input should be greater than or equal to 0> - Value: <-1>"),
+        ({"auto_questions": 10}, 0, ""),
+        ({"auto_questions": 3.14}, 102, "Field: <parser_config.auto_questions> - Message: <Input should be a valid integer> - Value: <3.14>"),
+        ({"auto_questions": "1024"}, 102, "Field: <parser_config.auto_questions> - Message: <Input should be a valid integer> - Value: <1024>"),
+        ({"topn_tags": -1}, 102, "Field: <parser_config.topn_tags> - Message: <Input should be greater than or equal to 1> - Value: <-1>"),
+        ({"topn_tags": 10}, 0, ""),
+        ({"topn_tags": 3.14}, 102, "Field: <parser_config.topn_tags> - Message: <Input should be a valid integer> - Value: <3.14>"),
+        ({"topn_tags": "1024"}, 102, "Field: <parser_config.topn_tags> - Message: <Input should be a valid integer> - Value: <1024>"),
+    ]
+    for parser_config, expected_code, expected_message in parser_cases:
+        res = rest_client.patch(
+            f"/datasets/{dataset_id}/documents/{first_document_id}",
+            json={"chunk_method": "naive", "parser_config": parser_config},
+        )
+        assert res.status_code == 200, (parser_config, res.text)
+        body = res.json()
+        assert body["code"] == expected_code, (parser_config, body)
+        if expected_code == 0:
+            list_res = rest_client.get(f"/datasets/{dataset_id}/documents", params={"id": first_document_id})
+            assert list_res.status_code == 200, (parser_config, list_res.text)
+            list_body = list_res.json()
+            assert list_body["code"] == 0, (parser_config, list_body)
+            doc_parser_config = list_body["data"]["docs"][0]["parser_config"]
+            if parser_config == {}:
+                assert doc_parser_config == DEFAULT_PARSER_CONFIG, (parser_config, list_body)
+            else:
+                for key, value in parser_config.items():
+                    if isinstance(value, dict):
+                        for sub_key, sub_value in value.items():
+                            assert doc_parser_config[key][sub_key] == sub_value, (parser_config, list_body)
+                    else:
+                        assert doc_parser_config[key] == value, (parser_config, list_body)
+        else:
+            assert body["message"] == expected_message, (parser_config, body)
 
 
 @pytest.mark.p2
