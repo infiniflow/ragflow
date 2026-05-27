@@ -23,6 +23,7 @@ import pytest
 import rag.graphrag.general.community_reports_extractor as community_reports_module
 from rag.graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from rag.graphrag.general.graph_extractor import GraphExtractor
+from rag.graphrag.general.index import _raw_chunks_to_texts
 
 
 def _build_llm_stub():
@@ -49,6 +50,20 @@ class TestGraphExtractor:
         await extractor._process_single_content(("chunk-1", "alpha beta"), 0, 1, out_results, task_id="task-123")
 
         assert seen_task_ids == ["task-123", "task-123", "task-123"]
+
+
+class TestGraphRagIndex:
+    @pytest.mark.p2
+    def test_raw_chunks_to_texts_converts_retriever_dicts_for_ner(self):
+        chunks = _raw_chunks_to_texts(
+            [
+                {"content_with_weight": "Alice works at Acme."},
+                {"content_with_weight": "Bob lives in Paris."},
+                {"doc_id": "missing-content"},
+            ]
+        )
+
+        assert chunks == ["Alice works at Acme.", "Bob lives in Paris."]
 
 
 class TestCommunityReportsExtractor:
