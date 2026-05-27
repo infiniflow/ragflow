@@ -16,6 +16,25 @@
 
 package entity
 
+// MCP server types. Mirrors common.constants.MCPServerType / VALID_MCP_SERVER_TYPES
+// in the Python codebase.
+const (
+	MCPServerTypeSSE            = "sse"
+	MCPServerTypeStreamableHTTP = "streamable-http"
+)
+
+// ValidMCPServerTypes is the set of accepted MCP server_type values.
+var ValidMCPServerTypes = map[string]struct{}{
+	MCPServerTypeSSE:            {},
+	MCPServerTypeStreamableHTTP: {},
+}
+
+// IsValidMCPServerType reports whether t is an accepted MCP server type.
+func IsValidMCPServerType(t string) bool {
+	_, ok := ValidMCPServerTypes[t]
+	return ok
+}
+
 // MCPServer MCP server model
 type MCPServer struct {
 	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`

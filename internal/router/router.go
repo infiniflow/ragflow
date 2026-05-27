@@ -40,6 +40,7 @@ type Router struct {
 	memoryHandler        *handler.MemoryHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
+	mcpHandler           *handler.MCPHandler
 }
 
 // NewRouter create router
@@ -61,6 +62,7 @@ func NewRouter(
 	memoryHandler *handler.MemoryHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
+	mcpHandler *handler.MCPHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -80,6 +82,7 @@ func NewRouter(
 		memoryHandler:        memoryHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
+		mcpHandler:           mcpHandler,
 	}
 }
 
@@ -307,6 +310,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+			}
+
+			// MCP server routes.
+			// Note: gin (v1.9.1) cannot register a static segment and a path
+			// param at the same tree node, so the bulk-import endpoint lives at
+			// POST /mcp/import instead of the Python path /mcp/servers/import,
+			// which would collide with /mcp/servers/:mcp_id.
+			mcp := v1.Group("/mcp")
+			{
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.POST("/import", r.mcpHandler.ImportMCPServers)
+				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)
 			}
 
 			system := v1.Group("/system")
