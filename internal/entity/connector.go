@@ -16,7 +16,10 @@
 
 package entity
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Connector connector model
 type Connector struct {
@@ -37,6 +40,53 @@ type Connector struct {
 // TableName specify table name
 func (Connector) TableName() string {
 	return "connector"
+}
+
+// MarshalJSON formats connector timestamps to match the Python API contract.
+func (c Connector) MarshalJSON() ([]byte, error) {
+	type connectorJSON struct {
+		ID            string  `json:"id"`
+		TenantID      string  `json:"tenant_id"`
+		Name          string  `json:"name"`
+		Source        string  `json:"source"`
+		InputType     string  `json:"input_type"`
+		Config        JSONMap `json:"config"`
+		RefreshFreq   int64   `json:"refresh_freq"`
+		PruneFreq     int64   `json:"prune_freq"`
+		TimeoutSecs   int64   `json:"timeout_secs"`
+		IndexingStart *string `json:"indexing_start"`
+		Status        string  `json:"status"`
+		CreateTime    *int64  `json:"create_time,omitempty"`
+		CreateDate    *string `json:"create_date,omitempty"`
+		UpdateTime    *int64  `json:"update_time,omitempty"`
+		UpdateDate    *string `json:"update_date,omitempty"`
+	}
+
+	return json.Marshal(connectorJSON{
+		ID:            c.ID,
+		TenantID:      c.TenantID,
+		Name:          c.Name,
+		Source:        c.Source,
+		InputType:     c.InputType,
+		Config:        c.Config,
+		RefreshFreq:   c.RefreshFreq,
+		PruneFreq:     c.PruneFreq,
+		TimeoutSecs:   c.TimeoutSecs,
+		IndexingStart: formatConnectorTime(c.IndexingStart),
+		Status:        c.Status,
+		CreateTime:    c.CreateTime,
+		CreateDate:    formatConnectorTime(c.CreateDate),
+		UpdateTime:    c.UpdateTime,
+		UpdateDate:    formatConnectorTime(c.UpdateDate),
+	})
+}
+
+func formatConnectorTime(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.Format("2006-01-02T15:04:05")
+	return &formatted
 }
 
 // Connector2Kb connector to knowledge base mapping model

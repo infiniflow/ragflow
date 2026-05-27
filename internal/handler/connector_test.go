@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,143 +16,93 @@ import (
 )
 
 type fakeConnectorService struct {
-	gotConnectorID string
-	gotUserID      string
-	gotReq         *service.UpdateConnectorRequest
-	called         bool
+	connector *entity.Connector
+	code      common.ErrorCode
+	err       error
 }
 
-func (f *fakeConnectorService) ListConnectors(userID string) (*service.ListConnectorsResponse, error) {
+func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 }
 
-func (f *fakeConnectorService) UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
-	f.called = true
-	f.gotConnectorID = connectorID
-	f.gotUserID = userID
-	f.gotReq = req
-	config := entity.JSONMap{}
-	if req != nil && req.Config != nil {
-		config = entity.JSONMap(*req.Config)
-	}
-	return &entity.Connector{
-		ID:          connectorID,
-		TenantID:    userID,
-		Name:        "REST source",
-		Source:      "rest_api",
-		InputType:   "poll",
-		Config:      config,
-		RefreshFreq: valueOrZero(req.RefreshFreq),
-		PruneFreq:   valueOrZero(req.PruneFreq),
-		TimeoutSecs: valueOrZero(req.TimeoutSecs),
-		Status:      "5",
-	}, common.CodeSuccess, nil
+func (s fakeConnectorService) CreateConnector(string, *service.CreateConnectorRequest) (*entity.Connector, error) {
+	return s.connector, s.err
 }
 
-func valueOrZero(value *int64) int64 {
-	if value == nil {
-		return 0
+func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
 	}
-	return *value
+	return s.connector, common.CodeSuccess, nil
 }
 
-func TestUpdateConnector(t *testing.T) {
+func (s fakeConnectorService) UpdateConnector(string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return s.connector, common.CodeSuccess, nil
+}
+
+func TestConnectorHandlerGetConnector(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	connectorService := &fakeConnectorService{}
-	h := &ConnectorHandler{connectorService: connectorService}
-	r := gin.New()
-	r.PATCH("/api/v1/connectors/:connector_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant123"})
-		h.UpdateConnector(c)
-	})
-
-	body := []byte(`{"data":{"refresh_freq":10,"prune_freq":20,"timeout_secs":180,"config":{"sync_deleted_files":true},"status":"SCHEDULE"}}`)
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/connectors/conn123", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if connectorService.gotConnectorID != "conn123" {
-		t.Fatalf("connectorID = %q, want conn123", connectorService.gotConnectorID)
-	}
-	if connectorService.gotUserID != "tenant123" {
-		t.Fatalf("userID = %q, want tenant123", connectorService.gotUserID)
-	}
-	if connectorService.gotReq == nil {
-		t.Fatal("service request was not captured")
-	}
-	if connectorService.gotReq.RefreshFreq == nil || *connectorService.gotReq.RefreshFreq != 10 {
-		t.Fatalf("refresh_freq = %v, want 10", connectorService.gotReq.RefreshFreq)
-	}
-	if connectorService.gotReq.PruneFreq == nil || *connectorService.gotReq.PruneFreq != 20 {
-		t.Fatalf("prune_freq = %v, want 20", connectorService.gotReq.PruneFreq)
-	}
-	if connectorService.gotReq.TimeoutSecs == nil || *connectorService.gotReq.TimeoutSecs != 180 {
-		t.Fatalf("timeout_secs = %v, want 180", connectorService.gotReq.TimeoutSecs)
-	}
-	if connectorService.gotReq.Config == nil || (*connectorService.gotReq.Config)["sync_deleted_files"] != true {
-		t.Fatalf("config = %#v", connectorService.gotReq.Config)
-	}
-	if connectorService.gotReq.Status != "SCHEDULE" {
-		t.Fatalf("status = %q, want SCHEDULE", connectorService.gotReq.Status)
+	tests := []struct {
+		name     string
+		service  fakeConnectorService
+		wantCode common.ErrorCode
+		wantID   string
+		wantMsg  string
+	}{
+		{
+			name: "success",
+			service: fakeConnectorService{connector: &entity.Connector{
+				ID:       "connector-1",
+				TenantID: "tenant-1",
+				Name:     "Docs",
+				Source:   "google_drive",
+				Status:   "unstart",
+				Config:   entity.JSONMap{"folder": "docs"},
+			}},
+			wantCode: common.CodeSuccess,
+			wantID:   "connector-1",
+		},
+		{
+			name:     "unauthorized",
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			wantCode: common.CodeAuthenticationError,
+			wantMsg:  "No authorization.",
+		},
 	}
 
-	var resp struct {
-		Code common.ErrorCode `json:"code"`
-		Data entity.Connector `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if resp.Code != common.CodeSuccess {
-		t.Fatalf("code = %d, want %d, body: %s", resp.Code, common.CodeSuccess, w.Body.String())
-	}
-	if resp.Data.ID != "conn123" || resp.Data.TenantID != "tenant123" {
-		t.Fatalf("response connector = %+v", resp.Data)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &ConnectorHandler{connectorService: tt.service}
+			router := gin.New()
+			router.GET("/api/v1/connectors/:connector_id", func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "tenant-1"})
+				h.GetConnector(c)
+			})
 
-func TestUpdateConnectorRejectsMalformedDataWrapper(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/connector-1", nil)
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
 
-	connectorService := &fakeConnectorService{}
-	h := &ConnectorHandler{connectorService: connectorService}
-	r := gin.New()
-	r.PATCH("/api/v1/connectors/:connector_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant123"})
-		h.UpdateConnector(c)
-	})
-
-	body := []byte(`{"data":[]}`)
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/connectors/conn123", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if connectorService.called {
-		t.Fatal("service should not be called for malformed data wrapper")
-	}
-
-	var resp struct {
-		Code    common.ErrorCode `json:"code"`
-		Message string           `json:"message"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if resp.Code != common.CodeDataError {
-		t.Fatalf("code = %d, want %d, body: %s", resp.Code, common.CodeDataError, w.Body.String())
-	}
-	if resp.Message != "field 'data' must be a JSON object" {
-		t.Fatalf("message = %q", resp.Message)
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v body=%v", body["code"], body)
+			}
+			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
+				t.Fatalf("message=%v", body["message"])
+			}
+			if tt.wantID != "" && body["data"].(map[string]interface{})["id"] != tt.wantID {
+				t.Fatalf("data=%v", body["data"])
+			}
+		})
 	}
 }

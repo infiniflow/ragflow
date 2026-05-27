@@ -18,12 +18,19 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"strings"
-	"time"
 
-	"ragflow/internal/common"
+	"gorm.io/gorm"
+)
+
+const (
+	connectorInputTypePoll   = "poll"
+	connectorStatusUnstarted = "0"
+	defaultConnectorFreq     = 5
+	defaultConnectorTimeout  = 60 * 29
 )
 
 // ConnectorService connector service
@@ -45,14 +52,83 @@ type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
 }
 
-// UpdateConnectorRequest update connector request.
-type UpdateConnectorRequest struct {
-	RefreshFreq *int64                  `json:"refresh_freq,omitempty"`
-	PruneFreq   *int64                  `json:"prune_freq,omitempty"`
-	Config      *map[string]interface{} `json:"config,omitempty"`
-	TimeoutSecs *int64                  `json:"timeout_secs,omitempty"`
-	Reschedule  bool                    `json:"reschedule,omitempty"`
-	Status      string                  `json:"status,omitempty"`
+// CreateConnectorRequest creates a connector with Python-compatible defaults.
+type CreateConnectorRequest struct {
+	Name        string         `json:"name"`
+	Source      string         `json:"source"`
+	Config      entity.JSONMap `json:"config"`
+	RefreshFreq *int64         `json:"refresh_freq,omitempty"`
+	PruneFreq   *int64         `json:"prune_freq,omitempty"`
+	TimeoutSecs *int64         `json:"timeout_secs,omitempty"`
+}
+
+// CreateConnector creates a connector owned by the current user.
+// Equivalent to Python's create_connector endpoint.
+func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	refreshFreq := int64(defaultConnectorFreq)
+	if req.RefreshFreq != nil {
+		refreshFreq = *req.RefreshFreq
+	}
+
+	pruneFreq := int64(defaultConnectorFreq)
+	if req.PruneFreq != nil {
+		pruneFreq = *req.PruneFreq
+	}
+
+	timeoutSecs := int64(defaultConnectorTimeout)
+	if req.TimeoutSecs != nil {
+		timeoutSecs = *req.TimeoutSecs
+	}
+
+	connector := &entity.Connector{
+		ID:          common.GenerateUUID(),
+		TenantID:    userID,
+		Name:        req.Name,
+		Source:      req.Source,
+		InputType:   connectorInputTypePoll,
+		Config:      req.Config,
+		RefreshFreq: refreshFreq,
+		PruneFreq:   pruneFreq,
+		TimeoutSecs: timeoutSecs,
+		Status:      connectorStatusUnstarted,
+	}
+
+	if err := s.connectorDAO.Create(connector); err != nil {
+		return nil, err
+	}
+
+	return s.connectorDAO.GetByID(connector.ID)
+}
+
+// GetConnector returns one connector when the user can access its tenant.
+func (s *ConnectorService) GetConnector(connectorID string, userID string) (*entity.Connector, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if connector.TenantID == userID {
+		return connector, common.CodeSuccess, nil
+	}
+
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	for _, tenantID := range tenantIDs {
+		if tenantID == connector.TenantID {
+			return connector, common.CodeSuccess, nil
+		}
+	}
+
+	return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
 }
 
 // ListConnectors list connectors for a user

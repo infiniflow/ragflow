@@ -50,7 +50,7 @@ func (p *PaddleOCRLocalModel) NewInstance(baseURL map[string]string) ModelDriver
 }
 
 func (p *PaddleOCRLocalModel) Name() string {
-	return "paddleocr_local"
+	return "paddleocr"
 }
 
 func (p *PaddleOCRLocalModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
