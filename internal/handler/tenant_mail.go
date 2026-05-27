@@ -19,13 +19,20 @@ package handler
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/mail"
 	"net/smtp"
 	"ragflow/internal/server"
 	"strings"
+	"time"
 )
 
 var sendTenantInviteEmail = deliverTenantInviteEmail
+
+const (
+	smtpDialTimeout = 10 * time.Second
+	smtpIOTimeout   = 15 * time.Second
+)
 
 func deliverTenantInviteEmail(toEmail, recipientEmail, tenantID, inviter string) error {
 	cfg := server.GetConfig()
@@ -39,6 +46,9 @@ func deliverTenantInviteEmail(toEmail, recipientEmail, tenantID, inviter string)
 	}
 	if len(smtpCfg.MailDefaultSender) < 2 {
 		return fmt.Errorf("mail_default_sender must include display name and email address")
+	}
+	if strings.TrimSpace(smtpCfg.MailFrontendURL) == "" {
+		return fmt.Errorf("mail_frontend_url is required")
 	}
 
 	from := mail.Address{
@@ -74,7 +84,17 @@ func deliverTenantInviteEmail(toEmail, recipientEmail, tenantID, inviter string)
 		return sendMailWithTLS(address, smtpCfg.MailServer, auth, from.Address, []string{to.Address}, []byte(message))
 	}
 
-	client, err := smtp.Dial(address)
+	dialer := net.Dialer{Timeout: smtpDialTimeout}
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(smtpIOTimeout)); err != nil {
+		return err
+	}
+
+	client, err := smtp.NewClient(conn, smtpCfg.MailServer)
 	if err != nil {
 		return err
 	}
@@ -112,11 +132,15 @@ func deliverTenantInviteEmail(toEmail, recipientEmail, tenantID, inviter string)
 }
 
 func sendMailWithTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
-	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
+	dialer := net.Dialer{Timeout: smtpDialTimeout}
+	conn, err := tls.DialWithDialer(&dialer, "tcp", addr, &tls.Config{ServerName: host})
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(smtpIOTimeout)); err != nil {
+		return err
+	}
 
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {

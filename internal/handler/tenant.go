@@ -34,6 +34,7 @@ type tenantService interface {
 	GetTenantInfo(userID string) (*service.TenantInfoResponse, error)
 	GetTenantList(userID string) ([]*service.TenantListItem, error)
 	InviteTenantUser(tenantID, currentUserID, email string) (*service.TenantInvitedUserResponse, common.ErrorCode, error)
+	CreateTenantUserInvite(tenantID, currentUserID, email string) (common.ErrorCode, error)
 	CreateMetadataStore(tenantID string) (common.ErrorCode, error)
 	DeleteMetadataStore(tenantID string) (common.ErrorCode, error)
 	CreateChunkStore(req *service.CreateDatasetTableRequest) (*service.CreateChunkStoreResponse, common.ErrorCode, error)
@@ -57,7 +58,7 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 }
 
 type AddTenantUserRequest struct {
-	Email string `json:"email" binding:"required"`
+	Email string `json:"email"`
 }
 
 func (h *TenantHandler) GetModels(c *gin.Context) {
@@ -246,6 +247,11 @@ func (h *TenantHandler) AddTenantUser(c *gin.Context) {
 	}
 	if err := sendTenantInviteEmail(req.Email, req.Email, c.Param("tenant_id"), inviter); err != nil {
 		jsonError(c, common.CodeServerError, "Failed to send invite email.")
+		return
+	}
+	code, err = h.tenantService.CreateTenantUserInvite(c.Param("tenant_id"), user.ID, req.Email)
+	if err != nil {
+		jsonError(c, code, err.Error())
 		return
 	}
 

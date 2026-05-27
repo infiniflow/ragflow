@@ -278,9 +278,45 @@ func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) 
 	return result, nil
 }
 
-// InviteTenantUser creates an invite relation for an existing user in the owner's team.
-// Equivalent to Python's create() in api/apps/restful_apis/tenant_api.py.
+// InviteTenantUser validates a pending invite and returns the invited user payload.
+// Equivalent to Python's create() validation in api/apps/restful_apis/tenant_api.py.
 func (s *TenantService) InviteTenantUser(tenantID, currentUserID, email string) (*TenantInvitedUserResponse, common.ErrorCode, error) {
+	inviteUser, code, err := s.validateTenantUserInvite(tenantID, currentUserID, email)
+	if err != nil {
+		return nil, code, err
+	}
+
+	return &TenantInvitedUserResponse{
+		ID:       inviteUser.ID,
+		Avatar:   inviteUser.Avatar,
+		Email:    inviteUser.Email,
+		Nickname: inviteUser.Nickname,
+	}, common.CodeSuccess, nil
+}
+
+// CreateTenantUserInvite persists a validated invite row after the email send succeeds.
+func (s *TenantService) CreateTenantUserInvite(tenantID, currentUserID, email string) (common.ErrorCode, error) {
+	inviteUser, code, err := s.validateTenantUserInvite(tenantID, currentUserID, email)
+	if err != nil {
+		return code, err
+	}
+
+	status := string(entity.StatusValid)
+	if err := s.userTenantDAO.Create(&entity.UserTenant{
+		ID:        common.GenerateUUID(),
+		UserID:    inviteUser.ID,
+		TenantID:  tenantID,
+		InvitedBy: currentUserID,
+		Role:      "invite",
+		Status:    &status,
+	}); err != nil {
+		return common.CodeServerError, err
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (s *TenantService) validateTenantUserInvite(tenantID, currentUserID, email string) (*entity.User, common.ErrorCode, error) {
 	if strings.TrimSpace(tenantID) == "" {
 		return nil, common.CodeDataError, errors.New("tenant_id is required")
 	}
@@ -314,24 +350,7 @@ func (s *TenantService) InviteTenantUser(tenantID, currentUserID, email string) 
 		return nil, common.CodeServerError, err
 	}
 
-	status := string(entity.StatusValid)
-	if err := s.userTenantDAO.Create(&entity.UserTenant{
-		ID:        common.GenerateUUID(),
-		UserID:    inviteUser.ID,
-		TenantID:  tenantID,
-		InvitedBy: currentUserID,
-		Role:      "invite",
-		Status:    &status,
-	}); err != nil {
-		return nil, common.CodeServerError, err
-	}
-
-	return &TenantInvitedUserResponse{
-		ID:       inviteUser.ID,
-		Avatar:   inviteUser.Avatar,
-		Email:    inviteUser.Email,
-		Nickname: inviteUser.Nickname,
-	}, common.CodeSuccess, nil
+	return inviteUser, common.CodeSuccess, nil
 }
 
 // CreateMetadataStore creates the metadata store for a tenant
