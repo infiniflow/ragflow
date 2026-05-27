@@ -367,10 +367,10 @@ def _struct_to_es_doc(
     """Build one ES doc for an extracted entity or relation.
 
     Args:
-        kind: ``"entity"`` or ``"relation"`` — written to ``structure_kwd``.
+        kind: ``"entity"`` or ``"relation"`` — written to ``knowledge_graph_kwd``.
         src_field / target_field: when ``kind == "relation"`` and these field
             names exist on the payload, the resolved values are written to
-            ``src_name_kwd`` / ``target_name_kwd``.
+            ``from_entity_kwd`` / ``to_entity_kwd``.
     """
     content_with_weight = json.dumps(payload, ensure_ascii=False)
     if hasattr(vec, "tolist"):
@@ -387,9 +387,9 @@ def _struct_to_es_doc(
     doc = {
         "content_with_weight": content_with_weight,
         "compile_kwd": compile_kwd,
-        "structure_kwd": kind,
+        "knowledge_graph_kwd": kind,
         "doc_id": doc_id_str,
-        "chunk_ids": list(chunk_ids or []),
+        "source_id": list(chunk_ids or []),
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
         f"q_{len(vec_list)}_vec": vec_list,
@@ -402,11 +402,11 @@ def _struct_to_es_doc(
         if src_field:
             src_val = payload.get(src_field)
             if src_val is not None and str(src_val).strip():
-                doc["src_name_kwd"] = str(src_val).strip()
+                doc["from_entity_kwd"] = str(src_val).strip()
         if target_field:
             tgt_val = payload.get(target_field)
             if tgt_val is not None and str(tgt_val).strip():
-                doc["target_name_kwd"] = str(tgt_val).strip()
+                doc["to_entity_kwd"] = str(tgt_val).strip()
 
     return doc
 
@@ -530,7 +530,7 @@ async def compile_structure_from_text(
                 "content_with_weight": <json>,
                 "compile_kwd": "list" | "set" | "hypergraph",
                 "doc_id": <doc_id>,
-                "chunk_ids": [<chunk_id>, ...],
+                "source_id": [<chunk_id>, ...],
                 "q_<dim>_vec": [...],
                 "id": <xxhash>,
             }
@@ -649,7 +649,7 @@ async def compile_structure_from_text(
 #
 # Pipeline (per spec):
 #   Phase 1 — Local dedup inside `docs`:
-#     - Group by (doc_id, compile_kwd, src_name_kwd?, target_name_kwd?).
+#     - Group by (doc_id, compile_kwd, from_entity_kwd?, to_entity_kwd?).
 #     - Within each group, compute pairwise cosine similarity (sklearn) over
 #       q_<dim>_vec, and for each pair above ``similarity_threshold`` (0.9 by
 #       default) ask the LLM via _struct_merge_pair to decide if they're the
@@ -692,8 +692,8 @@ def _struct_filter_key(doc: dict) -> tuple:
     return (
         doc.get("doc_id"),
         doc.get("compile_kwd"),
-        doc.get("src_name_kwd"),
-        doc.get("target_name_kwd"),
+        doc.get("from_entity_kwd"),
+        doc.get("to_entity_kwd"),
     )
 
 
@@ -748,9 +748,9 @@ async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict |
 
 def _struct_apply_merge_invariants(existing: dict, merged_payload: dict) -> dict:
     """For relations, force the source/target fields back to the existing payload's
-    values — src_name_kwd / target_name_kwd must not change across a merge.
+    values — from_entity_kwd / to_entity_kwd must not change across a merge.
     """
-    if existing.get("structure_kwd") != "relation":
+    if existing.get("knowledge_graph_kwd") != "relation":
         return merged_payload
     try:
         existing_payload = json.loads(existing.get("content_with_weight") or "{}")
@@ -775,9 +775,9 @@ def _struct_rebuild_es_doc(
     preserve_id: bool = True,
 ) -> dict:
     """Rebuild an ES doc from a merged payload using _struct_to_es_doc, then
-    overlay identity fields (id, src_name_kwd, target_name_kwd) from base_doc.
+    overlay identity fields (id, from_entity_kwd, to_entity_kwd) from base_doc.
     """
-    kind = base_doc.get("structure_kwd") or "entity"
+    kind = base_doc.get("knowledge_graph_kwd") or "entity"
     src_field = None
     target_field = None
     if kind == "relation":
@@ -801,8 +801,8 @@ def _struct_rebuild_es_doc(
     )
     if preserve_id and base_doc.get("id"):
         new_doc["id"] = base_doc["id"]
-    # The spec forbids changing src_name_kwd / target_name_kwd on a merge.
-    for kwd in ("src_name_kwd", "target_name_kwd"):
+    # The spec forbids changing from_entity_kwd / to_entity_kwd on a merge.
+    for kwd in ("from_entity_kwd", "to_entity_kwd"):
         if kwd in base_doc and base_doc[kwd]:
             new_doc[kwd] = base_doc[kwd]
     return new_doc
@@ -864,7 +864,7 @@ async def _struct_local_dedup(
                 continue
             merged_payload = _struct_apply_merge_invariants(existing, merged_payload)
             merged_chunk_ids = _struct_union_chunk_ids(
-                existing.get("chunk_ids"), incoming.get("chunk_ids"),
+                existing.get("source_id"), incoming.get("source_id"),
             )
             new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
             if new_vec is None:
@@ -907,12 +907,12 @@ async def _struct_es_dedup_one(
         "compile_kwd": [doc["compile_kwd"]],
         "doc_id": [doc["doc_id"]],
     }
-    if doc.get("structure_kwd"):
-        condition["structure_kwd"] = [doc["structure_kwd"]]
-    if doc.get("src_name_kwd"):
-        condition["src_name_kwd"] = [doc["src_name_kwd"]]
-    if doc.get("target_name_kwd"):
-        condition["target_name_kwd"] = [doc["target_name_kwd"]]
+    if doc.get("knowledge_graph_kwd"):
+        condition["knowledge_graph_kwd"] = [doc["knowledge_graph_kwd"]]
+    if doc.get("from_entity_kwd"):
+        condition["from_entity_kwd"] = [doc["from_entity_kwd"]]
+    if doc.get("to_entity_kwd"):
+        condition["to_entity_kwd"] = [doc["to_entity_kwd"]]
 
     vec_field, vec = _struct_doc_vec(doc)
     if not vec_field or vec is None:
@@ -928,8 +928,8 @@ async def _struct_es_dedup_one(
         extra_options={"similarity": similarity_threshold},
     )
     select_fields = [
-        "id", "content_with_weight", "chunk_ids", "structure_kwd", "compile_kwd",
-        "doc_id", "src_name_kwd", "target_name_kwd",
+        "id", "content_with_weight", "source_id", "knowledge_graph_kwd", "compile_kwd",
+        "doc_id", "from_entity_kwd", "to_entity_kwd",
     ]
     try:
         res = await thread_pool_exec(
@@ -958,7 +958,7 @@ async def _struct_es_dedup_one(
 
     merged_payload = _struct_apply_merge_invariants(old_doc, merged_payload)
     merged_chunk_ids = _struct_union_chunk_ids(
-        old_doc.get("chunk_ids"), doc.get("chunk_ids"),
+        old_doc.get("source_id"), doc.get("source_id"),
     )
     new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
     if new_vec is None:
@@ -991,12 +991,12 @@ async def merge_compiled_structures(
     inserting them into ES.
 
     Two phases:
-        1. **Local dedup**: bucket by (doc_id, compile_kwd, src_name_kwd?,
-           target_name_kwd?), pairwise cosine similarity over the q_<dim>_vec
+        1. **Local dedup**: bucket by (doc_id, compile_kwd, from_entity_kwd?,
+           to_entity_kwd?), pairwise cosine similarity over the q_<dim>_vec
            field via ``sklearn.metrics.pairwise.cosine_similarity``; pairs
            above ``similarity_threshold`` go through ``_struct_merge_pair``
            (LLM-judged). On a duplicate verdict the surviving entry is
-           rebuilt from the merged payload (union of ``chunk_ids``,
+           rebuilt from the merged payload (union of ``source_id``,
            re-embedded, src/target preserved on relations).
         2. **ES dedup**: for each surviving doc, KNN-search ES with the same
            filter via ``MatchDenseExpr`` (top1, similarity ≥ threshold). On a
