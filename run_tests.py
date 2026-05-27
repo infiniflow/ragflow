@@ -217,7 +217,7 @@ EXAMPLES:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:
-  python run_tests.py                    # Run all tests
+  python run_tests.py                    # Run all tests 
   python run_tests.py --coverage         # Run with coverage
   python run_tests.py --parallel         # Run in parallel
   python run_tests.py --test services/test_dialog_service.py  # Run specific test
