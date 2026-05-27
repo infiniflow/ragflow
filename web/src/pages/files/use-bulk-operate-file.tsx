@@ -1,8 +1,9 @@
 import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { IFile } from '@/interfaces/database/file-manager';
 import { OnChangeFn, RowSelectionState } from '@tanstack/react-table';
-import { FolderInput, Trash2 } from 'lucide-react';
+import { FolderInput, Link2, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { UseHandleConnectToKnowledgeReturnType } from './hooks';
 import { useHandleDeleteFile } from './use-delete-file';
 import { UseMoveDocumentShowType } from './use-move-file';
 
@@ -11,11 +12,14 @@ export function useBulkOperateFile({
   rowSelection,
   showMoveFileModal,
   setRowSelection,
+  showConnectToKnowledgeModal,
 }: {
   files: IFile[];
   rowSelection: RowSelectionState;
   setRowSelection: OnChangeFn<RowSelectionState>;
-} & UseMoveDocumentShowType) {
+} & UseMoveDocumentShowType & {
+    showConnectToKnowledgeModal: UseHandleConnectToKnowledgeReturnType['showConnectToKnowledgeModal'];
+  }) {
   const { t } = useTranslation();
 
   const { selectedIds } = useSelectedIds(rowSelection, files);
@@ -40,6 +44,14 @@ export function useBulkOperateFile({
         if (code === 0) {
           setRowSelection({});
         }
+      },
+    },
+    {
+      id: 'link',
+      label: t('fileManager.addToKnowledge'),
+      icon: <Link2 />,
+      onClick: async () => {
+        showConnectToKnowledgeModal(selectedIds);
       },
     },
   ];
