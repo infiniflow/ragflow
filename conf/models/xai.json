@@ -4,7 +4,8 @@
     "default": "https://api.x.ai/v1"
   },
   "url_suffix": {
-    "chat": "chat/completions"
+    "chat": "chat/completions",
+    "models": "models"
   },
   "class": "grok",
   "models": [
