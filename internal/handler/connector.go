@@ -23,6 +23,7 @@ import (
 	"strconv"
 
 	"ragflow/internal/common"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -113,6 +114,19 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	var req service.CreateConnectorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	if strings.TrimSpace(req.Name) == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "name is required"})
+		return
+	}
+	if strings.TrimSpace(req.Source) == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "source is required"})
+		return
+	}
+	if req.Config == nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "config is required"})
 		return
 	}
 

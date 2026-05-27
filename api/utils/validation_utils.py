@@ -557,7 +557,7 @@ class CreateDatasetReq(Base):
             CreateDatasetReq(avatar="data:video/mp4;base64,...")  # Unsupported MIME type
             ```
         """
-        if v is None:
+        if not v: # cover both None and empty string
             return v
 
         if "," in v:
