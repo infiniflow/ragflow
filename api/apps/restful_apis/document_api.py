@@ -1190,7 +1190,9 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
-def list_thumbnails():
+@login_required
+@add_tenant_id_to_kwargs
+def list_thumbnails(tenant_id):
     """
     Get thumbnails for documents.
     ---
@@ -1217,6 +1219,11 @@ def list_thumbnails():
 
     try:
         docs = DocumentService.get_thumbnails(doc_ids)
+        docs = [
+            doc_item
+            for doc_item in docs
+            if KnowledgebaseService.accessible(kb_id=doc_item["kb_id"], user_id=tenant_id)
+        ]
 
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
@@ -1641,7 +1648,9 @@ async def stop_parse_documents(tenant_id, dataset_id):
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
-async def get_document_image(image_id):
+@login_required
+@add_tenant_id_to_kwargs
+async def get_document_image(tenant_id, image_id):
     """
     Get a document image by ID.
     ---
@@ -1668,6 +1677,9 @@ async def get_document_image(image_id):
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
+        if not KnowledgebaseService.accessible(kb_id=bkt, user_id=tenant_id):
+            # Keep response indistinguishable to reduce object-id probing.
+            return get_data_error_result(message="Image not found.")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
