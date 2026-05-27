@@ -30,7 +30,7 @@ Released on May 26, 2026.
 - Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/infiniflow/ragflow/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
 - Weight assigned to vector similarity was not applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
 - Fixes parser configs not saving on dataset configuration page.
-- Logs wer not fully displayed on data source details page.
+- Logs were not fully displayed on data source details page.
 - Fixes document status filtering failure.
 - Fixes crash guard for empty LLM choices responses.
 - RAG: RAPTOR construction process halted when using the [Infinity](https://github.com/infiniflow/infinity) document engine. [#14998](https://github.com/infiniflow/ragflow/pull/14998)
