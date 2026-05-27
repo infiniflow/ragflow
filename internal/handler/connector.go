@@ -31,6 +31,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"ragflow/internal/service"
 )
@@ -50,8 +52,11 @@ type ConnectorHandler struct {
 const (
 	gmailWebFlowTTLSeconds         = 15 * 60
 	gmailWebOAuthTokenURL          = "https://oauth2.googleapis.com/token"
-	defaultGmailWebOAuthRedirectURI = "http://localhost:9380/v1/connector/gmail/oauth/web/callback"
+	defaultGmailWebOAuthRedirectURI = "http://localhost:9380/api/v1/connectors/gmail/oauth/web/callback"
+	gmailWebOAuthHTTPTimeout       = 15 * time.Second
 )
+
+var gmailWebOAuthHTTPClient = &http.Client{Timeout: gmailWebOAuthHTTPTimeout}
 
 // NewConnectorHandler create connector handler
 func NewConnectorHandler(connectorService *service.ConnectorService, userService *service.UserService) *ConnectorHandler {
@@ -229,7 +234,7 @@ func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, mess
   </script>
 </body>
 </html>`,
-		strings.Title(source),
+		cases.Title(language.Und, cases.NoLower).String(source),
 		map[bool]string{true: "Authorization complete", false: "Authorization failed"}[success],
 		html.EscapeString(message),
 		payloadJSON,
@@ -314,9 +319,14 @@ func (h *ConnectorHandler) GoogleGmailWebOAuthCallback(c *gin.Context) {
 	if codeVerifier != "" {
 		form.Set("code_verifier", codeVerifier)
 	}
-	req, _ := http.NewRequest(http.MethodPost, gmailWebOAuthTokenURL, bytes.NewBufferString(form.Encode()))
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, gmailWebOAuthTokenURL, bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		redisClient.Delete(gmailWebStateCacheKey(stateID))
+		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
+		return
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := gmailWebOAuthHTTPClient.Do(req)
 	if err != nil || resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		redisClient.Delete(gmailWebStateCacheKey(stateID))
 		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
