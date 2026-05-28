@@ -16,7 +16,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import pytest
-from test.testcases.configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
+from test.testcases.configs import INVALID_API_TOKEN
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
 
