@@ -49,6 +49,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.apps.restful_apis.chat_api import _get_bool_request_flag
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_data_error_result,
@@ -183,6 +184,7 @@ async def _run_workflow_session(
     return_trace,
     stream,
     chat_template_kwargs=None,
+    enable_thinking=None,
 ):
     async def commit_runtime_replica():
         commit_ok = CanvasReplicaService.commit_after_run(
@@ -227,6 +229,8 @@ async def _run_workflow_session(
     }
     if chat_template_kwargs is not None:
         run_kwargs["chat_template_kwargs"] = chat_template_kwargs
+    if enable_thinking is not None:
+        run_kwargs["enable_thinking"] = enable_thinking
 
     async def persist_workflow_session():
         if not final_ans:
@@ -1157,6 +1161,8 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     req = dict(req)
     req.pop("agent_id", None)
     req.pop("openai-compatible", None)
+    if "enable_thinking" in req:
+        req["enable_thinking"] = _get_bool_request_flag(req, "enable_thinking")
     session_id = req.get("session_id")
     workflow_session = False
     workflow_conv = None
@@ -1275,6 +1281,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
             chat_template_kwargs=req.get("chat_template_kwargs"),
+            enable_thinking=req.get("enable_thinking"),
         )
 
     if not session_id:
@@ -1422,6 +1429,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
             return_trace=bool(req.get("return_trace", False)),
             stream=req.get("stream", True),
             chat_template_kwargs=req.get("chat_template_kwargs"),
+            enable_thinking=req.get("enable_thinking"),
         )
 
     return_trace = bool(req.get("return_trace", False))

@@ -1,5 +1,8 @@
 import { FileUploadProps } from '@/components/file-upload';
-import { NextMessageInput } from '@/components/message-input/next';
+import {
+  NextMessageInput,
+  NextMessageInputOnPressEnterParameter,
+} from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
@@ -91,12 +94,15 @@ export function SessionChat({ session }: SessionChatProps) {
     }
   }, [sessionId, isNew, sendLoading, setDerivedMessages]);
 
-  const handleSessionPressEnter = useCallback(async () => {
-    if (value.trim()) {
-      hasLocalMessageRef.current = true;
-    }
-    return handlePressEnter();
-  }, [handlePressEnter, value]);
+  const handleSessionPressEnter = useCallback(
+    async (params: NextMessageInputOnPressEnterParameter) => {
+      if (value.trim()) {
+        hasLocalMessageRef.current = true;
+      }
+      return handlePressEnter(params);
+    },
+    [handlePressEnter, value],
+  );
 
   return (
     <>
@@ -160,6 +166,7 @@ export function SessionChat({ session }: SessionChatProps) {
             onUpload={handleUploadFile}
             removeFile={removeFile}
             conversationId=""
+            showModelThinking
           />
         </section>
       </section>

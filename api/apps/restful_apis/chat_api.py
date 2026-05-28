@@ -1132,6 +1132,8 @@ async def session_completion(chat_id_in_arg=""):
         return error
     request_messages, request_msg = normalized
     pass_all_history_messages = _get_bool_request_flag(req, "pass_all_history_messages", "pass_all_history", default=False)
+    if "enable_thinking" in req:
+        req["enable_thinking"] = _get_bool_request_flag(req, "enable_thinking")
     msg = request_msg
     message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""

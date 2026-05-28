@@ -91,6 +91,7 @@ export const useSendMessage = (controller: AbortController) => {
       messages,
       enableInternet,
       enableThinking,
+      enableModelThinking,
     }: {
       message: IMessage;
       currentConversationId?: string;
@@ -110,6 +111,7 @@ export const useSendMessage = (controller: AbortController) => {
           ],
           pass_all_history_messages: true,
           reasoning: enableThinking,
+          enable_thinking: enableModelThinking,
           internet: enableInternet,
         },
         controller,
@@ -145,6 +147,7 @@ export const useSendMessage = (controller: AbortController) => {
   const handlePressEnter = useCallback(
     async ({
       enableThinking,
+      enableModelThinking,
       enableInternet,
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
@@ -181,6 +184,7 @@ export const useSendMessage = (controller: AbortController) => {
           },
           enableInternet,
           enableThinking,
+          enableModelThinking,
         });
       }
 

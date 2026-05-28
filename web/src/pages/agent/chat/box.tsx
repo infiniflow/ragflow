@@ -132,6 +132,7 @@ function AgentChatBox() {
             onUpload={handleUploadFile}
             removeFile={removeFile}
             conversationId=""
+            showModelThinking
           />
         )}
       </section>

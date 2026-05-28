@@ -271,9 +271,10 @@ class LLM(ComponentBase):
         return pts, sys_prompt
 
     async def _generate_async(self, msg: list[dict], **kwargs) -> str:
+        gen_conf = self._gen_conf_with_thinking()
         if not self.imgs:
-            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
-        return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
+            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf, **kwargs)
+        return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf, images=self.imgs, **kwargs)
 
     async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
         async def delta_wrapper(txt_iter):
@@ -307,12 +308,13 @@ class LLM(ComponentBase):
             async for t in txt_iter:
                 yield delta(t)
 
+        gen_conf = self._gen_conf_with_thinking()
         if not self.imgs:
-            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)):
+            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], gen_conf, **kwargs)):
                 yield t
             return
 
-        async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
+        async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], gen_conf, images=self.imgs, **kwargs)):
             yield t
 
     async def _stream_output_async(self, prompt, msg):
@@ -344,10 +346,11 @@ class LLM(ComponentBase):
                 last_idx -= len("</think>")
             return re.sub(r"(<think>|</think>)", "", delta_ans)
 
+        gen_conf = self._gen_conf_with_thinking()
         stream_kwargs = {"images": self.imgs} if self.imgs else {}
         extra_chat_kwargs = self._get_chat_template_kwargs()
         stream_kwargs.update(extra_chat_kwargs)
-        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
+        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], gen_conf, **stream_kwargs):
             if self.check_if_canceled("LLM streaming"):
                 return
 
@@ -465,6 +468,14 @@ class LLM(ComponentBase):
             logging.warning("Ignore invalid sys.chat_template_kwargs type: %s", type(chat_template_kwargs).__name__)
             return {}
         return {"chat_template_kwargs": chat_template_kwargs}
+
+    def _gen_conf_with_thinking(self) -> dict:
+        enable_thinking = self._canvas.globals.get("sys.enable_thinking")
+        if enable_thinking is None:
+            return self._param.gen_conf()
+        gen_conf = dict(self._param.gen_conf())
+        gen_conf["reasoning"] = bool(enable_thinking)
+        return gen_conf
 
     async def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
         summ = await tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)

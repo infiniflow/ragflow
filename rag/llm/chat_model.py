@@ -31,6 +31,7 @@ from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
 from common.misc_utils import thread_pool_exec
+from common.model_thinking_utils import apply_enable_thinking_policy
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
@@ -74,9 +75,15 @@ def _apply_model_family_policies(
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
-    # Qwen3 family disables thinking by extra_body on non-stream chat requests.
-    if "qwen3" in model_name_lower:
-        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+    sanitized_gen_conf, thinking_kwargs = apply_enable_thinking_policy(
+        model_name,
+        str(provider) if provider else None,
+        sanitized_gen_conf,
+    )
+    if thinking_kwargs.get("extra_body"):
+        extra_body = dict(sanitized_kwargs.get("extra_body") or {})
+        extra_body.update(thinking_kwargs["extra_body"])
+        sanitized_kwargs["extra_body"] = extra_body
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
@@ -90,22 +97,6 @@ def _apply_model_family_policies(
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower:
-            reasoning = sanitized_gen_conf.pop("reasoning", None)
-            thinking = {"type": "enabled"}
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            sanitized_gen_conf["thinking"] = thinking
-
-            thinking_enabled = thinking.get("type") == "enabled"
-            sanitized_gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
-            sanitized_gen_conf["top_p"] = 0.95
-            sanitized_gen_conf["n"] = 1
-            sanitized_gen_conf["presence_penalty"] = 0.0
-            sanitized_gen_conf["frequency_penalty"] = 0.0
-
         return sanitized_gen_conf, sanitized_kwargs
 
     return sanitized_gen_conf, sanitized_kwargs
@@ -150,11 +141,13 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
+        gen_conf, policy_kwargs = _apply_model_family_policies(
             self.model_name,
             backend="base",
             gen_conf=gen_conf,
         )
+        if policy_kwargs.get("extra_body"):
+            gen_conf["extra_body"] = {**(gen_conf.get("extra_body") or {}), **policy_kwargs["extra_body"]}
 
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
@@ -180,6 +173,8 @@ class Base(ABC):
             "logprobs",
             "top_logprobs",
             "extra_headers",
+            "extra_body",
+            "thinking",
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
@@ -1387,7 +1382,7 @@ class LiteLLMBase(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
+        gen_conf, policy_kwargs = _apply_model_family_policies(
             self.model_name,
             backend="litellm",
             provider=self.provider,
@@ -1395,6 +1390,8 @@ class LiteLLMBase(ABC):
         )
 
         gen_conf.pop("max_tokens", None)
+        if policy_kwargs.get("extra_body"):
+            gen_conf["extra_body"] = {**(gen_conf.get("extra_body") or {}), **policy_kwargs["extra_body"]}
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:

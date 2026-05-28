@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import {
   Atom,
+  Brain,
   CircleStop,
   Globe,
   Paperclip,
@@ -32,6 +33,7 @@ import { AudioButton } from '../ui/audio-button';
 
 export type NextMessageInputOnPressEnterParameter = {
   enableThinking: boolean;
+  enableModelThinking: boolean;
   enableInternet: boolean;
 };
 
@@ -47,6 +49,7 @@ interface NextMessageInputProps {
   isUploading?: boolean;
   onPressEnter({
     enableThinking,
+    enableModelThinking,
     enableInternet,
   }: NextMessageInputOnPressEnterParameter): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
@@ -55,6 +58,7 @@ interface NextMessageInputProps {
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
   removeFile?(file: File): void;
   showReasoning?: boolean;
+  showModelThinking?: boolean;
   showInternet?: boolean;
   resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
@@ -73,6 +77,7 @@ export function NextMessageInput({
   onPressEnter,
   removeFile,
   showReasoning = false,
+  showModelThinking = false,
   showInternet = false,
 }: NextMessageInputProps) {
   const [files, setFiles] = React.useState<File[]>([]);
@@ -81,10 +86,15 @@ export function NextMessageInput({
   );
 
   const [enableThinking, setEnableThinking] = useState(false);
+  const [enableModelThinking, setEnableModelThinking] = useState(false);
   const [enableInternet, setEnableInternet] = useState(false);
 
   const handleThinkingToggle = useCallback(() => {
     setEnableThinking((prev) => !prev);
+  }, []);
+
+  const handleModelThinkingToggle = useCallback(() => {
+    setEnableModelThinking((prev) => !prev);
   }, []);
 
   const handleInternetToggle = useCallback(() => {
@@ -94,9 +104,16 @@ export function NextMessageInput({
   const pressEnter = useCallback(() => {
     onPressEnter({
       enableThinking,
+      enableModelThinking,
       enableInternet: showInternet ? enableInternet : false,
     });
-  }, [onPressEnter, enableThinking, enableInternet, showInternet]);
+  }, [
+    onPressEnter,
+    enableThinking,
+    enableModelThinking,
+    enableInternet,
+    showInternet,
+  ]);
 
   useEffect(() => {
     if (audioInputValue !== null) {
@@ -114,6 +131,7 @@ export function NextMessageInput({
     onInputChange,
     onPressEnter,
     enableThinking,
+    enableModelThinking,
     enableInternet,
     showInternet,
     pressEnter,
@@ -216,6 +234,7 @@ export function NextMessageInput({
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
+          style={{ resize }}
           className="
             min-h-10 max-h-40 w-full p-0 overflow-auto
             !outline-none !border-transparent !bg-transparent !shadow-none !ring-transparent !ring-offset-transparent
@@ -252,10 +271,26 @@ export function NextMessageInput({
                   'bg-text-primary text-bg-base': enableThinking,
                 })}
                 onClick={handleThinkingToggle}
-                data-testid="chat-detail-thinking-toggle"
+                data-testid="chat-detail-research-toggle"
               >
                 <Atom />
-                <span>Thinking</span>
+                <span>{t('chat.reasoning')}</span>
+              </Button>
+            )}
+
+            {showModelThinking && (
+              <Button
+                type="button"
+                size="sm"
+                variant={'outline'}
+                className={cn('border-0 h-7 text-sm bg-bg-card', {
+                  'bg-text-primary text-bg-base': enableModelThinking,
+                })}
+                onClick={handleModelThinkingToggle}
+                data-testid="chat-detail-model-thinking-toggle"
+              >
+                <Brain />
+                <span>{t('chat.modelThinking')}</span>
               </Button>
             )}
 

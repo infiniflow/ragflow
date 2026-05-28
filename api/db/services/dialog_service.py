@@ -287,7 +287,7 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True):
+async def async_chat_solo(dialog, messages, stream=True, **kwargs):
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
     attachments = ""
     image_attachments = []
@@ -319,11 +319,15 @@ async def async_chat_solo(dialog, messages, stream=True):
         msg[-1]["content"] += attachments
     if llm_type == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+    enable_thinking = kwargs.get("enable_thinking") if "enable_thinking" in kwargs else None
+    gen_conf = dict(dialog.llm_setting or {})
+    if enable_thinking is not None:
+        gen_conf["reasoning"] = enable_thinking
     if stream:
         if llm_type == "chat":
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
+            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, gen_conf)
         else:
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, gen_conf, images=image_files)
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
@@ -332,9 +336,9 @@ async def async_chat_solo(dialog, messages, stream=True):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
         if llm_type == "chat":
-            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, gen_conf)
         else:
-            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, gen_conf, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
@@ -549,7 +553,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     if not dialog.kb_ids and not use_web_search:
-        async for ans in async_chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream, **kwargs):
             yield ans
         return
 
@@ -673,7 +677,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         logging.debug("Proceeding with retrieval")
         tenant_ids = list(set([kb.tenant_id for kb in kbs]))
         knowledges = []
-        if prompt_config.get("reasoning", False) or kwargs.get("reasoning"):
+        if kwargs.get("reasoning", prompt_config.get("reasoning", False)):
             reasoner = DeepResearcher(
                 chat_mdl,
                 prompt_config,
@@ -761,7 +765,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
-    gen_conf = dialog.llm_setting
+    enable_thinking = kwargs.get("enable_thinking") if "enable_thinking" in kwargs else None
+    gen_conf = dict(dialog.llm_setting or {})
+    if enable_thinking is not None:
+        gen_conf["reasoning"] = enable_thinking
 
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
     prompt4citation = ""

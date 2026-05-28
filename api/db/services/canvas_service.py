@@ -356,6 +356,8 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     }
     if chat_template_kwargs is not None:
         run_kwargs["chat_template_kwargs"] = chat_template_kwargs
+    if "enable_thinking" in kwargs:
+        run_kwargs["enable_thinking"] = kwargs["enable_thinking"]
 
     async for ans in canvas.run(**run_kwargs):
         ans["session_id"] = session_id

@@ -1,3 +1,4 @@
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import sonnerMessage from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
@@ -79,59 +80,62 @@ export const useSendSessionMessage = () => {
     }
   }, [beginInputs, beginParams, showParameterDialog]);
 
-  const handlePressEnter = useCallback(async () => {
-    if (isCreatingSession.current) {
-      return;
-    }
-
-    if (
-      prologue &&
-      isEmpty(sessionId) &&
-      !isNew &&
-      derivedMessages.length === 0
-    ) {
-      addPrologue(prologue);
-    }
-
-    let exploreSessionId = sessionId;
-
-    if (isEmpty(sessionId) && canvasId) {
-      isCreatingSession.current = true;
-      try {
-        const sessionName = value?.trim() || 'New Session';
-        const result = await createAgentSession({
-          id: canvasId,
-          name: sessionName,
-        });
-
-        exploreSessionId = result.id;
-
-        setSessionId(result.id, false);
-
-        setTimeout(() => {
-          isCreatingSession.current = false;
-        }, 100);
-      } catch (error) {
-        isCreatingSession.current = false;
-        sonnerMessage.error('Failed to create session');
-        console.error('Failed to create session:', error);
+  const handlePressEnter = useCallback(
+    async (params?: NextMessageInputOnPressEnterParameter) => {
+      if (isCreatingSession.current) {
         return;
       }
-    }
 
-    return handleSendPressEnter?.({ exploreSessionId });
-  }, [
-    addPrologue,
-    canvasId,
-    createAgentSession,
-    derivedMessages.length,
-    handleSendPressEnter,
-    isNew,
-    prologue,
-    sessionId,
-    setSessionId,
-    value,
-  ]);
+      if (
+        prologue &&
+        isEmpty(sessionId) &&
+        !isNew &&
+        derivedMessages.length === 0
+      ) {
+        addPrologue(prologue);
+      }
+
+      let exploreSessionId = sessionId;
+
+      if (isEmpty(sessionId) && canvasId) {
+        isCreatingSession.current = true;
+        try {
+          const sessionName = value?.trim() || 'New Session';
+          const result = await createAgentSession({
+            id: canvasId,
+            name: sessionName,
+          });
+
+          exploreSessionId = result.id;
+
+          setSessionId(result.id, false);
+
+          setTimeout(() => {
+            isCreatingSession.current = false;
+          }, 100);
+        } catch (error) {
+          isCreatingSession.current = false;
+          sonnerMessage.error('Failed to create session');
+          console.error('Failed to create session:', error);
+          return;
+        }
+      }
+
+      return handleSendPressEnter?.({ exploreSessionId, ...params });
+    },
+    [
+      addPrologue,
+      canvasId,
+      createAgentSession,
+      derivedMessages.length,
+      handleSendPressEnter,
+      isNew,
+      prologue,
+      sessionId,
+      setSessionId,
+      value,
+    ],
+  );
 
   useEffect(() => {
     if (isNew && isEmpty(sessionId)) {

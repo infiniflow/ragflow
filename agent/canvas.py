@@ -402,7 +402,7 @@ class Canvas(Graph):
                 break
 
         for k in kwargs.keys():
-            if k in ["query", "user_id", "files", "chat_template_kwargs"] and kwargs[k]:
+            if k in ["query", "user_id", "files", "chat_template_kwargs", "enable_thinking"] and kwargs[k] is not None:
                 if k == "files":
                     self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k], layout_recognize)
                 else:
