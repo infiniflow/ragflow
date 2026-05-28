@@ -29,10 +29,10 @@ import (
 	"ragflow/internal/entity"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 
 	"ragflow/internal/service"
 )
@@ -202,6 +202,18 @@ func gmailWebResultCacheKey(flowID string) string {
 	return "gmail_web_flow_result:" + flowID
 }
 
+// capitalizeFirst uppercases the first rune and keeps the remaining runes unchanged.
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError && size == 0 {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
+}
+
 func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, message string, source string) {
 	status := "error"
 	autoClose := ""
@@ -272,7 +284,7 @@ func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, mess
   </script>
 </body>
 </html>`,
-		cases.Title(language.Und, cases.NoLower).String(source),
+		capitalizeFirst(source),
 		map[bool]string{true: "Authorization complete", false: "Authorization failed"}[success],
 		html.EscapeString(message),
 		payloadJSON,
