@@ -90,6 +90,43 @@ def _build_sse_response(body):
     return resp
 
 
+def _normalize_message_content(content):
+    """Convert OpenAI message content to a string for the dialog layer.
+
+    Supports string content and array parts with ``type: text``. Other part types
+    (e.g. image_url) are ignored until vision is wired through this route.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text", "")
+                if text is not None:
+                    parts.append(str(text))
+        return "\n".join(parts)
+    return None
+
+
+def _normalize_openai_messages(messages):
+    """Return (normalized_messages, error_message). error_message is set on failure."""
+    if not isinstance(messages, list):
+        return None, "messages must be an array."
+
+    normalized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            return None, "Each message must be an object."
+        content = _normalize_message_content(message.get("content"))
+        if content is None:
+            return None, "messages[].content must be a string or an array of content parts."
+        normalized.append({**message, "content": content})
+    return normalized, None
+
+
 @manager.route("/openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("model", "messages")
@@ -112,6 +149,9 @@ async def openai_chat_completions(chat_id):
     messages = req.get("messages", [])
     if len(messages) < 1:
         return get_error_data_result("You have to provide messages.")
+    messages, normalize_error = _normalize_openai_messages(messages)
+    if normalize_error:
+        return get_error_data_result(normalize_error)
     if messages[-1]["role"] != "user":
         return get_error_data_result("The last content of this conversation is not from user.")
 
