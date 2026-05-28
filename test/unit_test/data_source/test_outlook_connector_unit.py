@@ -258,8 +258,9 @@ def test_poll_source_yields_messages():
     assert len(batches) == 1
     doc = batches[0][0]
     assert doc.semantic_identifier == "Hello"
-    assert "Bob" in doc.sections[0].text
-    assert "Body text" in doc.sections[0].text
+    body = doc.blob.decode("utf-8")
+    assert "Bob" in body
+    assert "Body text" in body
     assert doc.metadata["conversation_id"] == "conv-1"
 
 
@@ -340,6 +341,6 @@ def test_poll_source_html_body_is_stripped():
     with patch.object(connector, "_get", return_value=delta_resp):
         batches = list(connector.poll_source(0.0, 9999999999.0))
 
-    text = batches[0][0].sections[0].text
+    text = batches[0][0].blob.decode("utf-8")
     assert "<p>" not in text
     assert "Hello world" in text

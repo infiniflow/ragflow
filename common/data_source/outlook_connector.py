@@ -22,7 +22,6 @@ from common.data_source.models import (
     BasicExpertInfo,
     ConnectorCheckpoint,
     Document,
-    TextSection,
 )
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
@@ -315,16 +314,15 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                 )
             )
 
+        blob = section_text.encode("utf-8")
         return Document(
             id=msg["id"],
+            source="outlook",
             semantic_identifier=subject,
-            doc_updated_at=received_dt,
-            sections=[
-                TextSection(
-                    link=msg.get("webLink", ""),
-                    text=section_text,
-                )
-            ],
+            extension=".html" if body_content_type == "html" else ".txt",
+            blob=blob,
+            doc_updated_at=received_dt or datetime.now(timezone.utc),
+            size_bytes=len(blob),
             primary_owners=primary_owners or None,
             metadata={
                 "user_id": user_id,
@@ -334,8 +332,8 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                 "cc": ",".join(cc_recipients),
                 "has_attachments": str(bool(msg.get("hasAttachments"))),
                 "conversation_id": msg.get("conversationId", ""),
+                "web_link": msg.get("webLink", ""),
             },
-            source="outlook",
         )
 
     def _iter_documents(

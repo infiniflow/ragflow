@@ -1029,14 +1029,12 @@ class Outlook(SyncBase):
             document_batch_generator = self.connector.load_from_checkpoint(
                 0, 0, checkpoint
             )
-            begin_info = "totally"
         else:
             end_ts = datetime.now(timezone.utc).timestamp()
             document_batch_generator = self.connector.poll_source(
                 task["poll_range_start"].timestamp(),
                 end_ts,
             )
-            begin_info = "from {}".format(task["poll_range_start"])
 
         details = "{}@{}".format(
             self.conf.get("folder", "inbox"),
