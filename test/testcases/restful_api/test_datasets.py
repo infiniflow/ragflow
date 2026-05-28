@@ -2211,6 +2211,83 @@ def test_dataset_get_contract(rest_client, create_dataset):
 
 
 @pytest.mark.p2
+def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_metadata_config_contract")
+
+    success_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
+    assert success_res.status_code == 200
+    success_payload = success_res.json()
+    assert success_payload["code"] == 0, success_payload
+    assert success_payload["data"] == {"metadata": [], "built_in_metadata": []}, success_payload
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        get_res = client.get(f"/datasets/{dataset_id}/metadata/config")
+        assert get_res.status_code == 401, (scenario_name, get_res.text)
+        get_payload = get_res.json()
+        assert get_payload["code"] == 401, (scenario_name, get_payload)
+        assert get_payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, get_payload)
+
+        put_res = client.put(
+            f"/datasets/{dataset_id}/metadata/config",
+            json={"metadata": [], "built_in_metadata": []},
+        )
+        assert put_res.status_code == 401, (scenario_name, put_res.text)
+        put_payload = put_res.json()
+        assert put_payload["code"] == 401, (scenario_name, put_payload)
+        assert put_payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, put_payload)
+
+    invalid_dataset_res = rest_client.get("/datasets/invalid_dataset_id/metadata/config")
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_dataset_payload["message"], invalid_dataset_payload
+
+    update_payload = {
+        "metadata": [
+            {"key": "author", "type": "string", "description": "Author name"},
+            {"key": "tags", "type": "list", "description": "Tag list", "enum": ["foo", "bar"]},
+        ],
+        "built_in_metadata": [
+            {"key": "size", "type": "number", "description": "File size"},
+        ],
+    }
+    normalized_update_payload = {
+        "metadata": [
+            {"key": "author", "type": "string", "description": "Author name", "enum": None},
+            {"key": "tags", "type": "list", "description": "Tag list", "enum": ["foo", "bar"]},
+        ],
+        "built_in_metadata": [
+            {"key": "size", "type": "number", "description": "File size", "enum": None},
+        ],
+    }
+    update_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json=update_payload)
+    assert update_res.status_code == 200
+    update_body = update_res.json()
+    assert update_body["code"] == 0, update_body
+    assert update_body["data"] == normalized_update_payload, update_body
+
+    refetch_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
+    assert refetch_res.status_code == 200
+    refetch_payload = refetch_res.json()
+    assert refetch_payload["code"] == 0, refetch_payload
+    assert refetch_payload["data"] == normalized_update_payload, refetch_payload
+
+    missing_payload_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json={})
+    assert missing_payload_res.status_code == 200
+    missing_payload = missing_payload_res.json()
+    assert missing_payload["code"] == 0, missing_payload
+    assert missing_payload["data"] == {"metadata": [], "built_in_metadata": []}, missing_payload
+
+    invalid_update_dataset_res = rest_client.put(
+        "/datasets/invalid_dataset_id/metadata/config",
+        json={"metadata": [], "built_in_metadata": []},
+    )
+    assert invalid_update_dataset_res.status_code == 200
+    invalid_update_dataset_payload = invalid_update_dataset_res.json()
+    assert invalid_update_dataset_payload["code"] == 102, invalid_update_dataset_payload
+    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_update_dataset_payload["message"], invalid_update_dataset_payload
+
+
 def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_metadata_summary")
     document_ids = []

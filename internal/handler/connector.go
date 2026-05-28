@@ -17,16 +17,9 @@
 package handler
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"html"
-	"io"
+	"errors"
 	"net/http"
-	"net/url"
-	"ragflow/internal/common"
-	"ragflow/internal/cache"
-	"ragflow/internal/entity"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,18 +27,24 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
-type connectorService interface {
+type connectorServiceIface interface {
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
-	GetConnector(connectorID string, userID string) (*entity.Connector, common.ErrorCode, error)
+	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
+	ListLog(connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
+	DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error)
+	RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error)
+	TestConnector(connectorID, userID string) error
 }
 
 // ConnectorHandler connector handler
 type ConnectorHandler struct {
-	connectorService connectorService
+	connectorService connectorServiceIface
 	userService      *service.UserService
 }
 
@@ -99,6 +98,25 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	})
 }
 
+// connectorErrorResponse maps service sentinel errors to the response codes used
+// by the Python connector_api, and writes the JSON response. It returns true when
+// the error was handled.
+func connectorErrorResponse(c *gin.Context, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, service.ErrConnectorNoAuth):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": "No authorization."})
+	case errors.Is(err, service.ErrConnectorNotFound):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "Can't find this Connector!"})
+	case errors.Is(err, service.ErrConnectorTestUnsupported):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": false, "message": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
+	}
+	return true
+}
+
 // GetConnector get connector
 // @Summary Get Connector
 // @Description Get connector details for the current user
@@ -123,6 +141,54 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    connector,
+		"message": "success",
+	})
+}
+
+// ListLogs list connector sync logs.
+// @Summary List Connector Logs
+// @Description List sync logs for a connector the current user can access
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/{connector_id}/logs [get]
+func (h *ConnectorHandler) ListLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	page := 1
+	if rawPage := strings.TrimSpace(c.DefaultQuery("page", "1")); rawPage != "" {
+		parsedPage, err := strconv.Atoi(rawPage)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page must be an integer")
+			return
+		}
+		page = parsedPage
+	}
+
+	pageSize := 15
+	if rawPageSize := strings.TrimSpace(c.DefaultQuery("page_size", "15")); rawPageSize != "" {
+		parsedPageSize, err := strconv.Atoi(rawPageSize)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page_size must be an integer")
+			return
+		}
+		pageSize = parsedPageSize
+	}
+
+	logs, total, code, err := h.connectorService.ListLog(c.Param("connector_id"), user.ID, page, pageSize)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    gin.H{"total": total, "logs": logs},
 		"message": "success",
 	})
 }
@@ -194,203 +260,114 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	})
 }
 
-func gmailWebStateCacheKey(flowID string) string {
-	return "gmail_web_flow_state:" + flowID
+// TestConnector validates an accessible connector's stored credentials.
+// @Summary Test Connector
+// @Description Validate connector credentials / connection (equivalent to Python's test_connector)
+// @Tags connector
+// @Produce json
+// @Param connector_id path string true "connector ID"
+// @Router /api/v1/connectors/{connector_id}/test [post]
+func (h *ConnectorHandler) TestConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	connectorID := c.Param("connector_id")
+	if connectorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "connector_id is required"})
+		return
+	}
+
+	err := h.connectorService.TestConnector(connectorID, user.ID)
+	if errors.Is(err, service.ErrConnectorTestUnsupported) {
+		connectorErrorResponse(c, err)
+		return
+	}
+	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
+		// Validation failure (e.g. missing credentials): mirror Python's DATA_ERROR with data=false.
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+	if connectorErrorResponse(c, err) {
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
 }
 
-func gmailWebResultCacheKey(flowID string) string {
-	return "gmail_web_flow_result:" + flowID
-}
-
-func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, message string, source string) {
-	status := "error"
-	autoClose := ""
-	if success {
-		status = "success"
-		autoClose = "window.close();"
-	}
-	payloadType := fmt.Sprintf("ragflow-%s-oauth", source)
-	payloadJSON := fmt.Sprintf(
-		`{"type":"%s","status":"%s","flowId":"%s","message":%q}`,
-		payloadType,
-		status,
-		flowID,
-		message,
-	)
-	page := fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Google %s Authorization</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f8fafc;
-      color: #0f172a;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      margin: 0;
-    }
-    .card {
-      background: white;
-      padding: 32px;
-      border-radius: 12px;
-      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
-      max-width: 420px;
-      text-align: center;
-    }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 12px;
-    }
-    p {
-      font-size: 0.95rem;
-      line-height: 1.5;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>%s</h1>
-    <p>%s</p>
-    <p>You can close this window.</p>
-  </div>
-  <script>
-    (function(){
-      if (window.opener) {
-        window.opener.postMessage(%s, "*");
-      }
-      %s
-    })();
-  </script>
-</body>
-</html>`,
-		cases.Title(language.Und, cases.NoLower).String(source),
-		map[bool]string{true: "Authorization complete", false: "Authorization failed"}[success],
-		html.EscapeString(message),
-		payloadJSON,
-		autoClose,
-	)
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.String(http.StatusOK, page)
-}
-
-// GoogleGmailWebOAuthCallback handles GET /api/v1/connectors/gmail/oauth/web/callback.
-func (h *ConnectorHandler) GoogleGmailWebOAuthCallback(c *gin.Context) {
-	stateID := c.Query("state")
-	errVal := c.Query("error")
-	errorDescription := c.Query("error_description")
-	if errorDescription == "" {
-		errorDescription = errVal
-	}
-
-	if stateID == "" {
-		renderGoogleWebOAuthPopup(c, "", false, "Missing OAuth state parameter.", "gmail")
+// DeleteConnector delete connector
+// @Description Detele Connector
+// @Tags connector
+// @Accept json
+// @Produce json
+func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	redisClient := cache.Get()
-	if redisClient == nil {
-		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session expired. Please restart from the main window.", "gmail")
-		return
-	}
-
-	var stateObj map[string]interface{}
-	if ok := redisClient.GetObj(gmailWebStateCacheKey(stateID), &stateObj); !ok {
-		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session expired. Please restart from the main window.", "gmail")
-		return
-	}
-
-	clientConfigAny, hasClientConfig := stateObj["client_config"]
-	clientConfig, okClientCfg := clientConfigAny.(map[string]interface{})
-	if !hasClientConfig || !okClientCfg {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session was invalid. Please retry.", "gmail")
-		return
-	}
-
-	webConfigAny, hasWeb := clientConfig["web"]
-	webConfig, okWebCfg := webConfigAny.(map[string]interface{})
-	if !hasWeb || !okWebCfg {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		renderGoogleWebOAuthPopup(c, stateID, false, "Authorization session was invalid. Please retry.", "gmail")
-		return
-	}
-
-	if errVal != "" {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		msg := errorDescription
-		if msg == "" {
-			msg = "Authorization was cancelled."
-		}
-		renderGoogleWebOAuthPopup(c, stateID, false, msg, "gmail")
-		return
-	}
-
-	code := c.Query("code")
-	if code == "" {
-		renderGoogleWebOAuthPopup(c, stateID, false, "Missing authorization code from Google.", "gmail")
-		return
-	}
-
-	redirectURI := defaultGmailWebOAuthRedirectURI
-	if rawRedirectURI, ok := stateObj["redirect_uri"].(string); ok && strings.TrimSpace(rawRedirectURI) != "" {
-		redirectURI = strings.TrimSpace(rawRedirectURI)
-	}
-	clientID, _ := webConfig["client_id"].(string)
-	clientSecret, _ := webConfig["client_secret"].(string)
-	codeVerifier, _ := stateObj["code_verifier"].(string)
-
-	form := url.Values{}
-	form.Set("code", code)
-	form.Set("client_id", clientID)
-	form.Set("client_secret", clientSecret)
-	form.Set("redirect_uri", redirectURI)
-	form.Set("grant_type", "authorization_code")
-	if codeVerifier != "" {
-		form.Set("code_verifier", codeVerifier)
-	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, gmailWebOAuthTokenURL, bytes.NewBufferString(form.Encode()))
+	ok, code, err := h.connectorService.DeleteConnector(c.Param("connector_id"), user.ID)
 	if err != nil {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
-		return
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := gmailWebOAuthHTTPClient.Do(req)
-	if err != nil || resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
-		return
-	}
-	defer resp.Body.Close()
-
-	body, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
+		jsonError(c, code, err.Error())
 		return
 	}
 
-	var tokenMap map[string]interface{}
-	if err := json.Unmarshal(body, &tokenMap); err != nil {
-		redisClient.Delete(gmailWebStateCacheKey(stateID))
-		renderGoogleWebOAuthPopup(c, stateID, false, "Failed to exchange tokens with Google. Please retry.", "gmail")
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    ok,
+		"message": "success",
+	})
+}
+
+// RebuildConnector rebuild connector
+// @Summary Rebuild Connector
+// @Description Trigger a rebuild for an accessible connector and knowledge base
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /connector/:connector_id/rebuild [post]
+func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
-	tokenMap["client_id"] = clientID
-	tokenMap["client_secret"] = clientSecret
-	tokenBytes, _ := json.Marshal(tokenMap)
 
-	resultPayload := map[string]interface{}{
-		"user_id":      stateObj["user_id"],
-		"credentials": string(tokenBytes),
+	// Parse request body to get kb_id
+	var req struct {
+		KbID string `json:"kb_id" binding:"required"`
 	}
-	redisClient.SetObj(gmailWebResultCacheKey(stateID), resultPayload, time.Duration(gmailWebFlowTTLSeconds)*time.Second)
-	redisClient.Delete(gmailWebStateCacheKey(stateID))
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "required argument is missing: kb_id",
+		})
+		return
+	}
 
-	renderGoogleWebOAuthPopup(c, stateID, true, "Authorization completed successfully.", "gmail")
+	if strings.TrimSpace(req.KbID) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "kb_id cannot be empty",
+		})
+		return
+	}
+
+	ok, code, err := h.connectorService.RebuildConnector(c.Param("connector_id"), user.ID, req.KbID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    ok,
+		"message": "success",
+	})
 }

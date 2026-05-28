@@ -26,6 +26,12 @@ import (
 	"time"
 )
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 func newModelScopeForTest(baseURL string) *ModelScopeModel {
 	return NewModelScopeModel(
 		map[string]string{"default": baseURL},
@@ -76,6 +82,20 @@ func TestModelScopeFactoryRoute(t *testing.T) {
 	}
 	if driver.Name() != "modelscope" {
 		t.Errorf("driver.Name()=%q, want modelscope", driver.Name())
+	}
+}
+
+func TestModelScopeNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewModelScopeModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewModelScopeModel returned nil")
 	}
 }
 

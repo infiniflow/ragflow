@@ -56,7 +56,15 @@ type VoyageModel struct {
 // TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
 // the connection-pool fields we care about.
 func NewVoyageModel(baseURL map[string]string, urlSuffix URLSuffix) *VoyageModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	var transport *http.Transport
+	if ok {
+		transport = defaultTransport.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
+	}
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
 	transport.IdleConnTimeout = 90 * time.Second
