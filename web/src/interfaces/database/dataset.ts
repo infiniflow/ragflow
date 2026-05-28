@@ -74,6 +74,7 @@ interface Parserconfig {
 
 interface Raptor {
   clustering_method?: 'gmm' | 'ahc';
+  ext?: { clustering_method: 'gmm' | 'ahc'; tree_builder: 'raptor' | 'psi' };
   max_cluster: number;
   max_token: number;
   prompt: string;
