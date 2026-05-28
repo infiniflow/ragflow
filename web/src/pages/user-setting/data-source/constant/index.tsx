@@ -44,8 +44,8 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   SLACK = 'slack',
+  SHAREPOINT = 'sharepoint',
 
-  //   SHAREPOINT = 'sharepoint',
   //   TEAMS = 'teams',
 }
 
@@ -131,6 +131,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.SLACK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SHAREPOINT]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MYSQL]: {
@@ -220,6 +223,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Slack',
       description: t(`setting.${DataSourceKey.SLACK}Description`),
       icon: <SvgIcon name={'data-source/slack'} width={38} />,
+    },
+    [DataSourceKey.SHAREPOINT]: {
+      name: 'SharePoint',
+      description: t(`setting.${DataSourceKey.SHAREPOINT}Description`),
+      icon: <SvgIcon name={'data-source/sharepoint'} width={38} />,
     },
     [DataSourceKey.JIRA]: {
       name: 'Jira',
@@ -676,6 +684,34 @@ export const DataSourceFormFields = {
       type: FormFieldType.Tag,
       required: false,
       tooltip: t('setting.slackChannelsTip'),
+    },
+  ],
+  [DataSourceKey.SHAREPOINT]: [
+    {
+      label: 'Site URL',
+      name: 'config.credentials.site_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://contoso.sharepoint.com/sites/MySite',
+      tooltip: t('setting.sharepointSiteUrlTip'),
+    },
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
     },
   ],
   [DataSourceKey.JIRA]: jiraConstant(t),
@@ -1540,6 +1576,18 @@ export const DataSourceFormDefaultValues = {
       channels: [],
       credentials: {
         slack_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    name: '',
+    source: DataSourceKey.SHAREPOINT,
+    config: {
+      credentials: {
+        site_url: '',
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },

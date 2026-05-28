@@ -62,6 +62,7 @@ from common.data_source import (
     DingTalkAITableConnector,
     RestAPIConnector,
     SlackConnector,
+    SharePointConnector,
 )
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
@@ -933,7 +934,66 @@ class SharePoint(SyncBase):
     SOURCE_NAME: str = FileSource.SHAREPOINT
 
     async def _generate(self, task: dict):
-        pass
+        self.connector = SharePointConnector(
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+            _begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            _begin_info = f"from {task['poll_range_start']}"
+
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(
+                    self.connector.load_from_checkpoint(start_time, end_time, checkpoint)
+                )
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning(
+                            "SharePoint connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading SharePoint documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        self.log_connection("SharePoint", self.conf.get("credentials", {}).get("site_url", ""), task)
+        return document_batches()
 
 
 class Slack(SyncBase):

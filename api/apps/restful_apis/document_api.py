@@ -41,6 +41,7 @@ from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
+from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
@@ -585,9 +586,25 @@ async def _upload_local_documents(kb, tenant_id):
             logging.error(msg)
             return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
 
+    # Parse optional parser_config overrides from form data
+    parser_config_override = None
+    raw_parser_config = form.get("parser_config")
+    if raw_parser_config:
+        try:
+            parsed = json.loads(raw_parser_config)
+            if isinstance(parsed, dict):
+                # Only allow known table column config keys to prevent arbitrary overrides
+                allowed_keys = {"table_column_mode", "table_column_roles"}
+                parser_config_override = {k: v for k, v in parsed.items() if k in allowed_keys}
+                if not parser_config_override:
+                    parser_config_override = None
+        except (json.JSONDecodeError, TypeError):
+            parser_config_override = None
+
     err, files = await thread_pool_exec(
         FileService.upload_document, kb, file_objs, tenant_id,
-        parent_path=form.get("parent_path")
+        parent_path=form.get("parent_path"),
+        parser_config_override=parser_config_override,
     )
     if err:
         msg = "\n".join(err)
@@ -779,7 +796,7 @@ def _get_docs_with_request(req, dataset_id:str):
     q = req.args
 
     page = int(q.get("page", 1))
-    page_size = int(q.get("page_size", 30))
+    page_size = validate_rest_api_page_size(int(q.get("page_size", 30)))
 
     orderby = q.get("orderby", "create_time")
     desc = str(q.get("desc", "true")).strip().lower() != "false"
@@ -795,15 +812,10 @@ def _get_docs_with_request(req, dataset_id:str):
             msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
             return RetCode.DATA_ERROR, msg, [], 0
 
-    # map run status (text or numeric) - align with API parameter
-    run_status = q.getlist("run")
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-    if run_status_converted:
-        invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
-        if invalid_status:
-            msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
-            return RetCode.DATA_ERROR, msg, [], 0
+    run_status_converted, invalid_status = _parse_run_status_filter(q)
+    if invalid_status:
+        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, msg, [], 0
 
     err_code, err_message, doc_ids_filter, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
     if err_code != RetCode.SUCCESS:
@@ -851,14 +863,10 @@ def _get_doc_filters_with_request(req, dataset_id: str):
             msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
             return RetCode.DATA_ERROR, msg, {}, 0
 
-    run_status = q.getlist("run")
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-    if run_status_converted:
-        invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
-        if invalid_status:
-            msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
-            return RetCode.DATA_ERROR, msg, {}, 0
+    run_status_converted, invalid_status = _parse_run_status_filter(q)
+    if invalid_status:
+        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, msg, {}, 0
 
     docs_filter, total = DocumentService.get_filter_by_kb_id(
         dataset_id,
@@ -868,6 +876,23 @@ def _get_doc_filters_with_request(req, dataset_id: str):
         suffix,
     )
     return RetCode.SUCCESS, "", docs_filter, total
+
+
+def _get_query_values(req_args, *names):
+    values = []
+    for name in names:
+        values.extend(req_args.getlist(name))
+        values.extend(req_args.getlist(f"{name}[]"))
+    return [str(value).strip() for value in values if value is not None and str(value).strip()]
+
+
+def _parse_run_status_filter(req_args):
+    raw_statuses = _get_query_values(req_args, "run", "run_status")
+    status_text_to_numeric = {status.name: status.value for status in TaskStatus}
+    valid_statuses = set(status_text_to_numeric.values())
+    converted = [status_text_to_numeric.get(status.upper(), status) for status in raw_statuses]
+    invalid_statuses = {status for status in converted if status not in valid_statuses}
+    return converted, invalid_statuses
 
 def _parse_doc_id_filter_with_metadata(req, kb_id):
     """Parse document ID filter based on metadata conditions from the request.
