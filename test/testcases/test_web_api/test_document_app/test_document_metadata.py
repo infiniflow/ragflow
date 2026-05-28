@@ -526,6 +526,23 @@ class TestDocumentMetadataUnit:
         assert res["code"] == RetCode.DATA_ERROR
         assert res["message"] == "Image not found."
 
+    @pytest.mark.p2
+    def test_get_preview_missing_blob_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return None
+
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _doc_id: (True, SimpleNamespace(name="report.pdf", type=module.FileType.OTHER.value)),
+        )
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("bucket", "name"))
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        res = _run(module.get("doc1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "This file is empty."
 
     @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
     def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
