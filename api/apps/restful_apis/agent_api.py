@@ -25,6 +25,7 @@ import json
 import logging
 import time
 from functools import partial, wraps
+from typing import Set
 
 from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 import jwt
@@ -57,11 +58,15 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
 from common.misc_utils import get_uuid, thread_pool_exec
 from peewee import MySQLDatabase, PostgresqlDatabase
+
+# Keeps strong references to fire-and-forget tasks so they are not GC'd before completion.
+_background_tasks: Set[asyncio.Task] = set()
 
 
 def _require_canvas_access_sync(func):
@@ -345,7 +350,7 @@ def list_agent_sessions(agent_id, tenant_id):
     session_id = request.args.get("id")
     user_id = request.args.get("user_id")
     page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
+    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
     keywords = request.args.get("keywords")
     from_date = request.args.get("from_date")
     to_date = request.args.get("to_date")
@@ -513,7 +518,7 @@ def list_agents(tenant_id):
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
 
     page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
+    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
     order_by = request.args.get("orderby", "create_time")
     desc = str(request.args.get("desc", "true")).lower() != "false"
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
@@ -612,6 +617,7 @@ async def update_agent_tags(tenant_id, canvas_id):
 @add_tenant_id_to_kwargs
 async def create_agent(tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
+    req["canvas_type"] = req.get("canvas_type","")
     req["user_id"] = tenant_id
     req["canvas_category"] = req.get("canvas_category") or CanvasCategory.Agent
     req["release"] = bool(req.get("release", ""))
@@ -868,6 +874,7 @@ def delete_agent(agent_id, tenant_id):
 @_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
+    req["canvas_type"] = req.get("canvas_type","")
     req["release"] = bool(req.get("release", ""))
 
     if req.get("dsl") is not None:
@@ -2079,7 +2086,10 @@ async def webhook(agent_id: str):
                     except Exception:
                         logging.exception("Failed to append webhook trace")
 
-        asyncio.create_task(background_run())
+        task = asyncio.create_task(background_run())
+        if isinstance(task, asyncio.Task):
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
         return resp
     else:
         async def sse():

@@ -48,7 +48,7 @@ func (m *MinerUModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (m *MinerUModel) Name() string {
-	return "mineru"
+	return "mineru.net"
 }
 
 func (m *MinerUModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
