@@ -38,8 +38,10 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
 }
 
 // NewRouter create router
@@ -59,8 +61,10 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
+	agentHandler *handler.AgentHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -78,8 +82,10 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
 	}
 }
 
@@ -100,6 +106,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -246,6 +253,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+			}
+
 			// Skill search routes
 			skills := v1.Group("/skills")
 			{
@@ -305,9 +317,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			// Agent routes
+			agents := v1.Group("/agents")
+			{
+				agents.GET("", r.agentHandler.ListAgents)
+			}
+
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
+				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
+				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
+				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
 			system := v1.Group("/system")
@@ -356,12 +380,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Tenant routes (per-tenant resources)
 		tenant := v1.Group("/tenant")
 		{
-			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)        // Internal API only for GO
-			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)     // Internal API only for GO
-			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)      // Internal API only for GO
-			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)  // Internal API only for GO
-			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)   // Internal API only for GO
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)      // Internal API only for GO
+			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
+			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
+			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
+			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
+			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 		}
 
 		// Document routes
@@ -410,6 +434,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
+			connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+			connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 		}
 
 		// File routes

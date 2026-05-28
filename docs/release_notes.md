@@ -9,6 +9,41 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.25.6
+
+Released on May 26, 2026.
+
+### New features
+
+- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
+
+### Improvements
+
+- RAG: Stabilizes RAPTOR's AHC mode (Ψ-RAG), which was introduced in v0.25.3 to resolve previous semantic loss by building individual document trees and then merging them hierarchically. This new approach significantly accelerates index construction and outperforms the legacy GMM mode in Recall@5 and average F1. Users retain the option to switch between the two modes. [#14674](https://github.com/infiniflow/ragflow/issues/14674)[#14679](https://github.com/infiniflow/ragflow/pull/14679)
+- Agent: Introduces lightweight `@tool` decorator to streamline Python function registration process for chat models. [#15047](https://github.com/infiniflow/ragflow/pull/15047)
+- Agent: Enables agent messages to display base64-encoded images. [#15212](https://github.com/infiniflow/ragflow/pull/15212)
+- Agent: Exposes **Doc Generator** component's file metadata as discrete variables. [#15080](https://github.com/infiniflow/ragflow/pull/15080)
+- Agent: Allows developers to pass `chat_template_kwargs` to agent chat completion endpoint. [#14182](https://github.com/infiniflow/ragflow/issues/14182)[#14542](https://github.com/infiniflow/ragflow/pull/14542) See also [Converse with agent](./references/http_api_reference.md#converse-with-agent)
+
+### Bug fixes
+
+- Fixes `/chat/completions` to allow sending only latest message in API payload and removes requirement to transmit full conversation history. [#15197](https://github.com/infiniflow/ragflow/pull/15197) See also [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant).
+- Weight assigned to vector similarity was not properly applied during the retrieval phase. [#15108](https://github.com/infiniflow/ragflow/pull/15108)
+- Users were unable to save parser configurations on the dataset configuration page. [#15175](https://github.com/infiniflow/ragflow/issues/15175)[#15177](https://github.com/infiniflow/ragflow/pull/15177)
+- Log text on a data source's details page was truncated. [#15056](https://github.com/infiniflow/ragflow/pull/15056)
+- An unresponsive "Status" filter on the document list page prevented users from filtering or managing uploaded documents by their parsing status. [#15170](https://github.com/infiniflow/ragflow/issues/15170)[#15216](https://github.com/infiniflow/ragflow/pull/15216)
+- Calling `GET /agents/<agent_id>/sessions/<session_id>` with a missing or invalid session ID caused a server error. [#14989](https://github.com/infiniflow/ragflow/issues/14989)[#15011](https://github.com/infiniflow/ragflow/pull/15011)
+- RAG: RAPTOR construction process halted when using the [Infinity](https://github.com/infiniflow/infinity) document engine. [#14998](https://github.com/infiniflow/ragflow/pull/14998)
+- The system failed to correctly parse structured content returned by Mistral reasoning models. [#14805](https://github.com/infiniflow/ragflow/pull/14805)
+- The **Parser** component in an ingestion pipeline incorrectly retained raw HTML tags in its text output. [#14831](https://github.com/infiniflow/ragflow/issues/14831)[#14920](https://github.com/infiniflow/ragflow/pull/14920)
+- The table parser incorrectly extracted or attached metadata during document processing. [#15127](https://github.com/infiniflow/ragflow/pull/15127)
+- Asynchronous background tasks and nested event loops were not properly handled, causing backend instability. [#14755](https://github.com/infiniflow/ragflow/issues/14755)[#14761](https://github.com/infiniflow/ragflow/pull/14761)
+- Prompt variables configured in the **Agent** component disappeared after being entered. [#15218](https://github.com/infiniflow/ragflow/pull/15218)
+
+### i18n
+
+- Fully translates the interface into French with the addition of roughly 1,400 localization keys. [#15192](https://github.com/infiniflow/ragflow/pull/15192)
+
 ## v0.25.5
 
 Released on May 20, 2026.
@@ -36,8 +71,8 @@ Released on May 20, 2026.
 - Agent: Fixed MCP tool name duplication.[#14217](https://github.com/infiniflow/ragflow/pull/14217)
 - Agent: top_k passing issues [#14760](https://github.com/infiniflow/ragflow/pull/14760)
 - Chat file attachment loss. [#13993](https://github.com/infiniflow/ragflow/pull/13993)
-- IMAP multi-address parsing [#15006](https://github.com/infiniflow/ragflow/pull/15006)
-- Langfuse token usage reporting. [#13294](https://github.com/infiniflow/ragflow/pull/13294)
+- IMAP synchronization process crashed when multiple email addresses or quoted commas were detected in "From" header. [#14963](https://github.com/infiniflow/ragflow/issues/14963)[#14964](https://github.com/infiniflow/ragflow/issues/14964)[#15006](https://github.com/infiniflow/ragflow/pull/15006)
+- Langfuse integration failed to track token consumption. [#9837](https://github.com/infiniflow/ragflow/issues/9837)[#13294](https://github.com/infiniflow/ragflow/pull/13294)
 - Enhances the stability and fault tolerance of the reranking module by implementing network timeouts, crash-prevention safeguards, and specific provider bug fixes. [#14264](https://github.com/infiniflow/ragflow/pull/14264)
 - Increases minimum supported Nginx to 1.31.0. [#14928](https://github.com/infiniflow/ragflow/issues/14928)[#15007](https://github.com/infiniflow/ragflow/pull/15007)
 
@@ -68,7 +103,6 @@ Released on May 13, 2026.
 
 ### New features
 
-- Data source and parsing: Added column-level semantic/metadata control for the spreadsheet file parser; introduced ETag optimization for incremental synchronization of S3 data sources to avoid unnecessary file transfers.
 - Enables assigning specific roles like content, metadata, and primary key, to table columns. [#13710](https://github.com/infiniflow/ragflow/pull/13710)
 
 ### Improvements
