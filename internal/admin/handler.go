@@ -1287,21 +1287,24 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	success(c, nil, "Publish message successfully")
 }
 
+type PullMessageFromQueueRequest struct {
+	MessageCount int `json:"message_count" binding:"required"`
+}
+
 func (h *Handler) PullMessageFromQueue(c *gin.Context) {
-	var req common.StartIngestionRequest
+	var req PullMessageFromQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errorResponse(c, "file uri and from is required", 400)
 		return
 	}
 
-	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:   req.TaskID,
-		TaskType: "CREATED",
-		ComeFrom: req.From,
-		UserId:   req.UserID,
-	})
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	messages, err := msgQueueEngine.ConsumeMessage("tasks.RAGFLOW", req.MessageCount)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
 
-	success(c, gin.H{"task_id": req.TaskID}, "Send task for ingestion successfully")
+	success(c, messages, "List messages from queue successfully")
 }
 
 func (h *Handler) StartIngestion(c *gin.Context) {

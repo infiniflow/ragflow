@@ -1681,7 +1681,18 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 	case TokenPull:
 		p.nextToken() // consume PULL
 
+		messageCount, err := p.parseNumber()
+		if err != nil {
+			messageCount = 1
+		}
+		p.nextToken() // consume PULL
+
+		if messageCount <= 0 || messageCount > 100 {
+			return nil, fmt.Errorf("message count cannot be less than 0 or greater than 100")
+		}
+
 		cmd := NewCommand("user_pull_message_command")
+		cmd.Params["message_count"] = messageCount
 		return cmd, nil
 	default:
 		return nil, fmt.Errorf("expected WITH")

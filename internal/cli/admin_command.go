@@ -1502,7 +1502,7 @@ func (c *RAGFlowClient) UserPublishMessageCommand(cmd *Command) (ResponseIf, err
 		return nil, fmt.Errorf("failed to publish message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result SimpleResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("publish message failed: invalid JSON (%w)", err)
 	}
@@ -1520,7 +1520,15 @@ func (c *RAGFlowClient) UserPullMessageCommand(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", "/admin/queue/messages", "admin", nil, nil)
+	messageCount, ok := cmd.Params["message_count"].(int)
+	if !ok {
+		return nil, fmt.Errorf("message_count not provided")
+	}
+	payload := map[string]interface{}{
+		"message_count": messageCount,
+	}
+
+	resp, err := c.HTTPClient.Request("PUT", "/admin/queue/messages", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull message: %w", err)
 	}
@@ -1529,7 +1537,7 @@ func (c *RAGFlowClient) UserPullMessageCommand(cmd *Command) (ResponseIf, error)
 		return nil, fmt.Errorf("failed to pull message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("pull message failed: invalid JSON (%w)", err)
 	}

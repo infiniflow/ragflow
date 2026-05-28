@@ -139,6 +139,34 @@ func (n *NatsEngine) ListMessages(messageType string) ([]map[string]string, erro
 	common.Info(fmt.Sprintf("Listed %d messages for subject: %s", len(messages), subjectFilter))
 	return messages, nil
 }
-func (n *NatsEngine) ConsumeMessage() (*string, error) {
-	return nil, nil
+func (n *NatsEngine) ConsumeMessage(subject string, messageCount int) ([]map[string]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	consumer, err := n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Name:          "RAGFLOW_CONSUMER",
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		MaxDeliver:    3,
+		MaxAckPending: 100,
+		FilterSubject: "tasks.>",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Consumer: %w", err)
+	}
+	//c.consumer = consumer
+	resultMessages := make([]map[string]string, 0)
+	messages, err := consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	for msg := range messages.Messages() {
+		messageMap := make(map[string]string)
+		messageMap["subject"] = msg.Subject()
+		messageMap["message"] = string(msg.Data())
+		common.Debug(fmt.Sprintf("New message: %s", string(msg.Data())))
+		err = msg.Ack()
+		if err != nil {
+			return nil, err
+		}
+		resultMessages = append(resultMessages, messageMap)
+	}
+
+	return resultMessages, nil
 }

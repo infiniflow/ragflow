@@ -82,5 +82,5 @@ type MessageQueue interface {
 	Init() error
 	PublishTask(subject string, payload []byte) error
 	ListMessages(messageType string) ([]map[string]string, error)
-	ConsumeMessage() (*string, error)
+	ConsumeMessage(subject string, messageCount int) ([]map[string]string, error)
 }
