@@ -210,13 +210,17 @@ func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, mess
 		autoClose = "window.close();"
 	}
 	payloadType := fmt.Sprintf("ragflow-%s-oauth", source)
-	payloadJSON := fmt.Sprintf(
-		`{"type":"%s","status":"%s","flowId":"%s","message":%q}`,
-		payloadType,
-		status,
-		flowID,
-		message,
-	)
+	payloadMap := map[string]string{
+		"type":    payloadType,
+		"status":  status,
+		"flowId":  flowID,
+		"message": message,
+	}
+	payloadBytes, err := json.Marshal(payloadMap)
+	if err != nil {
+		payloadBytes = []byte(`{"type":"ragflow-gmail-oauth","status":"error","flowId":"","message":"Failed to build OAuth payload."}`)
+	}
+	payloadJSON := string(payloadBytes)
 	page := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>

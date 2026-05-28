@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -141,6 +142,23 @@ func TestGoogleGmailWebOAuthCallback(t *testing.T) {
 		}
 		if !strings.Contains(resp.Body.String(), "Authorization session expired. Please restart from the main window.") {
 			t.Fatalf("unexpected body: %s", resp.Body.String())
+		}
+	})
+
+	t.Run("malicious_state_is_json_escaped", func(t *testing.T) {
+		state := `foo","x":"y"};alert(1);//`
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/gmail/oauth/web/callback?state="+url.QueryEscape(state), nil)
+		router.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+		}
+		// Ensure the payload is embedded as JSON string data, not raw script.
+		if strings.Contains(resp.Body.String(), `"flowId":"foo","x":"y"`) {
+			t.Fatalf("flowId appears unescaped in payload: %s", resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), `\"x\":\"y\"`) {
+			t.Fatalf("expected escaped flowId content in payload: %s", resp.Body.String())
 		}
 	})
 }
