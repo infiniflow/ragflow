@@ -141,6 +141,12 @@ class LLMBundle(LLM4Tenant):
         # `len(vts[0])` and the error surfaces as the unhelpful
         # `'NoneType' object is not subscriptable` (fixes #15343).
         if embeddings is None or len(embeddings) == 0:
+            logging.error(
+                "LLMBundle.encode: Embedding model '%s' (factory '%s') returned no vectors for %d input texts",
+                self.model_config.get("llm_name", "<unknown>"),
+                self.model_config.get("llm_factory", "<unknown>"),
+                len(safe_texts),
+            )
             raise RuntimeError(
                 "Embedding model '{name}' (factory '{factory}') returned no vectors. "
                 "Check that the model service is reachable, the API key is valid, "
@@ -177,6 +183,11 @@ class LLMBundle(LLM4Tenant):
         # surfaces as a clear RuntimeError instead of a subscript crash
         # downstream (fixes #15343).
         if emd is None or len(emd) == 0:
+            logging.error(
+                "LLMBundle.encode_queries: Embedding model '%s' (factory '%s') returned no vector for query",
+                self.model_config.get("llm_name", "<unknown>"),
+                self.model_config.get("llm_factory", "<unknown>"),
+            )
             raise RuntimeError(
                 "Embedding model '{name}' (factory '{factory}') returned no vector "
                 "for the query. Check that the model service is reachable, the API "
