@@ -220,7 +220,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         """
         from datetime import datetime, timezone
 
-        from common.data_source.models import Document, TextSection
+        from common.data_source.models import Document
 
         delta_links: dict[str, str] = {}
         if checkpoint and checkpoint.delta_links:
@@ -264,23 +264,21 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
                     if since_epoch and modified_ts and modified_ts < since_epoch:
                         continue
 
+                    doc_updated_at = (
+                        datetime.fromtimestamp(modified_ts, tz=timezone.utc)
+                        if modified_ts
+                        else datetime.now(timezone.utc)
+                    )
                     doc = Document(
                         id=item["id"],
+                        source="onedrive",
                         semantic_identifier=name,
-                        doc_updated_at=datetime.fromtimestamp(
-                            modified_ts, tz=timezone.utc
-                        )
-                        if modified_ts
-                        else None,
-                        sections=[
-                            TextSection(
-                                link=item.get("webUrl", ""),
-                                text=name,
-                            )
-                        ],
+                        extension=ext,
+                        blob=b"",
+                        doc_updated_at=doc_updated_at,
+                        size_bytes=int(item.get("size", 0) or 0),
                         metadata={
                             "drive_id": drive_id,
-                            "size": item.get("size", 0),
                             "web_url": item.get("webUrl", ""),
                             "created_by": (
                                 item.get("createdBy", {})
@@ -288,7 +286,6 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
                                 .get("displayName", "")
                             ),
                         },
-                        source="onedrive",
                     )
                     batch.append(doc)
                     if len(batch) >= self.batch_size:
