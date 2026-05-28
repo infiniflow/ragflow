@@ -80,11 +80,12 @@ type EmailLoginRequest struct {
 // UpdateSettingsRequest update user settings request
 type UpdateSettingsRequest struct {
 	Nickname    *string `json:"nickname,omitempty"`
-	Email       *string `json:"email,omitempty" binding:"omitempty,email"`
 	Avatar      *string `json:"avatar,omitempty"`
 	Language    *string `json:"language,omitempty"`
 	ColorSchema *string `json:"color_schema,omitempty"`
 	Timezone    *string `json:"timezone,omitempty"`
+	Password    *string `json:"password,omitempty"`
+	NewPassword *string `json:"new_password,omitempty"`
 }
 
 // ChangePasswordRequest change password request
@@ -150,14 +151,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		IsSuperuser:     &isSuperuser,
 	}
 
-	now := time.Now().Unix()
-	user.CreateTime = &now
-	user.UpdateTime = &now
-	nowDate := time.Now().Truncate(time.Second)
-	user.CreateDate = &nowDate
-	user.UpdateDate = &nowDate
-	user.LastLoginTime = &nowDate
-
 	tenantName := req.Nickname + "'s Kingdom"
 
 	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
@@ -192,11 +185,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		ParserIDs: "naive:General,Q&A:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	tenant.CreateTime = &now
-	tenant.UpdateTime = &now
-	tenant.CreateDate = &nowDate
-	tenant.UpdateDate = &nowDate
-
 	userTenantID := utility.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
@@ -206,11 +194,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	userTenant.CreateTime = &now
-	userTenant.UpdateTime = &now
-	userTenant.CreateDate = &nowDate
-	userTenant.UpdateDate = &nowDate
-
 	fileID := utility.GenerateToken()
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -221,11 +204,6 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		Type:      "folder",
 		Size:      0,
 	}
-	rootFile.CreateTime = &now
-	rootFile.UpdateTime = &now
-	rootFile.CreateDate = &nowDate
-	rootFile.UpdateDate = &nowDate
-
 	tenantDAO := dao.NewTenantDAO()
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
@@ -298,13 +276,9 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 
 	// Generate new access token
 	token := utility.GenerateToken()
-	if err := s.UpdateUserAccessToken(user, token); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to update access token: %w", err)
-	}
-
-	// Update timestamp
-	now := time.Now().Unix()
-	user.UpdateTime = &now
+	user.AccessToken = &token
+	now := time.Now().Truncate(time.Second)
+	user.LastLoginTime = &now
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -339,11 +313,9 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	// Generate new access token
 	token := utility.GenerateToken()
 	user.AccessToken = &token
+	now := time.Now().Truncate(time.Second)
+	user.LastLoginTime = &now
 
-	now := time.Now().Unix()
-	user.UpdateTime = &now
-	now_date := time.Now().Truncate(time.Second)
-	user.UpdateDate = &now_date
 	if err := s.userDAO.Update(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -794,24 +766,60 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 // UpdateUserSettings updates user settings
 func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
 	// Update fields if provided
+	if req.Password != nil {
+		ciphertext, err := base64.StdEncoding.DecodeString(*req.Password)
+		if err != nil {
+			return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
+		}
+		privateKey, err := s.loadPrivateKey()
+		if err != nil {
+			return common.CodeExceptionError, err
+		}
+		oldPasswordBytes, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+		oldPassword := "Fail to decrypt password!"
+		if err == nil {
+			oldPassword = string(oldPasswordBytes)
+		}
+		if user.Password == nil || !s.VerifyPassword(*user.Password, oldPassword) {
+			return common.CodeAuthenticationError, fmt.Errorf("Password error!")
+		}
+
+		if req.NewPassword != nil {
+			ciphertext, err := base64.StdEncoding.DecodeString(*req.NewPassword)
+			if err != nil {
+				return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
+			}
+			newPasswordBytes, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+			if err != nil {
+				return common.CodeExceptionError, err
+			}
+
+			hashedPassword, err := s.HashPassword(string(newPasswordBytes))
+			if err != nil {
+				return common.CodeExceptionError, err
+			}
+			user.Password = &hashedPassword
+		}
+	}
 	if req.Nickname != nil {
 		user.Nickname = *req.Nickname
-	}
-	if req.Email != nil {
-		user.Email = *req.Email
 	}
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently
 		// For now, just update if field exists
+		user.Avatar = req.Avatar
 	}
 	if req.Language != nil {
 		// Store language preference
+		user.Language = req.Language
 	}
 	if req.ColorSchema != nil {
 		// Store color schema preference
+		user.ColorSchema = req.ColorSchema
 	}
 	if req.Timezone != nil {
 		// Store timezone preference
+		user.Timezone = req.Timezone
 	}
 
 	// Save updated user
@@ -881,51 +889,44 @@ func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, err
 
 // SetTenantInfoRequest represents the request for setting tenant info
 type SetTenantInfoRequest struct {
-	TenantID  string `json:"tenant_id"`
-	ASRID     string `json:"asr_id"`
-	EmbdID    string `json:"embd_id"`
-	Img2TxtID string `json:"img2txt_id"`
-	LLMID     string `json:"llm_id"`
-	RerankID  string `json:"rerank_id"`
-	TTSID     string `json:"tts_id"`
+	TenantID  *string                `json:"tenant_id"`
+	ASRID     *string                `json:"asr_id"`
+	EmbdID    *string                `json:"embd_id"`
+	Img2TxtID *string                `json:"img2txt_id"`
+	LLMID     *string                `json:"llm_id"`
+	RerankID  *string                `json:"rerank_id"`
+	TTSID     *string                `json:"tts_id"`
+	Raw       map[string]interface{} `json:"-"`
 }
 
 // SetTenantInfo updates tenant model configuration
-func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) error {
+func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
+	_ = userID
 	tenantDAO := dao.NewTenantDAO()
-
-	_, err := tenantDAO.GetByID(req.TenantID)
-	if err != nil {
-		return fmt.Errorf("tenant not found: %w", err)
-	}
-
 	updates := make(map[string]interface{})
-	if req.LLMID != "" {
-		updates["llm_id"] = req.LLMID
+
+	for key, value := range req.Raw {
+		if key == "tenant_id" {
+			continue
+		}
+		updates[key] = value
 	}
-	if req.EmbdID != "" {
-		updates["embd_id"] = req.EmbdID
+
+	tenantID := ""
+	if req.TenantID != nil {
+		tenantID = *req.TenantID
 	}
-	if req.ASRID != "" {
-		updates["asr_id"] = req.ASRID
-	}
-	if req.Img2TxtID != "" {
-		updates["img2txt_id"] = req.Img2TxtID
-	}
-	if req.RerankID != "" {
-		updates["rerank_id"] = req.RerankID
-	}
-	if req.TTSID != "" {
-		updates["tts_id"] = req.TTSID
-	}
+
+	tenantLLMService := NewTenantLLMService()
+	updates = tenantLLMService.EnsureTenantModelIDForParams(tenantID, updates)
 
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(req.TenantID, updates); err != nil {
-			return fmt.Errorf("failed to update tenant: %w", err)
+		if err := tenantDAO.Update(tenantID, updates); err != nil {
+			return common.CodeExceptionError, err
 		}
 	}
 
-	return nil
+	return common.CodeSuccess, nil
 }
 
 // UserTenantService user tenant service

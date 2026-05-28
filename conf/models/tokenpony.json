@@ -1,0 +1,93 @@
+{
+  "name": "TokenPony",
+  "url": {
+    "default": "https://api.tokenpony.cn/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "tokenpony",
+  "models": [
+    {
+      "name": "qwen3-8b",
+      "max_tokens": 128000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v3-0324",
+      "max_tokens": 128000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-32b",
+      "max_tokens": 128000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "kimi-k2-instruct-0905",
+      "max_tokens": 256000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-r1-0528",
+      "max_tokens": 164000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-coder-480b",
+      "max_tokens": 1024000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "hunyuan-a13b-instruct",
+      "max_tokens": 256000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-next-80b-a3b-instruct",
+      "max_tokens": 1024000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v3.2-exp",
+      "max_tokens": 128000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-v3.1-terminus",
+      "max_tokens": 128000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-vl-235b-a22b-instruct",
+      "max_tokens": 262000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-vl-30b-a3b-instruct",
+      "max_tokens": 262000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "deepseek-ocr",
+      "max_tokens": 8000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "qwen3-235b-a22b-instruct-2507",
+      "max_tokens": 256000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "glm-4.6",
+      "max_tokens": 200000,
+      "model_types": ["chat"]
+    },
+    {
+      "name": "minimax-m2",
+      "max_tokens": 200000,
+      "model_types": ["chat"]
+    }
+  ]
+}

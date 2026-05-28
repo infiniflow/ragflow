@@ -169,6 +169,7 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 		"LocalAI":    true,
 		"LM-Studio":  true,
 		"GPUStack":   true,
+		"ModelScope": true,
 	}
 
 	objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)

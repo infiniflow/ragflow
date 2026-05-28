@@ -494,6 +494,28 @@ async def rank_memories_async(chat_mdl, goal: str, sub_goal: str, tool_call_summ
 
 
 async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: dict = None) -> dict:
+    """Generate metadata filter conditions from a user query using an LLM.
+
+    Args:
+        chat_mdl: LLM bundle for generating filters
+        meta_data: Dict of {key: set of values} - e.g. {"character": {"Caocao", "Liubei"}, "year": {2026}}
+        query: User question (e.g. "Caocao in 2026")
+        constraints: Optional dict of {key: operator} to constrain which op to use for a key
+
+    Returns:
+        Dict with "logic" ("and"/"or") and "conditions" list.
+        Example return value:
+            {
+                "logic": "and",
+                "conditions": [
+                    {"key": "year", "value": "2026", "op": "="},
+                    {"key": "character", "value": "Caocao", "op": "="}
+                ]
+            }
+
+    The LLM is prompted with the available metadata keys and values, and is asked to
+    generate filter conditions that match the user's query semantics.
+    """
     meta_data_structure = {}
     for key, values in meta_data.items():
         meta_data_structure[key] = list(values.keys()) if isinstance(values, dict) else values
@@ -863,6 +885,23 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     # Assign hierarchy levels using LLM
     toc_with_levels = await assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9})
     if not toc_with_levels:
+        return []
+
+    # Normalize TOC items to ensure consistent dict format
+    normalized_levels = []
+    for item in toc_with_levels:
+        if isinstance(item, dict):
+            # Already in correct format
+            normalized_levels.append(item)
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            # Convert ["level", "title"] or similar to dict
+            normalized_levels.append({"level": str(item[0]), "title": str(item[1])})
+        else:
+            logging.warning(f"Unexpected TOC item format (type={type(item).__name__}), skipping: {item}")
+
+    toc_with_levels = normalized_levels
+    if not toc_with_levels:
+        logging.warning("No valid TOC items after normalization.")
         return []
 
     # Merge structure and content (by index)

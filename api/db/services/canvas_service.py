@@ -16,6 +16,8 @@
 import json
 import logging
 import time
+from functools import reduce
+from operator import or_
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import CanvasCategory, TenantPermission
@@ -149,6 +151,7 @@ class UserCanvasService(CommonService):
         desc,
         keywords,
         canvas_category=None,
+        tags=None,
     ):
         fields = [
             cls.model.id,
@@ -161,6 +164,7 @@ class UserCanvasService(CommonService):
             User.avatar.alias('tenant_avatar'),
             cls.model.update_time,
             cls.model.canvas_category,
+            cls.model.tags,
         ]
         if keywords:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
@@ -173,6 +177,13 @@ class UserCanvasService(CommonService):
             )
         if canvas_category:
             agents = agents.where(cls.model.canvas_category == canvas_category)
+        if tags:
+            tag_list = [t.strip() for t in tags if t and t.strip()] if isinstance(tags, (list, tuple)) else [t.strip() for t in str(tags).split(",") if t.strip()]
+            if tag_list:
+                # Wrap value with commas so 'ml' doesn't match 'ml-ops'.
+                wrapped = fn.CONCAT(",", cls.model.tags, ",")
+                clauses = [wrapped.contains(f",{t},") for t in tag_list]
+                agents = agents.where(reduce(or_, clauses))
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -198,6 +209,69 @@ class UserCanvasService(CommonService):
                 agent['release_time'] = release_time_map.get(agent['id'])
 
         return agents_list, count
+
+    @classmethod
+    @DB.connection_context()
+    def list_tags(cls, joined_tenant_ids, user_id, canvas_category=None):
+        """Return {tag: agent_count} aggregated across agents visible to the user."""
+        query = cls.model.select(cls.model.tags).where(
+            ((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id)
+        )
+        if canvas_category:
+            query = query.where(cls.model.canvas_category == canvas_category)
+
+        counts: dict[str, int] = {}
+        for row in query.dicts():
+            for t in (row.get("tags") or "").split(","):
+                t = t.strip()
+                if t:
+                    counts[t] = counts.get(t, 0) + 1
+        logging.info(
+            "UserCanvasService.list_tags user=%s canvas_category=%s tags_count=%d",
+            user_id,
+            canvas_category,
+            len(counts),
+        )
+        return counts
+
+    # Tag storage is a single comma-separated CharField(max_length=512);
+    # commas inside a tag would corrupt the encoding, so strip them on write.
+    TAGS_FIELD_MAX = 512
+    TAG_MAX_LEN = 64
+
+    @classmethod
+    @DB.connection_context()
+    def update_tags(cls, canvas_id, tags):
+        """Persist a normalized comma-separated tag string for the given canvas."""
+        if isinstance(tags, (list, tuple)):
+            cleaned = [str(t).replace(",", " ").strip() for t in tags if t and str(t).strip()]
+        else:
+            cleaned = [t.strip() for t in str(tags or "").split(",") if t.strip()]
+        # Dedupe (case-insensitive, preserve order), cap individual tag length,
+        # then truncate the joined value so it always fits the column.
+        seen = set()
+        normalized = []
+        used = 0
+        for t in cleaned:
+            t = t[: cls.TAG_MAX_LEN]
+            key = t.lower()
+            if key in seen:
+                continue
+            extra = len(t) + (1 if normalized else 0)
+            if used + extra > cls.TAGS_FIELD_MAX:
+                break
+            seen.add(key)
+            normalized.append(t)
+            used += extra
+        value = ",".join(normalized)
+        rows_affected = cls.model.update(tags=value).where(cls.model.id == canvas_id).execute()
+        logging.info(
+            "UserCanvasService.update_tags canvas_id=%s tags_count=%d rows=%d",
+            canvas_id,
+            len(normalized),
+            rows_affected,
+        )
+        return rows_affected
 
     @classmethod
     @DB.connection_context()
@@ -241,6 +315,7 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     files = kwargs.get("files", [])
     inputs = kwargs.get("inputs", {})
     user_id = kwargs.get("user_id", "")
+    chat_template_kwargs = kwargs.get("chat_template_kwargs")
     custom_header = kwargs.get("custom_header", "")
     release_mode = str(kwargs.get("release", "")).strip().lower()
 
@@ -273,7 +348,16 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         "files": files
     })
     txt = ""
-    async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+    run_kwargs = {
+        "query": query,
+        "files": files,
+        "user_id": user_id,
+        "inputs": inputs,
+    }
+    if chat_template_kwargs is not None:
+        run_kwargs["chat_template_kwargs"] = chat_template_kwargs
+
+    async for ans in canvas.run(**run_kwargs):
         ans["session_id"] = session_id
         if ans["event"] == "message":
             txt += ans["data"]["content"]

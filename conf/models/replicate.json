@@ -1,0 +1,41 @@
+{
+  "name": "Replicate",
+  "url": {
+    "default": "https://api.replicate.com"
+  },
+  "url_suffix": {
+    "chat": "v1/predictions",
+    "models": "v1/models"
+  },
+  "class": "replicate",
+  "models": [
+    {
+      "name": "meta/meta-llama-3-70b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/meta-llama-3-8b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "replicate/all-mpnet-base-v2:b6b7585c9640cd7a9572c6e129c9549d79c9c31f0d3fdce7baac7c67ca38f305",
+      "max_tokens": 384,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "yxzwayne/bge-reranker-v2-m3:7f7c6e9d18336e2cbf07d88e9362d881d2fe4d6a9854ec1260f115cabc106a8c",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ]
+}

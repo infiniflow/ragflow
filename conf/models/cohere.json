@@ -7,7 +7,8 @@
     "chat": "v2/chat",
     "models": "v1/models",
     "embeddings": "v2/embed",
-    "rerank": "v2/rerank"
+    "rerank": "v2/rerank",
+    "asr": "audio/transcriptions"
   },
   "class": "cohere",
   "models": [
@@ -37,6 +38,13 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
+      ]
+    },
+    {
+      "name": "cohere-transcribe-03-2026",
+      "max_tokens": 8192,
+      "model_types": [
+        "asr"
       ]
     }
   ]
