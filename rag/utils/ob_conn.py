@@ -1304,6 +1304,16 @@ class OBConnection(OBConnectionBase):
     def get_doc_ids(self, res) -> list[str]:
         return [row["id"] for row in res.chunks]
 
+    def get_scores(self, res) -> dict[str, float]:
+        out = {}
+        for chunk in res.chunks:
+            chunk_id = chunk.get("id")
+            if chunk_id is None:
+                continue
+            score = chunk.get("_score")
+            out[chunk_id] = float(score) if score is not None else 0.0
+        return out
+
     def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         result = {}
         for row in res.chunks:
