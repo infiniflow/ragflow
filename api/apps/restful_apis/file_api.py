@@ -300,6 +300,11 @@ async def download(tenant_id: str = None, file_id: str = None):
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
             blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         if not blob:
+            logging.warning(
+                "Download failed: empty blob after primary+fallback lookup (tenant_id=%s, file_id=%s)",
+                tenant_id,
+                file_id,
+            )
             return get_error_data_result(message="This file is empty.")
 
         response = await make_response(blob)
