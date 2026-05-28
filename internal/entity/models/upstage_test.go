@@ -20,6 +20,20 @@ func newUpstageForTest(baseURL string) *UpstageModel {
 	)
 }
 
+func TestUpstageNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewUpstageModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewUpstageModel returned nil")
+	}
+}
+
 // ---------- reasoning_effort / reasoning field ----------
 
 func TestUpstageChatPropagatesReasoningEffort(t *testing.T) {
