@@ -21,18 +21,6 @@ import (
 	"time"
 )
 
-// ConnectorTaskType represents the type of a connector sync task.
-// Mirrors common.constants.ConnectorTaskType in the Python codebase.
-const (
-	ConnectorTaskTypeSync  = "sync"
-	ConnectorTaskTypePrune = "prune"
-)
-
-// Connector input types. Mirrors api.db.InputType in the Python codebase.
-const (
-	ConnectorInputTypePoll = "poll"
-)
-
 // Connector connector model
 type Connector struct {
 	ID            string     `gorm:"column:id;primaryKey;size:32" json:"id"`
