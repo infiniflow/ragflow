@@ -1,5 +1,6 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useCreateChat, usePatchChat } from '@/hooks/use-chat-request';
+import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IDialog } from '@/interfaces/database/chat';
 import { isEmpty } from 'lodash';
@@ -17,6 +18,7 @@ export const useRenameChat = () => {
   const { patchChat, loading: patchLoading } = usePatchChat();
   const { t } = useTranslation();
   const tenantInfo = useFetchTenantInfo();
+  const findLlmByUuid = useFindLlmByUuid();
 
   const InitialData = useMemo(
     () => ({
@@ -39,13 +41,15 @@ export const useRenameChat = () => {
         toc_enhance: false,
       },
       llm_id: tenantInfo.data.llm_id,
-      llm_setting: {},
+      llm_setting: {
+        model_type: findLlmByUuid(tenantInfo.data.llm_id)?.model_type || 'chat',
+      },
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.3,
       top_n: 8,
       top_k: 1024,
     }),
-    [t, tenantInfo.data.llm_id],
+    [t, tenantInfo.data.llm_id, findLlmByUuid],
   );
 
   const onChatRenameOk = useCallback(

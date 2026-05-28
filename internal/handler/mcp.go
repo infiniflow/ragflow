@@ -37,6 +37,33 @@ func NewMCPHandler(mcpService *service.MCPService) *MCPHandler {
 	}
 }
 
+// CreateMCPServer creates an MCP server for the current user.
+func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.CreateMCPServerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.mcpService.CreateMCPServer(user.ID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    result,
+	})
+}
+
 // DeleteMCPServer deletes an MCP server for the current user.
 func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

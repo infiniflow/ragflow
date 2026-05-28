@@ -17,7 +17,7 @@ func newXinferenceForTest(baseURL string) *XinferenceModel {
 			Chat:      "v1/chat/completions",
 			Embedding: "v1/embeddings",
 			Models:    "v1/models",
-      Rerank:    "v1/rerank",
+			Rerank:    "v1/rerank",
 		},
 	)
 }
@@ -490,12 +490,6 @@ func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
 	x := newXinferenceForTest("http://unused")
 	model := "qwen2.5-instruct"
 
-	if _, err := x.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank: expected no such method, got %v", err)
-  }
-	if _, err := x.Embed(&model, []string{"x"}, &APIConfig{}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: expected no such method, got %v", err)
-	}
 	if _, err := x.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}

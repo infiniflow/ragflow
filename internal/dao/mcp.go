@@ -16,7 +16,13 @@
 
 package dao
 
-import "ragflow/internal/entity"
+import (
+	"errors"
+
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
 
 // MCPServerDAO MCP server data access object.
 type MCPServerDAO struct{}
@@ -30,9 +36,28 @@ func NewMCPServerDAO() *MCPServerDAO {
 func (dao *MCPServerDAO) GetByID(id string) (*entity.MCPServer, error) {
 	var server entity.MCPServer
 	if err := DB.Where("id = ?", id).First(&server).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &server, nil
+}
+
+// ExistsByNameAndTenant returns whether an MCP server name already exists for a tenant.
+func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, error) {
+	var count int64
+	if err := DB.Model(&entity.MCPServer{}).
+		Where("name = ? AND tenant_id = ?", name, tenantID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// CreateMCPServer creates an MCP server.
+func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
+	return DB.Create(server).Error
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.

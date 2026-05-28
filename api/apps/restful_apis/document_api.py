@@ -13,17 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from io import BytesIO
 import logging
 import json
 import os
 import re
 from pathlib import Path
 
-from quart import request, make_response
+from quart import request, make_response,send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps import current_user, login_required
+from api.apps import login_required
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
@@ -38,8 +39,9 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.common.check_team_permission import check_kb_team_permission
 from api.db.services.task_service import TaskService, cancel_all_task_of
-from api.utils.api_utils import get_data_error_result, get_error_data_result, get_result, get_json_result, \
+from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
+from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
     UpdateDocumentReq, format_validation_error_message, validate_and_parse_json_request, DeleteDocumentReq,
 )
@@ -584,9 +586,25 @@ async def _upload_local_documents(kb, tenant_id):
             logging.error(msg)
             return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
 
+    # Parse optional parser_config overrides from form data
+    parser_config_override = None
+    raw_parser_config = form.get("parser_config")
+    if raw_parser_config:
+        try:
+            parsed = json.loads(raw_parser_config)
+            if isinstance(parsed, dict):
+                # Only allow known table column config keys to prevent arbitrary overrides
+                allowed_keys = {"table_column_mode", "table_column_roles"}
+                parser_config_override = {k: v for k, v in parsed.items() if k in allowed_keys}
+                if not parser_config_override:
+                    parser_config_override = None
+        except (json.JSONDecodeError, TypeError):
+            parser_config_override = None
+
     err, files = await thread_pool_exec(
         FileService.upload_document, kb, file_objs, tenant_id,
-        parent_path=form.get("parent_path")
+        parent_path=form.get("parent_path"),
+        parser_config_override=parser_config_override,
     )
     if err:
         msg = "\n".join(err)
@@ -778,7 +796,7 @@ def _get_docs_with_request(req, dataset_id:str):
     q = req.args
 
     page = int(q.get("page", 1))
-    page_size = int(q.get("page_size", 30))
+    page_size = validate_rest_api_page_size(int(q.get("page_size", 30)))
 
     orderby = q.get("orderby", "create_time")
     desc = str(q.get("desc", "true")).strip().lower() != "false"
@@ -794,15 +812,10 @@ def _get_docs_with_request(req, dataset_id:str):
             msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
             return RetCode.DATA_ERROR, msg, [], 0
 
-    # map run status (text or numeric) - align with API parameter
-    run_status = q.getlist("run")
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-    if run_status_converted:
-        invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
-        if invalid_status:
-            msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
-            return RetCode.DATA_ERROR, msg, [], 0
+    run_status_converted, invalid_status = _parse_run_status_filter(q)
+    if invalid_status:
+        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, msg, [], 0
 
     err_code, err_message, doc_ids_filter, return_empty_metadata = _parse_doc_id_filter_with_metadata(q, dataset_id)
     if err_code != RetCode.SUCCESS:
@@ -850,14 +863,10 @@ def _get_doc_filters_with_request(req, dataset_id: str):
             msg = f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}"
             return RetCode.DATA_ERROR, msg, {}, 0
 
-    run_status = q.getlist("run")
-    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
-    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
-    if run_status_converted:
-        invalid_status = {s for s in run_status_converted if s not in run_status_text_to_numeric.values()}
-        if invalid_status:
-            msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
-            return RetCode.DATA_ERROR, msg, {}, 0
+    run_status_converted, invalid_status = _parse_run_status_filter(q)
+    if invalid_status:
+        msg = f"Invalid filter run status conditions: {', '.join(invalid_status)}"
+        return RetCode.DATA_ERROR, msg, {}, 0
 
     docs_filter, total = DocumentService.get_filter_by_kb_id(
         dataset_id,
@@ -867,6 +876,23 @@ def _get_doc_filters_with_request(req, dataset_id: str):
         suffix,
     )
     return RetCode.SUCCESS, "", docs_filter, total
+
+
+def _get_query_values(req_args, *names):
+    values = []
+    for name in names:
+        values.extend(req_args.getlist(name))
+        values.extend(req_args.getlist(f"{name}[]"))
+    return [str(value).strip() for value in values if value is not None and str(value).strip()]
+
+
+def _parse_run_status_filter(req_args):
+    raw_statuses = _get_query_values(req_args, "run", "run_status")
+    status_text_to_numeric = {status.name: status.value for status in TaskStatus}
+    valid_statuses = set(status_text_to_numeric.values())
+    converted = [status_text_to_numeric.get(status.upper(), status) for status in raw_statuses]
+    invalid_statuses = {status for status in converted if status not in valid_statuses}
+    return converted, invalid_statuses
 
 def _parse_doc_id_filter_with_metadata(req, kb_id):
     """Parse document ID filter based on metadata conditions from the request.
@@ -1843,8 +1869,6 @@ async def get(doc_id):
     enumeration.
     """
     try:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
@@ -1865,46 +1889,116 @@ async def get(doc_id):
     except Exception as e:
         return server_error_response(e)
 
-
-@manager.route("/documents/<doc_id>/download", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @login_required
-@add_tenant_id_to_kwargs
-async def download_attachment(tenant_id=None, doc_id=None, attachment_id=None):
-    """Stream a document's underlying file to the requesting user.
-
-    Mirrors the authorization model of the preview endpoint: the user must belong
-    to the tenant that owns the document's knowledge base. A denial returns the
-    same "Document not found!" response so the endpoint cannot be used to
-    enumerate doc ids across tenants.
+async def download(dataset_id, document_id):
     """
-    try:
-        # Keep backward compatibility with older callers and unit tests that still
-        # pass `attachment_id` instead of the route parameter name.
-        doc_id = doc_id or attachment_id
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
+    Download a document from a dataset.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(kb_id=dataset_id, id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
 
-        e, doc = DocumentService.get_by_id(doc_id)
-        if not e:
-            return get_data_error_result(message="Document not found!")
-
-        ext_arg = request.args.get("ext")
-        if ext_arg:
-            ext = ext_arg.lower().lstrip(".")
-            content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
-        else:
-            m = re.search(r"\.([^.]+)$", doc.name.lower())
-            ext = m.group(1) if m else None
-            content_type = None
-            if ext:
-                fallback_prefix = "image" if doc.type == FileType.VISUAL.value else "application"
-                content_type = CONTENT_TYPE_MAP.get(ext, f"{fallback_prefix}/{ext}")
-
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
-        response = await make_response(data)
-        apply_safe_file_response_headers(response, content_type, ext)
-
-        return response
-
-    except Exception as e:
-        return server_error_response(e)
+@manager.route("/documents/<document_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def download_document(document_id):
+    """
+    Download a document.
+    ---
+    tags:
+      - Documents
+    security:
+      - ApiKeyAuth: []
+    produces:
+      - application/octet-stream
+    parameters:
+      - in: path
+        name: dataset_id
+        type: string
+        required: true
+        description: ID of the dataset.
+      - in: path
+        name: document_id
+        type: string
+        required: true
+        description: ID of the document to download.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+    responses:
+      200:
+        description: Document file stream.
+        schema:
+          type: file
+      400:
+        description: Error message.
+        schema:
+          type: object
+    """
+    if not document_id:
+        return get_error_data_result(message="Specify document_id please.")
+    doc = DocumentService.query(id=document_id)
+    if not doc:
+        return get_error_data_result(message=f"The dataset not own the document {document_id}.")
+    # The process of downloading
+    doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    if not file_stream:
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
+    file = BytesIO(file_stream)
+    # Use send_file with a proper filename and MIME type
+    return await send_file(
+        file,
+        as_attachment=True,
+        attachment_filename=doc[0].name,
+        mimetype="application/octet-stream",  # Set a default MIME type
+    )
