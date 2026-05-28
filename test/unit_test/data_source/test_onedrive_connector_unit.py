@@ -1,12 +1,11 @@
 """Unit tests for OneDriveConnector."""
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from common.data_source.onedrive_connector import OneDriveConnector, OneDriveCheckpoint
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
-    ConnectorValidationError,
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
