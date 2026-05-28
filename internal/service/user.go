@@ -80,11 +80,12 @@ type EmailLoginRequest struct {
 // UpdateSettingsRequest update user settings request
 type UpdateSettingsRequest struct {
 	Nickname    *string `json:"nickname,omitempty"`
-	Email       *string `json:"email,omitempty" binding:"omitempty,email"`
 	Avatar      *string `json:"avatar,omitempty"`
 	Language    *string `json:"language,omitempty"`
 	ColorSchema *string `json:"color_schema,omitempty"`
 	Timezone    *string `json:"timezone,omitempty"`
+	Password    *string `json:"password,omitempty"`
+	NewPassword *string `json:"new_password,omitempty"`
 }
 
 // ChangePasswordRequest change password request
@@ -765,11 +766,43 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 // UpdateUserSettings updates user settings
 func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
 	// Update fields if provided
+	if req.Password != nil {
+		ciphertext, err := base64.StdEncoding.DecodeString(*req.Password)
+		if err != nil {
+			return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
+		}
+		privateKey, err := s.loadPrivateKey()
+		if err != nil {
+			return common.CodeExceptionError, err
+		}
+		oldPasswordBytes, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+		oldPassword := "Fail to decrypt password!"
+		if err == nil {
+			oldPassword = string(oldPasswordBytes)
+		}
+		if user.Password == nil || !s.VerifyPassword(*user.Password, oldPassword) {
+			return common.CodeAuthenticationError, fmt.Errorf("Password error!")
+		}
+
+		if req.NewPassword != nil {
+			ciphertext, err := base64.StdEncoding.DecodeString(*req.NewPassword)
+			if err != nil {
+				return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
+			}
+			newPasswordBytes, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+			if err != nil {
+				return common.CodeExceptionError, err
+			}
+
+			hashedPassword, err := s.HashPassword(string(newPasswordBytes))
+			if err != nil {
+				return common.CodeExceptionError, err
+			}
+			user.Password = &hashedPassword
+		}
+	}
 	if req.Nickname != nil {
 		user.Nickname = *req.Nickname
-	}
-	if req.Email != nil {
-		user.Email = *req.Email
 	}
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently
