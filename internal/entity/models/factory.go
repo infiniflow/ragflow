@@ -119,19 +119,19 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewPPIOModel(baseURL, urlSuffix), nil
 	case "voyage":
 		return NewVoyageModel(baseURL, urlSuffix), nil
-	case "paddleocr":
+	case "paddleocr.net":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
 	case "xunfei":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
 		return NewDeepInfraModel(baseURL, urlSuffix), nil
-	case "mineru":
+	case "mineru.net":
 		return NewMinerUModel(baseURL, urlSuffix), nil
 	case "jiekouai":
 		return NewJieKouAIModel(baseURL, urlSuffix), nil
 	case "302.ai":
 		return NewAI302Model(baseURL, urlSuffix), nil
-	case "mineru_local":
+	case "mineru":
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
@@ -143,12 +143,14 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewN1NModel(baseURL, urlSuffix), nil
 	case "bedrock":
 		return NewBedrockModel(baseURL, urlSuffix), nil
-	case "paddleocr_local":
+	case "paddleocr":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
 	case "huaweicloud":
 		return NewHuaweiCloudModel(baseURL, urlSuffix), nil
+	case "qiniu":
+		return NewQiniuModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

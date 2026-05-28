@@ -49,7 +49,7 @@ class Pipeline(Graph):
             message += "[CANCEL]"
         try:
             bin = REDIS_CONN.get(log_key)
-            obj = json.loads(bin.encode("utf-8"))
+            obj = json.loads(bin.encode("utf-8")) if bin else []
             if obj:
                 if obj[-1]["component_id"] == component_name:
                     obj[-1]["trace"].append(
