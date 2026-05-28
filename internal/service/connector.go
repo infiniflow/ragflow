@@ -21,9 +21,19 @@ import (
 	"errors"
 	"fmt"
 
+	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+)
+
+const (
+	connectorInputTypePoll   = "poll"
+	connectorStatusUnstarted = "0"
+	defaultConnectorFreq     = 5
+	defaultConnectorTimeout  = 60 * 29
 )
 
 // Sentinel errors so handlers can map to the proper response codes,
@@ -42,11 +52,6 @@ var (
 type ConnectorService struct {
 	connectorDAO  *dao.ConnectorDAO
 	userTenantDAO *dao.UserTenantDAO
-}
-
-func (s *ConnectorService) Rebuild() {
-	//TODO implement me
-	panic("implement me")
 }
 
 // NewConnectorService create connector service
