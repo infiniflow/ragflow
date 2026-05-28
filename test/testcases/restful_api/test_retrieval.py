@@ -16,7 +16,6 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import pytest
-import requests
 from test.testcases.configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
@@ -378,12 +377,8 @@ def test_deleted_chunks_batch_not_in_retrieval_contract(rest_client, create_docu
 
 
 @pytest.mark.p2
-def test_related_questions_contract(auth, rest_client, rest_client_noauth):
-    tokens_res = requests.get(
-        f"{HOST_ADDRESS}/api/{VERSION}/system/tokens",
-        headers={"Authorization": auth},
-        timeout=30,
-    )
+def test_related_questions_contract(rest_client, rest_client_noauth):
+    tokens_res = rest_client.get("/system/tokens")
     assert tokens_res.status_code == 200, tokens_res.text
     tokens_payload = tokens_res.json()
     assert tokens_payload["code"] == 0, tokens_payload
