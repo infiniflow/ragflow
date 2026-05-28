@@ -223,3 +223,47 @@ func createRebuildSyncLog(tx *gorm.DB, connectorID, kbID, taskType string, reind
 		TotalDocsIndexed: 0,
 	}).Error
 }
+
+// ListLogsByConnectorID lists sync logs for one connector with pagination.
+func (dao *ConnectorDAO) ListLogsByConnectorID(connectorID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
+	baseQuery := DB.Model(&entity.SyncLogs{}).
+		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
+		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
+		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
+		Where("sync_logs.connector_id = ?", connectorID)
+
+	var total int64
+	if err := baseQuery.Distinct("sync_logs.id").Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var logs []*entity.ConnectorSyncLog
+	err := baseQuery.
+		Select(
+			"sync_logs.id",
+			"sync_logs.connector_id",
+			"sync_logs.task_type",
+			"sync_logs.kb_id",
+			"sync_logs.update_date",
+			"sync_logs.new_docs_indexed",
+			"sync_logs.total_docs_indexed",
+			"sync_logs.docs_removed_from_index",
+			"sync_logs.error_msg",
+			"sync_logs.error_count",
+			"sync_logs.time_started",
+			"connector.refresh_freq AS refresh_freq",
+			"connector.prune_freq AS prune_freq",
+			"knowledgebase.name AS kb_name",
+			"sync_logs.status",
+		).
+		Distinct().
+		Order("sync_logs.update_time DESC").
+		Offset(offset).
+		Limit(limit).
+		Scan(&logs).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return logs, total, nil
+}

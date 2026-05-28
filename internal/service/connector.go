@@ -263,3 +263,35 @@ func (s *ConnectorService) deleteConnectorDocumentChunks(tenantID, kbID string, 
 		_, _ = docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": document.ID}, indexName, kbID)
 	}
 }
+
+func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, 0, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, 0, common.CodeServerError, err
+	}
+
+	if !s.canAccessConnector(connector, userID) {
+		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 15
+	}
+	offset := (page - 1) * pageSize
+
+	logs, total, err := s.connectorDAO.ListLogsByConnectorID(connectorID, offset, pageSize)
+	if err != nil {
+		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
+	}
+	return logs, total, common.CodeSuccess, nil
+}
