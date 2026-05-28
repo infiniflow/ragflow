@@ -83,9 +83,13 @@ def _decode_chunk_image_base64(image_base64):
 def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary):
     try:
         store_chunk_image(dataset_id, chunk_id, image_binary)
-    except Exception as exc:
-        logging.exception(exc)
-        return f"Failed to store chunk image: {exc}"
+    except Exception:
+        logging.exception(
+            "Failed to store chunk image. dataset_id=%s chunk_id=%s",
+            dataset_id,
+            chunk_id,
+        )
+        return "Failed to store chunk image"
     return None
 
 
@@ -534,9 +538,8 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
 
-    image_base64 = req.get("image_base64")
-    if image_base64:
-        image_binary, image_err = _decode_chunk_image_base64(image_base64)
+    if "image_base64" in req:
+        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
             return get_error_data_result(message=image_err)
         store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
@@ -681,9 +684,8 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
-    image_base64 = req.get("image_base64")
-    if image_base64:
-        image_binary, image_err = _decode_chunk_image_base64(image_base64)
+    if "image_base64" in req:
+        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
             return get_error_data_result(message=image_err)
         store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)

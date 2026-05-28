@@ -673,6 +673,23 @@ def test_restful_add_chunk_invalid_image_base64_does_not_index_chunk(monkeypatch
 
 
 @pytest.mark.p2
+def test_restful_add_chunk_empty_image_base64_does_not_index_chunk(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "chunk with empty image", "image_base64": ""}),
+    )
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "`image_base64` must be a non-empty string", res
+    assert module.settings.docStoreConn.inserted == [], res
+
+
+@pytest.mark.p2
 def test_restful_update_chunk_invalid_image_base64_does_not_update_chunk(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={}, headers={})
