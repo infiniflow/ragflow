@@ -1045,7 +1045,44 @@ def test_openai_nonstream_branch_unit(monkeypatch):
 
     res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
     assert res["choices"][0]["message"]["content"] == "world"
-    
+
+
+@pytest.mark.p2
+def test_openai_defaults_to_nonstream_when_stream_omitted_unit(monkeypatch):
+    """Omitted stream must default to false (OpenAI API compat), not SSE."""
+    module = _load_openai_api_module(monkeypatch)
+
+    monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=[], llm_id="chat-model", tenant_id="tenant-1")],
+    )
+
+    stream_flags = []
+
+    async def fake_async_chat(_dia, _msg, stream, **_kwargs):
+        stream_flags.append(stream)
+        yield {"answer": "hello", "reference": {}}
+
+    monkeypatch.setattr(module, "async_chat", fake_async_chat)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "model": "model",
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
+    assert stream_flags == [False]
+    assert isinstance(res, dict)
+    assert res["object"] == "chat.completion"
+    assert res["choices"][0]["message"]["content"] == "hello"
+
 
 @pytest.mark.p2
 def test_agents_openai_compatibility_unit(monkeypatch):
