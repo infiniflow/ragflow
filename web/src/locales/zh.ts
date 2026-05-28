@@ -1104,6 +1104,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       onedriveClientIdTip: '拥有 Files.Read.All 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
       onedriveClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
       onedriveFolderPathTip: '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
+      sharepointDescription: '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
+      sharepointSiteUrlTip:
+        '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:
