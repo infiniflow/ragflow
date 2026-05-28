@@ -1242,6 +1242,12 @@ Example: Virtual Hosted Style`,
         'Connect Microsoft Teams via Microsoft Graph to sync channel posts and replies.',
       teamsTenantIdTip:
         'Azure AD tenant ID. Requires an app with Team.ReadBasic.All and ChannelMessage.Read.All application permissions (admin consent).',
+      slackDescription:
+        'Connect your Slack workspace to sync channel messages and threads.',
+      slackBotTokenTip:
+        'Slack bot user OAuth token (starts with xoxb-). The app needs the channels:read, channels:history, and users:read scopes.',
+      slackChannelsTip:
+        'Optional: channel names to sync (e.g., general). Leave empty to sync all accessible channels.',
       sharepointDescription:
         'Connect a SharePoint site via Microsoft Graph to sync its document libraries.',
       sharepointSiteUrlTip:

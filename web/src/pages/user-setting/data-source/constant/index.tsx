@@ -45,8 +45,8 @@ export enum DataSourceKey {
   RSS = 'rss',
   TEAMS = 'teams',
   SHAREPOINT = 'sharepoint',
-
-  //   SLACK = 'slack',
+  SLACK = 'slack',
+  SHAREPOINT = 'sharepoint',
 }
 
 type DataSourceFeatureVisibility = {
@@ -131,6 +131,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.TEAMS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SLACK]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.SHAREPOINT]: {
@@ -223,6 +226,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Microsoft Teams',
       description: t(`setting.${DataSourceKey.TEAMS}Description`),
       icon: <SvgIcon name={'data-source/teams'} width={38} />,
+    },
+    [DataSourceKey.SLACK]: {
+      name: 'Slack',
+      description: t(`setting.${DataSourceKey.SLACK}Description`),
+      icon: <SvgIcon name={'data-source/slack'} width={38} />,
     },
     [DataSourceKey.SHAREPOINT]: {
       name: 'SharePoint',
@@ -689,6 +697,22 @@ export const DataSourceFormFields = {
       name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
       required: true,
+    },
+  ],
+  [DataSourceKey.SLACK]: [
+    {
+      label: 'Slack Bot Token',
+      name: 'config.credentials.slack_bot_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.slackBotTokenTip'),
+    },
+    {
+      label: 'Channels',
+      name: 'config.channels',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.slackChannelsTip'),
     },
   ],
   [DataSourceKey.SHAREPOINT]: [
@@ -1582,6 +1606,16 @@ export const DataSourceFormDefaultValues = {
         tenant_id: '',
         client_id: '',
         client_secret: '',
+      }
+    }
+  },
+  [DataSourceKey.SLACK]: {
+    name: '',
+    source: DataSourceKey.SLACK,
+    config: {
+      channels: [],
+      credentials: {
+        slack_bot_token: '',
       },
     },
   },
