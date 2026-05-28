@@ -43,6 +43,7 @@ export enum DataSourceKey {
   POSTGRESQL = 'postgresql',
   REST_API = 'rest_api',
   RSS = 'rss',
+  OUTLOOK = 'outlook',
 
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -128,6 +129,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.OUTLOOK]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MYSQL]: {
@@ -294,6 +298,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
     },
+    [DataSourceKey.OUTLOOK]: {
+      name: 'Outlook',
+      description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
+      icon: <Mail className="text-text-primary" size={22} />,
+    },
   };
 };
 
@@ -380,6 +389,57 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 export const DataSourceFormFields = {
+  [DataSourceKey.OUTLOOK]: [
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.outlookTenantIdTip'),
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.outlookClientIdTip'),
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.outlookClientSecretTip'),
+    },
+    {
+      label: 'Mail Folder',
+      name: 'config.folder',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'inbox',
+      tooltip: t('setting.outlookFolderTip'),
+    },
+    {
+      label: 'Mailbox User IDs (optional)',
+      name: 'config.user_ids',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'support@example.com, sales@example.com',
+      tooltip: t('setting.outlookUserIdsTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
   [DataSourceKey.RSS]: [
     {
       label: 'Feed URL',
@@ -1719,6 +1779,20 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.OUTLOOK]: {
+    name: '',
+    source: DataSourceKey.OUTLOOK,
+    config: {
+      folder: 'inbox',
+      user_ids: '',
+      batch_size: 2,
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },
