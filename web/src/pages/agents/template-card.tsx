@@ -19,12 +19,15 @@ export function TemplateCard({ data, showModal }: IProps) {
     showModal(data);
   }, [data, showModal]);
 
-  const language = useMemo(() => {
+  const language = useMemo((): 'en' | 'zh' | 'de' => {
     if (i18n.language === LanguageAbbreviation.Zh) {
       return 'zh';
     }
-    return i18n.language || 'en';
-  }, []) as 'en' | 'zh' | 'de';
+    if (i18n.language === 'de') {
+      return 'de';
+    }
+    return 'en';
+  }, []);
 
   return (
     <Card className="border-colors-outline-neutral-standard group relative min-h-40">
@@ -42,7 +45,7 @@ export function TemplateCard({ data, showModal }: IProps) {
             {data?.title[language]}
           </div>
         </div>
-        <p className="break-words hypens-auto" lang={language}>
+        <p className="break-words hyphens-auto" lang={language}>
           {data?.description[language]}
         </p>
         <div className="group-hover:bg-gradient-to-t from-black/70 from-10% via-black/0 via-50% to-black/0 w-full h-full group-hover:block absolute top-0 left-0 hidden rounded-xl">
