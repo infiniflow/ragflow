@@ -159,3 +159,89 @@ func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsRespons
 		Connectors: connectors,
 	}, nil
 }
+
+// GetConnector returns connector details when the current user can access it.
+// Equivalent to Python's get_connector in api/apps/restful_apis/connector_api.py.
+func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, common.CodeDataError, errors.New("connector_id is required")
+	}
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+	if !s.canAccessConnector(connector, userID) {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+	return connector, common.CodeSuccess, nil
+}
+
+// UpdateConnector updates connector settings for an accessible connector.
+func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if strings.TrimSpace(connectorID) == "" {
+		return nil, common.CodeDataError, errors.New("connector_id is required")
+	}
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+	if !s.canAccessConnector(connector, userID) {
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+	}
+
+	if req != nil {
+		updates := map[string]interface{}{}
+		if req.PruneFreq != nil {
+			updates["prune_freq"] = *req.PruneFreq
+		}
+		if req.RefreshFreq != nil {
+			updates["refresh_freq"] = *req.RefreshFreq
+		}
+		if req.Config != nil {
+			updates["config"] = entity.JSONMap(*req.Config)
+		}
+		if req.TimeoutSecs != nil {
+			updates["timeout_secs"] = *req.TimeoutSecs
+		}
+		if req.Reschedule {
+			updates["status"] = string(entity.TaskStatusSchedule)
+		}
+		if req.Status != "" {
+			switch {
+			case strings.EqualFold(req.Status, "cancel"):
+				updates["status"] = string(entity.TaskStatusCancel)
+			case strings.EqualFold(req.Status, "schedule"):
+				updates["status"] = string(entity.TaskStatusSchedule)
+			default:
+				updates["status"] = req.Status
+			}
+		}
+		if len(updates) > 0 {
+			if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
+				return nil, common.CodeServerError, errors.New("failed to update connector")
+			}
+		}
+	}
+
+	connector, err = s.connectorDAO.GetByID(connector.ID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("Can't find this Connector!")
+	}
+	return connector, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) accessible(connectorID, userID string) bool {
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return false
+	}
+	return s.canAccessConnector(connector, userID)
+}
+
+func (s *ConnectorService) canAccessConnector(connector *entity.Connector, userID string) bool {
+	if connector.TenantID == userID {
+		return true
+	}
+	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
+	return err == nil
+}
