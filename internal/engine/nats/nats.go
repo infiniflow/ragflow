@@ -35,6 +35,7 @@ type NatsEngine struct {
 	nc        *nats.Conn
 	jetStream jetstream.JetStream
 	stream    jetstream.Stream
+	consumer  jetstream.Consumer
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {
@@ -132,43 +133,6 @@ func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
 	result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
 	result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
 	result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
-
-	//nc, err := nats.Connect(nats.DefaultURL)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//defer nc.Close()
-	//
-	//js, err := nc.JetStream()
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//
-	//sub, err := js.PullSubscribe("tasks.RAGFLOW", "RAGFLOW_CONSUMER", nats.PullMaxWaiting(128), nats.AckExplicit())
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//pending, _, err := sub.Pending()
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//
-	//result["another_pending_count1"] = strconv.FormatUint(uint64(pending), 10)
-	//
-	//msgs, err := sub.Fetch(1, nats.Context(ctx))
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//if len(msgs) == 0 {
-	//	return nil, nil
-	//}
-	//
-	//pending, _, err = sub.Pending()
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//result["another_pending_count2"] = strconv.Itoa(pending)
-	//cancel()
 	return result, nil
 }
 
@@ -214,32 +178,36 @@ func (n *NatsEngine) ListMessages(messageType string, pending bool) ([]map[strin
 	common.Info(fmt.Sprintf("Listed %d messages for subject: %s", len(messages), subjectFilter))
 	return messages, nil
 }
-func (n *NatsEngine) ConsumeMessage(subject string, messageCount int, ackPolicy bool) ([]map[string]string, error) {
+
+func (n *NatsEngine) InitConsumer(subject string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	consumer, err := n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+	var err error
+	n.consumer, err = n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Name:          "RAGFLOW_CONSUMER",
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    3,
-		MaxAckPending: 100,
+		MaxDeliver:    16,
+		MaxAckPending: 1024 * 128,
 		FilterSubject: "tasks.>",
 	})
 	if err != nil {
 		// MaxAckPending is immutable after consumer creation.
 		// If the consumer already exists, fall back to fetching it.
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
-			consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
+			n.consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
 			if err != nil {
-				return nil, fmt.Errorf("failed to get existing consumer: %w", err)
+				return fmt.Errorf("failed to get existing consumer: %w", err)
 			}
 		} else {
-			return nil, fmt.Errorf("failed to create Consumer: %w", err)
+			return fmt.Errorf("failed to create Consumer: %w", err)
 		}
 	}
-	//c.consumer = consumer
+	return nil
+}
+func (n *NatsEngine) GetMessages(messageCount int, ackPolicy bool) ([]map[string]string, error) {
 	resultMessages := make([]map[string]string, 0)
-	messages, err := consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
 	for msg := range messages.Messages() {
 		messageMap := make(map[string]string)
 		messageMap["subject"] = msg.Subject()
@@ -254,6 +222,5 @@ func (n *NatsEngine) ConsumeMessage(subject string, messageCount int, ackPolicy 
 
 		resultMessages = append(resultMessages, messageMap)
 	}
-
 	return resultMessages, nil
 }

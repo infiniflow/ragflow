@@ -54,9 +54,8 @@ type Config struct {
 
 // AdminConfig admin server configuration
 type AdminConfig struct {
-	Host                 string `mapstructure:"host"`
-	Port                 int    `mapstructure:"http_port"`
-	IngestionManagerPort int    `mapstructure:"ingestion_manager_port"`
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"http_port"`
 }
 
 type AuthenticationConfig struct {
@@ -368,6 +367,7 @@ func Init(configPath string) error {
 		case "nats":
 			host := getString(configDict, "host")
 			port := getInt(configDict, "port")
+			configDict["id"] = id
 			configDict["name"] = "nats"
 			configDict["host"] = host
 			configDict["port"] = port
@@ -583,9 +583,6 @@ func FromConfigFile(configPath string) error {
 		globalConfig.Admin.Port = 9383
 	} else {
 		globalConfig.Admin.Port += 2
-	}
-	if globalConfig.Admin.IngestionManagerPort == 0 {
-		globalConfig.Admin.IngestionManagerPort = 9385
 	}
 
 	// authentication section

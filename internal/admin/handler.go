@@ -1305,7 +1305,11 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	messages, err := msgQueueEngine.ConsumeMessage("tasks.RAGFLOW", req.MessageCount, ackPolicy)
+	err := msgQueueEngine.InitConsumer("tasks.RAGFLOW")
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
+	messages, err := msgQueueEngine.GetMessages(req.MessageCount, ackPolicy)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 	}
@@ -1324,23 +1328,6 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	success(c, result, "show message queue successfully")
 }
 
-func (h *Handler) StartIngestion(c *gin.Context) {
-	var req common.StartIngestionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "file uri and from is required", 400)
-		return
-	}
-
-	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:   req.TaskID,
-		TaskType: "CREATED",
-		ComeFrom: req.From,
-		UserId:   req.UserID,
-	})
-
-	success(c, gin.H{"task_id": req.TaskID}, "Send task for ingestion successfully")
-}
-
 type CancelIngestionTaskRequest struct {
 	TaskID     string `json:"task_id" binding:"required"`
 	From       string `json:"from" binding:"required"`
@@ -1354,23 +1341,35 @@ func (h *Handler) CancelIngestionTask(c *gin.Context) {
 		return
 	}
 
-	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:     req.TaskID,
-		TaskType:   "CANCELLING",
-		ComeFrom:   req.From,
-		AssignedTo: req.AssignedTo,
-	})
+	//ingestionManager.SubmitTask(&common.TaskAssignment{
+	//	TaskId:     req.TaskID,
+	//	TaskType:   "CANCELLING",
+	//	ComeFrom:   req.From,
+	//	AssignedTo: req.AssignedTo,
+	//})
 
 	success(c, gin.H{"task_id": req.TaskID}, "Cancel task successfully")
 }
 
+// ListIngestionTasks
+func (h *Handler) ListIngestionTasks(c *gin.Context) {
+
+	//tasks, err := ingestionManager.ListIngestionTasks()
+	//if err != nil {
+	//	errorResponse(c, err.Error(), 400)
+	//	return
+	//}
+
+	success(c, nil, "")
+}
+
 func (h *Handler) ListIngestors(c *gin.Context) {
-	ingestionMgr := GetIngestionManager()
-	ingestors, err := ingestionMgr.ListIngestors()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-	}
-	success(c, ingestors, "Get all tasks")
+	//ingestionMgr := GetIngestionManager()
+	//ingestors, err := ingestionMgr.ListIngestors()
+	//if err != nil {
+	//	errorResponse(c, err.Error(), 500)
+	//}
+	success(c, nil, "Get all tasks")
 }
 
 type ShutdownIngestorRequest struct {
@@ -1385,11 +1384,11 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	}
 
 	taskID := common.GenerateUUID()
-	ingestionManager.SubmitTask(&common.TaskAssignment{
-		TaskId:     taskID,
-		TaskType:   "SHUTDOWN",
-		AssignedTo: req.IngestorID,
-	})
+	//ingestionManager.SubmitTask(&common.TaskAssignment{
+	//	TaskId:     taskID,
+	//	TaskType:   "SHUTDOWN",
+	//	AssignedTo: req.IngestorID,
+	//})
 
 	success(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
 }
@@ -1427,16 +1426,4 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	responseWithCode(c, message, http.StatusOK, errCode)
-}
-
-// ListIngestionTasks
-func (h *Handler) ListIngestionTasks(c *gin.Context) {
-
-	tasks, err := ingestionManager.ListIngestionTasks()
-	if err != nil {
-		errorResponse(c, err.Error(), 400)
-		return
-	}
-
-	success(c, tasks, "")
 }

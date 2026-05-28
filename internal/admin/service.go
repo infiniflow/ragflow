@@ -123,13 +123,14 @@ func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 	//	})
 	//}
 
-	ingestionMgr := GetIngestionManager()
-	ingestionTasks, err := ingestionMgr.ListIngestionTasks()
-	if err != nil {
-		return nil, fmt.Errorf("fail to list ingestion tasks")
-	}
-
-	return ingestionTasks, nil
+	//ingestionMgr := GetIngestionManager()
+	//ingestionTasks, err := ingestionMgr.ListIngestionTasks()
+	//if err != nil {
+	//	return nil, fmt.Errorf("fail to list ingestion tasks")
+	//}
+	//
+	//return ingestionTasks, nil
+	return nil, nil
 }
 
 // GetUserByToken get user by access token
@@ -1050,11 +1051,11 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 			}
 			result = append(result, configDict)
 		}
-
 	}
 
 	id := len(result)
 	serverList := GlobalServerStore.ListInfos()
+	now := time.Now()
 	for _, serverStatus := range serverList {
 		serverItem := make(map[string]interface{})
 		serverItem["name"] = serverStatus.ServerName
@@ -1063,7 +1064,12 @@ func (s *Service) ListServices() ([]map[string]interface{}, error) {
 		id++
 		serverItem["host"] = serverStatus.Host
 		serverItem["port"] = serverStatus.Port
-		serverItem["status"] = "alive"
+		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
+		if now.Sub(serverStatus.Timestamp) < 30*time.Second {
+			serverItem["status"] = "alive"
+		} else {
+			serverItem["status"] = "timeout"
+		}
 		result = append(result, serverItem)
 	}
 	return result, nil

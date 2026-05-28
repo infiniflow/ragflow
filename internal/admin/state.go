@@ -58,6 +58,9 @@ func (s *ServerStore) UpdateServerInfo(serverName string, status *common.BaseMes
 		s.servers[serverName] = status
 		return
 	case common.ServerTypeIngestion:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.servers[serverName] = status
 		return
 	}
 }

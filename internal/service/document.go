@@ -357,10 +357,10 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 		// message queue
 
 		// Send task to admin server for ingestion
-		err = AdminServiceClient.SendIngestionTask(task.ID, "start_ingestion_task", "ragflow.server", userID)
-		if err != nil {
-			return nil, err
-		}
+		//err = AdminServiceClient.SendIngestionTask(task.ID, "start_ingestion_task", "ragflow.server", userID)
+		//if err != nil {
+		//	return nil, err
+		//}
 
 		responses = append(responses, &ParseDocumentResponse{
 			DocumentID: docID,
@@ -385,12 +385,12 @@ func (s *DocumentService) StopIngestions(tasks []string, userID string) ([]*enti
 			return nil, fmt.Errorf("no such task")
 		}
 
-		if task.Status == "CREATED" || task.Status == "COMPLETED" || task.Status == "RUNNING" {
-			err = AdminServiceClient.SendIngestionTask(task.ID, "stop_ingestion_task", "ragflow.server", userID)
-			if err != nil {
-				return nil, err
-			}
-		}
+		//if task.Status == "CREATED" || task.Status == "COMPLETED" || task.Status == "RUNNING" {
+		//	//err = AdminServiceClient.SendIngestionTask(task.ID, "stop_ingestion_task", "ragflow.server", userID)
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//}
 
 		err = s.ingestionTaskDAO.UpdateStatus(taskID, "CANCELLING")
 		if err != nil {

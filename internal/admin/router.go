@@ -46,9 +46,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		admin.POST("/reports", r.handler.Reports)
 
-		admin.POST("/ingestion/tasks", r.handler.StartIngestion)
-		admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
-		admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+		//admin.POST("/ingestion/tasks", r.handler.StartIngestion)
+		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
+		//admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 
 		// Protected routes
 		protected := admin.Group("")
@@ -151,7 +151,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
-
+			protected.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
+			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 		}
 	}
 

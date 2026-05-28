@@ -194,8 +194,6 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListTasks()
 	case TokenIngestors:
 		return p.parseAdminListIngestors()
-	case TokenIngestion:
-		return p.parseAdminListIngestionTasks()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -1722,4 +1720,28 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
+	p.nextToken() // consume MESSAGE_QUEUE
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenService:
+		p.nextToken() // consume SERVICE
+		serviceNum, err := p.parseNumber()
+		if err != nil {
+			return nil, fmt.Errorf("expected service number after SERVICE")
+		}
+		p.nextToken() // consume service number
+		cmd = NewCommand("admin_remove_service_command")
+		cmd.Params["service_number"] = serviceNum
+
+	default:
+		return nil, fmt.Errorf("expected SERVICE")
+	}
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 }

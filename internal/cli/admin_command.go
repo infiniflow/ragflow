@@ -1335,53 +1335,6 @@ func (c *RAGFlowClient) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error
 	return &result, nil
 }
 
-func (c *RAGFlowClient) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
-	}
-
-	documentID, ok := cmd.Params["uri"].(string)
-	if !ok {
-		return nil, fmt.Errorf("uri not provided")
-	}
-
-	config := map[string]interface{}{
-		"document_id": documentID,
-	}
-
-	configJSON, err := json.Marshal(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	payload := map[string]interface{}{
-		"config":  configJSON,
-		"user_id": c.Email,
-		"from":    "CLI",
-	}
-
-	resp, err := c.HTTPClient.Request("POST", "/admin/ingestion", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to ingest file: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonDataResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 func (c *RAGFlowClient) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "admin" {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
@@ -1581,6 +1534,42 @@ func (c *RAGFlowClient) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, e
 	var result CommonDataResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("show message queue failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) AdminRemoveServiceCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	serviceNumber, ok := cmd.Params["service_number"].(int)
+	if !ok {
+		return nil, fmt.Errorf("service_number not provided")
+	}
+
+	payload := map[string]interface{}{
+		"service_number": serviceNumber,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/admin/services", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove unavailable service: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove unavailable service: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove unavailable service failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
