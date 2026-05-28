@@ -154,22 +154,13 @@ class Graph:
         return self.components.get(cpn_id)
 
     def get_component_obj(self, cpn_id) -> ComponentBase:
-        cpn = self.components.get(cpn_id)
-        if cpn is None:
-            raise LookupError(f"Component '{cpn_id}' not found in canvas. Path may contain an invalid reference.")
-        return cpn["obj"]
+        return self.components.get(cpn_id)["obj"]
 
     def get_component_type(self, cpn_id) -> str:
-        cpn = self.components.get(cpn_id)
-        if cpn is None:
-            raise LookupError(f"Component '{cpn_id}' not found in canvas.")
-        return cpn["obj"].component_name
+        return self.components.get(cpn_id)["obj"].component_name
 
     def get_component_input_form(self, cpn_id) -> dict:
-        cpn = self.components.get(cpn_id)
-        if cpn is None:
-            raise LookupError(f"Component '{cpn_id}' not found in canvas.")
-        return cpn["obj"].get_input_form()
+        return self.components.get(cpn_id)["obj"].get_input_form()
 
     def get_tenant_id(self):
         return self._tenant_id
@@ -610,8 +601,6 @@ class Canvas(Graph):
                 def _append_path(cpn_id):
                     nonlocal other_branch
                     if other_branch:
-                        return
-                    if not cpn_id:
                         return
                     if self.path[-1] == cpn_id:
                         return
