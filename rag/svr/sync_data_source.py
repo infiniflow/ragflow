@@ -61,6 +61,7 @@ from common.data_source import (
     RDBMSConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    OneDriveConnector,
 )
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
@@ -935,6 +936,51 @@ class SharePoint(SyncBase):
         pass
 
 
+class OneDrive(SyncBase):
+    SOURCE_NAME: str = FileSource.ONEDRIVE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = OneDriveConnector(
+            batch_size=batch_size,
+            folder_path=self.conf.get("folder_path") or None,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            checkpoint = self.connector.build_dummy_checkpoint()
+            document_batch_generator = self.connector.load_from_checkpoint(
+                0, 0, checkpoint
+            )
+            begin_info = "totally"
+        else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            document_batch_generator = self.connector.poll_source(
+                task["poll_range_start"].timestamp(),
+                end_ts,
+            )
+            begin_info = "from {}".format(task["poll_range_start"])
+
+        self.log_connection(
+            "OneDrive",
+            self.conf.get("folder_path", "/") or "/",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
 class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
@@ -1685,6 +1731,7 @@ func_factory = {
     FileSource.GOOGLE_DRIVE: GoogleDrive,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
+    FileSource.ONEDRIVE: OneDrive,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,
