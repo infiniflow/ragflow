@@ -131,12 +131,14 @@ def _connector_with_fake_client(client, batch_size=10):
 # --- credential loading -----------------------------------------------------
 
 
+@pytest.mark.p2
 def test_load_credentials_is_not_supported():
     connector = SlackConnector()
     with pytest.raises(NotImplementedError):
         connector.load_credentials({"slack_bot_token": "xoxb-abc"})
 
 
+@pytest.mark.p2
 def test_set_credentials_provider_initializes_clients():
     connector = SlackConnector()
 
@@ -151,6 +153,7 @@ def test_set_credentials_provider_initializes_clients():
     assert connector.text_cleaner is not None
 
 
+@pytest.mark.p2
 def test_fetch_without_credentials_raises():
     connector = SlackConnector()
     with pytest.raises(slack_connector.ConnectorMissingCredentialError):
@@ -160,6 +163,7 @@ def test_fetch_without_credentials_raises():
 # --- document generation ----------------------------------------------------
 
 
+@pytest.mark.p1
 def test_load_from_state_generates_thread_documents():
     connector = _connector_with_fake_client(_FakeSlackClient())
 
@@ -184,6 +188,7 @@ def test_load_from_state_generates_thread_documents():
     assert thread_doc.semantic_identifier == "Bob in #general: Question?"
 
 
+@pytest.mark.p1
 def test_poll_source_passes_time_window():
     client = _FakeSlackClient()
     captured = {}

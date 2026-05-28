@@ -678,6 +678,16 @@ class SlackConnector(
                     f"Slack API returned a failure: {error_msg}"
                 )
 
+            # 3) Confirm users:read scope is available (required by thread_to_doc)
+            users_resp = self.fast_client.users_info(user="USLACKBOT")
+            if not users_resp.get("ok", False):
+                error_msg = users_resp.get("error", "")
+                if error_msg in ("missing_scope", "not_allowed_token_type"):
+                    raise InsufficientPermissionsError(
+                        "Slack bot token lacks the 'users:read' scope required to look up message senders. "
+                        "Please add 'users:read' to your Slack app's OAuth scopes."
+                    )
+
         except SlackApiError as e:
             slack_error = e.response.get("error", "")
             if slack_error == "ratelimited":

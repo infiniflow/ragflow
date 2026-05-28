@@ -951,10 +951,18 @@ class Slack(SyncBase):
         else:
             channels = None
 
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
         self.connector = SlackConnector(
             channels=channels or None,
             channel_regex_enabled=bool(self.conf.get("channel_regex_enabled", False)),
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            batch_size=batch_size,
         )
 
         credentials = self.conf.get("credentials") or {}
