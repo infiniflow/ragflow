@@ -1105,6 +1105,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       outlookClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
       outlookFolderTip: '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip: '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      sharepointDescription: '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
+      sharepointSiteUrlTip:
+        '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:

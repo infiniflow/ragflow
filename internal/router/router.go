@@ -100,6 +100,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
