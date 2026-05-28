@@ -27,7 +27,7 @@ export function TemplateCard({ data, showModal }: IProps) {
       return 'de';
     }
     return 'en';
-  }, []);
+  }, [i18n.language]);
 
   return (
     <Card className="border-colors-outline-neutral-standard group relative min-h-40">
