@@ -44,6 +44,7 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   OUTLOOK = 'outlook',
+  TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
 }
@@ -130,6 +131,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.OUTLOOK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.TEAMS]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.SLACK]: {
@@ -220,6 +224,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Moodle',
       description: t(`setting.${DataSourceKey.MOODLE}Description`),
       icon: <SvgIcon name={'data-source/moodle'} width={38} />,
+    },
+    [DataSourceKey.TEAMS]: {
+      name: 'Microsoft Teams',
+      description: t(`setting.${DataSourceKey.TEAMS}Description`),
+      icon: <SvgIcon name={'data-source/teams'} width={38} />,
     },
     [DataSourceKey.SLACK]: {
       name: 'Slack',
@@ -724,6 +733,27 @@ export const DataSourceFormFields = {
     {
       label: 'API Token',
       name: 'config.credentials.moodle_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
+  [DataSourceKey.TEAMS]: [
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.teamsTenantIdTip'),
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
       required: true,
     },
@@ -1626,6 +1656,17 @@ export const DataSourceFormDefaultValues = {
         moodle_token: '',
       },
     },
+  },
+  [DataSourceKey.TEAMS]: {
+    name: '',
+    source: DataSourceKey.TEAMS,
+    config: {
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      }
+    }
   },
   [DataSourceKey.SLACK]: {
     name: '',

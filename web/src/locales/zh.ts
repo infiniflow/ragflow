@@ -1105,6 +1105,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       outlookClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
       outlookFolderTip: '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip: '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      teamsDescription: '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
+      teamsTenantIdTip:
+        'Azure AD 租户 ID。需要具备 Team.ReadBasic.All 与 ChannelMessage.Read.All 应用权限（管理员同意）的应用。',
       slackDescription: '连接你的 Slack 工作区，同步频道消息与讨论串。',
       slackBotTokenTip:
         'Slack 机器人用户 OAuth Token（以 xoxb- 开头）。应用需具备 channels:read、channels:history 和 users:read 权限。',
