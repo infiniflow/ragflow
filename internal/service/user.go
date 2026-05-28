@@ -889,51 +889,44 @@ func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, err
 
 // SetTenantInfoRequest represents the request for setting tenant info
 type SetTenantInfoRequest struct {
-	TenantID  string `json:"tenant_id"`
-	ASRID     string `json:"asr_id"`
-	EmbdID    string `json:"embd_id"`
-	Img2TxtID string `json:"img2txt_id"`
-	LLMID     string `json:"llm_id"`
-	RerankID  string `json:"rerank_id"`
-	TTSID     string `json:"tts_id"`
+	TenantID  *string                `json:"tenant_id"`
+	ASRID     *string                `json:"asr_id"`
+	EmbdID    *string                `json:"embd_id"`
+	Img2TxtID *string                `json:"img2txt_id"`
+	LLMID     *string                `json:"llm_id"`
+	RerankID  *string                `json:"rerank_id"`
+	TTSID     *string                `json:"tts_id"`
+	Raw       map[string]interface{} `json:"-"`
 }
 
 // SetTenantInfo updates tenant model configuration
-func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) error {
+func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
+	_ = userID
 	tenantDAO := dao.NewTenantDAO()
-
-	_, err := tenantDAO.GetByID(req.TenantID)
-	if err != nil {
-		return fmt.Errorf("tenant not found: %w", err)
-	}
-
 	updates := make(map[string]interface{})
-	if req.LLMID != "" {
-		updates["llm_id"] = req.LLMID
+
+	for key, value := range req.Raw {
+		if key == "tenant_id" {
+			continue
+		}
+		updates[key] = value
 	}
-	if req.EmbdID != "" {
-		updates["embd_id"] = req.EmbdID
+
+	tenantID := ""
+	if req.TenantID != nil {
+		tenantID = *req.TenantID
 	}
-	if req.ASRID != "" {
-		updates["asr_id"] = req.ASRID
-	}
-	if req.Img2TxtID != "" {
-		updates["img2txt_id"] = req.Img2TxtID
-	}
-	if req.RerankID != "" {
-		updates["rerank_id"] = req.RerankID
-	}
-	if req.TTSID != "" {
-		updates["tts_id"] = req.TTSID
-	}
+
+	tenantLLMService := NewTenantLLMService()
+	updates = tenantLLMService.EnsureTenantModelIDForParams(tenantID, updates)
 
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(req.TenantID, updates); err != nil {
-			return fmt.Errorf("failed to update tenant: %w", err)
+		if err := tenantDAO.Update(tenantID, updates); err != nil {
+			return common.CodeExceptionError, err
 		}
 	}
 
-	return nil
+	return common.CodeSuccess, nil
 }
 
 // UserTenantService user tenant service
