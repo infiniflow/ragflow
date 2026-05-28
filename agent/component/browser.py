@@ -84,6 +84,15 @@ class BrowserParam(LLMParam):
 class Browser(ComponentBase, ABC):
     component_name = "Browser"
 
+    def _prepare_input_values(self):
+        for key, meta in self.get_input_elements().items():
+            val = meta.get("value")
+            if val is None:
+                val = ""
+            elif not isinstance(val, str):
+                val = json.dumps(val, ensure_ascii=False)
+            self.set_input_value(key, val)
+
     def get_input_elements(self) -> dict[str, dict]:
         text_parts = [
             str(self._param.prompts or ""),
@@ -667,6 +676,7 @@ class Browser(ComponentBase, ABC):
         profile_dir = None
         persist_session = self._should_persist_session()
         try:
+            self._prepare_input_values()
             user_prompt = self._resolve_text(kwargs.get("prompts", self._param.prompts))
             with tempfile.TemporaryDirectory(prefix="browser_use_upload_") as upload_dir, tempfile.TemporaryDirectory(
                 prefix="browser_use_download_"
