@@ -43,9 +43,9 @@ export enum DataSourceKey {
   POSTGRESQL = 'postgresql',
   REST_API = 'rest_api',
   RSS = 'rss',
+  SLACK = 'slack',
+  SHAREPOINT = 'sharepoint',
 
-  //   SHAREPOINT = 'sharepoint',
-  //   SLACK = 'slack',
   //   TEAMS = 'teams',
 }
 
@@ -130,6 +130,12 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.MOODLE]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.SLACK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MYSQL]: {
     syncDeletedFiles: true,
   },
@@ -212,6 +218,16 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Moodle',
       description: t(`setting.${DataSourceKey.MOODLE}Description`),
       icon: <SvgIcon name={'data-source/moodle'} width={38} />,
+    },
+    [DataSourceKey.SLACK]: {
+      name: 'Slack',
+      description: t(`setting.${DataSourceKey.SLACK}Description`),
+      icon: <SvgIcon name={'data-source/slack'} width={38} />,
+    },
+    [DataSourceKey.SHAREPOINT]: {
+      name: 'SharePoint',
+      description: t(`setting.${DataSourceKey.SHAREPOINT}Description`),
+      icon: <SvgIcon name={'data-source/sharepoint'} width={38} />,
     },
     [DataSourceKey.JIRA]: {
       name: 'Jira',
@@ -650,6 +666,50 @@ export const DataSourceFormFields = {
     {
       label: 'API Token',
       name: 'config.credentials.moodle_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
+  [DataSourceKey.SLACK]: [
+    {
+      label: 'Slack Bot Token',
+      name: 'config.credentials.slack_bot_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.slackBotTokenTip'),
+    },
+    {
+      label: 'Channels',
+      name: 'config.channels',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.slackChannelsTip'),
+    },
+  ],
+  [DataSourceKey.SHAREPOINT]: [
+    {
+      label: 'Site URL',
+      name: 'config.credentials.site_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://contoso.sharepoint.com/sites/MySite',
+      tooltip: t('setting.sharepointSiteUrlTip'),
+    },
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
       required: true,
     },
@@ -1506,6 +1566,28 @@ export const DataSourceFormDefaultValues = {
       moodle_url: '',
       credentials: {
         moodle_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SLACK]: {
+    name: '',
+    source: DataSourceKey.SLACK,
+    config: {
+      channels: [],
+      credentials: {
+        slack_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    name: '',
+    source: DataSourceKey.SHAREPOINT,
+    config: {
+      credentials: {
+        site_url: '',
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },

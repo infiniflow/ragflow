@@ -31,12 +31,12 @@ import (
 // LongCatModel implements ModelDriver for LongCat (Meituan).
 //
 // LongCat exposes an OpenAI-compatible chat completions endpoint at
-// https://api.longcat.chat/openai/v1/chat/completions. The official
-// docs (https://longcat.chat/platform/docs/APIDocs.html) only describe
-// the chat-completions surface — no /models, /embeddings, /rerank,
-// /audio, or /ocr endpoints are advertised. The wire shape matches the
-// OpenAI convention: response/delta carry reasoning_content alongside
-// content for thinking models.
+// https://api.longcat.chat/openai/v1/chat/completions and lists models at
+// https://api.longcat.chat/openai/v1/models. The official docs
+// (https://longcat.chat/platform/docs/APIDocs.html) do not advertise separate
+// /embeddings, /rerank, /audio, or /ocr endpoints. The wire shape matches the
+// OpenAI convention: response/delta carry reasoning_content alongside content
+// for thinking models.
 //
 // Documented request fields are limited to: model, messages, stream,
 // max_tokens, temperature, top_p. Sending other OpenAI-style fields
@@ -60,7 +60,15 @@ type LongCatModel struct {
 // long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
 // callers wrap each request with context.WithTimeout instead.
 func NewLongCatModel(baseURL map[string]string, urlSuffix URLSuffix) *LongCatModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	var transport *http.Transport
+	if ok {
+		transport = defaultTransport.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
+	}
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
 	transport.IdleConnTimeout = 90 * time.Second
@@ -404,23 +412,83 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-// ListModels is not exposed by the LongCat platform. The official
-// docs at https://longcat.chat/platform/docs/APIDocs.html only
-// document /openai/v1/chat/completions and /anthropic/v1/messages;
-// no /models endpoint exists. The shipped catalog lives in
-// conf/models/longcat.json; this driver method does not invent a
-// fake one.
-func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+type longCatModelInfo struct {
+	ID string `json:"id"`
 }
 
-// CheckConnection is not exposed by the LongCat platform. With no
-// documented /models or /health endpoint, there is no cheap way to
-// verify the API key without burning a real chat completion against
-// a tenant's quota. Return the documented sentinel rather than
-// pretend.
+type longCatListModelsResponse struct {
+	Data  []longCatModelInfo `json:"data"`
+	Error interface{}        `json:"error"`
+}
+
+const longCatMaxListModelsResponseBytes = 1 << 20
+
+func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	baseURL, err := l.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := l.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, longCatMaxListModelsResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if len(body) > longCatMaxListModelsResponseBytes {
+		return nil, fmt.Errorf("longcat: models response exceeds %d bytes", longCatMaxListModelsResponseBytes)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result longCatListModelsResponse
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("longcat: upstream error: %v", result.Error)
+	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, model := range result.Data {
+		if model.ID != "" {
+			models = append(models, model.ID)
+		}
+	}
+	return models, nil
+}
+
 func (l *LongCatModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	_, err := l.ListModels(apiConfig)
+	return err
 }
 
 // Embed is not exposed by the LongCat API. The /v1/embeddings endpoint

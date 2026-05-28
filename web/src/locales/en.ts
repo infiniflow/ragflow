@@ -1238,6 +1238,16 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      slackDescription:
+        'Connect your Slack workspace to sync channel messages and threads.',
+      slackBotTokenTip:
+        'Slack bot user OAuth token (starts with xoxb-). The app needs the channels:read, channels:history, and users:read scopes.',
+      slackChannelsTip:
+        'Optional: channel names to sync (e.g., general). Leave empty to sync all accessible channels.',
+      sharepointDescription:
+        'Connect a SharePoint site via Microsoft Graph to sync its document libraries.',
+      sharepointSiteUrlTip:
+        'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',

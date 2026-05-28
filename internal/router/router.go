@@ -38,6 +38,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 	agentHandler         *handler.AgentHandler
@@ -60,6 +61,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
@@ -80,6 +82,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
@@ -103,6 +106,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -168,7 +172,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
-				documents.POST("/parse", r.documentHandler.ParseDocuments)
 			}
 
 			// Chat routes
@@ -197,6 +200,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
+				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}
 
 			// Search routes
@@ -247,6 +252,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
+
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")
@@ -316,6 +326,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
+				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
+				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 			}
 
 			system := v1.Group("/system")
@@ -350,9 +365,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			kb.GET("/tags", r.knowledgebaseHandler.ListTagsFromKbs)
 			kb.GET("/get_meta", r.knowledgebaseHandler.GetMeta)
 			kb.GET("/basic_info", r.knowledgebaseHandler.GetBasicInfo)
-			kb.POST("/doc_engine_table", r.knowledgebaseHandler.CreateDatasetInDocEngine)   // Internal API only for GO
-			kb.DELETE("/doc_engine_table", r.knowledgebaseHandler.DeleteDatasetInDocEngine) // Internal API only for GO
-			kb.POST("/insert_from_file", r.knowledgebaseHandler.InsertDatasetFromFile)      // Internal API only for GO
 
 			// KB ID specific routes
 			kbByID := kb.Group("/:kb_id")
@@ -367,9 +379,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Tenant routes (per-tenant resources)
 		tenant := v1.Group("/tenant")
 		{
-			tenant.POST("/doc_engine_metadata_table", r.tenantHandler.CreateMetadataInDocEngine)   // Internal API only for GO
-			tenant.DELETE("/doc_engine_metadata_table", r.tenantHandler.DeleteMetadataInDocEngine) // Internal API only for GO
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)      // Internal API only for GO
+			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
+			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
+			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
+			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
+			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 		}
 
 		// Document routes
@@ -378,6 +393,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			doc.POST("/list", r.documentHandler.ListDocuments)
 			doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
 			doc.POST("/set_meta", r.documentHandler.SetMeta)
+			doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
 		}
 
 		// Chunk routes
@@ -385,7 +401,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			chunk.POST("/list", r.chunkHandler.List)
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
-			chunk.POST("/rm", r.chunkHandler.Remove)
 		}
 
 		// LLM routes
@@ -418,6 +433,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
+			connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+			connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 		}
 
 		// File routes

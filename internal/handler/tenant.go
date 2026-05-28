@@ -32,13 +32,15 @@ import (
 type TenantHandler struct {
 	tenantService *service.TenantService
 	userService   *service.UserService
+	kbService     *service.KnowledgebaseService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, kbService *service.KnowledgebaseService) *TenantHandler {
 	return &TenantHandler{
 		tenantService: tenantService,
 		userService:   userService,
+		kbService:     kbService,
 	}
 }
 
@@ -192,16 +194,16 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 	})
 }
 
-// CreateMetadataInDocEngine handles the create doc meta table request
-// @Summary Create Doc Meta Table
-// @Description Create the document metadata table for a tenant
+// CreateMetadataStore handles the create metadata store request
+// @Summary Create Metadata Store
+// @Description Create the metadata store for a tenant
 // @Tags tenants
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/doc_engine_metadata_table [post]
-func (h *TenantHandler) CreateMetadataInDocEngine(c *gin.Context) {
+// @Router /v1/tenant/metadata_store [post]
+func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -211,7 +213,7 @@ func (h *TenantHandler) CreateMetadataInDocEngine(c *gin.Context) {
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
 
-	code, err := h.tenantService.CreateMetadataInDocEngine(tenantID)
+	code, err := h.tenantService.CreateMetadataStore(tenantID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -224,16 +226,16 @@ func (h *TenantHandler) CreateMetadataInDocEngine(c *gin.Context) {
 	})
 }
 
-// DeleteMetadataInDocEngine handles the delete doc meta table request
-// @Summary Delete Metadata In Doc Engine
-// @Description Delete the document metadata table for a tenant
+// DeleteMetadataStore handles the delete metadata store request
+// @Summary Delete Metadata Store
+// @Description Delete the metadata store for a tenant
 // @Tags tenants
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/doc_engine_metadata_table [delete]
-func (h *TenantHandler) DeleteMetadataInDocEngine(c *gin.Context) {
+// @Router /v1/tenant/metadata_store [delete]
+func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -243,7 +245,7 @@ func (h *TenantHandler) DeleteMetadataInDocEngine(c *gin.Context) {
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
 
-	code, err := h.tenantService.DeleteMetadataInDocEngine(tenantID)
+	code, err := h.tenantService.DeleteMetadataStore(tenantID)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
@@ -253,6 +255,201 @@ func (h *TenantHandler) DeleteMetadataInDocEngine(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    nil,
+	})
+}
+
+// CreateChunkTableRequest represents the request for creating a chunk table
+type CreateChunkTableRequest struct {
+	KBID       string `json:"kb_id" binding:"required"`
+	VectorSize int    `json:"vector_size" binding:"required"`
+}
+
+// CreateChunkStore handles the create chunk store request
+// @Summary Create Chunk Store
+// @Description Create the chunk store for a knowledge base
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body CreateChunkTableRequest true "create chunk store request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/tenant/chunk_store [post]
+func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req CreateChunkTableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	// Check authorization - user must have access to this kb
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	serviceReq := &service.CreateDatasetTableRequest{
+		KBID:       req.KBID,
+		VectorSize: req.VectorSize,
+	}
+	result, code, err := h.tenantService.CreateChunkStore(serviceReq)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    result,
+	})
+}
+
+// DeleteChunkTableRequest represents the request for deleting a chunk table
+type DeleteChunkTableRequest struct {
+	KBID string `json:"kb_id" binding:"required"`
+}
+
+// DeleteChunkStore handles the delete chunk store request
+// @Summary Delete Chunk Store
+// @Description Delete the chunk store for a knowledge base
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body DeleteChunkTableRequest true "delete chunk store request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/tenant/chunk_store [delete]
+func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req DeleteChunkTableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	// Check authorization
+	if !h.kbService.Accessible(req.KBID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	code, err := h.tenantService.DeleteChunkStore(req.KBID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    nil,
+	})
+}
+
+// InsertChunksFromFileRequest request for inserting chunks from file
+type InsertChunksFromFileRequest struct {
+	FilePath string `json:"file_path" binding:"required"`
+}
+
+// @Summary Insert chunks into dataset from JSON file
+// @Description Internal: Insert chunks into dataset table from a JSON file
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body InsertChunksFromFileRequest true "insert chunks request"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/tenant/insert_chunks_from_file [post]
+func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req InsertChunksFromFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.FilePath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "file_path is required",
+		})
+		return
+	}
+
+	// Read the JSON file
+	data, err := os.ReadFile(req.FilePath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "failed to read file: " + err.Error(),
+		})
+		return
+	}
+
+	// Parse JSON - format: {"index_name"/"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
+	var debugFormat struct {
+		IndexName       string `json:"index_name"`
+		TableName       string `json:"table_name"`
+		KnowledgebaseID string `json:"knowledgebase_id"`
+		Chunks          []map[string]interface{} `json:"chunks"`
+	}
+
+	if err := json.Unmarshal(data, &debugFormat); err != nil || debugFormat.Chunks == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "invalid JSON format: expected {\"index_name\"/\"table_name\": ..., \"knowledgebase_id\": ..., \"chunks\": [...]}",
+		})
+		return
+	}
+
+	if len(debugFormat.Chunks) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "no chunks found in file",
+		})
+		return
+	}
+
+	// Support both index_name (ES) and table_name (Infinity) in JSON
+	indexName := debugFormat.IndexName
+	if indexName == "" {
+		indexName = debugFormat.TableName
+	}
+
+	// Get the document engine and insert
+	docEngine := engine.Get()
+	result, err := docEngine.InsertChunks(c.Request.Context(), debugFormat.Chunks, indexName, debugFormat.KnowledgebaseID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "failed to insert into dataset: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    result,
+		"message": "success",
 	})
 }
 

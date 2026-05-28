@@ -10,9 +10,9 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
@@ -62,9 +62,36 @@ func (a *AI302Model) Name() string {
 	return "302ai"
 }
 
+func validateAI302APIKey(apiConfig *APIConfig) (string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return "", fmt.Errorf("api key is required")
+	}
+	return strings.TrimSpace(*apiConfig.ApiKey), nil
+}
+
+func validateAI302ModelName(modelName *string) (string, error) {
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return "", fmt.Errorf("model name is required")
+	}
+	return strings.TrimSpace(*modelName), nil
+}
+
+func validateAI302DocumentURL(rawURL string) (string, error) {
+	documentURL := strings.TrimSpace(rawURL)
+	parsedURL, err := url.Parse(documentURL)
+	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return "", fmt.Errorf("invalid document URL")
+	}
+	return documentURL, nil
+}
+
 func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -88,17 +115,13 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 
 	// Build request body
 	reqBody := map[string]interface{}{
-		"model":       modelName,
+		"model":       strings.TrimSpace(modelName),
 		"messages":    apiMessages,
 		"stream":      false,
 		"temperature": 1,
 	}
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -145,7 +168,7 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := a.httpClient.Do(req)
@@ -210,6 +233,16 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is required")
+	}
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -232,17 +265,13 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// Build request body with streaming enabled
 	reqBody := map[string]interface{}{
-		"model":       modelName,
+		"model":       strings.TrimSpace(modelName),
 		"messages":    apiMessages,
 		"stream":      true,
 		"temperature": 1,
 	}
 
 	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
-
 		if modelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *modelConfig.MaxTokens
 		}
@@ -293,7 +322,8 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -310,7 +340,6 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -379,6 +408,14 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
+	model, err := validateAI302ModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -388,7 +425,7 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
-		"model": *modelName,
+		"model": model,
 		"input": texts,
 	}
 
@@ -403,7 +440,7 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -450,6 +487,17 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
+	if strings.TrimSpace(query) == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+	model, err := validateAI302ModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -458,14 +506,14 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 
 	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Rerank)
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN != 0 {
+	var topN int
+	if rerankConfig != nil && rerankConfig.TopN != 0 {
 		topN = rerankConfig.TopN
 	}
 
 	reqBody := map[string]interface{}{
-		"model":     *modelName,
-		"query":     query,
+		"model":     model,
+		"query":     strings.TrimSpace(query),
 		"documents": documents,
 		"top_n":     topN,
 	}
@@ -481,7 +529,7 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -522,8 +570,16 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 }
 
 func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if file == nil || *file == "" {
+	if file == nil || strings.TrimSpace(*file) == "" {
 		return nil, fmt.Errorf("file is missing")
+	}
+	model, err := validateAI302ModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	region := "default"
@@ -538,7 +594,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
-	audioFile, err := os.Open(*file)
+	audioFile, err := os.Open(strings.TrimSpace(*file))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
 	}
@@ -547,7 +603,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	// create multipart file field
 	part, err := writer.CreateFormFile(
 		"file",
-		filepath.Base(*file),
+		filepath.Base(strings.TrimSpace(*file)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create multipart file: %w", err)
@@ -559,7 +615,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	}
 
 	// model field
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err := writer.WriteField("model", model); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
@@ -602,7 +658,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
 
@@ -648,8 +704,16 @@ func (a *AI302Model) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	if (urls == nil || *urls == "") && (content == nil || len(content) == 0) {
+	if (urls == nil || strings.TrimSpace(*urls) == "") && (content == nil || len(content) == 0) {
 		return nil, fmt.Errorf("file url or content is required")
+	}
+	model, err := validateAI302ModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	region := "default"
@@ -660,8 +724,11 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.OCR)
 
 	var docURL string
-	if urls != nil && *urls != "" {
-		docURL = *urls
+	if urls != nil && strings.TrimSpace(*urls) != "" {
+		docURL, err = validateAI302DocumentURL(*urls)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		mimeType := http.DetectContentType(content)
 		base64Str := base64.StdEncoding.EncodeToString(content)
@@ -669,7 +736,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	}
 
 	reqData := map[string]interface{}{
-		"model": *modelName,
+		"model": model,
 		"document": map[string]interface{}{
 			"type":         "document_url",
 			"document_url": docURL,
@@ -690,7 +757,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -732,11 +799,15 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 }
 
 func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	if documentURL == nil || *documentURL == "" {
+	if documentURL == nil || strings.TrimSpace(*documentURL) == "" {
 		return nil, fmt.Errorf("302.ai API requires a valid public document URL; direct file upload is not supported")
 	}
+	docURL, err := validateAI302DocumentURL(*documentURL)
+	if err != nil {
+		return nil, err
+	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
 
@@ -748,11 +819,11 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 	apiURL := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.DocumentParse)
 
 	reqBody := map[string]interface{}{
-		"url": *documentURL,
+		"url": docURL,
 	}
 
-	if modelName != nil && *modelName != "" {
-		reqBody["model_version"] = *modelName
+	if modelName != nil && strings.TrimSpace(*modelName) != "" {
+		reqBody["model_version"] = strings.TrimSpace(*modelName)
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -766,7 +837,7 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -798,6 +869,10 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 }
 
 func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
+	apiKey, err := validateAI302APIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
@@ -805,20 +880,13 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Models)
 
-	reqBody := map[string]string{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
@@ -835,18 +903,24 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("models response missing data")
+	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+	models := make([]string, 0, len(result.Data))
+	for _, model := range result.Data {
+		if strings.TrimSpace(model.ID) == "" {
+			return nil, fmt.Errorf("models response contains empty id")
+		}
+		models = append(models, strings.TrimSpace(model.ID))
 	}
 
 	return models, nil
@@ -866,7 +940,10 @@ func (a *AI302Model) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 }
 
 func (a *AI302Model) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("task id is required")
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
 
@@ -876,14 +953,14 @@ func (a *AI302Model) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespons
 	}
 
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
-	apiURL := fmt.Sprintf("%s/%s/%s", a.BaseURL[region], a.URLSuffix.DocumentParse, taskID)
+	apiURL := fmt.Sprintf("%s/%s/%s", a.BaseURL[region], a.URLSuffix.DocumentParse, url.PathEscape(strings.TrimSpace(taskID)))
 
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
