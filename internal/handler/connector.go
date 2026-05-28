@@ -17,6 +17,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -45,6 +47,66 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 		connectorService: connectorService,
 		userService:      userService,
 	}
+}
+
+// UpdateConnector updates a connector.
+// @Summary Update Connector
+// @Description Update an accessible connector's polling configuration
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Success 200 {object} entity.Connector
+// @Router /api/v1/connectors/{connector_id} [patch]
+func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var payload map[string]json.RawMessage
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	rawPayload, err := unwrapConnectorPayload(payload)
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	var req service.UpdateConnectorRequest
+	if rawPayload != nil {
+		if err := json.Unmarshal(rawPayload, &req); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	result, code, err := h.connectorService.UpdateConnector(c.Param("connector_id"), user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+func unwrapConnectorPayload(payload map[string]json.RawMessage) ([]byte, error) {
+	if len(payload) == 0 {
+		return nil, nil
+	}
+	if data, ok := payload["data"]; ok {
+		var dataObj map[string]json.RawMessage
+		if err := json.Unmarshal(data, &dataObj); err == nil && dataObj != nil {
+			return data, nil
+		}
+		return nil, errors.New("field 'data' must be a JSON object")
+	}
+	return json.Marshal(payload)
 }
 
 // ListConnectors list connectors

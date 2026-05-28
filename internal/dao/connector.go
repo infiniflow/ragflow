@@ -17,7 +17,11 @@
 package dao
 
 import (
+	"errors"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ConnectorDAO connector data access object
@@ -102,4 +106,78 @@ func (dao *ConnectorDAO) UpdateByID(id string, updates map[string]interface{}) e
 // DeleteByID delete connector by ID
 func (dao *ConnectorDAO) DeleteByID(id string) error {
 	return DB.Where("id = ?", id).Delete(&entity.Connector{}).Error
+}
+
+// ListMappingsByConnectorID lists dataset links for a connector.
+func (dao *ConnectorDAO) ListMappingsByConnectorID(connectorID string) ([]*entity.Connector2Kb, error) {
+	var mappings []*entity.Connector2Kb
+	err := DB.Where("connector_id = ?", connectorID).Find(&mappings).Error
+	return mappings, err
+}
+
+// CancelRunningOrScheduledLogs marks active sync logs as canceled for a connector.
+func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(connectorID string) error {
+	return DB.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND status IN ?", connectorID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
+		Update("status", string(entity.TaskStatusCancel)).Error
+}
+
+// GetLatestDoneSyncLog gets the latest completed sync log for a connector/dataset/task type.
+func (dao *ConnectorDAO) GetLatestDoneSyncLog(connectorID, datasetID, taskType string) (*entity.SyncLogs, error) {
+	var log entity.SyncLogs
+	err := DB.Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, datasetID, taskType, string(entity.TaskStatusDone)).
+		Order("update_time DESC").
+		First(&log).Error
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// HasScheduledSyncLog returns whether a scheduled sync log already exists.
+func (dao *ConnectorDAO) HasScheduledSyncLog(connectorID, datasetID, taskType string) (bool, error) {
+	var count int64
+	err := DB.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, datasetID, taskType, string(entity.TaskStatusSchedule)).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// CreateSyncLog creates a connector sync log.
+func (dao *ConnectorDAO) CreateSyncLog(log *entity.SyncLogs) error {
+	return DB.Create(log).Error
+}
+
+// ScheduleSyncLogIfAbsent creates a scheduled sync log and marks the connector scheduled atomically.
+func (dao *ConnectorDAO) ScheduleSyncLogIfAbsent(log *entity.SyncLogs) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var connector entity.Connector
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", log.ConnectorID).
+			First(&connector).Error; err != nil {
+			return err
+		}
+
+		var count int64
+		if err := tx.Model(&entity.SyncLogs{}).
+			Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", log.ConnectorID, log.KbID, log.TaskType, string(entity.TaskStatusSchedule)).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+
+		if err := tx.Model(&entity.Connector{}).
+			Where("id = ?", log.ConnectorID).
+			Update("status", string(entity.TaskStatusSchedule)).Error; err != nil {
+			return err
+		}
+		return tx.Create(log).Error
+	})
+}
+
+// IsRecordNotFound reports whether err is GORM's record-not-found sentinel.
+func IsRecordNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
 }

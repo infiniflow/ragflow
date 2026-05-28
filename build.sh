@@ -33,7 +33,9 @@ check_cpp_deps() {
     command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
 
     # Check for pcre2 library
-    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] || [ -f "/usr/local/lib/libpcre2-8.a" ]; then
+    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
+       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0" ] \
+       || [ -f "/usr/local/lib/libpcre2-8.a" ]; then
         echo "✓ pcre2 library found"
     else
         echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
@@ -87,6 +89,7 @@ build_go() {
     # Check for pcre2 library — known Linux paths + macOS Homebrew (Apple Silicon
     # at /opt/homebrew, Intel Macs at /usr/local).
     if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
+       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0" ] \
        || [ -f "/usr/local/lib/libpcre2-8.a" ] \
        || [ -f "/opt/homebrew/lib/libpcre2-8.a" ]; then
         echo "✓ pcre2 library found"
