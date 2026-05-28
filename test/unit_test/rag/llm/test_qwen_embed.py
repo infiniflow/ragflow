@@ -42,5 +42,5 @@ def test_encode_queries_raises_upstream_message_when_dashscope_output_is_null():
     assert "status_code: 400" in message
     assert "code: Arrearage" in message
     assert "Access denied" in message
-    assert "request_id" not in message
+    assert "request_id: 8ccbaab3-14d7-92c0-95f3-c6ea34eb9bed" in message
     assert "NoneType" not in message

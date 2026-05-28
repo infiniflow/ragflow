@@ -31,4 +31,4 @@ def test_extract_upstream_error_message_reads_common_provider_fields():
     assert "code: BadGateway" in message
     assert "message: provider is unavailable" in message
     assert "reason: upstream timeout" in message
-    assert "request_id" not in message
+    assert "request_id: req-1" in message
