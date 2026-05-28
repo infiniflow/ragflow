@@ -48,7 +48,6 @@ from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_too
 from api.db.services.tenant_llm_service import LLMFactoriesService
 from common.connection_utils import timeout
 from common.constants import RetCode
-from common.exceptions import UpstreamProviderError
 from common import settings
 from common.misc_utils import thread_pool_exec
 
@@ -136,8 +135,6 @@ def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!
 def server_error_response(e):
     # Quart invokes this handler outside the original except block, so we must pass exc_info manually.
     logging.error("Unhandled exception during request", exc_info=(type(e), e, e.__traceback__))
-    if isinstance(e, UpstreamProviderError):
-        return get_json_result(code=RetCode.SERVER_ERROR, message=str(e))
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):

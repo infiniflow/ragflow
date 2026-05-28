@@ -26,7 +26,3 @@ class ArgumentException(Exception):
 class NotFoundException(Exception):
     def __init__(self, msg):
         self.msg = msg
-
-
-class UpstreamProviderError(Exception):
-    """Raised when an upstream model or service returns an actionable error."""

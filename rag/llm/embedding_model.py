@@ -27,43 +27,13 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
-from common.exceptions import UpstreamProviderError
-from common.log_utils import extract_upstream_error_message, log_exception
+from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
 import logging
 import base64
 
 logger = logging.getLogger(__name__)
-
-
-def _response_status_code(resp):
-    for getter in (
-        lambda r: r.get("status_code"),
-        lambda r: r["status_code"],
-        lambda r: getattr(r, "status_code"),
-    ):
-        try:
-            status_code = getter(resp)
-            if status_code is not None:
-                return int(status_code)
-        except Exception:
-            continue
-    return None
-
-
-def _embedding_response_payload(resp):
-    try:
-        return resp["output"]["embeddings"]
-    except Exception:
-        return None
-
-
-def _raise_embedding_upstream_error(resp, prefix="Embedding model error"):
-    upstream_error = extract_upstream_error_message(resp)
-    if upstream_error:
-        raise UpstreamProviderError(f"{prefix}: {upstream_error}")
-    raise UpstreamProviderError(f"{prefix}: invalid embedding response from upstream provider")
 
 
 def _dashscope_base_url_for_log(base_url: str) -> str:
@@ -327,23 +297,20 @@ class QWenEmbed(Base):
             retry_max = 5
             with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
                 resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-            status_code = _response_status_code(resp)
-            if status_code is not None and 400 <= status_code < 500:
-                _raise_embedding_upstream_error(resp)
-            while not _embedding_response_payload(resp) and retry_max > 0:
+            while (resp["output"] is None or resp["output"].get("embeddings") is None) and retry_max > 0:
                 time.sleep(10)
                 with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
                     resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-                status_code = _response_status_code(resp)
-                if status_code is not None and 400 <= status_code < 500:
-                    _raise_embedding_upstream_error(resp)
                 retry_max -= 1
-            if retry_max == 0 and not _embedding_response_payload(resp):
-                _raise_embedding_upstream_error(resp)
+            if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
+                if resp.get("message"):
+                    log_exception(ValueError(f"Retry_max reached, calling embedding model failed: {resp['message']}"))
+                else:
+                    log_exception(ValueError("Retry_max reached, calling embedding model failed"))
+                raise
             try:
-                embeddings = _embedding_response_payload(resp)
-                embds = [[] for _ in range(len(embeddings))]
-                for e in embeddings:
+                embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
+                for e in resp["output"]["embeddings"]:
                     embds[e["text_index"]] = e["embedding"]
                 res.extend(embds)
                 token_count += total_token_count_from_response(resp)
@@ -355,14 +322,11 @@ class QWenEmbed(Base):
     def encode_queries(self, text):
         with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
             resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
-        embeddings = _embedding_response_payload(resp)
-        if not embeddings:
-            _raise_embedding_upstream_error(resp)
         try:
-            return np.array(embeddings[0]["embedding"]), total_token_count_from_response(resp)
+            return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:
             log_exception(_e, resp)
-            raise
+            raise Exception(f"Error: {resp}")
 
 
 class ZhipuEmbed(Base):

@@ -18,7 +18,6 @@ import logging
 from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
-from common.exceptions import UpstreamProviderError
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
 from api.utils.pagination_utils import validate_rest_api_page_size
@@ -506,8 +505,6 @@ async def search_datasets(tenant_id):
         logging.exception(e)
         if "not_found" in str(e):
             return get_error_data_result(message="No chunk found! Check the chunk status please!")
-        if isinstance(e, UpstreamProviderError):
-            return get_error_data_result(message=str(e), code=RetCode.SERVER_ERROR)
         return get_error_data_result(message="Internal server error")
 
 
@@ -538,8 +535,6 @@ async def search(tenant_id, dataset_id):
         logging.exception(e)
         if "not_found" in str(e):
             return get_error_data_result(message="No chunk found! Check the chunk status please!")
-        if isinstance(e, UpstreamProviderError):
-            return get_error_data_result(message=str(e), code=RetCode.SERVER_ERROR)
         return get_error_data_result(message="Internal server error")
 
 
