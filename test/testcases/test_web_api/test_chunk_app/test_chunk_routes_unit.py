@@ -687,6 +687,7 @@ def test_restful_add_chunk_empty_image_base64_does_not_index_chunk(monkeypatch):
     assert res["code"] == module.RetCode.DATA_ERROR, res
     assert res["message"] == "`image_base64` must be a non-empty string", res
     assert module.settings.docStoreConn.inserted == [], res
+    assert module.DocumentService.increment_calls == [], res
 
 
 @pytest.mark.p2
