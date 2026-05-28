@@ -135,14 +135,14 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 
 // UpdateMCPServer updates an MCP server owned by a tenant.
 func (s *MCPService) UpdateMCPServer(tenantID, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
-	server, err := s.mcpServerDAO.GetByID(mcpID)
+	server, err := s.mcpServerDAO.GetByIDAndTenant(mcpID, tenantID)
 	if err != nil {
 		if isMCPServerNotFound(err) {
 			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
 	}
-	if server == nil || server.TenantID != tenantID {
+	if server == nil {
 		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
 	}
 
