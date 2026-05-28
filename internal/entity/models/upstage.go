@@ -44,10 +44,10 @@ type UpstageModel struct {
 
 // NewUpstageModel creates a new Upstage model instance.
 //
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
+// Transport creation is delegated to newPooledTransport, which keeps Go's
+// defaults for ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
+// TLSHandshakeTimeout, and ExpectContinueTimeout, and overrides only the
+// connection-pool fields we care about.
 //
 // The Client itself has no Timeout. http.Client.Timeout would also
 // cap the time spent reading the response body, which would cut off

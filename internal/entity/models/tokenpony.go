@@ -52,9 +52,9 @@ type TokenPonyModel struct {
 // NewTokenPonyModel creates a new TokenPony model instance.
 //
 // Same transport convention as the other Go drivers in this package:
-// clone http.DefaultTransport to keep ProxyFromEnvironment, DialContext,
-// HTTP/2, and TLS defaults, and only override the connection-pool
-// fields. No client-level Timeout so SSE streams aren't capped mid-flight.
+// newPooledTransport keeps ProxyFromEnvironment, DialContext, HTTP/2, and
+// TLS defaults while overriding only the connection-pool fields. No
+// client-level Timeout so SSE streams aren't capped mid-flight.
 func NewTokenPonyModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenPonyModel {
 	transport := newPooledTransport()
 	transport.DisableCompression = false
