@@ -1395,6 +1395,34 @@ class ConfluenceConnector(
             raise ConnectorMissingCredentialError("Confluence")
         return self._low_timeout_confluence_client
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "ConfluenceConnector":
+        index_mode = (config.get("index_mode") or "everything").lower()
+        space = ""
+        page_id = ""
+        index_recursively = False
+        if index_mode == "space":
+            space = (config.get("space") or "").strip()
+        elif index_mode == "page":
+            page_id = (config.get("page_id") or "").strip()
+            index_recursively = bool(config.get("index_recursively", False))
+
+        connector = cls(
+            wiki_base=config["wiki_base"],
+            is_cloud=config.get("is_cloud", True),
+            space=space,
+            page_id=page_id,
+            index_recursively=index_recursively,
+        )
+        connector.set_credentials_provider(
+            StaticCredentialsProvider(
+                tenant_id=None,
+                connector_name=DocumentSource.CONFLUENCE,
+                credential_json=config.get("credentials") or {},
+            )
+        )
+        return connector
+
     def set_credentials_provider(
         self, credentials_provider: CredentialsProviderInterface
     ) -> None:

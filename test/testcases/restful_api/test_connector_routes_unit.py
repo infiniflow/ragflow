@@ -277,6 +277,26 @@ def _load_connector_app(monkeypatch):
     }
     monkeypatch.setitem(sys.modules, "common.data_source.google_util.constant", google_constants_mod)
 
+    data_source_mod = ModuleType("common.data_source")
+
+    def _stub_build_connector_for_source(_source, _config):
+        raise NotImplementedError("patch build_connector_for_source in test")
+
+    data_source_mod.build_connector_for_source = _stub_build_connector_for_source
+    monkeypatch.setitem(sys.modules, "common.data_source", data_source_mod)
+
+    data_source_exceptions_mod = ModuleType("common.data_source.exceptions")
+
+    class _ConnectorMissingCredentialError(Exception):
+        pass
+
+    class _ConnectorValidationError(Exception):
+        pass
+
+    data_source_exceptions_mod.ConnectorMissingCredentialError = _ConnectorMissingCredentialError
+    data_source_exceptions_mod.ConnectorValidationError = _ConnectorValidationError
+    monkeypatch.setitem(sys.modules, "common.data_source.exceptions", data_source_exceptions_mod)
+
     misc_mod = ModuleType("common.misc_utils")
     misc_mod.get_uuid = lambda: "uuid-from-helper"
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_mod)
@@ -455,6 +475,34 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     assert all(res["message"] == "No authorization." for res in responses)
     assert all(res["data"] is False for res in responses)
     assert touched == []
+
+    class _FakeConnector:
+        def validate_connector_settings(self):
+            return None
+
+    monkeypatch.setattr(
+        sys.modules["common.data_source"],
+        "build_connector_for_source",
+        lambda source, config: _FakeConnector(),
+    )
+    monkeypatch.setattr(module.ConnectorService, "accessible", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(module.ConnectorService, "get_by_id", lambda _connector_id: (False, None))
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": {"feed_url": "https://example.com"}}),
+    )
+    ok_res = _run(module.test_connector("new"))
+    assert ok_res["data"] is True
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"source": "rss", "config": "bad"}),
+    )
+    bad_config_res = _run(module.test_connector("new"))
+    assert bad_config_res["code"] == module.RetCode.ARGUMENT_ERROR
 
 
 @pytest.mark.p2

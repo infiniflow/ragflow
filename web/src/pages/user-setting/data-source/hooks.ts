@@ -1,3 +1,4 @@
+import { DynamicFormRef } from '@/components/dynamic-form';
 import message from '@/components/ui/message';
 import { RunningStatus } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
@@ -12,7 +13,7 @@ import dataSourceService, {
 } from '@/services/data-source-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
-import { useCallback, useMemo, useState } from 'react';
+import { RefObject, useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { DataSourceKey, useDataSourceInfo } from './constant';
 import {
@@ -259,27 +260,31 @@ export const useDataSourceRebuild = () => {
   return { handleRebuild };
 };
 
-export const useTestDataSource = () => {
-  const [currentQueryParameters] = useSearchParams();
-  const id = currentQueryParameters.get('id');
+export const useTestDataSource = (
+  formRef: RefObject<DynamicFormRef | null>,
+  connectorId: string,
+) => {
   const [loading, setLoading] = useState(false);
 
   const handleTest = useCallback(async () => {
-    if (!id) return;
+    const values = formRef.current?.getFilteredValues();
+    const source = values?.source;
+    if (!source) return;
+
     setLoading(true);
     try {
-      const { data } = await testDataSource(id);
+      const config =
+        values?.config && typeof values.config === 'object'
+          ? values.config
+          : {};
+      const { data } = await testDataSource(connectorId, { source, config });
       if (data.code === 0) {
-        message.success(t('setting.restApiTestSuccess'));
-      } else {
-        message.error(data.message || t('setting.restApiTestFailed'));
+        message.success(t('setting.dataSourceTestSuccess'));
       }
-    } catch {
-      message.error(t('setting.restApiTestFailed'));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [formRef, connectorId]);
 
   return { loading, handleTest };
 };

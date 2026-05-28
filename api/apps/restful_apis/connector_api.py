@@ -180,38 +180,31 @@ def rm_connector(connector_id):
 
 @manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
 @login_required
+@validate_request("source")
 async def test_connector(connector_id):
-    """Validate connector configuration without persisting changes or triggering sync.
-
-    For the REST API connector, this uses `RestAPIConnector.validate_config`
-    against the existing saved configuration.
-    """
+    """Validate connector configuration from the request body without persisting."""
     if not ConnectorService.accessible(connector_id, current_user.id):
         return _connector_auth_error(connector_id, current_user.id)
 
-    from common.data_source.rest_api_connector import RestAPIConnector
+    from common.data_source import build_connector_for_source
     from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 
+    req = await get_request_json()
+    source = req["source"]
+    config = req.get("config") or {}
+    if not isinstance(config, dict):
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="config must be an object.")
+
     ok, conn = ConnectorService.get_by_id(connector_id)
-    if not ok:
-        return get_data_error_result(message="Can't find this Connector!")
+    if ok and conn.tenant_id != current_user.id:
+        return get_json_result(code=RetCode.PERMISSION_ERROR, message="You don't own this connector.")
 
-    if conn.source != DocumentSource.REST_API:
-        return get_json_result(
-            code=RetCode.ARGUMENT_ERROR,
-            message="Test endpoint currently supports only REST API connectors.",
-            data=False,
-        )
-
-    config = conn.config or {}
-    credentials = config.get("credentials") or {}
+    def _validate() -> None:
+        connector = build_connector_for_source(source, config)
+        connector.validate_connector_settings()
 
     try:
-        await asyncio.to_thread(
-            RestAPIConnector.validate_config,
-            config=config,
-            credentials=credentials,
-        )
+        await asyncio.to_thread(_validate)
     except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
         return get_json_result(
             code=RetCode.DATA_ERROR,
@@ -219,10 +212,10 @@ async def test_connector(connector_id):
             data=False,
         )
     except Exception as exc:
-        logging.exception("REST API connector validation failed: %s", exc)
+        logging.exception("Connector validation failed for %s: %s", connector_id, exc)
         return get_json_result(
             code=RetCode.SERVER_ERROR,
-            message="REST API connector validation failed, please check logs.",
+            message="Connector validation failed, please check logs.",
             data=False,
         )
 

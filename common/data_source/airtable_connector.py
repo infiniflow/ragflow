@@ -7,7 +7,7 @@ import requests
 from pyairtable import Api as AirtableApi
 
 from common.data_source.config import AIRTABLE_CONNECTOR_SIZE_THRESHOLD, INDEX_BATCH_SIZE, DocumentSource
-from common.data_source.exceptions import ConnectorMissingCredentialError
+from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import (
     Document,
@@ -85,9 +85,34 @@ class AirtableConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync)
     # -------------------------
     # Credentials
     # -------------------------
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "AirtableConnector":
+        credentials = config.get("credentials") or {}
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            base_id=config.get("base_id"),
+            table_name_or_id=config.get("table_name_or_id"),
+            batch_size=batch_size,
+        )
+        connector.load_credentials(
+            {"airtable_access_token": credentials["airtable_access_token"]}
+        )
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self._airtable_client = AirtableApi(credentials["airtable_access_token"])
         return None
+
+    def validate_connector_settings(self) -> None:
+        if not self._airtable_client:
+            raise ConnectorMissingCredentialError("Airtable credentials not loaded.")
+
+        try:
+            self.airtable_client.table(self.base_id, self.table_name_or_id).all(max_records=1)
+        except Exception as e:
+            raise ConnectorValidationError(
+                f"Failed to validate Airtable connector settings: {e}"
+            ) from e
 
     @property
     def airtable_client(self) -> AirtableApi:

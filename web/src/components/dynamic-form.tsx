@@ -113,6 +113,7 @@ export interface DynamicFormRef {
   submit: () => void;
   isDirty: () => boolean;
   getValues: (name?: string) => any;
+  getFilteredValues: () => any;
   reset: (values?: any) => void;
   trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
@@ -813,6 +814,7 @@ const DynamicForm = {
           },
           isDirty: () => form.formState.isDirty,
           getValues: form.getValues,
+          getFilteredValues: () => filterActiveValues(form.getValues()),
           reset: (values?: T) => {
             if (values) {
               form.reset(values);

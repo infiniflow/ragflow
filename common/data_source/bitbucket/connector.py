@@ -88,6 +88,22 @@ class BitbucketConnector(
         self.email: str | None = None
         self.api_token: str | None = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "BitbucketConnector":
+        credentials = config.get("credentials") or {}
+        connector = cls(
+            workspace=config.get("workspace"),
+            repositories=config.get("repository_slugs"),
+            projects=config.get("projects"),
+        )
+        connector.load_credentials(
+            {
+                "bitbucket_email": credentials.get("bitbucket_account_email"),
+                "bitbucket_api_token": credentials.get("bitbucket_api_token"),
+            }
+        )
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load API token-based credentials.
 

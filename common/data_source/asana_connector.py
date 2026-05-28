@@ -6,6 +6,7 @@ from typing import Any, Dict
 import asana
 import requests
 from common.data_source.config import CONTINUE_ON_CONNECTOR_FAILURE, INDEX_BATCH_SIZE, DocumentSource
+from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
 from common.data_source.interfaces import LoadConnector, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument
 from common.data_source.utils import extract_size_bytes, get_file_ext
@@ -395,6 +396,21 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             f"AsanaConnector initialized with workspace_id: {asana_workspace_id}"
         )
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "AsanaConnector":
+        credentials = config.get("credentials") or {}
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            config.get("asana_workspace_id"),
+            config.get("asana_project_ids"),
+            config.get("asana_team_id"),
+            batch_size=batch_size,
+        )
+        connector.load_credentials(
+            {"asana_api_token_secret": credentials["asana_api_token_secret"]}
+        )
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.api_token = credentials["asana_api_token_secret"]
         self.asana_client = AsanaAPI(
@@ -405,6 +421,17 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.workspace_users_email = self.asana_client.get_accessible_emails(self.workspace_id, self.project_ids_to_index, self.asana_team_id)
         logging.info("Asana credentials loaded and API client initialized")
         return None
+
+    def validate_connector_settings(self) -> None:
+        if not hasattr(self, "asana_client") or self.asana_client is None:
+            raise ConnectorMissingCredentialError("Asana credentials not loaded.")
+
+        try:
+            self.asana_client.workspaces_api.get_workspace(self.workspace_id, {})
+        except Exception as e:
+            raise ConnectorValidationError(
+                f"Failed to validate Asana connector settings: {e}"
+            ) from e
 
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch | None

@@ -34,6 +34,13 @@ class TeamsConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSyn
         self.batch_size = batch_size
         self.teams_client = None
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "TeamsConnector":
+        batch_size = int(config.get("batch_size") or _SLIM_DOC_BATCH_SIZE)
+        connector = cls(batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load Microsoft Teams credentials"""
         try:

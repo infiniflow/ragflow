@@ -80,6 +80,19 @@ class BlobStorageConnector(LoadConnector, PollConnector, FingerprintConnector):
         logging.info(f"Setting allow_images to {allow_images}.")
         self._allow_images = allow_images
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any], *, bucket_type: str) -> "BlobStorageConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            bucket_type=bucket_type,
+            bucket_name=config["bucket_name"],
+            prefix=config.get("prefix", ""),
+            batch_size=batch_size,
+        )
+        connector.set_allow_images(config.get("allow_images", False))
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load credentials"""
         logging.debug(

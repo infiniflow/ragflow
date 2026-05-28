@@ -15,8 +15,14 @@ from slack_sdk.http_retry import ConnectionErrorRetryHandler
 from slack_sdk.http_retry.builtin_interval_calculators import FixedValueRetryIntervalCalculator
 
 from common.data_source.config import (
-    INDEX_BATCH_SIZE, SLACK_NUM_THREADS, ENABLE_EXPENSIVE_EXPERT_CALLS,
-    _SLACK_LIMIT, FAST_TIMEOUT, MAX_RETRIES, MAX_CHANNELS_TO_LOG
+    DocumentSource,
+    INDEX_BATCH_SIZE,
+    SLACK_NUM_THREADS,
+    ENABLE_EXPENSIVE_EXPERT_CALLS,
+    _SLACK_LIMIT,
+    FAST_TIMEOUT,
+    MAX_RETRIES,
+    MAX_CHANNELS_TO_LOG,
 )
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
@@ -28,7 +34,8 @@ from common.data_source.exceptions import (
 from common.data_source.interfaces import (
     CheckpointedConnectorWithPermSync,
     CredentialsConnector,
-    SlimConnectorWithPermSync
+    SlimConnectorWithPermSync,
+    StaticCredentialsProvider,
 )
 from common.data_source.models import (
     BasicExpertInfo,
@@ -493,6 +500,24 @@ class SlackConnector(
         self._channels = (
             [channel.removeprefix("#") for channel in channels] if channels else None
         )
+
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "SlackConnector":
+        channels = config.get("channels")
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(
+            channels=channels.split(",") if isinstance(channels, str) and channels else channels,
+            channel_regex_enabled=bool(config.get("channel_regex_enabled", False)),
+            batch_size=batch_size,
+        )
+        connector.set_credentials_provider(
+            StaticCredentialsProvider(
+                tenant_id=None,
+                connector_name=DocumentSource.SLACK,
+                credential_json=config.get("credentials") or {},
+            )
+        )
+        return connector
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load credentials"""

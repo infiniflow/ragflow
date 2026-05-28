@@ -71,6 +71,13 @@ class MoodleConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         for batch in batch_generator(generator, self.batch_size):
             yield batch
 
+    @classmethod
+    def build_connector(cls, config: dict[str, Any]) -> "MoodleConnector":
+        batch_size = int(config.get("batch_size") or INDEX_BATCH_SIZE)
+        connector = cls(moodle_url=config["moodle_url"], batch_size=batch_size)
+        connector.load_credentials(config.get("credentials") or {})
+        return connector
+
     def load_credentials(self, credentials: dict[str, Any]) -> None:
         token = credentials.get("moodle_token")
         if not token:
