@@ -653,3 +653,61 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
     res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "`available_int` or `available` is required.", res
 
+
+@pytest.mark.p2
+def test_restful_add_chunk_invalid_image_base64_does_not_index_chunk(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "chunk with bad image", "image_base64": "not-valid-base64!!!"}),
+    )
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "Invalid `image_base64`", res
+    assert module.settings.docStoreConn.inserted == [], res
+    assert module.DocumentService.increment_calls == [], res
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_invalid_image_base64_does_not_update_chunk(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.updated.clear()
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "updated chunk", "image_base64": "not-valid-base64!!!"}),
+    )
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "Invalid `image_base64`", res
+    assert module.settings.docStoreConn.updated == [], res
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    store_calls = []
+    monkeypatch.setattr(module, "store_chunk_image", lambda bucket, name, binary: store_calls.append((bucket, name, binary)))
+
+    valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "chunk with image", "image_base64": valid_b64}),
+    )
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert store_calls, "store_chunk_image should run before doc-store insert"
+    assert module.settings.docStoreConn.inserted, "chunk should be indexed after image stored"
+    inserted = module.settings.docStoreConn.inserted[-1]
+    assert inserted.get("img_id"), inserted
+    assert inserted.get("doc_type_kwd") == "image", inserted
+
