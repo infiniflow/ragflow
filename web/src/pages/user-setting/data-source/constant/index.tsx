@@ -44,10 +44,8 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   OUTLOOK = 'outlook',
+  SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
-
-  //   SLACK = 'slack',
-  //   TEAMS = 'teams',
 }
 
 type DataSourceFeatureVisibility = {
@@ -132,6 +130,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.OUTLOOK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SLACK]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.SHAREPOINT]: {
@@ -219,6 +220,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Moodle',
       description: t(`setting.${DataSourceKey.MOODLE}Description`),
       icon: <SvgIcon name={'data-source/moodle'} width={38} />,
+    },
+    [DataSourceKey.SLACK]: {
+      name: 'Slack',
+      description: t(`setting.${DataSourceKey.SLACK}Description`),
+      icon: <SvgIcon name={'data-source/slack'} width={38} />,
     },
     [DataSourceKey.SHAREPOINT]: {
       name: 'SharePoint',
@@ -720,6 +726,22 @@ export const DataSourceFormFields = {
       name: 'config.credentials.moodle_token',
       type: FormFieldType.Password,
       required: true,
+    },
+  ],
+  [DataSourceKey.SLACK]: [
+    {
+      label: 'Slack Bot Token',
+      name: 'config.credentials.slack_bot_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.slackBotTokenTip'),
+    },
+    {
+      label: 'Channels',
+      name: 'config.channels',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.slackChannelsTip'),
     },
   ],
   [DataSourceKey.SHAREPOINT]: [
@@ -1602,6 +1624,16 @@ export const DataSourceFormDefaultValues = {
       moodle_url: '',
       credentials: {
         moodle_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SLACK]: {
+    name: '',
+    source: DataSourceKey.SLACK,
+    config: {
+      channels: [],
+      credentials: {
+        slack_bot_token: '',
       },
     },
   },
