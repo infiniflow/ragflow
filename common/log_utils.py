@@ -14,10 +14,13 @@
 #  limitations under the License.
 #
 
+import json
+import logging
 import os
 import os.path
-import logging
 from logging.handlers import RotatingFileHandler
+
+from common.exceptions import UpstreamProviderError
 from common.file_utils import get_project_base_directory
 
 initialized_root_logger = False
@@ -90,8 +93,119 @@ def get_log_levels() -> dict:
     return dict(pkg_levels)
 
 
+def _get_response_value(resp, key):
+    try:
+        if isinstance(resp, dict):
+            return resp.get(key)
+    except Exception:
+        pass
+
+    try:
+        getter = getattr(resp, "get", None)
+        if callable(getter):
+            return getter(key)
+    except Exception:
+        pass
+
+    try:
+        return resp[key]
+    except Exception:
+        pass
+
+    try:
+        return getattr(resp, key)
+    except Exception:
+        return None
+
+
+def _append_error_part(parts, seen, label, value):
+    if value is None or value == "":
+        return
+    text = str(value).strip()
+    if not text or text.lower() == "none":
+        return
+    part = f"{label}: {text}"
+    if part not in seen:
+        seen.add(part)
+        parts.append(part)
+
+
+def _is_error_status(status):
+    try:
+        return int(status) >= 400
+    except Exception:
+        return False
+
+
+def _collect_upstream_error_parts(resp, parts, seen):
+    if resp is None:
+        return False
+
+    status = _get_response_value(resp, "status_code") or _get_response_value(resp, "status")
+    code = _get_response_value(resp, "code")
+    request_id = _get_response_value(resp, "request_id")
+
+    error_found = False
+    for key in ("message", "error", "reason", "detail", "description"):
+        value = _get_response_value(resp, key)
+        if isinstance(value, dict):
+            error_found = _collect_upstream_error_parts(value, parts, seen) or error_found
+        elif value not in (None, ""):
+            _append_error_part(parts, seen, key, value)
+            error_found = True
+
+    if error_found or _is_error_status(status):
+        _append_error_part(parts, seen, "status_code", status)
+        _append_error_part(parts, seen, "code", code)
+        _append_error_part(parts, seen, "request_id", request_id)
+        return True
+    return False
+
+
+def extract_upstream_error_message(*responses):
+    """
+    Extract useful error fields from provider responses without assuming one SDK shape.
+
+    Providers commonly return dict-like objects or response objects with ``text``, ``message``,
+    ``error``, ``reason``, ``code``, ``status_code``, and ``request_id`` fields. This helper
+    turns those fields into a compact message suitable for API clients.
+    """
+    parts = []
+    seen = set()
+    fallback_texts = []
+
+    for resp in responses:
+        if resp is None:
+            continue
+
+        text = None
+        try:
+            text = getattr(resp, "text")
+        except Exception:
+            text = None
+
+        if text:
+            try:
+                parsed = json.loads(text)
+                if _collect_upstream_error_parts(parsed, parts, seen):
+                    continue
+            except Exception:
+                fallback_texts.append(str(text).strip())
+
+        _collect_upstream_error_parts(resp, parts, seen)
+
+    if parts:
+        return ", ".join(parts)
+
+    for text in fallback_texts:
+        if text:
+            return text
+    return ""
+
+
 def log_exception(e, *args):
     logging.exception(e)
+    response_text = None
     for a in args:
         try:
             text = getattr(a, "text")
@@ -99,6 +213,12 @@ def log_exception(e, *args):
             text = None
         if text is not None:
             logging.error(text)
-            raise Exception(text)
-        logging.error(str(a))
+            response_text = text
+        else:
+            logging.error(str(a))
+    upstream_error = extract_upstream_error_message(*args)
+    if upstream_error:
+        raise UpstreamProviderError(upstream_error) from e
+    if response_text is not None:
+        raise UpstreamProviderError(response_text) from e
     raise e
