@@ -499,7 +499,7 @@ def test_chunk_delete_concurrent_and_bulk_contract(rest_client, create_document)
     for index in range(40):
         payload = rest_client.post(base_path, json={"content": f"bulk chunk {index}"}).json()
         assert payload["code"] == 0, payload
-    bulk_ids_payload = rest_client.get(base_path, params={"page_size": 200}).json()
+    bulk_ids_payload = rest_client.get(base_path, params={"page_size": 100}).json()
     assert bulk_ids_payload["code"] == 0, bulk_ids_payload
     bulk_ids = [chunk["id"] for chunk in bulk_ids_payload["data"]["chunks"]]
     bulk_res = rest_client.delete(base_path, json={"chunk_ids": bulk_ids})
