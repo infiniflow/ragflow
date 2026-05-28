@@ -136,6 +136,19 @@ class LLMBundle(LLM4Tenant):
                 safe_texts.append(text)
 
         embeddings, used_tokens = self.mdl.encode(safe_texts)
+        # Surface a clear failure when the embedding model is unavailable or
+        # returns no vectors. Without this guard, downstream call sites do
+        # `len(vts[0])` and the error surfaces as the unhelpful
+        # `'NoneType' object is not subscriptable` (fixes #15343).
+        if embeddings is None or len(embeddings) == 0:
+            raise RuntimeError(
+                "Embedding model '{name}' (factory '{factory}') returned no vectors. "
+                "Check that the model service is reachable, the API key is valid, "
+                "and the model supports the requested input.".format(
+                    name=self.model_config.get("llm_name", "<unknown>"),
+                    factory=self.model_config.get("llm_factory", "<unknown>"),
+                )
+            )
         if self.model_config["llm_factory"] == "Builtin":
             logging.debug("LLMBundle.encode query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
         else:
@@ -160,6 +173,18 @@ class LLMBundle(LLM4Tenant):
             )
             query = "None"
         emd, used_tokens = self.mdl.encode_queries(query)
+        # Mirror the encode() guard so a missing/refusing embedding model
+        # surfaces as a clear RuntimeError instead of a subscript crash
+        # downstream (fixes #15343).
+        if emd is None or len(emd) == 0:
+            raise RuntimeError(
+                "Embedding model '{name}' (factory '{factory}') returned no vector "
+                "for the query. Check that the model service is reachable, the API "
+                "key is valid, and the model supports the requested input.".format(
+                    name=self.model_config.get("llm_name", "<unknown>"),
+                    factory=self.model_config.get("llm_factory", "<unknown>"),
+                )
+            )
         if self.model_config["llm_factory"] == "Builtin":
             logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(query, len(emd), used_tokens))
         else:
