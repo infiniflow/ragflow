@@ -143,8 +143,6 @@ def _collect_upstream_error_parts(resp, parts, seen):
 
     status = _get_response_value(resp, "status_code") or _get_response_value(resp, "status")
     code = _get_response_value(resp, "code")
-    request_id = _get_response_value(resp, "request_id")
-
     error_found = False
     for key in ("message", "error", "reason", "detail", "description"):
         value = _get_response_value(resp, key)
@@ -157,7 +155,6 @@ def _collect_upstream_error_parts(resp, parts, seen):
     if error_found or _is_error_status(status):
         _append_error_part(parts, seen, "status_code", status)
         _append_error_part(parts, seen, "code", code)
-        _append_error_part(parts, seen, "request_id", request_id)
         return True
     return False
 
