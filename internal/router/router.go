@@ -38,6 +38,7 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 }
@@ -59,6 +60,7 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 ) *Router {
@@ -78,6 +80,7 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 	}
@@ -247,6 +250,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+			}
+
 			// Skill search routes
 			skills := v1.Group("/skills")
 			{
@@ -311,6 +319,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.GET("/", r.connectorHandler.ListConnectors)
 				connector.POST("/", r.connectorHandler.CreateConnector)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
+				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
+				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 			}
 
 			system := v1.Group("/system")
@@ -413,6 +424,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
+			connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+			connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 		}
 
 		// File routes
