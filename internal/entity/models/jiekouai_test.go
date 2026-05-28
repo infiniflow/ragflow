@@ -245,8 +245,8 @@ func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
 		if body["query"] != "question" {
 			t.Errorf("query=%v, want question", body["query"])
 		}
-		if body["top_n"] != float64(0) {
-			t.Errorf("top_n=%v, want 0", body["top_n"])
+		if _, ok := body["top_n"]; ok {
+			t.Errorf("top_n=%v, want omitted", body["top_n"])
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"results": []map[string]interface{}{{

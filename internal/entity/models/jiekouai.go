@@ -465,16 +465,13 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(j.BaseURL[region], "/"), j.URLSuffix.Rerank)
 
-	var topN int
-	if rerankConfig != nil && rerankConfig.TopN != 0 {
-		topN = rerankConfig.TopN
-	}
-
 	reqBody := map[string]interface{}{
 		"model":     model,
 		"query":     strings.TrimSpace(query),
 		"documents": documents,
-		"top_n":     topN,
+	}
+	if rerankConfig != nil && rerankConfig.TopN != 0 {
+		reqBody["top_n"] = rerankConfig.TopN
 	}
 
 	jsonData, err := json.Marshal(reqBody)
