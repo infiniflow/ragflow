@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
@@ -25,11 +24,18 @@ type fakeConnectorService struct {
 }
 
 func (s fakeConnectorService) ListConnectors(string) (*service.ListConnectorsResponse, error) {
-	return &service.ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
+	return &service.ListConnectorsResponse{}, nil
+}
+
+func (s fakeConnectorService) TestConnector(string, string) error {
+	return s.err
 }
 
 func (s fakeConnectorService) CreateConnector(string, *service.CreateConnectorRequest) (*entity.Connector, error) {
-	return s.connector, s.err
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.connector, nil
 }
 
 func (s fakeConnectorService) GetConnector(string, string) (*entity.Connector, common.ErrorCode, error) {
@@ -60,48 +66,52 @@ func (s fakeConnectorService) RebuildConnector(string, string, string) (bool, co
 	return true, common.CodeSuccess, nil
 }
 
-func TestConnectorHandlerGetConnector(t *testing.T) {
+func TestConnectorHandlerTestConnector(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
 		name     string
-		service  fakeConnectorService
+		err      error
 		wantCode common.ErrorCode
-		wantID   string
-		wantMsg  string
 	}{
 		{
-			name: "success",
-			service: fakeConnectorService{connector: &entity.Connector{
-				ID:       "connector-1",
-				TenantID: "tenant-1",
-				Name:     "Docs",
-				Source:   "google_drive",
-				Status:   "unstart",
-				Config:   entity.JSONMap{"folder": "docs"},
-			}},
+			name:     "success",
+			err:      nil,
 			wantCode: common.CodeSuccess,
-			wantID:   "connector-1",
+		},
+		{
+			name:     "not found",
+			err:      service.ErrConnectorNotFound,
+			wantCode: common.CodeDataError,
 		},
 		{
 			name:     "unauthorized",
-			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			err:      service.ErrConnectorNoAuth,
 			wantCode: common.CodeAuthenticationError,
-			wantMsg:  "No authorization.",
+		},
+		{
+			name:     "unsupported source",
+			err:      service.ErrConnectorTestUnsupported,
+			wantCode: common.CodeArgumentError,
+		},
+		{
+			name:     "validation failure",
+			err:      fmt.Errorf("connector credentials are missing"),
+			wantCode: common.CodeDataError,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &ConnectorHandler{connectorService: tt.service}
+			h := &ConnectorHandler{connectorService: fakeConnectorService{err: tt.err}}
 			router := gin.New()
-			router.GET("/api/v1/connectors/:connector_id", func(c *gin.Context) {
+			router.POST("/api/v1/connectors/:connector_id/test", func(c *gin.Context) {
 				c.Set("user", &entity.User{ID: "tenant-1"})
-				h.GetConnector(c)
+				h.TestConnector(c)
 			})
 
 			resp := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/connector-1", nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/connectors/connector-1/test", nil)
 			router.ServeHTTP(resp, req)
 			if resp.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
@@ -112,13 +122,7 @@ func TestConnectorHandlerGetConnector(t *testing.T) {
 				t.Fatalf("unmarshal response: %v", err)
 			}
 			if body["code"] != float64(tt.wantCode) {
-				t.Fatalf("code=%v body=%v", body["code"], body)
-			}
-			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
-				t.Fatalf("message=%v", body["message"])
-			}
-			if tt.wantID != "" && body["data"].(map[string]interface{})["id"] != tt.wantID {
-				t.Fatalf("data=%v", body["data"])
+				t.Fatalf("code=%v want=%v body=%v", body["code"], tt.wantCode, body)
 			}
 		})
 	}

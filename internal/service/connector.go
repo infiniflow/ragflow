@@ -20,12 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-
-	"gorm.io/gorm"
 )
 
 const (
@@ -35,15 +36,22 @@ const (
 	defaultConnectorTimeout  = 60 * 29
 )
 
+// Sentinel errors so handlers can map to the proper response codes,
+// mirroring the Python connector_api responses.
+var (
+	// ErrConnectorNotFound mirrors Python's "Can't find this Connector!".
+	ErrConnectorNotFound = errors.New("can't find this Connector")
+	// ErrConnectorNoAuth mirrors Python's "No authorization." denial.
+	ErrConnectorNoAuth = errors.New("no authorization")
+	// ErrConnectorTestUnsupported is returned for connector sources whose
+	// validation path is not yet ported to Go.
+	ErrConnectorTestUnsupported = errors.New("test endpoint currently supports only REST API connectors")
+)
+
 // ConnectorService connector service
 type ConnectorService struct {
 	connectorDAO  *dao.ConnectorDAO
 	userTenantDAO *dao.UserTenantDAO
-}
-
-func (s *ConnectorService) Rebuild() {
-	//TODO implement me
-	panic("implement me")
 }
 
 // NewConnectorService create connector service
@@ -188,6 +196,69 @@ func (s *ConnectorService) ListConnectors(userID string) (*ListConnectorsRespons
 	return &ListConnectorsResponse{
 		Connectors: connectors,
 	}, nil
+}
+
+// accessible reports whether the user can access the connector's tenant.
+// Mirrors Python's ConnectorService.accessible: owner access plus joined tenants.
+func (s *ConnectorService) accessible(connectorID, userID string) (bool, error) {
+	conn, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return false, ErrConnectorNotFound
+	}
+
+	if conn.TenantID == userID {
+		return true, nil
+	}
+
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	for _, tid := range tenantIDs {
+		if tid == conn.TenantID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// TestConnector validates a connector's stored configuration.
+// Equivalent to Python's test_connector. Per-connector credential validation
+// lives in the Python common.data_source package and is not yet available in
+// Go; for now this verifies access, that the connector exists, that the source
+// is REST_API (the only source Python currently tests), and that credentials
+// are present in the stored config. It returns ErrConnectorTestUnsupported for
+// other sources.
+func (s *ConnectorService) TestConnector(connectorID, userID string) error {
+	ok, err := s.accessible(connectorID, userID)
+	if err != nil && errors.Is(err, ErrConnectorNotFound) {
+		return ErrConnectorNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrConnectorNoAuth
+	}
+
+	conn, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		return ErrConnectorNotFound
+	}
+
+	if conn.Source != "rest_api" {
+		return ErrConnectorTestUnsupported
+	}
+
+	config := conn.Config
+	if config == nil {
+		return fmt.Errorf("connector configuration is missing")
+	}
+	creds, ok := config["credentials"].(map[string]interface{})
+	if !ok || len(creds) == 0 {
+		return fmt.Errorf("connector credentials are missing")
+	}
+	return nil
 }
 
 func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error) {
