@@ -152,6 +152,9 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 		jsonError(c, code, err.Error())
 		return
 	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
