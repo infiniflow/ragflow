@@ -57,10 +57,7 @@ type NovitaModel struct {
 // clone http.DefaultTransport, override the connection-pool fields,
 // no client-level Timeout so SSE streams are not capped.
 func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

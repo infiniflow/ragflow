@@ -44,18 +44,7 @@ type GroqModel struct {
 }
 
 func NewGroqModel(baseURL map[string]string, urlSuffix URLSuffix) *GroqModel {
-	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
-	var transport *http.Transport
-	if ok {
-		transport = defaultTransport.Clone()
-	} else {
-		transport = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		}
-	}
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

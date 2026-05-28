@@ -54,10 +54,7 @@ type N1NModel struct {
 // long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
 // callers wrap each request with context.WithTimeout instead.
 func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 

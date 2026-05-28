@@ -57,10 +57,7 @@ type XAIModel struct {
 // long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
 // callers wrap each request with context.WithTimeout instead.
 func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 
 	return &XAIModel{

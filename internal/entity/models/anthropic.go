@@ -39,10 +39,7 @@ type AnthropicModel struct {
 }
 
 func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *AnthropicModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &AnthropicModel{

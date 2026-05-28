@@ -56,10 +56,7 @@ type TokenPonyModel struct {
 // HTTP/2, and TLS defaults, and only override the connection-pool
 // fields. No client-level Timeout so SSE streams aren't capped mid-flight.
 func NewTokenPonyModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenPonyModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = 90 * time.Second
+	transport := newPooledTransport()
 	transport.DisableCompression = false
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
