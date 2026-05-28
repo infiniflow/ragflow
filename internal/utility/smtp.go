@@ -134,7 +134,10 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 
 	if cfg.MailUseSSL {
 		// Implicit TLS (typical port 465). Dial TLS first, then SMTP.
-		tlsCfg := &tls.Config{ServerName: cfg.MailServer}
+		tlsCfg := &tls.Config{
+			ServerName: cfg.MailServer,
+			MinVersion: tls.VersionTLS12,
+		}
 		conn, err := tls.Dial("tcp", addr, tlsCfg)
 		if err != nil {
 			return fmt.Errorf("smtp tls dial: %w", err)
@@ -160,7 +163,10 @@ func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
 	}
 	defer client.Quit()
 	if cfg.MailUseTLS {
-		tlsCfg := &tls.Config{ServerName: cfg.MailServer}
+		tlsCfg := &tls.Config{
+			ServerName: cfg.MailServer,
+			MinVersion: tls.VersionTLS12,
+		}
 		if err := client.StartTLS(tlsCfg); err != nil {
 			return fmt.Errorf("smtp starttls: %w", err)
 		}

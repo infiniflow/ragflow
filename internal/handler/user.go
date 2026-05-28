@@ -632,14 +632,15 @@ func joinStrings(values []string) string {
 //
 // Mirrors api/apps/restful_apis/user_api.py /auth/password/... endpoints.
 //
-// NOTE — captcha contract divergence: the Python endpoint returns a
+// Contract divergence from Python: the Python endpoint returns a
 // rendered image (Content-Type: image/JPEG) from the python-captcha
-// library. This Go port returns JSON {captcha: "<text>"} for now because
-// the Go side has no image-captcha dependency vendored and writing a
-// raster from scratch is out of scope for this PR. The OTP step still
-// requires the user to submit the captcha string, so the backend gate
-// is identical; only the FE rendering layer needs to switch from <img>
-// to a text display until a Go captcha library is wired in.
+// library and stores the captcha under captcha:<email>. This Go port
+// returns only a server-issued captcha_id and stores under
+// captcha:<captcha_id>. The plaintext captcha text is never sent back
+// to the client, so an attacker cannot replay /forgot/captcha and read
+// the expected answer. Image rendering will follow once a Go captcha
+// library lands; until then the FE either renders a placeholder for
+// the id or skips the challenge UI entirely.
 
 type forgotCaptchaRequest struct {
 	Email string `form:"email" json:"email"`
@@ -648,7 +649,8 @@ type forgotCaptchaRequest struct {
 // ForgotCaptcha POST /api/v1/auth/password/forgot/captcha
 // @Summary Issue forgot-password captcha
 // @Description Generates a captcha for the email and stores it in Redis
-// for 60 seconds. The follow-up OTP-send endpoint validates against it.
+// for 60 seconds keyed by a server-issued captcha_id. Only the
+// captcha_id is returned — the plaintext code stays server-side.
 // @Tags auth
 // @Accept json
 // @Produce json
@@ -664,7 +666,7 @@ func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
 		_ = c.ShouldBindJSON(&req)
 	}
 
-	code, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
+	captchaID, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errCode,
@@ -676,24 +678,25 @@ func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "captcha issued",
-		"data":    gin.H{"captcha": code},
+		"data":    gin.H{"captcha_id": captchaID},
 	})
 }
 
 type forgotSendOTPRequest struct {
-	Email   string `json:"email"`
-	Captcha string `json:"captcha"`
+	Email     string `json:"email"`
+	CaptchaID string `json:"captcha_id"`
+	Captcha   string `json:"captcha"`
 }
 
 // ForgotSendOTP POST /api/v1/auth/password/forgot/otp
 // @Summary Send forgot-password OTP
-// @Description Validates the captcha then mints a one-time code, stores
-// a salted hash in Redis (5 min TTL, attempt cap, resend cooldown),
-// and emails the OTP to the user.
+// @Description Validates the captcha (looked up by captcha_id), then
+// mints a one-time code, stores a salted hash in Redis (5 min TTL,
+// attempt cap, resend cooldown), and emails the OTP to the user.
 // @Tags auth
 // @Accept json
 // @Produce json
-// @Param request body forgotSendOTPRequest true "email + captcha"
+// @Param request body forgotSendOTPRequest true "email + captcha_id + captcha"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/auth/password/forgot/otp [post]
 func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
@@ -706,7 +709,7 @@ func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
 		})
 		return
 	}
-	errCode, err := h.userService.ForgotSendOTP(req.Email, req.Captcha)
+	errCode, err := h.userService.ForgotSendOTP(req.Email, req.CaptchaID, req.Captcha)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errCode,

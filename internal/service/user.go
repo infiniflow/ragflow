@@ -1191,13 +1191,15 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 // ---- Forgot-password flow (mirrors api/apps/restful_apis/user_api.py
 // `/auth/password/...` endpoints, fixes #15282) -------------------------
 
-// ForgotIssueCaptcha mints a captcha for the given email and stores it in
-// Redis under utility.CaptchaRedisKey with a 60s TTL. Returns the
-// captcha text so the handler can render it (image or JSON depending on
-// the handler's contract — the service does not commit either way).
+// ForgotIssueCaptcha mints a captcha for the given email and stores the
+// expected text in Redis under utility.CaptchaIDRedisKey, keyed by a
+// fresh server-side captcha_id, with a 60s TTL. Returns only the
+// captcha_id — the code itself is never exposed to the client so an
+// attacker who replays the issue endpoint cannot read the expected
+// answer.
 //
 // Refuses unknown emails to avoid leaking the user list — matches Python.
-func (s *UserService) ForgotIssueCaptcha(email string) (string, common.ErrorCode, error) {
+func (s *UserService) ForgotIssueCaptcha(email string) (captchaID string, code common.ErrorCode, err error) {
 	if email == "" {
 		return "", common.CodeArgumentError, fmt.Errorf("email is required")
 	}
@@ -1205,30 +1207,32 @@ func (s *UserService) ForgotIssueCaptcha(email string) (string, common.ErrorCode
 		return "", common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
-	code, err := utility.GenerateCaptchaCode()
+	text, err := utility.GenerateCaptchaCode()
 	if err != nil {
 		return "", common.CodeServerError, err
 	}
-	if ok := cache.Get().Set(utility.CaptchaRedisKey(email), code, 60*time.Second); !ok {
+	captchaID = utility.GenerateToken()
+	if ok := cache.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
-	return code, common.CodeSuccess, nil
+	return captchaID, common.CodeSuccess, nil
 }
 
-// ForgotSendOTP verifies the captcha, then issues an OTP and emails it.
-// Hash-and-salt is stored in Redis under the keys returned by
-// utility.OTPRedisKeys; resend cooldown and per-email lockout behaviour
-// match the Python implementation byte-for-byte.
-func (s *UserService) ForgotSendOTP(email, captcha string) (common.ErrorCode, error) {
-	if email == "" || captcha == "" {
-		return common.CodeArgumentError, fmt.Errorf("email and captcha required")
+// ForgotSendOTP verifies the captcha (looked up by the server-issued
+// captcha_id), then issues an OTP and emails it. Hash-and-salt is
+// stored in Redis under the keys returned by utility.OTPRedisKeys.
+// Resend cooldown and per-email lockout behaviour otherwise match the
+// Python implementation byte-for-byte.
+func (s *UserService) ForgotSendOTP(email, captchaID, captcha string) (common.ErrorCode, error) {
+	if email == "" || captchaID == "" || captcha == "" {
+		return common.CodeArgumentError, fmt.Errorf("email, captcha_id and captcha required")
 	}
 	if _, err := s.userDAO.GetByEmail(email); err != nil {
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
 	rc := cache.Get()
-	captchaKey := utility.CaptchaRedisKey(email)
+	captchaKey := utility.CaptchaIDRedisKey(captchaID)
 	stored, _ := rc.Get(captchaKey)
 	if stored == "" {
 		return common.CodeNotEffective, fmt.Errorf("invalid or expired captcha")
@@ -1236,9 +1240,9 @@ func (s *UserService) ForgotSendOTP(email, captcha string) (common.ErrorCode, er
 	if !strings.EqualFold(strings.TrimSpace(stored), strings.TrimSpace(captcha)) {
 		return common.CodeAuthenticationError, fmt.Errorf("invalid or expired captcha")
 	}
-	// One-shot: consume the captcha so a leaked stream of OTP requests
-	// cannot reuse the same image.
-	_ = rc.Set(captchaKey, "", time.Second)
+	// One-shot: consume the captcha so a leaked captcha_id cannot be
+	// reused for a stream of OTP requests.
+	rc.Delete(captchaKey)
 
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 

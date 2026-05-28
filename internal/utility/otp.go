@@ -54,10 +54,15 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-// CaptchaRedisKey returns the Redis key that holds the active captcha for
-// the given email (matches Python ``captcha_key``).
-func CaptchaRedisKey(email string) string {
-	return "captcha:" + normalizeEmail(email)
+// CaptchaIDRedisKey returns the Redis key that holds the active captcha
+// for a server-issued captcha_id. The handler returns the id to the
+// client and never the code itself, so an attacker cannot read the
+// expected answer from the response. Diverges from Python's
+// email-keyed ``captcha_key`` on purpose — captchas are 60s-lived
+// and never cross between Go and Python in practice, so there is no
+// shared-state requirement.
+func CaptchaIDRedisKey(captchaID string) string {
+	return "captcha:" + captchaID
 }
 
 // OTPRedisKeys returns the four Redis keys used by the forgot-password
