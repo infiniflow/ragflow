@@ -299,6 +299,8 @@ async def download(tenant_id: str = None, file_id: str = None):
         if not blob:
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
             blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        if not blob:
+            return get_error_data_result(message="This file is empty.")
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
