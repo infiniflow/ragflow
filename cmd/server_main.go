@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package main
 
 import (
@@ -179,8 +195,8 @@ func startServer(config *server.Config) {
 	searchService := service.NewSearchService()
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
-	modelProviderService := service.NewModelProviderService()
 	mcpService := service.NewMCPService()
+	modelProviderService := service.NewModelProviderService()
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
@@ -188,7 +204,7 @@ func startServer(config *server.Config) {
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
 	userHandler := handler.NewUserHandler(userService)
-	tenantHandler := handler.NewTenantHandler(tenantService, userService)
+	tenantHandler := handler.NewTenantHandler(tenantService, userService, knowledgebaseService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
@@ -201,12 +217,13 @@ func startServer(config *server.Config) {
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
+	mcpHandler := handler.NewMCPHandler(mcpService, userService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	mcpHandler := handler.NewMCPHandler(mcpService, userService)
+	agentHandler := handler.NewAgentHandler(service.NewAgentService())
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler, mcpHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

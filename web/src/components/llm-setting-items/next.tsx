@@ -58,6 +58,7 @@ export const LlmSettingFieldSchema = {
   presence_penalty: z.coerce.number().optional(),
   frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
+  parameter: z.string().optional(),
 };
 
 export const LlmSettingSchema = {
