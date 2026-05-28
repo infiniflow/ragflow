@@ -17,10 +17,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 )
 
@@ -42,6 +44,11 @@ type ConnectorService struct {
 	userTenantDAO *dao.UserTenantDAO
 }
 
+func (s *ConnectorService) Rebuild() {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewConnectorService create connector service
 func NewConnectorService() *ConnectorService {
 	return &ConnectorService{
@@ -53,6 +60,108 @@ func NewConnectorService() *ConnectorService {
 // ListConnectorsResponse list connectors response
 type ListConnectorsResponse struct {
 	Connectors []*dao.ConnectorListItem `json:"connectors"`
+}
+
+// CreateConnectorRequest creates a connector with Python-compatible defaults.
+type CreateConnectorRequest struct {
+	Name        string         `json:"name"`
+	Source      string         `json:"source"`
+	Config      entity.JSONMap `json:"config"`
+	RefreshFreq *int64         `json:"refresh_freq,omitempty"`
+	PruneFreq   *int64         `json:"prune_freq,omitempty"`
+	TimeoutSecs *int64         `json:"timeout_secs,omitempty"`
+}
+
+// RebuildConnectorRequest rebuild connector request.
+type RebuildConnectorRequest struct {
+	KbID string `json:"kb_id"`
+}
+
+// canAccessConnector Test Authentication
+func (s *ConnectorService) canAccessConnector(connector *entity.Connector, userID string) bool {
+	if connector.TenantID == userID {
+		return true
+	}
+
+	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
+	return err == nil
+}
+
+// cancelConnectorTasks Stop connector tasks
+func (s *ConnectorService) cancelConnectorTasks(connectorID string) error {
+	if err := s.connectorDAO.CancelRunningOrScheduledLogs(connectorID); err != nil {
+		return err
+	}
+	return s.connectorDAO.UpdateByID(connectorID, map[string]interface{}{"status": string(entity.TaskStatusCancel)})
+}
+
+// CreateConnector creates a connector owned by the current user.
+// Equivalent to Python's create_connector endpoint.
+func (s *ConnectorService) CreateConnector(userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	refreshFreq := int64(defaultConnectorFreq)
+	if req.RefreshFreq != nil {
+		refreshFreq = *req.RefreshFreq
+	}
+
+	pruneFreq := int64(defaultConnectorFreq)
+	if req.PruneFreq != nil {
+		pruneFreq = *req.PruneFreq
+	}
+
+	timeoutSecs := int64(defaultConnectorTimeout)
+	if req.TimeoutSecs != nil {
+		timeoutSecs = *req.TimeoutSecs
+	}
+
+	connector := &entity.Connector{
+		ID:          common.GenerateUUID(),
+		TenantID:    userID,
+		Name:        req.Name,
+		Source:      req.Source,
+		InputType:   connectorInputTypePoll,
+		Config:      req.Config,
+		RefreshFreq: refreshFreq,
+		PruneFreq:   pruneFreq,
+		TimeoutSecs: timeoutSecs,
+		Status:      connectorStatusUnstarted,
+	}
+
+	if err := s.connectorDAO.Create(connector); err != nil {
+		return nil, err
+	}
+
+	return s.connectorDAO.GetByID(connector.ID)
+}
+
+// GetConnector returns one connector when the user can access its tenant.
+func (s *ConnectorService) GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if connector.TenantID == userID {
+		return connector, common.CodeSuccess, nil
+	}
+
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	for _, tenantID := range tenantIDs {
+		if tenantID == connector.TenantID {
+			return connector, common.CodeSuccess, nil
+		}
+	}
+
+	return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
 }
 
 // ListConnectors list connectors for a user
@@ -147,3 +256,108 @@ func (s *ConnectorService) TestConnector(connectorID, userID string) error {
 	return nil
 }
 
+func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error) {
+	if connectorID == "" {
+		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return false, common.CodeServerError, err
+	}
+
+	if !s.canAccessConnector(connector, userID) {
+		return false, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	if err = s.cancelConnectorTasks(connector.ID); err != nil {
+		return false, common.CodeServerError, err
+	}
+
+	if err = s.connectorDAO.DeleteByID(connector.ID); err != nil {
+		return false, common.CodeServerError, err
+	}
+	return true, common.CodeSuccess, nil
+}
+
+// RebuildConnector schedules a rebuild for an accessible connector and knowledge base.
+func (s *ConnectorService) RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error) {
+	if connectorID == "" {
+		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+	if kbID == "" {
+		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return false, common.CodeServerError, err
+	}
+
+	if !s.canAccessConnector(connector, userID) {
+		return false, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	sourceType := fmt.Sprintf("%s/%s", connector.Source, connector.ID)
+	documents, err := s.connectorDAO.ListDocumentsByKBAndSourceType(kbID, sourceType)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+
+	s.deleteConnectorDocumentChunks(connector.TenantID, kbID, documents)
+
+	if err := s.connectorDAO.RebuildConnector(connector, kbID, documents); err != nil {
+		return false, common.CodeServerError, err
+	}
+	return true, common.CodeSuccess, nil
+}
+
+func (s *ConnectorService) deleteConnectorDocumentChunks(tenantID, kbID string, documents []*entity.Document) {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return
+	}
+
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	for _, document := range documents {
+		_, _ = docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": document.ID}, indexName, kbID)
+	}
+}
+
+func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, 0, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, 0, common.CodeServerError, err
+	}
+
+	if !s.canAccessConnector(connector, userID) {
+		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 15
+	}
+	offset := (page - 1) * pageSize
+
+	logs, total, err := s.connectorDAO.ListLogsByConnectorID(connectorID, offset, pageSize)
+	if err != nil {
+		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
+	}
+	return logs, total, common.CodeSuccess, nil
+}
