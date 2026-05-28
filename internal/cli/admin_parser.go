@@ -1658,3 +1658,32 @@ func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
 	}
 	return NewCommand("unset_token"), nil
 }
+
+func (p *Parser) parseMessageQueueCommand() (*Command, error) {
+	p.nextToken() // consume MESSAGE_QUEUE
+
+	switch p.curToken.Type {
+	case TokenList:
+		p.nextToken() // consume LIST
+
+		cmd := NewCommand("user_list_message_queue_command")
+		return cmd, nil
+	case TokenPublish:
+		p.nextToken() // consume PUBLISH
+
+		message, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected message after PUBLISH")
+		}
+		cmd := NewCommand("user_publish_message_command")
+		cmd.Params["message"] = message
+		return cmd, nil
+	case TokenPull:
+		p.nextToken() // consume PULL
+
+		cmd := NewCommand("user_pull_message_command")
+		return cmd, nil
+	default:
+		return nil, fmt.Errorf("expected WITH")
+	}
+}

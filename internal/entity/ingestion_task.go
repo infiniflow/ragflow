@@ -32,10 +32,9 @@ func (IngestionTask) TableName() string {
 }
 
 type IngestionTaskLog struct {
-	ID       int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskID   string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	NodeName string  `gorm:"column:node_name;size:32;not null;index" json:"node_name"`
-	Progress JSONMap `gorm:"column:progress;type:longtext;not null" json:"progress"`
+	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TaskID     string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
+	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
 	BaseModel
 }
 
@@ -58,9 +57,9 @@ func (IngestionTasklet) TableName() string {
 }
 
 type IngestionTaskletLog struct {
-	ID        int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskletID string  `gorm:"column:tasklet_id;size:32;not null;index" json:"task_id"`
-	Progress  JSONMap `gorm:"column:progress;type:longtext;not null" json:"progress"`
+	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
+	TaskletID  string  `gorm:"column:tasklet_id;size:32;not null;index" json:"tasklet_id"`
+	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
 	BaseModel
 }
 

@@ -134,6 +134,10 @@ func main() {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
 
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
+
 	// Initialize server variables (runtime variables from Redis)
 	if err := server.InitVariables(cache.Get()); err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))

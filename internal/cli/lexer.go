@@ -459,6 +459,12 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenIngestors, Value: ident}
 	case "INGESTION":
 		return Token{Type: TokenIngestion, Value: ident}
+	case "MQ":
+		return Token{Type: TokenMQ, Value: ident}
+	case "PUBLISH":
+		return Token{Type: TokenPublish, Value: ident}
+	case "PULL":
+		return Token{Type: TokenPull, Value: ident}
 	case "LOG":
 		return Token{Type: TokenLog, Value: ident}
 	case "LEVEL":

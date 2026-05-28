@@ -129,6 +129,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminShutdownCommand()
 	case TokenRestart:
 		return p.parseAdminRestartCommand()
+	case TokenMQ:
+		return p.parseMessageQueueCommand()
 
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)

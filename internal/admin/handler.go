@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
@@ -1254,6 +1255,53 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 	}
 
 	success(c, gin.H{"level": req.Level}, "Log level updated successfully")
+}
+
+func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	messages, err := msgQueueEngine.ListMessages("ingestion")
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
+
+	success(c, messages, "List messages from queue successfully")
+}
+
+type PublishMessageToQueueRequest struct {
+	Message string `json:"message" binding:"required"`
+}
+
+func (h *Handler) PublishMessageToQueue(c *gin.Context) {
+	var req PublishMessageToQueueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri and from is required", 400)
+		return
+	}
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	err := msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(req.Message))
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
+
+	success(c, nil, "Publish message successfully")
+}
+
+func (h *Handler) PullMessageFromQueue(c *gin.Context) {
+	var req common.StartIngestionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "file uri and from is required", 400)
+		return
+	}
+
+	ingestionManager.SubmitTask(&common.TaskAssignment{
+		TaskId:   req.TaskID,
+		TaskType: "CREATED",
+		ComeFrom: req.From,
+		UserId:   req.UserID,
+	})
+
+	success(c, gin.H{"task_id": req.TaskID}, "Send task for ingestion successfully")
 }
 
 func (h *Handler) StartIngestion(c *gin.Context) {

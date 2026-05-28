@@ -141,6 +141,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/models/:model_name", r.handler.ShowModel)
 			}
 
+			queue := protected.Group("/queue")
+			{
+				queue.POST("/messages", r.handler.PublishMessageToQueue)
+				queue.GET("/messages", r.handler.ListMessagesFromQueue)
+				queue.PUT("/messages", r.handler.PullMessageFromQueue)
+			}
+
 			protected.GET("/ingestors", r.handler.ListIngestors)
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 

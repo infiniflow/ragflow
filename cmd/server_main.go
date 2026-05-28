@@ -141,6 +141,10 @@ func main() {
 		common.Fatal("Failed to initialize storage factory", zap.Error(err))
 	}
 
+	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
+		common.Error("Failed to initialize message queue engine", err)
+	}
+
 	// Initialize server variables (runtime variables that can change during operation)
 	// This must be done after Cache is initialized
 	if err := server.InitVariables(cache.Get()); err != nil {

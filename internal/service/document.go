@@ -354,6 +354,8 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 			continue
 		}
 
+		// message queue
+
 		// Send task to admin server for ingestion
 		err = AdminServiceClient.SendIngestionTask(task.ID, "start_ingestion_task", "ragflow.server", userID)
 		if err != nil {
@@ -536,7 +538,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(docID string) error {
 
 	// Build condition to match the document
 	condition := map[string]interface{}{
-		"id":   docID,
+		"id":    docID,
 		"kb_id": doc.KbID,
 	}
 

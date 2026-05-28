@@ -164,6 +164,9 @@ const (
 	TokenStart
 	TokenStop
 	TokenIngestion
+	TokenMQ
+	TokenPublish
+	TokenPull
 	TokenLog
 	TokenLevel
 	TokenDebug

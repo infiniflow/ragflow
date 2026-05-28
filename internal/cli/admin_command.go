@@ -1452,3 +1452,92 @@ func (c *RAGFlowClient) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) 
 	result.Duration = resp.Duration
 	return &result, nil
 }
+
+func (c *RAGFlowClient) UserListMessageQueueCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/admin/queue/messages", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks in message queue: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to list tasks in message queue: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("list tasks in message queue failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) UserPublishMessageCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	message, ok := cmd.Params["message"].(string)
+	if !ok {
+		return nil, fmt.Errorf("message not provided")
+	}
+	payload := map[string]interface{}{
+		"message": message,
+	}
+
+	resp, err := c.HTTPClient.Request("POST", "/admin/queue/messages", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to publish message: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to publish message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("publish message failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) UserPullMessageCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	resp, err := c.HTTPClient.Request("PUT", "/admin/queue/messages", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pull message: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to pull message: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("pull message failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
