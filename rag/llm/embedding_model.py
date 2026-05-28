@@ -38,13 +38,37 @@ logger = logging.getLogger(__name__)
 
 
 def _response_status_code(resp):
-    for getter in (
-        lambda r: r.get("status_code"),
-        lambda r: r["status_code"],
-        lambda r: getattr(r, "status_code"),
-    ):
+    if isinstance(resp, dict):
+        for key in ("status_code", "status"):
+            try:
+                status_code = resp.get(key)
+                if status_code is not None:
+                    return int(status_code)
+            except Exception:
+                continue
+        return None
+
+    for key in ("status_code", "status"):
         try:
-            status_code = getter(resp)
+            status_code = getattr(resp, key)
+            if status_code is not None:
+                return int(status_code)
+        except Exception:
+            continue
+
+    for key in ("status_code", "status"):
+        try:
+            getter = getattr(resp, "get", None)
+            if callable(getter):
+                status_code = getter(key)
+                if status_code is not None:
+                    return int(status_code)
+        except Exception:
+            continue
+
+    for key in ("status_code", "status"):
+        try:
+            status_code = resp[key]
             if status_code is not None:
                 return int(status_code)
         except Exception:
@@ -59,11 +83,27 @@ def _embedding_response_payload(resp):
         return None
 
 
+def _embedding_data_payload(resp):
+    try:
+        return resp["data"]
+    except Exception:
+        return None
+
+
 def _raise_embedding_upstream_error(resp, prefix="Embedding model error"):
     upstream_error = extract_upstream_error_message(resp)
     if upstream_error:
         raise UpstreamProviderError(f"{prefix}: {upstream_error}")
     raise UpstreamProviderError(f"{prefix}: invalid embedding response from upstream provider")
+
+
+def _raise_for_embedding_http_error(response, prefix="Embedding model error"):
+    status_code = _response_status_code(response)
+    if status_code is not None and status_code >= 400:
+        upstream_error = extract_upstream_error_message(response)
+        if upstream_error:
+            raise UpstreamProviderError(f"{prefix}: status_code: {status_code}, {upstream_error}")
+        raise UpstreamProviderError(f"{prefix}: status_code: {status_code}")
 
 
 def _dashscope_base_url_for_log(base_url: str) -> str:
@@ -948,10 +988,16 @@ class SILICONFLOWEmbed(Base):
                 "encoding_format": "float",
             }
             response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
+            _raise_for_embedding_http_error(response)
             try:
                 res = response.json()
-                ress.extend([d["embedding"] for d in res["data"]])
+                data = _embedding_data_payload(res)
+                if not data:
+                    _raise_embedding_upstream_error(res)
+                ress.extend([d["embedding"] for d in data])
                 token_count += total_token_count_from_response(res)
+            except UpstreamProviderError:
+                raise
             except Exception as _e:
                 log_exception(_e, response)
                 raise Exception(f"Error: {response}")
@@ -965,9 +1011,15 @@ class SILICONFLOWEmbed(Base):
             "encoding_format": "float",
         }
         response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
+        _raise_for_embedding_http_error(response)
         try:
             res = response.json()
-            return np.array(res["data"][0]["embedding"]), total_token_count_from_response(res)
+            data = _embedding_data_payload(res)
+            if not data:
+                _raise_embedding_upstream_error(res)
+            return np.array(data[0]["embedding"]), total_token_count_from_response(res)
+        except UpstreamProviderError:
+            raise
         except Exception as _e:
             log_exception(_e, response)
             raise Exception(f"Error: {response}")
