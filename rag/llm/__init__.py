@@ -67,6 +67,7 @@ class SupportedLiteLLMProvider(StrEnum):
 FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Tongyi_Qianwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    SupportedLiteLLMProvider.DeepSeek: "https://api.deepseek.com/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.Ollama: "",
     SupportedLiteLLMProvider.LongCat: "https://api.longcat.chat/openai",
