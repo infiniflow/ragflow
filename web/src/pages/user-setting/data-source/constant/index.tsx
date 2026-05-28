@@ -44,8 +44,8 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   TEAMS = 'teams',
+  SHAREPOINT = 'sharepoint',
 
-  //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
 }
 
@@ -128,6 +128,12 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.TEAMS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SHAREPOINT]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MYSQL]: {
@@ -217,6 +223,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Microsoft Teams',
       description: t(`setting.${DataSourceKey.TEAMS}Description`),
       icon: <SvgIcon name={'data-source/teams'} width={38} />,
+    },
+    [DataSourceKey.SHAREPOINT]: {
+      name: 'SharePoint',
+      description: t(`setting.${DataSourceKey.SHAREPOINT}Description`),
+      icon: <SvgIcon name={'data-source/sharepoint'} width={38} />,
     },
     [DataSourceKey.JIRA]: {
       name: 'Jira',
@@ -666,6 +677,34 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: true,
       tooltip: t('setting.teamsTenantIdTip'),
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
+  [DataSourceKey.SHAREPOINT]: [
+    {
+      label: 'Site URL',
+      name: 'config.credentials.site_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://contoso.sharepoint.com/sites/MySite',
+      tooltip: t('setting.sharepointSiteUrlTip'),
+    },
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
     },
     {
       label: 'Client ID',
@@ -1540,6 +1579,18 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.TEAMS,
     config: {
       credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    name: '',
+    source: DataSourceKey.SHAREPOINT,
+    config: {
+      credentials: {
+        site_url: '',
         tenant_id: '',
         client_id: '',
         client_secret: '',

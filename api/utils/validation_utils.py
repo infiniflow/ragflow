@@ -29,6 +29,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
 
 
@@ -557,7 +558,7 @@ class CreateDatasetReq(Base):
             CreateDatasetReq(avatar="data:video/mp4;base64,...")  # Unsupported MIME type
             ```
         """
-        if v is None:
+        if not v: # cover both None and empty string
             return v
 
         if "," in v:
@@ -960,6 +961,11 @@ class BaseListReq(BaseModel):
         """Validate and normalize an optional list filter id."""
         return validate_uuid1_hex(v)
 
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
+
 
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
@@ -1010,9 +1016,14 @@ class ListFileReq(BaseModel):
     parent_id: Annotated[str | None, Field(default=None)]
     keywords: Annotated[str, Field(default="")]
     page: Annotated[int, Field(default=1, ge=1)]
-    page_size: Annotated[int, Field(default=15, ge=1, le=100)]
+    page_size: Annotated[int, Field(default=15, ge=1)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        return validate_rest_api_page_size(v)
 
 
 def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
