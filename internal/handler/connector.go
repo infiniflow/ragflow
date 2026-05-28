@@ -219,16 +219,50 @@ func renderGoogleWebOAuthPopup(c *gin.Context, flowID string, success bool, mess
 	)
 	page := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8" /><title>Google %s Authorization</title></head>
-<body style="font-family: Arial, sans-serif; background: #f8fafc; color: #0f172a; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0;">
-  <div style="background:white; padding:32px; border-radius:12px; box-shadow:0 8px 30px rgba(15,23,42,0.1); max-width:420px; text-align:center;">
+<head>
+  <meta charset="utf-8" />
+  <title>Google %s Authorization</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: white;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
+      max-width: 420px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
     <h1>%s</h1>
     <p>%s</p>
     <p>You can close this window.</p>
   </div>
   <script>
     (function(){
-      if (window.opener) { window.opener.postMessage(%s, "*"); }
+      if (window.opener) {
+        window.opener.postMessage(%s, "*");
+      }
       %s
     })();
   </script>
