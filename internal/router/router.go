@@ -100,6 +100,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -308,6 +309,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
+				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 			}
 
 			system := v1.Group("/system")
@@ -356,12 +359,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Tenant routes (per-tenant resources)
 		tenant := v1.Group("/tenant")
 		{
-			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)        // Internal API only for GO
-			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)     // Internal API only for GO
-			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)      // Internal API only for GO
-			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)  // Internal API only for GO
-			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)   // Internal API only for GO
-			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile)      // Internal API only for GO
+			tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                     // Internal API only for GO
+			tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                   // Internal API only for GO
+			tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)               // Internal API only for GO
+			tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)             // Internal API only for GO
+			tenant.POST("/insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
+			tenant.POST("/insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
 		}
 
 		// Document routes
