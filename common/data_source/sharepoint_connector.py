@@ -141,7 +141,14 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
             value = value.replace(tzinfo=timezone.utc)
         return value
 
-    def _drive_item_to_document(self, drive_item: Any, drive_name: str) -> Document:
+    @staticmethod
+    def _composite_doc_id(drive_id: Any, drive_item: Any) -> str:
+        # Graph driveItem IDs are only unique within a single drive. A site can
+        # expose multiple document libraries (drives), so we namespace the item
+        # ID by drive ID to keep document identifiers globally unique.
+        return f"{drive_id}:{drive_item.id}"
+
+    def _drive_item_to_document(self, drive_item: Any, drive_id: Any, drive_name: str) -> Document:
         name = drive_item.name or str(drive_item.id)
         content_result = drive_item.get_content().execute_query()
         blob = content_result.value or b""
@@ -158,13 +165,13 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
 
         modified = self._modified_dt(drive_item) or datetime.now(timezone.utc)
 
-        metadata = {"drive": drive_name}
+        metadata = {"drive": drive_name, "drive_id": str(drive_id), "drive_item_id": str(drive_item.id)}
         web_url = getattr(drive_item, "web_url", None)
         if web_url:
             metadata["web_url"] = web_url
 
         return Document(
-            id=str(drive_item.id),
+            id=self._composite_doc_id(drive_id, drive_item),
             source="sharepoint",
             semantic_identifier=name,
             extension=extension,
@@ -184,6 +191,7 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
 
         for drive in self._iter_drives():
             drive_name = getattr(drive, "name", None) or getattr(drive, "properties", {}).get("name", "")
+            drive_id = getattr(drive, "id", None) or getattr(drive, "properties", {}).get("id", "")
             for drive_item in self._walk_files(drive.root):
                 try:
                     modified = self._modified_dt(drive_item)
@@ -192,12 +200,14 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                         # start is an exclusive lower bound; full reindex passes start=0.
                         if not (start < ts <= end):
                             continue
-                    yield self._drive_item_to_document(drive_item, drive_name)
+                    yield self._drive_item_to_document(drive_item, drive_id, drive_name)
                 except Exception as e:
                     logging.exception("SharePoint failed to process drive item")
                     yield ConnectorFailure(
                         failed_document=DocumentFailure(
-                            document_id=str(getattr(drive_item, "id", "unknown")),
+                            document_id=self._composite_doc_id(drive_id, drive_item)
+                            if getattr(drive_item, "id", None) is not None
+                            else "unknown",
                             document_link=getattr(drive_item, "web_url", "") or "",
                         ),
                         failure_message=str(e),
@@ -250,8 +260,9 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
 
         batch: list[SlimDocument] = []
         for drive in self._iter_drives():
+            drive_id = getattr(drive, "id", None) or getattr(drive, "properties", {}).get("id", "")
             for drive_item in self._walk_files(drive.root):
-                batch.append(SlimDocument(id=str(drive_item.id)))
+                batch.append(SlimDocument(id=self._composite_doc_id(drive_id, drive_item)))
                 if len(batch) >= self.batch_size:
                     yield batch
                     batch = []

@@ -102,10 +102,11 @@ class _FakeDriveItem:
 
 
 class _FakeDrive:
-    def __init__(self, name, root):
+    def __init__(self, name, root, drive_id=None):
         self.name = name
         self.root = root
-        self.properties = {"name": name}
+        self.id = drive_id or f"drive-{name}"
+        self.properties = {"name": name, "id": self.id}
 
 
 class _FakeDrivesAccessor:
@@ -145,7 +146,7 @@ def _build_connector_with_tree():
     nested = _FakeDriveItem("f2", "report.md", b"# Report", feb, size=8)
     subfolder = _FakeDriveItem("d2", "sub", children=[nested])
     root = _FakeDriveItem("d1", "root", children=[readme, subfolder])
-    drive = _FakeDrive("Documents", root)
+    drive = _FakeDrive("Documents", root, drive_id="drv-A")
     site = _FakeSite([drive])
 
     connector = SharePointConnector(batch_size=10)
@@ -218,16 +219,18 @@ def test_load_from_checkpoint_walks_libraries_and_downloads():
     )
 
     assert checkpoint.has_more is False
-    assert {doc.id for doc in docs} == {"f1", "f2"}
+    assert {doc.id for doc in docs} == {"drv-A:f1", "drv-A:f2"}
 
     by_id = {doc.id: doc for doc in docs}
-    assert by_id["f1"].blob == b"hello sharepoint"
-    assert by_id["f1"].extension == ".txt"
-    assert by_id["f1"].size_bytes == 16
-    assert by_id["f1"].source == "sharepoint"
-    assert by_id["f1"].metadata["drive"] == "Documents"
-    assert by_id["f2"].semantic_identifier == "report.md"
-    assert by_id["f2"].extension == ".md"
+    assert by_id["drv-A:f1"].blob == b"hello sharepoint"
+    assert by_id["drv-A:f1"].extension == ".txt"
+    assert by_id["drv-A:f1"].size_bytes == 16
+    assert by_id["drv-A:f1"].source == "sharepoint"
+    assert by_id["drv-A:f1"].metadata["drive"] == "Documents"
+    assert by_id["drv-A:f1"].metadata["drive_id"] == "drv-A"
+    assert by_id["drv-A:f1"].metadata["drive_item_id"] == "f1"
+    assert by_id["drv-A:f2"].semantic_identifier == "report.md"
+    assert by_id["drv-A:f2"].extension == ".md"
 
 
 def test_load_from_checkpoint_filters_by_modified_window():
@@ -241,7 +244,7 @@ def test_load_from_checkpoint_filters_by_modified_window():
         connector.load_from_checkpoint(start, end, connector.build_dummy_checkpoint())
     )
 
-    assert [doc.id for doc in docs] == ["f2"]
+    assert [doc.id for doc in docs] == ["drv-A:f2"]
 
 
 def test_retrieve_all_slim_docs_lists_ids_without_download():
@@ -250,4 +253,32 @@ def test_retrieve_all_slim_docs_lists_ids_without_download():
     batches = list(connector.retrieve_all_slim_docs_perm_sync())
     ids = [doc.id for batch in batches for doc in batch]
 
-    assert sorted(ids) == ["f1", "f2"]
+    assert sorted(ids) == ["drv-A:f1", "drv-A:f2"]
+
+
+def test_document_ids_are_unique_across_drives_with_colliding_item_ids():
+    # Graph driveItem IDs are unique only within a single drive; two libraries
+    # under the same site can legitimately yield items with identical IDs.
+    jan = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+
+    file_a = _FakeDriveItem("same-id", "a.txt", b"A", jan, size=1)
+    root_a = _FakeDriveItem("rootA", "root", children=[file_a])
+    drive_a = _FakeDrive("LibraryA", root_a, drive_id="drv-A")
+
+    file_b = _FakeDriveItem("same-id", "b.txt", b"B", jan, size=1)
+    root_b = _FakeDriveItem("rootB", "root", children=[file_b])
+    drive_b = _FakeDrive("LibraryB", root_b, drive_id="drv-B")
+
+    site = _FakeSite([drive_a, drive_b])
+    connector = SharePointConnector(batch_size=10)
+    connector.graph_client = _FakeGraphClient(site)
+    connector._site_url = "https://contoso.sharepoint.com/sites/MySite"
+
+    docs, _ = _collect(
+        connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint())
+    )
+    ids = {doc.id for doc in docs}
+    assert ids == {"drv-A:same-id", "drv-B:same-id"}
+
+    slim_ids = [doc.id for batch in connector.retrieve_all_slim_docs_perm_sync() for doc in batch]
+    assert sorted(slim_ids) == ["drv-A:same-id", "drv-B:same-id"]
