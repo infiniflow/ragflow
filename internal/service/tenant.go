@@ -597,6 +597,7 @@ type TenantMemberResponse struct {
 	ID              string  `json:"id"`
 	UserID          string  `json:"user_id"`
 	Role            string  `json:"role"`
+	Status          string  `json:"status"`
 	Nickname        string  `json:"nickname"`
 	Email           string  `json:"email"`
 	Avatar          string  `json:"avatar"`
@@ -625,6 +626,7 @@ func (s *TenantService) ListMembers(userID, tenantID string) ([]*TenantMemberRes
 			ID:              r.ID,
 			UserID:          r.UserID,
 			Role:            r.Role,
+			Status:          r.Status,
 			Nickname:        r.Nickname,
 			Email:           r.Email,
 			Avatar:          r.Avatar,
@@ -667,7 +669,7 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 		return nil, common.CodeDataError, fmt.Errorf("user not found")
 	}
 
-	// Reject if already a member (owner or normal).
+	// Reject if already a member or has a pending invitation.
 	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(invitee.ID, tenantID)
 	if existing != nil {
 		switch existing.Role {
@@ -675,6 +677,8 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 			return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
 		case TenantRoleNormal, TenantRoleAdmin:
 			return nil, common.CodeDataError, fmt.Errorf("user is already a member")
+		case TenantRoleInvite:
+			return nil, common.CodeDataError, fmt.Errorf("user already has a pending invitation")
 		}
 	}
 
@@ -705,9 +709,13 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 
 // RemoveMember removes a user from the tenant.
 // Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
+// The tenant owner (targetUserID == tenantID) cannot be removed.
 func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (common.ErrorCode, error) {
 	if userID != tenantID && userID != targetUserID {
 		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	}
+	if targetUserID == tenantID {
+		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
 	}
 	if err := s.userTenantDAO.DeleteByUserAndTenant(targetUserID, tenantID); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)
@@ -717,6 +725,13 @@ func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (com
 
 // AcceptInvite transitions the calling user's role from "invite" → "normal" for the given tenant.
 func (s *TenantService) AcceptInvite(userID, tenantID string) (common.ErrorCode, error) {
+	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, tenantID)
+	if err != nil || existing == nil {
+		return common.CodeDataError, fmt.Errorf("no pending invitation found")
+	}
+	if existing.Role != TenantRoleInvite {
+		return common.CodeArgumentError, fmt.Errorf("no pending invitation to accept")
+	}
 	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(userID, tenantID, TenantRoleNormal); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to accept invitation: %w", err)
 	}

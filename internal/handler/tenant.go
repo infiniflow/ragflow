@@ -414,6 +414,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param tenant_id path string true "Tenant ID"
+// @Param request body object true "Remove member request" SchemaExample({"user_id":"string"})
 // @Router /api/v1/tenants/{tenant_id}/users [delete]
 func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)

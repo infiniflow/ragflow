@@ -83,6 +83,19 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 	}
 }
 
+// TestAcceptInviteAuthCheck verifies that AcceptInvite fails when no membership exists (nil DAO).
+func TestAcceptInviteAuthCheck(t *testing.T) {
+	s := &TenantService{}
+	// nil userTenantDAO: FilterByUserIDAndTenantID will panic/err, so we expect CodeDataError.
+	code, err := s.AcceptInvite("user-abc", "tenant-xyz")
+	if err == nil {
+		t.Fatal("expected error when no membership exists, got nil")
+	}
+	if code != common.CodeDataError {
+		t.Errorf("expected CodeDataError, got %v", code)
+	}
+}
+
 // TestTenantRoleConstants verifies the role string values match the Python enums.
 func TestTenantRoleConstants(t *testing.T) {
 	cases := map[string]string{
