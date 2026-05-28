@@ -41,6 +41,7 @@ type Router struct {
 	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
 }
 
 // NewRouter create router
@@ -63,6 +64,7 @@ func NewRouter(
 	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
+	agentHandler *handler.AgentHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -83,6 +85,7 @@ func NewRouter(
 		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
 	}
 }
 
@@ -312,6 +315,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				model.GET("/", r.tenantHandler.GetModels)
 				model.PATCH("/", r.tenantHandler.SetModels)
+			}
+
+			// Agent routes
+			agents := v1.Group("/agents")
+			{
+				agents.GET("", r.agentHandler.ListAgents)
 			}
 
 			connector := v1.Group("/connectors")
