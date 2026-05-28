@@ -44,7 +44,6 @@ export enum DataSourceKey {
   REST_API = 'rest_api',
   RSS = 'rss',
   TEAMS = 'teams',
-  SHAREPOINT = 'sharepoint',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
 }
