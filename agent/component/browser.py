@@ -413,7 +413,6 @@ class Browser(ComponentBase, ABC):
         if not model_name:
             raise ValueError(f"Invalid model config for Browser llm_id={self._param.llm_id}")
         base_url = self._resolve_openai_compatible_base_url(cfg)
-        provider_name = self._infer_provider_name(cfg).lower()
 
         # ChatBrowserUse only supports bu-* models. For tenant models, use OpenAI-compatible adapter.
         if model_name.startswith("bu-") or model_name.startswith("browser-use/"):
@@ -427,16 +426,18 @@ class Browser(ComponentBase, ABC):
             llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
             return ChatBrowserUse(**llm_kwargs)
 
+        # browser-use Agent defaults to json_schema response_format and may use tool_choice via
+        # ChatDeepSeek. Many providers (e.g. DeepSeek thinking models) reject both. Use ChatOpenAI
+        # with schema-in-prompt and without forced structured output on the first run.
         llm_kwargs = {
             "model": model_name,
             "api_key": cfg.get("api_key"),
             "base_url": base_url,
             "temperature": self._param.temperature,
             "max_retries": self._param.max_retries,
+            "add_schema_to_system_prompt": True,
+            "dont_force_structured_output": True,
         }
-        if "deepseek" in provider_name:
-            llm_kwargs["add_schema_to_system_prompt"] = True
-            llm_kwargs["dont_force_structured_output"] = True
         llm_kwargs = {k: v for k, v in llm_kwargs.items() if v not in (None, "")}
         return ChatOpenAI(**llm_kwargs)
 
@@ -675,19 +676,6 @@ class Browser(ComponentBase, ABC):
                 return ""
         return pick_final_result(final_result_fn)
 
-    @staticmethod
-    def _friendly_invoke_error(exc: Exception) -> str:
-        raw = str(exc)
-        lowered = raw.lower()
-        if "response_format type is unavailable" in lowered:
-            return (
-                "Browser model provider rejected required response_format. "
-                "Current model/provider does not support the structured response format required by browser-use. "
-                "Please switch Browser node llm_id to a compatible model/provider (for example Qwen/bu-* or an OpenAI-compatible gateway that supports this response_format). "
-                f"Original error: {raw}"
-            )
-        return raw
-
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20 * 60)))
     def _invoke(self, **kwargs):
         profile_dir = None
@@ -733,7 +721,7 @@ class Browser(ComponentBase, ABC):
                 return self.output()
         except Exception as e:
             logging.exception("Browser invoke failed")
-            self.set_output("_ERROR", self._friendly_invoke_error(e))
+            self.set_output("_ERROR", str(e))
             return self.output()
         finally:
             if profile_dir and not persist_session:
