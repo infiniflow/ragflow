@@ -51,7 +51,10 @@ class TestCapability:
         for i in range(count):
             payload = {"name": f"dataset_{i}"}
             client.create_dataset(**payload)
-        assert len(client.list_datasets(page_size=2000)) == count
+        datasets = []
+        for page in range(1, (count // 100) + 1):
+            datasets.extend(client.list_datasets(page=page, page_size=100))
+        assert len(datasets) == count
 
     @pytest.mark.p3
     def test_create_dataset_concurrent(self, client):

@@ -43,6 +43,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -422,7 +423,7 @@ async def list_chats():
 
     try:
         page_number = int(request.args.get("page", 0))
-        items_per_page = int(request.args.get("page_size", 0))
+        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
         authorized_owner_ids = {member["tenant_id"] for member in tenants}
@@ -769,7 +770,7 @@ async def list_sessions(chat_id):
                 code=RetCode.AUTHENTICATION_ERROR,
             )
         page_number = int(request.args.get("page", 1))
-        items_per_page = int(request.args.get("page_size", 30))
+        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")

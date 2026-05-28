@@ -527,3 +527,31 @@ class LLM4Tenant:
             except Exception:
                 # Skip langfuse tracing if connection fails
                 pass
+
+    def close(self):
+        """Release resources held by this LLM4Tenant instance.
+
+        This method should be called when the instance is no longer needed
+        to properly release resources such as:
+        - Langfuse tracing client (flush and shutdown)
+        - Underlying model instance resources (HTTP sessions, etc.)
+        """
+        # Flush and shutdown Langfuse client if it was initialized
+        if self.langfuse:
+            try:
+                self.langfuse.flush()
+                if hasattr(self.langfuse, 'shutdown'):
+                    self.langfuse.shutdown()
+            except Exception:
+                # Ignore errors during cleanup
+                pass
+            finally:
+                self.langfuse = None
+
+        # Release underlying model instance if it has a close method
+        if self.mdl and hasattr(self.mdl, 'close') and callable(getattr(self.mdl, 'close')):
+            try:
+                self.mdl.close()
+            except Exception:
+                # Ignore errors during cleanup
+                pass

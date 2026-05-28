@@ -1099,6 +1099,19 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      teamsDescription:
+        '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
+      teamsTenantIdTip:
+        'Azure AD 租户 ID。需要具备 Team.ReadBasic.All 与 ChannelMessage.Read.All 应用权限（管理员同意）的应用。',
+      slackDescription: '连接你的 Slack 工作区，同步频道消息与讨论串。',
+      slackBotTokenTip:
+        'Slack 机器人用户 OAuth Token（以 xoxb- 开头）。应用需具备 channels:read、channels:history 和 users:read 权限。',
+      slackChannelsTip:
+        '可选：需要同步的频道名称（例如 general）。留空则同步所有可访问的频道。',
+      sharepointDescription:
+        '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
+      sharepointSiteUrlTip:
+        '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
       bitbucketTopWorkspaceTip:

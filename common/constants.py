@@ -251,7 +251,7 @@ class ForgettingPolicy(StrEnum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_QUEUE_NAME = "te"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
 
