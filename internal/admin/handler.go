@@ -1258,8 +1258,9 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 }
 
 func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
+
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	messages, err := msgQueueEngine.ListMessages("ingestion")
+	messages, err := msgQueueEngine.ListMessages("ingestion", false)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 	}
@@ -1288,7 +1289,8 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 }
 
 type PullMessageFromQueueRequest struct {
-	MessageCount int `json:"message_count" binding:"required"`
+	MessageCount int    `json:"message_count" binding:"required"`
+	AckPolicy    string `json:"ack_policy" binding:"required"`
 }
 
 func (h *Handler) PullMessageFromQueue(c *gin.Context) {
@@ -1297,14 +1299,29 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		errorResponse(c, "file uri and from is required", 400)
 		return
 	}
+	ackPolicy := false
+	if req.AckPolicy == "ACK" {
+		ackPolicy = true
+	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	messages, err := msgQueueEngine.ConsumeMessage("tasks.RAGFLOW", req.MessageCount)
+	messages, err := msgQueueEngine.ConsumeMessage("tasks.RAGFLOW", req.MessageCount, ackPolicy)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 	}
 
 	success(c, messages, "List messages from queue successfully")
+}
+
+func (h *Handler) ShowMessageQueue(c *gin.Context) {
+
+	msgQueueEngine := engine.GetMessageQueueEngine()
+	result, err := msgQueueEngine.ShowMessageQueue()
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
+
+	success(c, result, "show message queue successfully")
 }
 
 func (h *Handler) StartIngestion(c *gin.Context) {

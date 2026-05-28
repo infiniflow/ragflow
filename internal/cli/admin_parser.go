@@ -1662,12 +1662,22 @@ func (p *Parser) parseAdminUnsetCommand() (*Command, error) {
 func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 	p.nextToken() // consume MESSAGE_QUEUE
 
+	var cmd *Command
 	switch p.curToken.Type {
+	case TokenShow:
+		p.nextToken()
+		cmd = NewCommand("user_show_message_queue_command")
+
 	case TokenList:
 		p.nextToken() // consume LIST
 
-		cmd := NewCommand("user_list_message_queue_command")
-		return cmd, nil
+		cmd = NewCommand("user_list_message_queue_command")
+		if p.curToken.Type == TokenPending {
+			cmd.Params["pending"] = true
+			p.nextToken() // consume PENDING
+		} else {
+			cmd.Params["pending"] = false
+		}
 	case TokenPublish:
 		p.nextToken() // consume PUBLISH
 
@@ -1675,26 +1685,41 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 		if err != nil {
 			return nil, fmt.Errorf("expected message after PUBLISH")
 		}
-		cmd := NewCommand("user_publish_message_command")
+		p.nextToken() // consume message
+
+		cmd = NewCommand("user_publish_message_command")
 		cmd.Params["message"] = message
-		return cmd, nil
 	case TokenPull:
 		p.nextToken() // consume PULL
 
 		messageCount, err := p.parseNumber()
 		if err != nil {
 			messageCount = 1
+		} else {
+			p.nextToken() // consume NUMBER
 		}
-		p.nextToken() // consume PULL
 
 		if messageCount <= 0 || messageCount > 100 {
 			return nil, fmt.Errorf("message count cannot be less than 0 or greater than 100")
 		}
 
-		cmd := NewCommand("user_pull_message_command")
+		cmd = NewCommand("user_pull_message_command")
 		cmd.Params["message_count"] = messageCount
-		return cmd, nil
+
+		if p.curToken.Type == TokenNoACK {
+			cmd.Params["ack_policy"] = "NOACK"
+			p.nextToken() // consume NOACK
+		} else {
+			cmd.Params["ack_policy"] = "ACK"
+		}
+
 	default:
 		return nil, fmt.Errorf("expected WITH")
 	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }

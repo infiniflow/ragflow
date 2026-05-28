@@ -202,6 +202,8 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserPublishMessageCommand(cmd)
 	case "user_pull_message_command":
 		return c.UserPullMessageCommand(cmd)
+	case "user_show_message_queue_command":
+		return c.UserShowMessageQueueCommand(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)

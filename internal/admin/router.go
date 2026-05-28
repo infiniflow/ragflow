@@ -143,6 +143,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			queue := protected.Group("/queue")
 			{
+				queue.GET("/", r.handler.ShowMessageQueue)
 				queue.POST("/messages", r.handler.PublishMessageToQueue)
 				queue.GET("/messages", r.handler.ListMessagesFromQueue)
 				queue.PUT("/messages", r.handler.PullMessageFromQueue)

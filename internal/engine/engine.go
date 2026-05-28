@@ -81,6 +81,7 @@ func Type(docEngine DocEngine) EngineType {
 type MessageQueue interface {
 	Init() error
 	PublishTask(subject string, payload []byte) error
-	ListMessages(messageType string) ([]map[string]string, error)
-	ConsumeMessage(subject string, messageCount int) ([]map[string]string, error)
+	ListMessages(messageType string, pending bool) ([]map[string]string, error)
+	ConsumeMessage(subject string, messageCount int, ackPolicy bool) ([]map[string]string, error)
+	ShowMessageQueue() (map[string]string, error)
 }

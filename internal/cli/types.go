@@ -167,6 +167,8 @@ const (
 	TokenMQ
 	TokenPublish
 	TokenPull
+	TokenPending
+	TokenNoACK
 	TokenLog
 	TokenLevel
 	TokenDebug

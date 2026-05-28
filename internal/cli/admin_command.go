@@ -1458,7 +1458,15 @@ func (c *RAGFlowClient) UserListMessageQueueCommand(cmd *Command) (ResponseIf, e
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/admin/queue/messages", "admin", nil, nil)
+	pending, ok := cmd.Params["pending"].(bool)
+	if !ok {
+		return nil, fmt.Errorf("pending not provided")
+	}
+	payload := map[string]interface{}{
+		"pending": pending,
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/admin/queue/messages", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tasks in message queue: %w", err)
 	}
@@ -1524,8 +1532,14 @@ func (c *RAGFlowClient) UserPullMessageCommand(cmd *Command) (ResponseIf, error)
 	if !ok {
 		return nil, fmt.Errorf("message_count not provided")
 	}
+	ackPolicy, ok := cmd.Params["ack_policy"].(string)
+	if !ok {
+		return nil, fmt.Errorf("ack_policy not provided")
+	}
+
 	payload := map[string]interface{}{
 		"message_count": messageCount,
+		"ack_policy":    ackPolicy,
 	}
 
 	resp, err := c.HTTPClient.Request("PUT", "/admin/queue/messages", "admin", nil, payload)
@@ -1540,6 +1554,33 @@ func (c *RAGFlowClient) UserPullMessageCommand(cmd *Command) (ResponseIf, error)
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("pull message failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) UserShowMessageQueueCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	resp, err := c.HTTPClient.Request("GET", "/admin/queue", "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to show message queue: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show message queue: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("show message queue failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
