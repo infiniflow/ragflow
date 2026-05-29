@@ -280,6 +280,8 @@ export default {
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   getAttachmentFileDownload: (docId: string) =>
     `${restAPIv1}/agents/attachments/${docId}/download`,
+  getAttachmentFilePreview: (docId: string) =>
+    `${restAPIv1}/agents/attachments/${docId}/preview`,
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,

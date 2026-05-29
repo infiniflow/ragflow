@@ -598,17 +598,17 @@ async def deprecated_document_get(doc_id):
 @login_required
 async def deprecated_document_download(doc_id):
     """
-    Deprecated: Use GET /api/v1/agents/attachments/{attachment_id}/download instead.
+    Deprecated: Use GET /api/v1/agents/attachments/{attachment_id}/preview instead.
 
     Old path: GET /api/v1/document/download/{doc_id}
-    New path: GET /api/v1/agents/attachments/{doc_id}/download
+    New path: GET /api/v1/agents/attachments/{doc_id}/preview
     """
     logging.warning(
         "API endpoint /api/v1/document/download/%s is deprecated. Please use /api/v1/agents/attachments/%s/download instead.",
         doc_id,
         doc_id,
     )
-    return await agent_api.download_attachment(attachment_id=doc_id)
+    return await agent_api.preview_attachment(attachment_id=doc_id)
 
 
 @legacy_v1_manager.route("/document/download/<attachment_id>", methods=["GET"])
@@ -618,14 +618,14 @@ async def document_download_v1(attachment_id):
     Compatibility alias for document download under /v1.
 
     Old path: GET /v1/document/download/{attachment_id}
-    New path: GET /api/v1/agents/attachments/{attachment_id}/download
+    New path: GET /api/v1/agents/attachments/{attachment_id}/preview
     """
     logging.warning(
         "API endpoint /v1/document/download/%s is deprecated. Please use /api/v1/agents/attachments/%s/download instead.",
         attachment_id,
         attachment_id,
     )
-    return await agent_api.download_attachment(attachment_id=attachment_id)
+    return await agent_api.preview_attachment(attachment_id=attachment_id)
 
 
 # =============================================================================
