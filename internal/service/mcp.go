@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/mcpclient"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -232,11 +233,29 @@ func (s *MCPService) ImportServers(tenantID string, servers map[string]map[strin
 		delete(variables, "tools")
 		delete(stringVars, "tools")
 
+		// Headers can be provided either as a top-level "headers" map
+		// (preferred — matches the Python import shape) or as a flat
+		// "authorization_token" string at the entry root. Both go to the
+		// MCP client for tool discovery and to the persisted record so
+		// configs that depend on custom auth headers survive the round
+		// trip.
 		headers := map[string]string{}
 		headerVals := map[string]interface{}{}
+		if rawHeaders, ok := config["headers"].(map[string]interface{}); ok {
+			for k, v := range rawHeaders {
+				if sv, ok := v.(string); ok {
+					headers[k] = sv
+				}
+				headerVals[k] = v
+			}
+		}
 		if token, ok := config["authorization_token"].(string); ok {
-			headers["authorization_token"] = token
-			headerVals["authorization_token"] = token
+			if _, exists := headers["authorization_token"]; !exists {
+				headers["authorization_token"] = token
+			}
+			if _, exists := headerVals["authorization_token"]; !exists {
+				headerVals["authorization_token"] = token
+			}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -315,6 +334,16 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 	if !isValidMCPServerType(req.ServerType) {
 		return nil, ErrMCPInvalidType
 	}
+
+	// Run the SSRF guard up front so URL-shape failures (disallowed
+	// scheme, missing host, non-public address) surface as
+	// ErrMCPInvalidURL data errors instead of being swallowed inside the
+	// generic FetchTools error and re-classified by the handler as a 500.
+	// FetchTools repeats the check internally; the second call is cheap.
+	if _, _, err := utility.AssertURLSafe(req.URL); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrMCPInvalidURL, err.Error())
+	}
+
 	timeoutSec := req.Timeout
 	if timeoutSec <= 0 {
 		timeoutSec = defaultMCPFetchTimeoutSec

@@ -339,6 +339,21 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		return nil, err
 	}
 
+	// The endpoint event can hand us an arbitrary absolute URL. A
+	// malicious public SSE server could point us at 127.0.0.1 or any
+	// other internal host to bounce the POST phase through us. Re-run
+	// the SSRF guard against the resolved URL, and — when the host
+	// differs from the original SSE host — swap in a fresh pinned
+	// client so the dial-time IP override still applies.
+	postClient := client
+	if postHost, postIP, vErr := utility.AssertURLSafe(postURL); vErr != nil {
+		return nil, vErr
+	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
+		if u.Hostname() != originalHost(endpoint) {
+			postClient = utility.PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
+		}
+	}
+
 	pending := newPendingResponses()
 	streamDone := make(chan error, 1)
 	go func() {
@@ -355,7 +370,7 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 		for k, v := range headers {
 			req.Header.Set(k, v)
 		}
-		resp, err := client.Do(req)
+		resp, err := postClient.Do(req)
 		if err != nil {
 			return mapMCPConnectionError(err)
 		}
@@ -430,6 +445,29 @@ func waitForEndpoint(ctx context.Context, stream *sseReader, base string) (strin
 		}
 		// Other events (heartbeats, message) before endpoint are ignored.
 	}
+}
+
+// originalHost extracts the hostname from the original SSE endpoint so the
+// caller can detect when the server-advertised post URL has moved to a
+// different host (and a fresh pinned client is required).
+func originalHost(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+// sseTimeoutFrom recovers a non-zero timeout from the request context so
+// the freshly-pinned post-phase client has the same deadline as the rest
+// of the SSE flow.
+func sseTimeoutFrom(ctx context.Context) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		if d := time.Until(deadline); d > 0 {
+			return d
+		}
+	}
+	return 10 * time.Second
 }
 
 // pendingResponses correlates outstanding JSON-RPC ids with channels that

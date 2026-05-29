@@ -55,7 +55,11 @@ func TestFetchToolsStreamableHTTPJSON(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
 		if err := json.Unmarshal(body, &req); err != nil {
-			t.Fatalf("invalid request body: %v", err)
+			// testing.T's Fatal* must run on the test goroutine; surface the
+			// failure via Errorf and bail the handler out instead.
+			t.Errorf("invalid request body: %v", err)
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
 		}
 		switch req["method"] {
 		case "initialize":
@@ -142,7 +146,9 @@ func TestFetchToolsSSE(t *testing.T) {
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			t.Fatal("response writer is not a flusher")
+			t.Errorf("response writer is not a flusher")
+			http.Error(w, "no flusher", http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -166,7 +172,9 @@ func TestFetchToolsSSE(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
 		if err := json.Unmarshal(body, &req); err != nil {
-			t.Fatalf("invalid request body: %v", err)
+			t.Errorf("invalid request body: %v", err)
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
 		}
 		switch req["method"] {
 		case "initialize":

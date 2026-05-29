@@ -167,7 +167,10 @@ func PinnedHTTPClient(hostname, resolvedIP string, timeout time.Duration) *http.
 		KeepAlive: 30 * time.Second,
 	}
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		// Disable environment proxy: HTTP_PROXY / HTTPS_PROXY would route
+		// the connection through the proxy host instead of the pinned
+		// resolvedIP, bypassing the SSRF guard.
+		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, splitErr := net.SplitHostPort(addr)
 			if splitErr == nil && host == hostname && resolvedIP != "" {
