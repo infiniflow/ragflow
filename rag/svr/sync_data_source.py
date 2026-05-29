@@ -84,6 +84,23 @@ MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
 
+def _redact_mailbox(value: str) -> str:
+    """Return a privacy-preserving representation of a UPN / email / object id.
+
+    Sync logs surface connector configuration verbatim, so leaking the
+    full mailbox list of a tenant is enough to inventory their org from
+    a single log file. Preserve the first two characters of the local
+    part as a debugging hint and mask the rest.
+    """
+    if not value:
+        return "<empty>"
+    if "@" in value:
+        local, _, _domain = value.partition("@")
+        local_mask = local if len(local) <= 2 else local[:2] + "***"
+        return f"{local_mask}@***"
+    return f"{value[:4]}***" if len(value) > 4 else "***"
+
+
 class SyncBase:
     """
     Base class for all data source synchronization connectors.
@@ -1025,22 +1042,36 @@ class Outlook(SyncBase):
         )
         self.connector.load_credentials(self.conf["credentials"])
 
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the receivedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every mailbox each run.
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            checkpoint = self.connector.build_dummy_checkpoint()
-            document_batch_generator = self.connector.load_from_checkpoint(
-                0, 0, checkpoint
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        # Redact mailbox identifiers — full UPN / email lists in connector
+        # logs leak PII (the entire org's mail directory ends up in
+        # tail-of-logs output). Surface the folder, the count, and a small
+        # masked preview so operators can still spot a misconfigured run.
+        if user_ids:
+            preview = ",".join(_redact_mailbox(u) for u in user_ids[:3])
+            if len(user_ids) > 3:
+                preview = f"{preview},+{len(user_ids) - 3} more"
+            details = "{}@{} users (preview: {})".format(
+                self.conf.get("folder", "inbox"),
+                len(user_ids),
+                preview,
             )
         else:
-            end_ts = datetime.now(timezone.utc).timestamp()
-            document_batch_generator = self.connector.poll_source(
-                task["poll_range_start"].timestamp(),
-                end_ts,
-            )
-
-        details = "{}@{}".format(
-            self.conf.get("folder", "inbox"),
-            ",".join(user_ids) if user_ids else "<all-users>",
-        )
+            details = "{}@<all-users>".format(self.conf.get("folder", "inbox"))
         self.log_connection("Outlook", details, task)
 
         def wrapper():

@@ -1,7 +1,8 @@
 """Outlook / Microsoft 365 mail data source connector"""
 
+import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Generator
 
 import msal
 import requests
@@ -22,13 +23,37 @@ from common.data_source.models import (
     BasicExpertInfo,
     ConnectorCheckpoint,
     Document,
+    SlimDocument,
 )
+
+logger = logging.getLogger(__name__)
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
 # Default folder when none specified; "inbox" is a well-known folder ID.
 _DEFAULT_FOLDER = "inbox"
+
+
+def _redact(value: str | None) -> str:
+    """Return a privacy-preserving representation of a UPN / email / object id.
+
+    Used for log lines so a single failure trace doesn't leak the entire
+    list of mailbox owners. The first two characters of the local part are
+    preserved as a debugging hint; the rest of the local part and the
+    domain are masked. For non-email values (GUIDs, object IDs) we keep
+    the first 4 chars to disambiguate which mailbox failed.
+    """
+    if not value:
+        return "<empty>"
+    if "@" in value:
+        local, _, domain = value.partition("@")
+        if len(local) <= 2:
+            local_mask = local
+        else:
+            local_mask = local[:2] + "***"
+        return f"{local_mask}@***"
+    return f"{value[:4]}***" if len(value) > 4 else "***"
 
 
 class OutlookCheckpoint(ConnectorCheckpoint):
@@ -183,6 +208,11 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> Any:
+        """Return messages received at or after *start* (epoch seconds).
+
+        Kept for callers that prefer the time-window interface; internally
+        defers to the same delta-walk used by load_from_checkpoint.
+        """
         return self._iter_documents(since_epoch=start)
 
     def load_from_checkpoint(
@@ -191,9 +221,19 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         end: SecondsSinceUnixEpoch,
         checkpoint: ConnectorCheckpoint,
     ) -> Any:
+        """Resume from *checkpoint*'s delta_links and apply the start floor.
+
+        The delta_links map carries per-user @odata.deltaLink values from the
+        previous run; when present the walk resumes from those links instead
+        of crawling each mailbox from the root, which is what makes
+        incremental syncs cheap. The start_time is still applied as a
+        receivedDateTime floor so callers that pass a window (and have no
+        persisted delta link yet) don't re-process everything.
+        """
         if not isinstance(checkpoint, OutlookCheckpoint):
             checkpoint = self.build_dummy_checkpoint()
-        return self._iter_documents(checkpoint=checkpoint)
+        since = start if start else None
+        return self._iter_documents(checkpoint=checkpoint, since_epoch=since)
 
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -203,22 +243,42 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     ) -> Any:
         return self.load_from_checkpoint(start, end, checkpoint)
 
-    def retrieve_all_slim_docs_perm_sync(self, callback: Any = None) -> Any:
-        """Yield lightweight (id, subject) tuples for prune-sync."""
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> Generator[list[SlimDocument], None, None]:
+        """Yield batches of slim documents for prune / permission sync.
+
+        The prune collector in rag/svr/sync_data_source._collect_prune_snapshot
+        does file_list.extend(batch) and then
+        cleanup_stale_documents_for_task reads `.id` on every retained item
+        (api/db/services/connector_service.py:174). Yielding plain dicts
+        appended dict keys to file_list and then failed attribute access;
+        yielding list[SlimDocument] honors both contracts.
+        """
+        if not self._access_token:
+            raise ConnectorMissingCredentialError("Outlook")
+
+        batch: list[SlimDocument] = []
         for user_id in self._list_user_ids():
             url: str | None = self._delta_url(user_id)
             while url:
-                resp = self._get(url)
-                if not resp.ok:
-                    break
-                data = resp.json()
+                data = self._get_json(url, context=f"prune user={_redact(user_id)}")
                 for msg in data.get("value", []):
                     if msg.get("@removed"):
                         continue
+                    msg_id = msg.get("id")
+                    if not msg_id:
+                        continue
                     if callback:
-                        callback(msg["id"], msg.get("subject", ""))
-                    yield {"id": msg["id"], "subject": msg.get("subject", "")}
+                        callback(msg_id, msg.get("subject", ""))
+                    batch.append(SlimDocument(id=msg_id))
+                    if len(batch) >= self.batch_size:
+                        yield batch
+                        batch = []
                 url = data.get("@odata.nextLink")
+        if batch:
+            yield batch
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -231,6 +291,31 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
             timeout=60,
         )
 
+    def _get_json(self, url: str, *, context: str) -> dict:
+        """GET *url* and decode JSON. Raise on non-2xx so the caller never
+        treats a 429 / 5xx as an empty page and silently advances the
+        checkpoint past missing data.
+        """
+        resp = self._get(url)
+        if not resp.ok:
+            body_snippet = resp.text[:200] if resp.text else ""
+            logger.error(
+                "Outlook Graph request failed (%s): HTTP %s body=%s",
+                context,
+                resp.status_code,
+                body_snippet,
+            )
+            raise UnexpectedValidationError(
+                f"Outlook Graph request failed ({context}): "
+                f"HTTP {resp.status_code} {body_snippet}"
+            )
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise UnexpectedValidationError(
+                f"Outlook Graph response is not JSON ({context}): {exc}"
+            )
+
     def _list_user_ids(self) -> list[str]:
         """Return mailbox identifiers to sync."""
         if self.user_ids:
@@ -239,10 +324,7 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         ids: list[str] = []
         url: str | None = f"{_GRAPH_BASE}/users?$select=id,userPrincipalName,mail"
         while url:
-            resp = self._get(url)
-            if not resp.ok:
-                break
-            data = resp.json()
+            data = self._get_json(url, context="list users")
             for user in data.get("value", []):
                 # Skip users with no mailbox provisioned.
                 if user.get("mail") or user.get("userPrincipalName"):
@@ -354,10 +436,9 @@ class OutlookConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
             next_delta: str | None = None
 
             while url:
-                resp = self._get(url)
-                if not resp.ok:
-                    break
-                data = resp.json()
+                data = self._get_json(
+                    url, context=f"delta user={_redact(user_id)}"
+                )
 
                 for msg in data.get("value", []):
                     # Skip removed/deleted messages signalled by delta semantics
