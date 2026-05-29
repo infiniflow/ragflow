@@ -343,13 +343,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				log := system.Group("/log")
+				system.GET("/stats", r.systemHandler.GetStats)
+
+				config := system.Group("/config")
 				{
-					// /api/v1/system/log GET
-					log.GET("", r.systemHandler.GetLogLevel)
-					// /api/v1/system/log PUT
-					log.PUT("", r.systemHandler.SetLogLevel)
+					config.GET("/log", r.systemHandler.GetLogLevel)
+					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				//log := system.Group("/log")
+				//{
+				//	// /api/v1/system/log GET
+				//	log.GET("", r.systemHandler.GetLogLevel)
+				//	// /api/v1/system/log PUT
+				//	log.PUT("", r.systemHandler.SetLogLevel)
+				//}
 
 				tokens := system.Group("/tokens")
 				{
