@@ -114,6 +114,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// User login by email endpoint
 		apiNoAuth.POST("/auth/login", r.userHandler.LoginByEmail)
 
+		// OAuth / OIDC login routes. The static "channels" segment is
+		// registered before the wildcard, so gin's tree resolves
+		// /auth/login/channels to GetLoginChannels and other values to
+		// OAuthLogin without conflict.
+		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
+		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthCallback)
+
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
 	}
