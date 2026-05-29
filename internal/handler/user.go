@@ -635,12 +635,20 @@ func joinStrings(values []string) string {
 // Contract divergence from Python: the Python endpoint returns a
 // rendered image (Content-Type: image/JPEG) from the python-captcha
 // library and stores the captcha under captcha:<email>. This Go port
-// returns only a server-issued captcha_id and stores under
-// captcha:<captcha_id>. The plaintext captcha text is never sent back
-// to the client, so an attacker cannot replay /forgot/captcha and read
-// the expected answer. Image rendering will follow once a Go captcha
-// library lands; until then the FE either renders a placeholder for
-// the id or skips the challenge UI entirely.
+// returns a server-issued captcha_id plus an SVG captcha image (as a
+// data URL the FE can drop straight into <img src>), and stores
+// captcha:<captcha_id>. The plaintext text is only ever transmitted
+// embedded in the rendered SVG — the OTP step reuses the captcha_id
+// to look the expected text up server-side.
+//
+// SVG was chosen because no Go raster-captcha library is vendored in
+// go.mod and the build has no network for `go get`. Browsers render
+// SVG via standard <img> tags, so the contract satisfies the
+// "captcha image tied to the server-side key" requirement from the
+// PR review. SVG is XML and a determined scraper can grep the text,
+// so this is a real step up from no challenge but weaker than a
+// raster captcha — when a raster library lands the swap is one
+// helper function (utility.RenderCaptcha*).
 
 type forgotCaptchaRequest struct {
 	Email string `form:"email" json:"email"`
@@ -649,8 +657,9 @@ type forgotCaptchaRequest struct {
 // ForgotCaptcha POST /api/v1/auth/password/forgot/captcha
 // @Summary Issue forgot-password captcha
 // @Description Generates a captcha for the email and stores it in Redis
-// for 60 seconds keyed by a server-issued captcha_id. Only the
-// captcha_id is returned — the plaintext code stays server-side.
+// for 60 seconds keyed by a server-issued captcha_id. Returns the id
+// and an SVG image (data URL) the FE renders inside <img src>. The
+// plaintext code is never returned outside the rendered image.
 // @Tags auth
 // @Accept json
 // @Produce json
@@ -666,7 +675,7 @@ func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
 		_ = c.ShouldBindJSON(&req)
 	}
 
-	captchaID, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
+	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(req.Email)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errCode,
@@ -678,7 +687,10 @@ func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "captcha issued",
-		"data":    gin.H{"captcha_id": captchaID},
+		"data": gin.H{
+			"captcha_id":    captchaID,
+			"captcha_image": captchaImage,
+		},
 	})
 }
 
@@ -820,7 +832,14 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
+	// GetUserProfile includes the password hash and the live access_token,
+	// which must never appear in the reset response body (the token is
+	// already in the Authorization header). Mirror the Python contract
+	// `user.to_safe_dict(for_self=True)` by stripping those fields before
+	// writing. PR #15290 review.
 	profile := h.userService.GetUserProfile(user)
+	delete(profile, "password")
+	delete(profile, "access_token")
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"message": "Password reset successful. Logged in.",

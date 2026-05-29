@@ -1193,29 +1193,30 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 
 // ForgotIssueCaptcha mints a captcha for the given email and stores the
 // expected text in Redis under utility.CaptchaIDRedisKey, keyed by a
-// fresh server-side captcha_id, with a 60s TTL. Returns only the
-// captcha_id — the code itself is never exposed to the client so an
-// attacker who replays the issue endpoint cannot read the expected
-// answer.
+// fresh server-side captcha_id, with a 60s TTL. Returns the captcha_id
+// and a renderable SVG image (data URL) the FE drops into <img src> so
+// the human can read the challenge and type the answer. The plaintext
+// code itself is never sent to the client outside the rendered image.
 //
 // Refuses unknown emails to avoid leaking the user list — matches Python.
-func (s *UserService) ForgotIssueCaptcha(email string) (captchaID string, code common.ErrorCode, err error) {
+func (s *UserService) ForgotIssueCaptcha(email string) (captchaID, imageDataURL string, code common.ErrorCode, err error) {
 	if email == "" {
-		return "", common.CodeArgumentError, fmt.Errorf("email is required")
+		return "", "", common.CodeArgumentError, fmt.Errorf("email is required")
 	}
 	if _, err := s.userDAO.GetByEmail(email); err != nil {
-		return "", common.CodeDataError, fmt.Errorf("invalid email")
+		return "", "", common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
 	text, err := utility.GenerateCaptchaCode()
 	if err != nil {
-		return "", common.CodeServerError, err
+		return "", "", common.CodeServerError, err
 	}
 	captchaID = utility.GenerateToken()
 	if ok := cache.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
-		return "", common.CodeServerError, fmt.Errorf("failed to store captcha")
+		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
-	return captchaID, common.CodeSuccess, nil
+	imageDataURL = utility.RenderCaptchaSVGDataURL(text)
+	return captchaID, imageDataURL, common.CodeSuccess, nil
 }
 
 // ForgotSendOTP verifies the captcha (looked up by the server-issued
