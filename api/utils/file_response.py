@@ -3,6 +3,7 @@
 #
 
 import re
+from urllib.parse import urlencode
 
 CONTENT_TYPE_MAP = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -137,10 +138,10 @@ def apply_download_file_response_headers(
 
 
 def agent_attachment_preview_path(attachment_id: str, *, ext: str | None = None, mime_type: str | None = None) -> str:
-    query = []
+    query: dict[str, str] = {}
     if ext:
-        query.append(f"ext={ext}")
+        query["ext"] = ext
     if mime_type:
-        query.append(f"mime_type={mime_type}")
-    suffix = f"?{'&'.join(query)}" if query else ""
+        query["mime_type"] = mime_type
+    suffix = f"?{urlencode(query)}" if query else ""
     return f"/api/v1/agents/attachments/{attachment_id}/preview{suffix}"
