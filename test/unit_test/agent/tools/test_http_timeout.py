@@ -51,21 +51,35 @@ assert (TOOLS_DIR / "github.py").is_file(), f"agent tools not found at {TOOLS_DI
 _REQUEST_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "request"}
 # Modules whose request methods we police, as referenced at the call site.
 _HTTP_NAMESPACES = {"requests", "httpx"}
+# Common local names for a session/client built from those modules, so calls
+# like ``session.get(...)`` or ``client.request(...)`` are covered too.
+_HTTP_INSTANCE_NAMES = {"session", "client", "session_client"}
+
+
+def _root_name(node: ast.AST) -> str | None:
+    """Resolve the leftmost identifier of an HTTP call target.
+
+    Unwraps a constructor call (``requests.Session()`` -> ``requests``) and any
+    chained attribute (``requests.sessions.Session`` -> ``requests``), returning
+    the base ``Name`` id or ``None``.
+    """
+    if isinstance(node, ast.Call):
+        node = node.func
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
 
 
 def _iter_request_calls(tree: ast.AST):
-    """Yield ``ast.Call`` nodes that look like ``<http>.<verb>(...)`` requests."""
+    """Yield ``ast.Call`` nodes that look like an HTTP ``<verb>(...)`` request."""
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
         if not isinstance(func, ast.Attribute) or func.attr not in _REQUEST_METHODS:
             continue
-        root = func.value
-        # Walk back through chained attributes (e.g. requests.sessions.Session()).
-        while isinstance(root, ast.Attribute):
-            root = root.value
-        if isinstance(root, ast.Name) and root.id in _HTTP_NAMESPACES:
+        root = _root_name(func.value)
+        if root in _HTTP_NAMESPACES or root in _HTTP_INSTANCE_NAMES:
             yield node
 
 
