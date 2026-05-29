@@ -55,6 +55,16 @@ func (h *SystemHandler) Health(c *gin.Context) {
 	})
 }
 
+// Healthz reports dependency health in the Python-compatible format.
+func (h *SystemHandler) Healthz(c *gin.Context) {
+	result, allOK := h.systemService.Healthz(c.Request.Context())
+	statusCode := http.StatusOK
+	if !allOK {
+		statusCode = http.StatusInternalServerError
+	}
+	c.JSON(statusCode, result)
+}
+
 // GetConfig get system configuration
 // @Summary Get System Configuration
 // @Description Get system configuration including register enabled status
@@ -102,6 +112,27 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    cfg,
+	})
+}
+
+// GetStatus get RAGFlow status
+func (h *SystemHandler) GetStatus(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	status, err := h.systemService.GetStatus()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    status,
+		"message": "success",
 	})
 }
 
