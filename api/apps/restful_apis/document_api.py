@@ -1670,6 +1670,12 @@ async def get_document_image(image_id):
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
+        if data is None:
+            logging.warning(
+                "get_document_image: storage miss image_id=%s bucket=%s key=%s",
+                image_id, bkt, nm,
+            )
+            return get_data_error_result(message="Image not found.")
         response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
         return response
@@ -1876,6 +1882,12 @@ async def get(doc_id):
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        if data is None:
+            logging.warning(
+                "get document preview: storage miss doc_id=%s bucket=%s key=%s",
+                doc_id, b, n,
+            )
+            return get_data_error_result(message="Document not found!")
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
