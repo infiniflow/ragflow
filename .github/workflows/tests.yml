@@ -171,9 +171,50 @@ jobs:
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
                RUNNER_NUM=${RUNNER_NUM:-1}
 
-          # Per-runner base plus per-workflow-run offset avoids port clashes when
-          # multiple CI jobs share the same self-hosted runner concurrently.
+          # Per-runner base plus per-workflow-run offset avoids most port clashes
+          # when multiple CI jobs share the same self-hosted runner concurrently.
+          # Probe the final published ports as well because unrelated or stale
+          # compose projects can still occupy the computed block.
                PORT_OFFSET=$(( (GITHUB_RUN_ID % 400) + RUNNER_NUM * 10 ))
+               if ! command -v ss > /dev/null 2>&1; then
+                    echo "ss is required to probe CI port availability"
+                    exit 1
+               fi
+               port_is_available() {
+                    local port="$1"
+                    ! sudo ss -Htanl "sport = :${port}" | grep -q .
+               }
+               ports_available_for_offset() {
+                    local offset="$1"
+                    local bases=(
+                         1200 1201 23817 23820 5432 5455 9000 9001 6379 6380
+                         6601 9380 9381 9382 9384 9383 9385 80 443
+                    )
+                    local base
+                    local port
+                    for base in "${bases[@]}"; do
+                         port=$((base + offset))
+                         if ! port_is_available "${port}"; then
+                              echo "Port ${port} is already in use; trying another CI port block"
+                              return 1
+                         fi
+                    done
+                    return 0
+               }
+               SELECTED_PORT_OFFSET=""
+               for attempt in $(seq 0 100); do
+                    CANDIDATE_PORT_OFFSET=$((PORT_OFFSET + attempt * 400))
+                    if ports_available_for_offset "${CANDIDATE_PORT_OFFSET}"; then
+                         SELECTED_PORT_OFFSET="${CANDIDATE_PORT_OFFSET}"
+                         break
+                    fi
+               done
+               if [[ -z "${SELECTED_PORT_OFFSET}" ]]; then
+                    echo "Unable to find an available CI port block"
+                    exit 1
+               fi
+               PORT_OFFSET="${SELECTED_PORT_OFFSET}"
+               echo "Using CI port offset ${PORT_OFFSET}"
                ES_PORT=$((1200 + PORT_OFFSET))
                OS_PORT=$((1201 + PORT_OFFSET))
                INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
