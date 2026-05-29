@@ -13,11 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import pytest
+
 from common.model_thinking_utils import (
     apply_enable_thinking_policy,
     detect_thinking_family,
     is_qwen3_thinking_model,
 )
+
+
+pytestmark = pytest.mark.p2
 
 
 def test_detect_thinking_family():

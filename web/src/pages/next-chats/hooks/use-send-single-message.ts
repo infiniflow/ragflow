@@ -59,6 +59,7 @@ export function useSendSingleMessage({
       messages,
       enableInternet,
       enableThinking,
+      enableModelThinking,
       ...params
     }: {
       message: IMessage;
