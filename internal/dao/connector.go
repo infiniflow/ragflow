@@ -257,7 +257,7 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(connectorID string, offset, limit
 			"sync_logs.status",
 		).
 		Distinct().
-		Order("sync_logs.update_time DESC").
+		Order("sync_logs.update_date DESC").
 		Offset(offset).
 		Limit(limit).
 		Scan(&logs).Error

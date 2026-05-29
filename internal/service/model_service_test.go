@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
 )
 
@@ -25,7 +26,7 @@ func (s *stubModelDriver) Name() string {
 	return "stub"
 }
 
-func TestNewModelDriverForBaseURLPreservesEmptyRegion(t *testing.T) {
+func TestNewModelDriverForBaseURLAddsDefaultFallbackForEmptyRegion(t *testing.T) {
 	expected := &stubModelDriver{}
 	var gotBaseURL map[string]string
 	driver := &stubModelDriver{
@@ -45,8 +46,8 @@ func TestNewModelDriverForBaseURLPreservesEmptyRegion(t *testing.T) {
 	if gotBaseURL[""] != "http://localhost:1234" {
 		t.Fatalf("expected empty-region base URL, got %#v", gotBaseURL)
 	}
-	if _, ok := gotBaseURL["default"]; ok {
-		t.Fatalf("unexpected default region key in base URL map: %#v", gotBaseURL)
+	if gotBaseURL["default"] != "http://localhost:1234" {
+		t.Fatalf("expected default-region fallback base URL, got %#v", gotBaseURL)
 	}
 }
 
@@ -125,5 +126,47 @@ func TestNewModelDriverForBaseURLRejectsNilDriver(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "driver not found") {
 		t.Fatalf("expected driver not found error, got %v", err)
+	}
+}
+
+func TestAddCustomModelRejectsNilRequest(t *testing.T) {
+	service := &ModelProviderService{}
+
+	code, err := service.AddCustomModel(nil, "user-id")
+	if err == nil {
+		t.Fatal("expected nil request to return an error")
+	}
+	if code != common.CodeBadRequest {
+		t.Fatalf("expected bad request code, got %v", code)
+	}
+}
+
+func TestAddCustomModelRejectsEmptyModelTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		modelTypes []string
+	}{
+		{name: "nil"},
+		{name: "empty", modelTypes: []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &ModelProviderService{}
+			req := &AddCustomModelRequest{
+				ProviderName: "openai",
+				InstanceName: "default",
+				ModelName:    "custom-chat",
+				ModelTypes:   tt.modelTypes,
+			}
+
+			code, err := service.AddCustomModel(req, "user-id")
+			if err == nil {
+				t.Fatal("expected empty model_types to return an error")
+			}
+			if code != common.CodeBadRequest {
+				t.Fatalf("expected bad request code, got %v", code)
+			}
+		})
 	}
 }

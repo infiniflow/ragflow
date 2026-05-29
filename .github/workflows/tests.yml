@@ -171,50 +171,51 @@ jobs:
                RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
                RUNNER_NUM=${RUNNER_NUM:-1}
 
-          # Per-runner base plus per-workflow-run offset avoids most port clashes
-          # when multiple CI jobs share the same self-hosted runner concurrently.
-          # Probe the final published ports as well because unrelated or stale
-          # compose projects can still occupy the computed block.
-               PORT_OFFSET=$(( (GITHUB_RUN_ID % 400) + RUNNER_NUM * 10 ))
-               if ! command -v ss > /dev/null 2>&1; then
-                    echo "ss is required to probe CI port availability"
-                    exit 1
-               fi
-               port_is_available() {
-                    local port="$1"
-                    ! sudo ss -Htanl "sport = :${port}" | grep -q .
+          # Per-runner seed plus per-workflow-run offset avoids most clashes when
+          # multiple CI jobs share the same self-hosted runner concurrently. Probe
+          # the final host ports too, because stale compose projects can still hold
+          # a deterministic port from a previous run.
+               PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443)
+               MAX_PORT_OFFSET=$((65000 - 23820))
+               PORT_OFFSET=$(( (GITHUB_RUN_ID % 4000) + RUNNER_NUM * 1000 ))
+
+               port_offset_available() {
+                 local offset=$1
+                 local base port
+                 for base in "${PORT_BASES[@]}"; do
+                   port=$((base + offset))
+                   if ss -Htnl "sport = :${port}" | grep -q .; then
+                     return 1
+                   fi
+                 done
+                 return 0
                }
-               ports_available_for_offset() {
-                    local offset="$1"
-                    local bases=(
-                         1200 1201 23817 23820 5432 5455 9000 9001 6379 6380
-                         6601 9380 9381 9382 9384 9383 9385 80 443
-                    )
-                    local base
-                    local port
-                    for base in "${bases[@]}"; do
-                         port=$((base + offset))
-                         if ! port_is_available "${port}"; then
-                              echo "Port ${port} is already in use; trying another CI port block"
-                              return 1
-                         fi
-                    done
-                    return 0
+
+               select_port_offset() {
+                 local seed_offset=$1
+                 local ATTEMPT CANDIDATE_PORT_OFFSET
+                 SELECTED_PORT_OFFSET=""
+                 for ATTEMPT in $(seq 0 9); do
+                   CANDIDATE_PORT_OFFSET=$(( (seed_offset + ATTEMPT * 4000) % MAX_PORT_OFFSET ))
+                   if [ "${CANDIDATE_PORT_OFFSET}" -lt 1000 ]; then
+                     CANDIDATE_PORT_OFFSET=$((CANDIDATE_PORT_OFFSET + 1000))
+                   fi
+
+                   if port_offset_available "${CANDIDATE_PORT_OFFSET}"; then
+                     SELECTED_PORT_OFFSET=${CANDIDATE_PORT_OFFSET}
+                     return 0
+                   fi
+                 done
+                 return 1
                }
-               SELECTED_PORT_OFFSET=""
-               for attempt in $(seq 0 100); do
-                    CANDIDATE_PORT_OFFSET=$((PORT_OFFSET + attempt * 400))
-                    if ports_available_for_offset "${CANDIDATE_PORT_OFFSET}"; then
-                         SELECTED_PORT_OFFSET="${CANDIDATE_PORT_OFFSET}"
-                         break
-                    fi
-               done
-               if [[ -z "${SELECTED_PORT_OFFSET}" ]]; then
-                    echo "Unable to find an available CI port block"
-                    exit 1
+
+               if ! select_port_offset "${PORT_OFFSET}"; then
+                 echo "Failed to find a free host port range for docker compose" >&2
+                 exit 1
                fi
-               PORT_OFFSET="${SELECTED_PORT_OFFSET}"
-               echo "Using CI port offset ${PORT_OFFSET}"
+
+               PORT_OFFSET=${SELECTED_PORT_OFFSET}
+               echo "Using host port offset ${PORT_OFFSET}"
                ES_PORT=$((1200 + PORT_OFFSET))
                OS_PORT=$((1201 + PORT_OFFSET))
                INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
@@ -238,6 +239,7 @@ jobs:
           # Persist computed ports into .env so docker-compose uses the correct host bindings
                echo "" >> .env
                echo -e "ES_PORT=${ES_PORT}" >> .env
+               echo -e "PORT_OFFSET=${PORT_OFFSET}" >> .env
                echo -e "OS_PORT=${OS_PORT}" >> .env
                echo -e "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}" >> .env
                echo -e "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}" >> .env
@@ -270,10 +272,112 @@ jobs:
 
       - name: Start ragflow:nightly for Infinity
         run: |
+          set -o pipefail
+          set -a
+          source docker/.env
+          set +a
+          PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443)
+          MAX_PORT_OFFSET=$((65000 - 23820))
+
+          port_offset_available() {
+            local offset=$1
+            local base port
+            for base in "${PORT_BASES[@]}"; do
+              port=$((base + offset))
+              if ss -Htnl "sport = :${port}" | grep -q .; then
+                return 1
+              fi
+            done
+            return 0
+          }
+
+          select_port_offset() {
+            local seed_offset=$1
+            local ATTEMPT CANDIDATE_PORT_OFFSET
+            SELECTED_PORT_OFFSET=""
+            for ATTEMPT in $(seq 0 9); do
+              CANDIDATE_PORT_OFFSET=$(( (seed_offset + ATTEMPT * 4000) % MAX_PORT_OFFSET ))
+              if [ "${CANDIDATE_PORT_OFFSET}" -lt 1000 ]; then
+                CANDIDATE_PORT_OFFSET=$((CANDIDATE_PORT_OFFSET + 1000))
+              fi
+              if port_offset_available "${CANDIDATE_PORT_OFFSET}"; then
+                SELECTED_PORT_OFFSET=${CANDIDATE_PORT_OFFSET}
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          set_env_value() {
+            local key=$1
+            local value=$2
+            if grep -q "^${key}=" docker/.env; then
+              sed -i "s|^${key}=.*|${key}=${value}|" docker/.env
+            else
+              echo "${key}=${value}" >> docker/.env
+            fi
+          }
+
+          write_ci_ports() {
+            local offset=$1
+            set_env_value PORT_OFFSET "${offset}"
+            set_env_value ES_PORT "$((1200 + offset))"
+            set_env_value OS_PORT "$((1201 + offset))"
+            set_env_value INFINITY_THRIFT_PORT "$((23817 + offset))"
+            set_env_value INFINITY_HTTP_PORT "$((23820 + offset))"
+            set_env_value INFINITY_PSQL_PORT "$((5432 + offset))"
+            set_env_value EXPOSE_MYSQL_PORT "$((5455 + offset))"
+            set_env_value MINIO_PORT "$((9000 + offset))"
+            set_env_value MINIO_CONSOLE_PORT "$((9001 + offset))"
+            set_env_value REDIS_PORT "$((6379 + offset))"
+            set_env_value TEI_PORT "$((6380 + offset))"
+            set_env_value KIBANA_PORT "$((6601 + offset))"
+            set_env_value SVR_HTTP_PORT "$((9380 + offset))"
+            set_env_value ADMIN_SVR_HTTP_PORT "$((9381 + offset))"
+            set_env_value SVR_MCP_PORT "$((9382 + offset))"
+            set_env_value GO_HTTP_PORT "$((9384 + offset))"
+            set_env_value GO_ADMIN_PORT "$((9383 + offset))"
+            set_env_value SANDBOX_EXECUTOR_MANAGER_PORT "$((9385 + offset))"
+            set_env_value SVR_WEB_HTTP_PORT "$((80 + offset))"
+            set_env_value SVR_WEB_HTTPS_PORT "$((443 + offset))"
+            echo "HOST_ADDRESS=http://host.docker.internal:$((9380 + offset))" >> ${GITHUB_ENV}
+            PORT_OFFSET=${offset}
+          }
+
+          compose_up_with_port_retry() {
+            local attempt log_file seed_offset
+            seed_offset=${PORT_OFFSET:-$(( (GITHUB_RUN_ID % 4000) + 1000 ))}
+            for attempt in $(seq 0 3); do
+              if [ "${attempt}" -gt 0 ]; then
+                if ! select_port_offset "$((seed_offset + attempt * 4000))"; then
+                  echo "Failed to find a replacement host port range for docker compose" >&2
+                  return 1
+                fi
+                echo "Retrying docker compose with host port offset ${SELECTED_PORT_OFFSET}"
+                write_ci_ports "${SELECTED_PORT_OFFSET}"
+                sleep $((attempt * 5))
+              fi
+
+              sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+              sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
+              log_file=$(mktemp)
+              if sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d 2>&1 | tee "${log_file}"; then
+                rm -f "${log_file}"
+                return 0
+              fi
+              if ! grep -Eiq "bind for .* failed|port is already allocated|address already in use|failed to set up container networking" "${log_file}"; then
+                rm -f "${log_file}"
+                return 1
+              fi
+              echo "Docker compose hit a port bind conflict; selecting a new port block"
+              rm -f "${log_file}"
+            done
+            echo "Docker compose failed after retrying port bind conflicts" >&2
+            return 1
+          }
+
           sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=infinity/' docker/.env
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
-          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+          compose_up_with_port_retry
 
       - name: Run sdk tests against Infinity
         run: |
@@ -486,10 +590,112 @@ jobs:
 
       - name: Start ragflow:nightly for Elasticsearch
         run: |
+          set -o pipefail
+          set -a
+          source docker/.env
+          set +a
+          PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6601 9380 9381 9382 9384 9383 9385 80 443)
+          MAX_PORT_OFFSET=$((65000 - 23820))
+
+          port_offset_available() {
+            local offset=$1
+            local base port
+            for base in "${PORT_BASES[@]}"; do
+              port=$((base + offset))
+              if ss -Htnl "sport = :${port}" | grep -q .; then
+                return 1
+              fi
+            done
+            return 0
+          }
+
+          select_port_offset() {
+            local seed_offset=$1
+            local ATTEMPT CANDIDATE_PORT_OFFSET
+            SELECTED_PORT_OFFSET=""
+            for ATTEMPT in $(seq 0 9); do
+              CANDIDATE_PORT_OFFSET=$(( (seed_offset + ATTEMPT * 4000) % MAX_PORT_OFFSET ))
+              if [ "${CANDIDATE_PORT_OFFSET}" -lt 1000 ]; then
+                CANDIDATE_PORT_OFFSET=$((CANDIDATE_PORT_OFFSET + 1000))
+              fi
+              if port_offset_available "${CANDIDATE_PORT_OFFSET}"; then
+                SELECTED_PORT_OFFSET=${CANDIDATE_PORT_OFFSET}
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          set_env_value() {
+            local key=$1
+            local value=$2
+            if grep -q "^${key}=" docker/.env; then
+              sed -i "s|^${key}=.*|${key}=${value}|" docker/.env
+            else
+              echo "${key}=${value}" >> docker/.env
+            fi
+          }
+
+          write_ci_ports() {
+            local offset=$1
+            set_env_value PORT_OFFSET "${offset}"
+            set_env_value ES_PORT "$((1200 + offset))"
+            set_env_value OS_PORT "$((1201 + offset))"
+            set_env_value INFINITY_THRIFT_PORT "$((23817 + offset))"
+            set_env_value INFINITY_HTTP_PORT "$((23820 + offset))"
+            set_env_value INFINITY_PSQL_PORT "$((5432 + offset))"
+            set_env_value EXPOSE_MYSQL_PORT "$((5455 + offset))"
+            set_env_value MINIO_PORT "$((9000 + offset))"
+            set_env_value MINIO_CONSOLE_PORT "$((9001 + offset))"
+            set_env_value REDIS_PORT "$((6379 + offset))"
+            set_env_value TEI_PORT "$((6380 + offset))"
+            set_env_value KIBANA_PORT "$((6601 + offset))"
+            set_env_value SVR_HTTP_PORT "$((9380 + offset))"
+            set_env_value ADMIN_SVR_HTTP_PORT "$((9381 + offset))"
+            set_env_value SVR_MCP_PORT "$((9382 + offset))"
+            set_env_value GO_HTTP_PORT "$((9384 + offset))"
+            set_env_value GO_ADMIN_PORT "$((9383 + offset))"
+            set_env_value SANDBOX_EXECUTOR_MANAGER_PORT "$((9385 + offset))"
+            set_env_value SVR_WEB_HTTP_PORT "$((80 + offset))"
+            set_env_value SVR_WEB_HTTPS_PORT "$((443 + offset))"
+            echo "HOST_ADDRESS=http://host.docker.internal:$((9380 + offset))" >> ${GITHUB_ENV}
+            PORT_OFFSET=${offset}
+          }
+
+          compose_up_with_port_retry() {
+            local attempt log_file seed_offset
+            seed_offset=${PORT_OFFSET:-$(( (GITHUB_RUN_ID % 4000) + 1000 ))}
+            for attempt in $(seq 0 3); do
+              if [ "${attempt}" -gt 0 ]; then
+                if ! select_port_offset "$((seed_offset + attempt * 4000))"; then
+                  echo "Failed to find a replacement host port range for docker compose" >&2
+                  return 1
+                fi
+                echo "Retrying docker compose with host port offset ${SELECTED_PORT_OFFSET}"
+                write_ci_ports "${SELECTED_PORT_OFFSET}"
+                sleep $((attempt * 5))
+              fi
+
+              sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+              sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
+              log_file=$(mktemp)
+              if sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d 2>&1 | tee "${log_file}"; then
+                rm -f "${log_file}"
+                return 0
+              fi
+              if ! grep -Eiq "bind for .* failed|port is already allocated|address already in use|failed to set up container networking" "${log_file}"; then
+                rm -f "${log_file}"
+                return 1
+              fi
+              echo "Docker compose hit a port bind conflict; selecting a new port block"
+              rm -f "${log_file}"
+            done
+            echo "Docker compose failed after retrying port bind conflicts" >&2
+            return 1
+          }
+
           sed -i 's/^DOC_ENGINE=.*$/DOC_ENGINE=elasticsearch/' docker/.env
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
-          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+          compose_up_with_port_retry
 
       - name: Run sdk tests against Elasticsearch
         run: |

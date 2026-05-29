@@ -114,6 +114,27 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	})
 }
 
+// DeleteMCPServer deletes an MCP server for the current user.
+func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	result, code, err := h.mcpService.DeleteMCPServer(user.ID, c.Param("mcp_id"))
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    result,
+	})
+}
+
 func parseMCPServerPage(value string) (int, error) {
 	if value == "" {
 		return defaultMCPServerPage, nil

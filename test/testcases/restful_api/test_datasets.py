@@ -459,7 +459,7 @@ def test_dataset_update_embedding_model_with_existing_chunks_contract(rest_clien
     assert dataset_payload["code"] == 0, dataset_payload
     current_embedding = dataset_payload["data"]["embedding_model"]
 
-    candidates = ["embedding-3@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Builtin"]
+    candidates = ["embedding-3@CI@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Local@Builtin"]
     last_payload = None
     for candidate in candidates:
         if candidate == current_embedding:
@@ -810,10 +810,10 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     dataset_id = create_payload["data"]["id"]
 
     invalid_cases = [
-        ("unknown@ZHIPU-AI", "Unsupported model: <unknown@ZHIPU-AI>"),
-        ("embedding-3@unknown", "Unsupported model: <embedding-3@unknown>"),
-        ("text-embedding-v3@Tongyi-Qianwen", "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>"),
-        ("text-embedding-3-small@OpenAI", "Unauthorized model: <text-embedding-3-small@OpenAI>"),
+        ("unknown@ZHIPU-AI", "Instance default not found for model unknown@ZHIPU-AI."),
+        ("embedding-3@unknown", "Provider unknown not found for model embedding-3@unknown."),
+        ("text-embedding-v3@Tongyi-Qianwen", "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen."),
+        ("text-embedding-3-small@OpenAI", "Provider OpenAI not found for model text-embedding-3-small@OpenAI."),
     ]
     for embedding_model, expected_message in invalid_cases:
         res = rest_client.put(
@@ -834,7 +834,7 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
-    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", list_payload
+    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Local@Builtin", list_payload
 
 
 @pytest.mark.p2
@@ -1164,21 +1164,21 @@ def test_dataset_create_permission_contract(rest_client, clear_datasets, name, p
 @pytest.mark.parametrize(
     "name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail",
     [
-        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("tenant_zhipu", "embedding-3@ZHIPU-AI", 0, "embedding-3@ZHIPU-AI", None, True),
-        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Unsupported model: <unknown@ZHIPU-AI>", False),
-        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Unsupported model: <embedding-3@unknown>", False),
+        ("builtin_baai", "BAAI/bge-small-en-v1.5@Local@Builtin", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("tenant_zhipu", "embedding-3@CI@ZHIPU-AI", 0, "embedding-3@CI@ZHIPU-AI", None, True),
+        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Instance default not found for model unknown@ZHIPU-AI.", False),
+        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Provider unknown not found for model embedding-3@unknown.", False),
         (
             "tenant_no_auth_default_tenant_llm",
             "text-embedding-v3@Tongyi-Qianwen",
             102,
             None,
-            "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>",
+            "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen.",
             False,
         ),
-        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Unauthorized model: <text-embedding-3-small@OpenAI>", False),
+        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Provider OpenAI not found for model text-embedding-3-small@OpenAI.", False),
     ],
     ids=[
         "builtin_baai",

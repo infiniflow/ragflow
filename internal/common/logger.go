@@ -18,7 +18,9 @@ package common
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 
 	"go.uber.org/zap"
@@ -30,23 +32,70 @@ var (
 	Sugar       *zap.SugaredLogger
 	levelMu     sync.RWMutex
 	atomicLevel zap.AtomicLevel
+	pkgLevels   map[string]string
 )
+
+func parseZapLevel(level string) (zapcore.Level, error) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return zapcore.DebugLevel, nil
+	case "info":
+		return zapcore.InfoLevel, nil
+	case "warn", "warning":
+		return zapcore.WarnLevel, nil
+	case "error":
+		return zapcore.ErrorLevel, nil
+	case "fatal":
+		return zapcore.FatalLevel, nil
+	case "panic":
+		return zapcore.PanicLevel, nil
+	default:
+		return zapcore.InfoLevel, fmt.Errorf("unknown log level: %s", level)
+	}
+}
+
+func logLevelName(level zapcore.Level) string {
+	if level == zapcore.WarnLevel {
+		return "WARNING"
+	}
+	return strings.ToUpper(level.String())
+}
+
+func initPackageLogLevels(rootLevel zapcore.Level) {
+	levels := make(map[string]string)
+	for _, item := range strings.Split(os.Getenv("LOG_LEVELS"), ",") {
+		terms := strings.SplitN(item, "=", 2)
+		if len(terms) != 2 {
+			continue
+		}
+		pkgName := strings.TrimSpace(terms[0])
+		if pkgName == "" {
+			continue
+		}
+		level, err := parseZapLevel(terms[1])
+		if err != nil {
+			level = zapcore.InfoLevel
+		}
+		levels[pkgName] = logLevelName(level)
+	}
+	// I set it to align with python for now, we shall change it later before ragflow 1.0
+	if _, ok := levels["peewee"]; !ok {
+		levels["peewee"] = logLevelName(zapcore.WarnLevel)
+	}
+	if _, ok := levels["pdfminer"]; !ok {
+		levels["pdfminer"] = logLevelName(zapcore.WarnLevel)
+	}
+	if _, ok := levels["root"]; !ok {
+		levels["root"] = logLevelName(rootLevel)
+	}
+	pkgLevels = levels
+}
 
 // Init initializes the global logger
 // Note: This requires zap to be installed: go get go.uber.org/zap
 func Init(level string) error {
-	// Parse log level
-	var zapLevel zapcore.Level
-	switch level {
-	case "debug":
-		zapLevel = zapcore.DebugLevel
-	case "info":
-		zapLevel = zapcore.InfoLevel
-	case "warn":
-		zapLevel = zapcore.WarnLevel
-	case "error":
-		zapLevel = zapcore.ErrorLevel
-	default:
+	zapLevel, err := parseZapLevel(level)
+	if err != nil {
 		zapLevel = zapcore.InfoLevel
 	}
 
@@ -87,6 +136,10 @@ func Init(level string) error {
 
 	Logger = logger
 	Sugar = logger.Sugar()
+
+	levelMu.Lock()
+	initPackageLogLevels(zapLevel)
+	levelMu.Unlock()
 
 	return nil
 }
@@ -155,29 +208,51 @@ func GetLevel() string {
 	return atomicLevel.String()
 }
 
+// GetLogLevels returns Python-compatible package log levels.
+func GetLogLevels() map[string]string {
+	levelMu.RLock()
+	defer levelMu.RUnlock()
+
+	levels := make(map[string]string, len(pkgLevels))
+	for pkgName, level := range pkgLevels {
+		levels[pkgName] = level
+	}
+	return levels
+}
+
 // SetLevel sets the log level at runtime
 func SetLevel(level string) error {
 	levelMu.Lock()
 	defer levelMu.Unlock()
 
-	var zapLevel zapcore.Level
-	switch level {
-	case "debug":
-		zapLevel = zapcore.DebugLevel
-	case "info":
-		zapLevel = zapcore.InfoLevel
-	case "warn", "warning":
-		zapLevel = zapcore.WarnLevel
-	case "error":
-		zapLevel = zapcore.ErrorLevel
-	case "fatal":
-		zapLevel = zapcore.FatalLevel
-	case "panic":
-		zapLevel = zapcore.PanicLevel
-	default:
-		return fmt.Errorf("unknown log level: %s", level)
+	zapLevel, err := parseZapLevel(level)
+	if err != nil {
+		return err
+	}
+	atomicLevel.SetLevel(zapLevel)
+	if pkgLevels == nil {
+		pkgLevels = make(map[string]string)
+	}
+	pkgLevels["root"] = logLevelName(zapLevel)
+	return nil
+}
+
+// SetPackageLogLevel sets a Python-compatible package log level at runtime.
+func SetPackageLogLevel(pkgName, level string) error {
+	zapLevel, err := parseZapLevel(level)
+	if err != nil {
+		return err
 	}
 
-	atomicLevel.SetLevel(zapLevel)
+	levelMu.Lock()
+	defer levelMu.Unlock()
+
+	if pkgLevels == nil {
+		pkgLevels = make(map[string]string)
+	}
+	pkgLevels[pkgName] = logLevelName(zapLevel)
+	if pkgName == "root" {
+		atomicLevel.SetLevel(zapLevel)
+	}
 	return nil
 }

@@ -209,3 +209,65 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 		t.Errorf("SearchByType data count=%d, want 21", len(resp.Data))
 	}
 }
+
+func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "siliconflow.json"), readProviderConfig(t, "siliconflow.json"), 0o600); err != nil {
+		t.Fatalf("write siliconflow config: %v", err)
+	}
+
+	pm, err := NewProviderManager(dir)
+	if err != nil {
+		t.Fatalf("NewProviderManager: %v", err)
+	}
+
+	provider := pm.FindProvider("SiliconFlow")
+	if provider == nil {
+		t.Fatal("SiliconFlow provider not found")
+	}
+	if provider.URL["default"] != "https://api.siliconflow.cn/v1" {
+		t.Errorf("default URL=%q", provider.URL["default"])
+	}
+	if provider.URLSuffix.Chat != "chat/completions" {
+		t.Errorf("chat suffix=%q", provider.URLSuffix.Chat)
+	}
+	if _, ok := provider.ModelDriver.(*modeldrivers.SiliconflowModel); !ok {
+		t.Fatalf("ModelDriver=%T, want *models.SiliconflowModel", provider.ModelDriver)
+	}
+	if provider.ModelDriver.Name() != "siliconflow" {
+		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
+	}
+	if len(provider.Models) != 12 {
+		t.Fatalf("SiliconFlow model count=%d, want 12", len(provider.Models))
+	}
+
+	deepSeekV4Pro, err := pm.GetModelByName("SiliconFlow", "Pro/deepseek-ai/DeepSeek-V4-Pro")
+	if err != nil {
+		t.Fatalf("GetModelByName DeepSeek-V4-Pro: %v", err)
+	}
+	if deepSeekV4Pro.MaxTokens != 1048576 {
+		t.Errorf("DeepSeek-V4-Pro max_tokens=%d", deepSeekV4Pro.MaxTokens)
+	}
+	if !deepSeekV4Pro.ModelTypeMap["chat"] {
+		t.Errorf("DeepSeek-V4-Pro model types=%v, want chat", deepSeekV4Pro.ModelTypes)
+	}
+
+	kimiK26, err := pm.GetModelByName("SiliconFlow", "Pro/moonshotai/Kimi-K2.6")
+	if err != nil {
+		t.Fatalf("GetModelByName Kimi-K2.6: %v", err)
+	}
+	if kimiK26.MaxTokens != 262144 {
+		t.Errorf("Kimi-K2.6 max_tokens=%d", kimiK26.MaxTokens)
+	}
+	if !kimiK26.ModelTypeMap["chat"] || !kimiK26.ModelTypeMap["vision"] {
+		t.Errorf("Kimi-K2.6 model types=%v, want chat+vision", kimiK26.ModelTypes)
+	}
+
+	glm51, err := pm.GetModelByName("SiliconFlow", "Pro/zai-org/GLM-5.1")
+	if err != nil {
+		t.Fatalf("GetModelByName GLM-5.1: %v", err)
+	}
+	if glm51.MaxTokens != 204800 {
+		t.Errorf("GLM-5.1 max_tokens=%d", glm51.MaxTokens)
+	}
+}
