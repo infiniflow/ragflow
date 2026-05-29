@@ -810,10 +810,10 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     dataset_id = create_payload["data"]["id"]
 
     invalid_cases = [
-        ("unknown@ZHIPU-AI", "Unsupported model: <unknown@ZHIPU-AI>"),
-        ("embedding-3@unknown", "Unsupported model: <embedding-3@unknown>"),
-        ("text-embedding-v3@Tongyi-Qianwen", "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>"),
-        ("text-embedding-3-small@OpenAI", "Unauthorized model: <text-embedding-3-small@OpenAI>"),
+        ("unknown@ZHIPU-AI", "Instance default not found for model unknown@ZHIPU-AI."),
+        ("embedding-3@unknown", "Provider unknown not found for model embedding-3@unknown."),
+        ("text-embedding-v3@Tongyi-Qianwen", "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen."),
+        ("text-embedding-3-small@OpenAI", "Provider OpenAI not found for model text-embedding-3-small@OpenAI."),
     ]
     for embedding_model, expected_message in invalid_cases:
         res = rest_client.put(
@@ -834,7 +834,7 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
-    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", list_payload
+    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Local@Builtin", list_payload
 
 
 @pytest.mark.p2
