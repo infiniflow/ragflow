@@ -36,7 +36,6 @@ from api.db import FileType
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.utils.file_utils import filename_type
 from common import settings
 from common.connection_utils import timeout
