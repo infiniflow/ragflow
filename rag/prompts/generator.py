@@ -22,6 +22,7 @@ from copy import deepcopy
 from typing import Tuple
 from jinja2.sandbox import SandboxedEnvironment
 import json_repair
+
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
@@ -149,9 +150,17 @@ def message_fit_in(msg, max_length=4000):
     used, fitted_protected = fit_protected(protected_messages)
     remaining = max(0, max_length - used)
     if remaining <= 0:
+        logging.debug(
+            "message_fit_in trimmed all history: max_length=%s used=%s protected_count=%s history_count=%s",
+            max_length,
+            used,
+            len(fitted_protected),
+            len(historical_messages),
+        )
         return used, fitted_protected
 
     recent_history = []
+    remaining_before_history = remaining
     for m in reversed(historical_messages):
         tokens = num_tokens_from_string(m["content"])
         if tokens > remaining:
@@ -160,7 +169,18 @@ def message_fit_in(msg, max_length=4000):
         remaining -= tokens
 
     fitted = fitted_protected[:-1] + recent_history + fitted_protected[-1:]
-    return count(fitted), fitted
+    fitted_token_count = count(fitted)
+    logging.debug(
+        "message_fit_in trimmed history: max_length=%s protected_used=%s remaining_before_history=%s remaining_after_history=%s kept_history=%s dropped_history=%s final_used=%s",
+        max_length,
+        used,
+        remaining_before_history,
+        remaining,
+        len(recent_history),
+        max(0, len(historical_messages) - len(recent_history)),
+        fitted_token_count,
+    )
+    return fitted_token_count, fitted
 
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):
@@ -283,14 +303,14 @@ async def question_proposal(chat_mdl, content, topn=3):
 async def full_question(tenant_id=None, llm_id=None, messages=[], language=None, chat_mdl=None):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 
     if not chat_mdl:
-        if TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+        model_types = get_model_type_by_name(tenant_id, llm_id)
+        if "image2text" in model_types:
+            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
         else:
-            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
         chat_mdl = LLMBundle(tenant_id, chat_model_config)
     conv = []
     for m in messages:
@@ -319,16 +339,15 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from common.constants import LLMType
     from api.db.services.llm_service import LLMBundle
-    from api.db.services.tenant_llm_service import TenantLLMService
-    from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_tenant_default_model_by_type, get_model_type_by_name
 
-    if llm_id and TenantLLMService.llm_id2llm_type(llm_id) == "image2text":
-        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    if llm_id and "image2text" in get_model_type_by_name(tenant_id, llm_id) :
+        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, llm_id)
     else:
         if not llm_id:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
         else:
-            chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, llm_id)
+            chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, llm_id)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     rendered_sys_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE).render()
     rendered_user_prompt = PROMPT_JINJA_ENV.from_string(CROSS_LANGUAGES_USER_PROMPT_TEMPLATE).render(query=query,
@@ -924,6 +943,23 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     # Assign hierarchy levels using LLM
     toc_with_levels = await assign_toc_levels(raw_structure, chat_mdl, {"temperature": 0.0, "top_p": 0.9})
     if not toc_with_levels:
+        return []
+
+    # Normalize TOC items to ensure consistent dict format
+    normalized_levels = []
+    for item in toc_with_levels:
+        if isinstance(item, dict):
+            # Already in correct format
+            normalized_levels.append(item)
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            # Convert ["level", "title"] or similar to dict
+            normalized_levels.append({"level": str(item[0]), "title": str(item[1])})
+        else:
+            logging.warning(f"Unexpected TOC item format (type={type(item).__name__}), skipping: {item}")
+
+    toc_with_levels = normalized_levels
+    if not toc_with_levels:
+        logging.warning("No valid TOC items after normalization.")
         return []
 
     # Merge structure and content (by index)

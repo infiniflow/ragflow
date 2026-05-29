@@ -339,6 +339,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -551,8 +552,12 @@ func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
 	}
+	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	if modelsSuffix == "" {
+		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
+	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
