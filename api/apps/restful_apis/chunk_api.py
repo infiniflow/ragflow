@@ -24,8 +24,7 @@ from quart import request
 
 from api.apps import login_required
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_id,
-    get_model_config_by_type_and_name,
+    get_model_config_from_provider_instance,
     get_tenant_default_model_by_type,
 )
 from api.db.db_models import Document, Task
@@ -291,16 +290,12 @@ async def retrieval_test(tenant_id):
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
             return get_error_data_result(message="Dataset not found!")
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id) if kb.tenant_embd_id else get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
         rerank_mdl = None
-        if req.get("tenant_rerank_id"):
-            allowed_rerank_tenant_ids = {tenant_id, *[dataset.tenant_id for dataset in kbs]}
-            rerank_model_config = get_model_config_by_id(req["tenant_rerank_id"], allowed_tenant_ids=allowed_rerank_tenant_ids, requester_tenant_id=tenant_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-        elif req.get("rerank_id"):
-            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
+        if req.get("rerank_id"):
+            rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK, req["rerank_id"])
             rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
         if langs:
@@ -517,12 +512,8 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
-    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
-    if tenant_embd_id:
-        model_config = get_model_config_by_id(tenant_embd_id)
-    else:
-        embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_id = DocumentService.get_embd_id(document_id)
+    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
@@ -661,12 +652,8 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
-    tenant_embd_id = DocumentService.get_tenant_embd_id(document_id)
-    if tenant_embd_id:
-        model_config = get_model_config_by_id(tenant_embd_id)
-    else:
-        embd_id = DocumentService.get_embd_id(document_id)
-        model_config = get_model_config_by_type_and_name(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
+    embd_id = DocumentService.get_embd_id(document_id)
+    model_config = get_model_config_from_provider_instance(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
     if doc.parser_id == ParserType.QA:
         arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]

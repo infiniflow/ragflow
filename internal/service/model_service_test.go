@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
 )
 
@@ -125,5 +126,47 @@ func TestNewModelDriverForBaseURLRejectsNilDriver(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "driver not found") {
 		t.Fatalf("expected driver not found error, got %v", err)
+	}
+}
+
+func TestAddCustomModelRejectsNilRequest(t *testing.T) {
+	service := &ModelProviderService{}
+
+	code, err := service.AddCustomModel(nil, "user-id")
+	if err == nil {
+		t.Fatal("expected nil request to return an error")
+	}
+	if code != common.CodeBadRequest {
+		t.Fatalf("expected bad request code, got %v", code)
+	}
+}
+
+func TestAddCustomModelRejectsEmptyModelTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		modelTypes []string
+	}{
+		{name: "nil"},
+		{name: "empty", modelTypes: []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &ModelProviderService{}
+			req := &AddCustomModelRequest{
+				ProviderName: "openai",
+				InstanceName: "default",
+				ModelName:    "custom-chat",
+				ModelTypes:   tt.modelTypes,
+			}
+
+			code, err := service.AddCustomModel(req, "user-id")
+			if err == nil {
+				t.Fatal("expected empty model_types to return an error")
+			}
+			if code != common.CodeBadRequest {
+				t.Fatalf("expected bad request code, got %v", code)
+			}
+		})
 	}
 }

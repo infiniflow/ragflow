@@ -38,7 +38,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from common.constants import LLMType, PipelineTaskType
 from common.metadata_utils import update_metadata_to
 from common.misc_utils import thread_pool_exec
@@ -244,7 +244,7 @@ class DataflowService:
             self._progress(prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = self._get_kb_by_id(ctx.kb_id)
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_by_type_and_name(
+            embd_model_config = get_model_config_from_provider_instance(
                 ctx.tenant_id, LLMType.EMBEDDING, embedding_id
             )
             from api.db.services.llm_service import LLMBundle

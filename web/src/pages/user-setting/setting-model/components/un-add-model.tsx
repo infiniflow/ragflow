@@ -3,49 +3,56 @@ import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { APIMapUrl } from '@/constants/llm';
-import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectLlmList } from '@/hooks/use-llm-request';
+import { useFetchAvailableProviders } from '@/hooks/use-llm-request';
 import { ArrowUpRight, Plus } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 export const mapModelKey = {
   IMAGE2TEXT: 'VLM',
   'TEXT EMBEDDING': 'Embedding',
   SPEECH2TEXT: 'ASR',
   'TEXT RE-RANK': 'Rerank',
+  chat: 'LLM',
+  vision: 'VLM',
+  embedding: 'Embedding',
+  asr: 'ASR',
+  rerank: 'Rerank',
+  tts: 'TTS',
+  ocr: 'OCR',
 };
-const orderMap: Record<TagType, number> = {
-  LLM: 1,
-  'TEXT EMBEDDING': 2,
-  'TEXT RE-RANK': 3,
-  TTS: 4,
-  SPEECH2TEXT: 5,
-  IMAGE2TEXT: 6,
-  MODERATION: 7,
-};
-type TagType =
-  | 'LLM'
-  | 'TEXT EMBEDDING'
-  | 'TEXT RE-RANK'
-  | 'TTS'
-  | 'SPEECH2TEXT'
-  | 'IMAGE2TEXT'
-  | 'MODERATION';
 
-const sortTags = (tags: string) => {
-  return tags
-    .split(',')
-    .map((tag) => tag.trim())
-    .sort(
-      (a, b) =>
-        (orderMap[a as TagType] || 999) - (orderMap[b as TagType] || 999),
-    );
+const orderMap: Record<ModelType, number> = {
+  chat: 1,
+  embedding: 2,
+  rerank: 3,
+  tts: 4,
+  asr: 5,
+  vision: 6,
+  ocr: 7,
+};
+
+type ModelType =
+  | 'chat'
+  | 'embedding'
+  | 'rerank'
+  | 'tts'
+  | 'asr'
+  | 'vision'
+  | 'ocr';
+
+const sortModelTypes = (modelTypes: string[]) => {
+  return [...modelTypes].sort(
+    (a, b) =>
+      (orderMap[a as ModelType] || 999) - (orderMap[b as ModelType] || 999),
+  );
 };
 
 export const AvailableModels: FC<{
   handleAddModel: (factory: string) => void;
 }> = ({ handleAddModel }) => {
-  const { t } = useTranslate('setting');
-  const { factoryList } = useSelectLlmList();
+  const { t } = useTranslation();
+  const { data: factoryList } = useFetchAvailableProviders();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -57,7 +64,7 @@ export const AvailableModels: FC<{
         .includes(searchTerm.toLowerCase());
       const matchesTag =
         selectedTag === null ||
-        model.tags.split(',').some((tag) => tag.trim() === selectedTag);
+        model.model_types.some((type) => type === selectedTag);
       return matchesSearch && matchesTag;
     });
     return models;
@@ -66,11 +73,11 @@ export const AvailableModels: FC<{
   const allTags = useMemo(() => {
     const tagsSet = new Set<string>();
     factoryList.forEach((model) => {
-      model.tags.split(',').forEach((tag) => tagsSet.add(tag.trim()));
+      model.model_types.forEach((type) => tagsSet.add(type));
     });
     return Array.from(tagsSet).sort(
       (a, b) =>
-        (orderMap[a as TagType] || 999) - (orderMap[b as TagType] || 999),
+        (orderMap[a as ModelType] || 999) - (orderMap[b as ModelType] || 999),
     );
   }, [factoryList]);
 
@@ -84,14 +91,16 @@ export const AvailableModels: FC<{
       data-testid="available-models-section"
     >
       <header className="p-4 space-y-3">
-        <h3 className="text-text-primary text-base">{t('availableModels')}</h3>
+        <h3 className="text-text-primary text-base">
+          {t('setting.availableModels')}
+        </h3>
         {/* Search Bar */}
         <div>
           {/* <div className="relative"> */}
           <SearchInput
             data-testid="model-providers-search"
             type="text"
-            placeholder={t('search')}
+            placeholder={t('setting.search')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full px-4 py-2 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
@@ -165,19 +174,17 @@ export const AvailableModels: FC<{
                 className="px-2 opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100"
               >
                 <Plus size={12} />
-                {t('addTheModel')}
+                {t('setting.addTheModel')}
               </Button>
             </div>
 
             <div className="flex flex-wrap gap-1">
-              {sortTags(model.tags).map((tag, index) => (
+              {sortModelTypes(model.model_types).map((type, index) => (
                 <span
                   key={index}
                   className="px-1 flex items-center h-5 text-xs bg-bg-card text-text-secondary rounded-md"
                 >
-                  {/* {tag} */}
-                  {mapModelKey[tag.trim() as keyof typeof mapModelKey] ||
-                    tag.trim()}
+                  {mapModelKey[type as keyof typeof mapModelKey] || type}
                 </span>
               ))}
             </div>

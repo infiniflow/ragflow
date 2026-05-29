@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -54,9 +53,27 @@ func (j *JieKouAIModel) Name() string {
 	return "jiekouai"
 }
 
+func validateJieKouAIAPIKey(apiConfig *APIConfig) (string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return "", fmt.Errorf("api key is required")
+	}
+	return strings.TrimSpace(*apiConfig.ApiKey), nil
+}
+
+func validateJieKouAIModelName(modelName *string) (string, error) {
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return "", fmt.Errorf("model name is required")
+	}
+	return strings.TrimSpace(*modelName), nil
+}
+
 func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	if modelName = strings.TrimSpace(modelName); modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -87,10 +104,6 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
@@ -126,7 +139,8 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -190,6 +204,16 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	if err != nil {
+		return err
+	}
+	if modelName = strings.TrimSpace(modelName); modelName == "" {
+		return fmt.Errorf("model name is required")
+	}
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -219,10 +243,6 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
-
 		if modelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *modelConfig.MaxTokens
 		}
@@ -261,7 +281,8 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -278,7 +299,6 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		common.Info(line)
 
 		// SSE data line starts with "data:"
 		if !strings.HasPrefix(line, "data:") {
@@ -347,6 +367,14 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	if len(texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
+	model, err := validateJieKouAIModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -356,7 +384,7 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(j.BaseURL[region], "/"), j.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
-		"model": *modelName,
+		"model": model,
 		"input": texts,
 	}
 
@@ -371,7 +399,7 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -418,6 +446,17 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
+	if strings.TrimSpace(query) == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+	model, err := validateJieKouAIModelName(modelName)
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -426,16 +465,13 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(j.BaseURL[region], "/"), j.URLSuffix.Rerank)
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN != 0 {
-		topN = rerankConfig.TopN
-	}
-
 	reqBody := map[string]interface{}{
-		"model":     *modelName,
-		"query":     query,
+		"model":     model,
+		"query":     strings.TrimSpace(query),
 		"documents": documents,
-		"top_n":     topN,
+	}
+	if rerankConfig != nil && rerankConfig.TopN != 0 {
+		reqBody["top_n"] = rerankConfig.TopN
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -449,7 +485,7 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -514,6 +550,10 @@ func (j *JieKouAIModel) ParseFile(modelName *string, content []byte, url *string
 }
 
 func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
@@ -521,20 +561,13 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Models)
 
-	reqBody := map[string]string{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -551,18 +584,24 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("models response missing data")
+	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+	models := make([]string, 0, len(result.Data))
+	for _, model := range result.Data {
+		if strings.TrimSpace(model.ID) == "" {
+			return nil, fmt.Errorf("models response contains empty id")
+		}
+		models = append(models, strings.TrimSpace(model.ID))
 	}
 
 	return models, nil
