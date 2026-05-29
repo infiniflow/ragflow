@@ -271,3 +271,16 @@ def test_header_variable_with_put(monkeypatch):
     monkeypatch.setattr(module.requests, "put", mock_put)
     invoke._invoke()
     assert mock_put.call_args[1]["headers"]["Authorization"] == "Bearer put_token"
+
+
+@pytest.mark.p2
+def test_invoke_blocks_loopback_url_with_ssrf_guard(monkeypatch):
+    """Invoke must use the shared SSRF guard before requests.* (issue Invoke SSRF)."""
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://127.0.0.1:8123/api")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert result is not None
+    assert "SSRF" in result or "blocked" in result.lower()

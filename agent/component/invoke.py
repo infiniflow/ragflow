@@ -25,6 +25,7 @@ import requests
 
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
+from common.ssrf_guard import assert_url_is_safe, pin_dns
 from deepdoc.parser import HtmlParser
 
 
@@ -223,13 +224,20 @@ class Invoke(ComponentBase, ABC):
         headers = self._build_headers(kwargs)
         proxies = self._build_proxies()
 
+        try:
+            ssrf_hostname, ssrf_ip = assert_url_is_safe(url)
+        except ValueError as e:
+            self.set_output("_ERROR", str(e))
+            return f"Http request error: SSRF guard blocked {url!r}: {e}"
+
         last_error = None
         for _ in range(self._param.max_retries + 1):
             if self.check_if_canceled("Invoke processing"):
                 return
 
             try:
-                response = self._send_request(url, args, headers, proxies)
+                with pin_dns(ssrf_hostname, ssrf_ip):
+                    response = self._send_request(url, args, headers, proxies)
                 result = self._format_response(response)
                 self.set_output("result", result)
                 return result
