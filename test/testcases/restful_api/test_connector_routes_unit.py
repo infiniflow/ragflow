@@ -221,9 +221,37 @@ def _load_connector_app(monkeypatch):
         def list_sync_tasks(*_args, **_kwargs):
             return [], 0
 
+    class _StubConnector2KbService:
+        # The production rebuild route now verifies that the connector
+        # is bound to the caller-supplied kb_id via
+        # Connector2KbService.query(connector_id=, kb_id=) — fixes
+        # the access-control gap addressed by PR #15272. Default to a
+        # truthy result so existing pass-through tests do not need to
+        # know about this binding check; tests that exercise the deny
+        # branch monkeypatch this to return an empty list.
+        @staticmethod
+        def query(*_args, **_kwargs):
+            return [object()]
+
     connector_service_mod.ConnectorService = _StubConnectorService
     connector_service_mod.SyncLogsService = _StubSyncLogsService
+    connector_service_mod.Connector2KbService = _StubConnector2KbService
     monkeypatch.setitem(sys.modules, "api.db.services.connector_service", connector_service_mod)
+
+    # KnowledgebaseService.accessible() gates the same rebuild route on
+    # tenant ownership of the kb. Default to True for the same reason
+    # as Connector2KbService above.
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+
+    class _StubKnowledgebaseService:
+        @staticmethod
+        def accessible(*_args, **_kwargs):
+            return True
+
+    knowledgebase_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    monkeypatch.setitem(
+        sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod
+    )
 
     api_utils_mod = ModuleType("api.utils.api_utils")
 
