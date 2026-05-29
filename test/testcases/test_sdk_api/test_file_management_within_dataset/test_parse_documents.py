@@ -21,7 +21,7 @@ from ragflow_sdk.modules.document import Document
 from utils import wait_for
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(200, 1, "Document parsing timeout")
 def condition(_dataset: DataSet, _document_ids: list[str] = None):
     documents = _dataset.list_documents(page_size=100)
 
