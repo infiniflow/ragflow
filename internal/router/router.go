@@ -337,6 +337,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
+				system.GET("/status", r.systemHandler.GetStatus)
 				log := system.Group("/log")
 				{
 					// /api/v1/system/log GET
