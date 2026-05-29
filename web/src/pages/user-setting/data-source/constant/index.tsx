@@ -43,6 +43,7 @@ export enum DataSourceKey {
   POSTGRESQL = 'postgresql',
   REST_API = 'rest_api',
   RSS = 'rss',
+  ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   TEAMS = 'teams',
   SLACK = 'slack',
@@ -128,6 +129,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ONEDRIVE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.OUTLOOK]: {
@@ -321,6 +325,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
     },
+    [DataSourceKey.ONEDRIVE]: {
+      name: 'OneDrive',
+      description: t(`setting.${DataSourceKey.ONEDRIVE}Description`),
+      icon: <SvgIcon name={'data-source/onedrive'} width={38} />,
+    },
     [DataSourceKey.OUTLOOK]: {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
@@ -412,6 +421,49 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 export const DataSourceFormFields = {
+  [DataSourceKey.ONEDRIVE]: [
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.onedriveTenantIdTip'),
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.onedriveClientIdTip'),
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.onedriveClientSecretTip'),
+    },
+    {
+      label: 'Folder Path (optional)',
+      name: 'config.folder_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/Documents/Reports',
+      tooltip: t('setting.onedriveFolderPathTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
   [DataSourceKey.OUTLOOK]: [
     {
       label: 'Tenant ID',
@@ -1900,6 +1952,19 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.ONEDRIVE]: {
+    name: '',
+    source: DataSourceKey.ONEDRIVE,
+    config: {
+      folder_path: '',
+      batch_size: 2,
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },

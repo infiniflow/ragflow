@@ -1099,6 +1099,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      onedriveDescription:
+        '连接 OneDrive 或 OneDrive for Business，通过 Microsoft Graph delta 查询索引文件和文件夹。',
+      onedriveTenantIdTip: 'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      onedriveClientIdTip: '拥有 Files.Read.All 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      onedriveClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
+      onedriveFolderPathTip:
+        '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
       outlookDescription:
         '连接 Outlook / Microsoft 365 邮箱，通过 Microsoft Graph delta 查询索引邮件。',
       outlookTenantIdTip:
