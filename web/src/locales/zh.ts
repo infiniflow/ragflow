@@ -519,9 +519,6 @@ export default {
 
       html4excel: '表格转HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
-      markdownChunkByHeading: '按 Markdown 标题切片',
-      markdownChunkByHeadingTip:
-        '在 General 切片方法下处理 Markdown 文件时，按 ATX 标题（# 至 ######）将内容分组为独立切片，无需调用大语言模型。若单个标题下内容超过推荐切片大小，仍会按大小进一步拆分。',
       autoKeywords: '自动关键词提取',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自动问题提取',
@@ -560,6 +557,9 @@ export default {
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
       overlappedPercentTip: '相邻两个块之间的重叠百分比',
+      markdownChunkByHeading: '按 Markdown 标题切片',
+      markdownChunkByHeadingTip:
+        '在 General 切片方法下处理 Markdown 文件时，按 ATX 标题（# 至 ######）将内容分组为独立切片，无需调用大语言模型。若单个标题下内容超过推荐切片大小，仍会按大小进一步拆分。',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',

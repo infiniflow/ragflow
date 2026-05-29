@@ -1088,8 +1088,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     text = sec[0] if isinstance(sec, tuple) else sec
                     if not isinstance(text, str) or not text.strip():
                         continue
-                    for chunk_idx, chunk in enumerate(chunks):
-                        if text.strip() in chunk or chunk in text.strip():
+                    for chunk_idx, chunk_text in enumerate(chunks):
+                        if text.strip() in chunk_text or chunk_text in text.strip():
                             chunk_images[chunk_idx] = concat_img(chunk_images[chunk_idx], sec_image) if chunk_images[chunk_idx] else sec_image
                             break
             has_images = any(img is not None for img in chunk_images)

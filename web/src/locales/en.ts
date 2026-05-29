@@ -575,9 +575,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
 
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
-      markdownChunkByHeading: 'Chunk Markdown by headings',
-      markdownChunkByHeadingTip:
-        'For Markdown files in the General chunking method, group content under ATX headings (# through ######) into separate chunks without using an LLM. Oversized sections may still be split by the recommended chunk size.',
       autoKeywords: 'Auto-keyword',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
@@ -646,6 +643,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
       overlappedPercent: 'Overlapped percent(%)',
+      markdownChunkByHeading: 'Chunk Markdown by headings',
+      markdownChunkByHeadingTip:
+        'For Markdown files in the General chunking method, group content under ATX headings (# through ######) into separate chunks without using an LLM. Oversized sections may still be split by the recommended chunk size.',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',

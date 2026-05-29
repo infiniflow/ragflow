@@ -36,12 +36,14 @@ Final content.
 
 
 class TestMarkdownHeading:
+    @pytest.mark.p2
     def test_is_atx_heading_line(self):
         assert is_atx_heading_line("# Title")
         assert is_atx_heading_line("###### Deep")
         assert not is_atx_heading_line("Not a heading")
         assert not is_atx_heading_line("#no space")
 
+    @pytest.mark.p2
     def test_split_text_by_atx_headings(self):
         chunks = split_text_by_atx_headings(SAMPLE_MD)
         assert len(chunks) == 4
@@ -50,6 +52,7 @@ class TestMarkdownHeading:
         assert "### Subsection" in chunks[2]
         assert chunks[3].startswith("## Section B")
 
+    @pytest.mark.p2
     def test_group_markdown_sections_by_headings(self):
         sections = [
             ("# Introduction", ""),
@@ -65,6 +68,7 @@ class TestMarkdownHeading:
         assert "Content for A." in chunks[1]
         assert "Final content." in chunks[2]
 
+    @pytest.mark.p2
     def test_group_respects_max_depth(self):
         sections = [
             ("### Only H3", ""),

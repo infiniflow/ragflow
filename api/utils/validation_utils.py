@@ -410,6 +410,8 @@ class ParserConfig(Base):
     delimiter: Annotated[str, Field(default=r"\n", min_length=1)]
     graphrag: Annotated[GraphragConfig, Field(default_factory=lambda: GraphragConfig(use_graphrag=False))]
     html4excel: Annotated[bool, Field(default=False)]
+    markdown_chunk_by_heading: Annotated[bool, Field(default=False)]
+    markdown_heading_depth: Annotated[int, Field(default=6, ge=1, le=6)]
     layout_recognize: Annotated[str, Field(default="DeepDOC")]
     parent_child: Annotated[ParentChildConfig, Field(default_factory=lambda: ParentChildConfig(use_parent_child=False))]
     raptor: Annotated[RaptorConfig, Field(default_factory=lambda: RaptorConfig(use_raptor=False))]
