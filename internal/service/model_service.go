@@ -1915,6 +1915,13 @@ type AddCustomModelRequest struct {
 }
 
 func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, userID string) (common.ErrorCode, error) {
+	if request == nil {
+		return common.CodeBadRequest, errors.New("request is required")
+	}
+	if len(request.ModelTypes) == 0 {
+		return common.CodeBadRequest, errors.New("model type is required")
+	}
+
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
