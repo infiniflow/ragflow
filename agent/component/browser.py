@@ -33,7 +33,7 @@ from urllib.request import Request, urlopen
 from agent.component.base import ComponentBase
 from agent.component.llm import LLMParam
 from api.db import FileType
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_model_type_by_name
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -394,9 +394,9 @@ class Browser(ComponentBase, ABC):
     def _build_browser_llm(self):
         from browser_use.llm import ChatBrowserUse, ChatOpenAI
 
-        chat_model_config = get_model_config_by_type_and_name(
+        chat_model_config = get_model_config_from_provider_instance(
             self._canvas.get_tenant_id(),
-            TenantLLMService.llm_id2llm_type(self._param.llm_id),
+            get_model_type_by_name(self._param.llm_id),
             self._param.llm_id,
         )
         cfg = self._as_model_config_dict(chat_model_config)
