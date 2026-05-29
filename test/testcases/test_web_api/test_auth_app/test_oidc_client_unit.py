@@ -127,18 +127,25 @@ def _base_config():
     }
 
 
-def _metadata(issuer):
-    return {
+def _metadata(issuer, signing_algs=None):
+    md = {
         "issuer": issuer,
         "jwks_uri": f"{issuer}/jwks",
         "authorization_endpoint": f"{issuer}/authorize",
         "token_endpoint": f"{issuer}/token",
         "userinfo_endpoint": f"{issuer}/userinfo",
     }
+    if signing_algs is not None:
+        md["id_token_signing_alg_values_supported"] = signing_algs
+    return md
 
 
-def _make_client(monkeypatch, oidc_module):
-    monkeypatch.setattr(oidc_module.OIDCClient, "_load_oidc_metadata", staticmethod(lambda issuer: _metadata(issuer)))
+def _make_client(monkeypatch, oidc_module, signing_algs=None):
+    monkeypatch.setattr(
+        oidc_module.OIDCClient,
+        "_load_oidc_metadata",
+        staticmethod(lambda issuer: _metadata(issuer, signing_algs=signing_algs)),
+    )
     return oidc_module.OIDCClient(_base_config())
 
 
@@ -199,8 +206,6 @@ def test_parse_id_token_success_and_error(monkeypatch):
     _, oidc_module = _load_auth_modules(monkeypatch)
     client = _make_client(monkeypatch, oidc_module)
 
-    monkeypatch.setattr(oidc_module.jwt, "get_unverified_header", lambda _token: {})
-
     seen = {}
 
     class _JwkClient(_DummyJwkClient):
@@ -243,6 +248,195 @@ def test_parse_id_token_success_and_error(monkeypatch):
     with pytest.raises(ValueError) as exc_info:
         client.parse_id_token("id-token-2")
     assert str(exc_info.value) == "Error parsing ID Token: decode boom"
+
+
+# ===================================================================== #
+# JWT algorithm-confusion regression tests                              #
+#                                                                       #
+# Before the fix, ``parse_id_token`` read the signing algorithm from    #
+# the unverified JWT header. An attacker who presents a JWT with        #
+# ``"alg": "none"`` would have signature verification disabled, and an  #
+# attacker who presents ``"alg": "HS256"`` and signs the JWT with the   #
+# public key bytes (RSA / HMAC confusion) would get the forged token    #
+# accepted. The tests below pin the contract:                           #
+#                                                                       #
+#   - the algorithm allowlist is pinned at construction time from the   #
+#     provider's discovery metadata intersected with the safe allowlist #
+#   - the JWT header's ``alg`` claim is never read at decode time       #
+# ===================================================================== #
+
+
+@pytest.mark.p2
+def test_id_token_signing_algs_default_to_rs256_when_metadata_missing(monkeypatch):
+    """No ``id_token_signing_alg_values_supported`` in metadata → RS256 only.
+
+    Crucially the fallback is RS256, never whatever the JWT header claims.
+    """
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(monkeypatch, oidc_module)
+    assert client.id_token_signing_algs == ["RS256"]
+
+
+@pytest.mark.p2
+def test_id_token_signing_algs_intersect_metadata_with_safe_allowlist(monkeypatch):
+    """Metadata advertises a mix of safe and unsafe algs — only safe ones kept."""
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(
+        monkeypatch,
+        oidc_module,
+        signing_algs=["RS256", "ES256", "HS256", "none", "PS512"],
+    )
+    assert set(client.id_token_signing_algs) == {"RS256", "ES256", "PS512"}
+    # The dangerous algorithms must not appear in the verification allowlist.
+    assert "HS256" not in client.id_token_signing_algs
+    assert "none" not in client.id_token_signing_algs
+
+
+@pytest.mark.p2
+def test_id_token_signing_algs_fall_back_when_only_unsafe_advertised(monkeypatch):
+    """Provider advertises only HS256 / none → fall back to RS256, do not trust."""
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(
+        monkeypatch,
+        oidc_module,
+        signing_algs=["HS256", "none", "bogus"],
+    )
+    assert client.id_token_signing_algs == ["RS256"]
+
+
+@pytest.mark.p2
+def test_id_token_signing_algs_ignores_non_string_entries(monkeypatch):
+    """Malformed entries (None / dict / int) are filtered out, not crashed on."""
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(
+        monkeypatch,
+        oidc_module,
+        signing_algs=["RS256", None, 42, {"x": 1}, "ES384"],
+    )
+    assert set(client.id_token_signing_algs) == {"RS256", "ES384"}
+
+
+@pytest.mark.p2
+def test_id_token_signing_algs_handles_non_list_metadata_field(monkeypatch):
+    """If metadata gives a non-list type for the field, fall back to default."""
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(monkeypatch, oidc_module, signing_algs="RS256")
+    assert client.id_token_signing_algs == ["RS256"]
+
+
+@pytest.mark.p2
+def test_parse_id_token_passes_pinned_algorithms_to_jwt_decode(monkeypatch):
+    """``jwt.decode`` receives the pinned allowlist, regardless of JWT header."""
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(monkeypatch, oidc_module, signing_algs=["RS256", "ES256"])
+
+    # Even if the unverified header claims something dangerous, the
+    # verification path must not consult it. We sabotage
+    # ``jwt.get_unverified_header`` to prove the code never calls it.
+    def _explode(_token):  # pragma: no cover - must not be called
+        raise AssertionError(
+            "parse_id_token must not read the algorithm from the unverified JWT header"
+        )
+
+    monkeypatch.setattr(oidc_module.jwt, "get_unverified_header", _explode)
+    monkeypatch.setattr(oidc_module.jwt, "PyJWKClient", _DummyJwkClient)
+
+    seen = {}
+
+    def _decode(id_token, key, algorithms, audience, issuer):
+        seen["algorithms"] = list(algorithms)
+        return {"sub": "user-2"}
+
+    monkeypatch.setattr(oidc_module.jwt, "decode", _decode)
+    client.parse_id_token("malicious-header-token")
+
+    assert set(seen["algorithms"]) == {"RS256", "ES256"}
+    # Hard-stop: dangerous algorithms must never reach ``jwt.decode``.
+    assert "none" not in seen["algorithms"]
+    assert "HS256" not in seen["algorithms"]
+
+
+@pytest.mark.p2
+def test_parse_id_token_rejects_alg_none(monkeypatch):
+    """End-to-end: an ``alg: "none"`` JWT must not authenticate.
+
+    Uses the real PyJWT decoder so the test exercises the actual contract
+    between ``parse_id_token`` and the upstream library.
+    """
+    import jwt as real_jwt
+
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(monkeypatch, oidc_module)  # defaults to RS256
+
+    # PyJWT requires explicit opt-in to encode ``alg=none``; even then it
+    # produces a token with no signature segment.
+    forged = real_jwt.encode(
+        {
+            "sub": "victim-subject",
+            "email": "admin@target.example",
+            "aud": "client-1",
+            "iss": "https://issuer.example",
+        },
+        key="",
+        algorithm="none",
+    )
+    # Force the JWKS step into a no-op so we exercise *just* the alg gate.
+    monkeypatch.setattr(oidc_module.jwt, "PyJWKClient", _DummyJwkClient)
+
+    with pytest.raises(ValueError) as exc_info:
+        client.parse_id_token(forged)
+    assert "Error parsing ID Token" in str(exc_info.value)
+
+
+@pytest.mark.p2
+def test_parse_id_token_rejects_hs256_when_allowlist_is_asymmetric(monkeypatch):
+    """End-to-end: a JWT whose header claims ``alg: HS256`` must not be
+    accepted when the pinned allowlist is asymmetric-only.
+
+    This is the algorithm half of the RSA / HMAC confusion attack
+    (CWE-347). The attacker forges a JWT with ``"alg": "HS256"`` so the
+    server picks the HMAC verifier; pre-fix the server would read that alg
+    straight from the header and call
+    ``jwt.decode(..., algorithms=["HS256"], key=public_key)`` which lets
+    the attacker forge tokens with the public key bytes. After the fix the
+    allowlist pinned at construction time wins — HS* is never in it — so
+    PyJWT raises ``InvalidAlgorithmError`` before the HMAC verifier is
+    ever invoked.
+
+    Note: modern PyJWT (>=2.0) also independently refuses to use a
+    PEM-encoded key as an HMAC secret, so the public-key-bytes leg of the
+    full attack is partially mitigated at the library level. The fix here
+    is defense in depth and the only mitigation for non-PEM key formats
+    (raw bytes, DER, JWK octet keys, older PyJWT versions).
+    """
+    import jwt as real_jwt
+
+    _, oidc_module = _load_auth_modules(monkeypatch)
+    client = _make_client(monkeypatch, oidc_module)  # defaults to RS256
+
+    # Use a non-PEM byte string so we exercise the alg gate (not PyJWT's
+    # incidental PEM-as-HMAC-secret refusal).
+    shared_secret = b"shared-secret-bytes-not-a-pem-key"
+    forged = real_jwt.encode(
+        {
+            "sub": "victim-subject",
+            "email": "admin@target.example",
+            "aud": "client-1",
+            "iss": "https://issuer.example",
+        },
+        key=shared_secret,
+        algorithm="HS256",
+    )
+
+    class _SecretJwkClient(_DummyJwkClient):
+        def get_signing_key_from_jwt(self, _id_token):
+            return SimpleNamespace(key=shared_secret)
+
+    monkeypatch.setattr(oidc_module.jwt, "PyJWKClient", _SecretJwkClient)
+
+    with pytest.raises(ValueError) as exc_info:
+        client.parse_id_token(forged)
+    assert "Error parsing ID Token" in str(exc_info.value)
 
 
 @pytest.mark.p2

@@ -284,6 +284,31 @@ func buildExportedMCPServer(server *entity.MCPServer) (*ExportedMCPServers, bool
 	}, true
 }
 
+// DeleteMCPServer deletes an MCP server owned by a tenant.
+func (s *MCPService) DeleteMCPServer(tenantID, mcpID string) (bool, common.ErrorCode, error) {
+	server, err := s.mcpServerDAO.GetByID(mcpID)
+	if err != nil {
+		return false, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
+	}
+	if server == nil || server.TenantID != tenantID {
+		return false, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+	}
+
+	deleted, err := s.mcpServerDAO.DeleteMCPServer(mcpID, tenantID)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if !deleted {
+		return false, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+	}
+
+	return true, common.CodeSuccess, nil
+}
+
+func mcpServerNotFoundError(mcpID, tenantID string) error {
+	return fmt.Errorf("Cannot find MCP server %s for user %s", mcpID, tenantID)
+}
+
 func isValidMCPServerType(serverType string) bool {
 	return serverType == mcpServerTypeSSE || serverType == mcpServerTypeStreamableHTTP
 }

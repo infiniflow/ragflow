@@ -188,30 +188,36 @@ class TenantLLMService(CommonService):
         api_key = model_config.get("api_key_payload", model_config["api_key"])
         if model_config["model_type"] == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in embedding model. Supported factories: {EmbeddingModel.keys()}")
                 return None
             return EmbeddingModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
-        elif model_config["model_type"] == LLMType.RERANK:
+        elif model_config["model_type"] == LLMType.RERANK.value:
             if model_config["llm_factory"] not in RerankModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in rerank model. Supported factories: {RerankModel.keys()}")
                 return None
             return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
         elif model_config["model_type"] == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in cv model. Supported factories: {CvModel.keys()}")
                 return None
             return CvModel[model_config["llm_factory"]](api_key, model_config["llm_name"], lang, base_url=model_config["api_base"], **kwargs)
 
         elif model_config["model_type"] == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in chat model. Supported factories: {ChatModel.keys()}")
                 return None
             return ChatModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
 
-        elif model_config["model_type"] == LLMType.SPEECH2TEXT:
+        elif model_config["model_type"] == LLMType.SPEECH2TEXT.value:
             if model_config["llm_factory"] not in Seq2txtModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in speech2text model. Supported factories: {Seq2txtModel.keys()}")
                 return None
             return Seq2txtModel[model_config["llm_factory"]](key=api_key, model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
-        elif model_config["model_type"] == LLMType.TTS:
+        elif model_config["model_type"] == LLMType.TTS.value:
             if model_config["llm_factory"] not in TTSModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in tts model. Supported factories: {TTSModel.keys()}")
                 return None
             return TTSModel[model_config["llm_factory"]](
                 api_key,
@@ -219,8 +225,9 @@ class TenantLLMService(CommonService):
                 base_url=model_config["api_base"],
             )
 
-        elif model_config["model_type"] == LLMType.OCR:
+        elif model_config["model_type"] == LLMType.OCR.value:
             if model_config["llm_factory"] not in OcrModel:
+                logging.error(f"Factory {model_config['llm_factory']} not in ocr model. Supported factories: {OcrModel.keys()}")
                 return None
             return OcrModel[model_config["llm_factory"]](
                 key=api_key,
