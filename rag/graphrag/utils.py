@@ -587,16 +587,40 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
     start = now
 
-    # All new chunks are ready.  Now delete old data and insert the new data.
-    # Deleting only after chunks are built ensures that a crash during embedding
-    # generation above does not destroy the old graph/subgraph checkpoints.
-    await thread_pool_exec(
-        settings.docStoreConn.delete,
-        {"knowledge_graph_kwd": ["graph", "subgraph"]},
-        search.index_name(tenant_id),
-        kb_id
-    )
+    # CRITICAL FIX: Write new chunks FIRST, then delete old chunks.
+    # This prevents data loss if timeout occurs between delete and write.
+    # See: https://github.com/infiniflow/ragflow/issues/<issue_number>
+    
+    # Step 1: Query OLD chunk IDs (before deleting anything)
+    old_chunk_ids = []
+    try:
+        old_chunks_result = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            {"knowledge_graph_kwd": ["graph", "subgraph"], "kb_id": kb_id},
+            [],
+            OrderByExpr(),
+            0,
+            10000,
+            search.index_name(tenant_id),
+            [kb_id]
+        )
+        if old_chunks_result:
+            old_chunk_ids = [c.get("id") for c in old_chunks_result if c.get("id")]
+        if callback:
+            callback(msg=f"set_graph: found {len(old_chunk_ids)} old chunks to replace.")
+    except Exception as e:
+        logging.warning(f"set_graph: failed to query old chunks (non-fatal): {e}")
+        old_chunk_ids = []
 
+    # Step 2: WRITE NEW CHUNKS FIRST (safe: old data still exists if this fails)
+    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert chunks")
+    now = asyncio.get_running_loop().time()
+    if callback:
+        callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges in {now - start:.2f}s.")
+    start = now
+
+    # Step 3: Delete removed nodes/edges (precise, safe)
     if change.removed_nodes:
         BATCH_SIZE = 100
         sorted_nodes = sorted(change.removed_nodes)
@@ -649,10 +673,22 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {del_now - start:.2f}s.")
     start = del_now
 
-    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert chunks")
-    now = asyncio.get_running_loop().time()
-    if callback:
-        callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges from index in {now - start:.2f}s.")
+    # Step 4: DELETE OLD CHUNKS BY ID (safe: new data already written)
+    if old_chunk_ids:
+        deleted_count = 0
+        for chunk_id in old_chunk_ids:
+            try:
+                await thread_pool_exec(
+                    settings.docStoreConn.delete,
+                    {"id": chunk_id},
+                    search.index_name(tenant_id),
+                    kb_id
+                )
+                deleted_count += 1
+            except Exception as e:
+                logging.warning(f"set_graph: failed to delete old chunk {chunk_id} (non-fatal): {e}")
+        if callback:
+            callback(msg=f"set_graph: cleaned up {deleted_count} old chunks.")
 
 
 def is_continuous_subsequence(subseq, seq):

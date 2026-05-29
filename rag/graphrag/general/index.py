@@ -716,7 +716,8 @@ async def generate_subgraph(
     return subgraph
 
 
-@timeout(60 * 3)
+# @timeout(60 * 3)  # REMOVED: ineffective in production (ENABLE_TIMEOUT_ASSERTION not set)
+                   # Real timeout control is in _run_with_retry() (L501~505)
 async def merge_subgraph(
     tenant_id: str,
     kb_id: str,
