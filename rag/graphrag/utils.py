@@ -489,6 +489,30 @@ async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
     return doc_ids
 
 
+async def _enumerate_graph_subgraph_chunk_ids(tenant_id: str, kb_id: str) -> list[str]:
+    """Return all doc-store ids for graph/subgraph rows in a KB."""
+    old_ids: list[str] = []
+    page_size = 256
+    for offset in range(0, 1024 * page_size, page_size):
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            [],
+            {"kb_id": kb_id, "knowledge_graph_kwd": ["graph", "subgraph"]},
+            [],
+            OrderByExpr(),
+            offset,
+            page_size,
+            search.index_name(tenant_id),
+            [kb_id],
+        )
+        fields = settings.docStoreConn.get_fields(res, ["id"])
+        if not fields:
+            break
+        old_ids.extend(fields.keys())
+    return old_ids
+
+
 async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
     conds = {"fields": ["content_with_weight", "removed_kwd", "source_id"], "size": 1, "knowledge_graph_kwd": ["graph"]}
     res = await settings.retriever.search(conds, search.index_name(tenant_id), [kb_id])
@@ -587,15 +611,57 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         callback(msg=f"set_graph converted graph change to {len(chunks)} chunks in {now - start:.2f}s.")
     start = now
 
-    # All new chunks are ready.  Now delete old data and insert the new data.
-    # Deleting only after chunks are built ensures that a crash during embedding
-    # generation above does not destroy the old graph/subgraph checkpoints.
-    await thread_pool_exec(
-        settings.docStoreConn.delete,
-        {"knowledge_graph_kwd": ["graph", "subgraph"]},
-        search.index_name(tenant_id),
-        kb_id
-    )
+    new_graph_subgraph_ids = {
+        chunk["id"]
+        for chunk in chunks
+        if chunk.get("knowledge_graph_kwd") in ("graph", "subgraph")
+    }
+
+    # Snapshot existing graph/subgraph ids before insert so a timeout during write
+    # cannot leave the KB with all graph rows deleted and only a partial rewrite.
+    old_graph_subgraph_ids: list[str] = []
+    try:
+        old_graph_subgraph_ids = await _enumerate_graph_subgraph_chunk_ids(tenant_id, kb_id)
+    except Exception:
+        logging.exception(
+            "Failed to enumerate existing graph/subgraph chunks for kb %s; falling back to delete-then-insert.",
+            kb_id,
+        )
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"knowledge_graph_kwd": ["graph", "subgraph"]},
+            search.index_name(tenant_id),
+            kb_id,
+        )
+        old_graph_subgraph_ids = []
+
+    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert chunks")
+
+    stale_graph_subgraph_ids = [chunk_id for chunk_id in old_graph_subgraph_ids if chunk_id not in new_graph_subgraph_ids]
+    if stale_graph_subgraph_ids:
+        try:
+            await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"knowledge_graph_kwd": ["graph", "subgraph"], "id": stale_graph_subgraph_ids},
+                search.index_name(tenant_id),
+                kb_id,
+            )
+        except Exception:
+            logging.exception(
+                "Failed to prune %d stale graph/subgraph chunks for kb %s",
+                len(stale_graph_subgraph_ids),
+                kb_id,
+            )
+
+    insert_now = asyncio.get_running_loop().time()
+    if callback:
+        callback(
+            msg=(
+                f"set_graph inserted {len(chunks)} chunks and pruned {len(stale_graph_subgraph_ids)} "
+                f"stale graph/subgraph rows in {insert_now - start:.2f}s."
+            )
+        )
+    start = insert_now
 
     if change.removed_nodes:
         BATCH_SIZE = 100
@@ -647,12 +713,14 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     del_now = asyncio.get_running_loop().time()
     if callback:
         callback(msg=f"set_graph removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges from index in {del_now - start:.2f}s.")
-    start = del_now
-
-    await insert_chunks_bounded(chunks, tenant_id, kb_id, callback=callback, label="Insert chunks")
-    now = asyncio.get_running_loop().time()
+    now = del_now
     if callback:
-        callback(msg=f"set_graph added/updated {len(change.added_updated_nodes)} nodes and {len(change.added_updated_edges)} edges from index in {now - start:.2f}s.")
+        callback(
+            msg=(
+                f"set_graph added/updated {len(change.added_updated_nodes)} nodes and "
+                f"{len(change.added_updated_edges)} edges from index in {now - start:.2f}s."
+            )
+        )
 
 
 def is_continuous_subsequence(subseq, seq):
