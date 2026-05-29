@@ -323,7 +323,7 @@ async def retrieval(tenant_id):
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
    
   
-@manager.route('/dify/retrieval', methods=['GET'])  # noqa: F821
+@manager.route('/dify/retrieval/health', methods=['GET'])  # noqa: F821
 async def retrieval_health_check():
     """Health check endpoint for Dify external knowledge base connectivity verification."""
     return get_json_result(data=True)
