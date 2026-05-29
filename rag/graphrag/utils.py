@@ -639,19 +639,22 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
 
     stale_graph_subgraph_ids = [chunk_id for chunk_id in old_graph_subgraph_ids if chunk_id not in new_graph_subgraph_ids]
     if stale_graph_subgraph_ids:
-        try:
-            await thread_pool_exec(
-                settings.docStoreConn.delete,
-                {"knowledge_graph_kwd": ["graph", "subgraph"], "id": stale_graph_subgraph_ids},
-                search.index_name(tenant_id),
-                kb_id,
-            )
-        except Exception:
-            logging.exception(
-                "Failed to prune %d stale graph/subgraph chunks for kb %s",
-                len(stale_graph_subgraph_ids),
-                kb_id,
-            )
+        prune_batch_size = 100
+        for i in range(0, len(stale_graph_subgraph_ids), prune_batch_size):
+            batch = stale_graph_subgraph_ids[i:i + prune_batch_size]
+            try:
+                await thread_pool_exec(
+                    settings.docStoreConn.delete,
+                    {"knowledge_graph_kwd": ["graph", "subgraph"], "id": batch},
+                    search.index_name(tenant_id),
+                    kb_id,
+                )
+            except Exception:
+                logging.exception(
+                    "Failed to prune stale graph/subgraph chunks for kb %s (batch offset %d)",
+                    kb_id,
+                    i,
+                )
 
     insert_now = asyncio.get_running_loop().time()
     if callback:
