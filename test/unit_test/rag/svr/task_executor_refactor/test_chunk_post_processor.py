@@ -26,7 +26,6 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
     apply_tags,
     count_with_key,
     build_metadata_config,
-    get_model_config_from_provider_instance,
 )
 
 
