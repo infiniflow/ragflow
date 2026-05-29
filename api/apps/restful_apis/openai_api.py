@@ -162,7 +162,7 @@ async def openai_chat_completions(chat_id):
 
     tools = None
     toolcall_session = None
-    stream_mode = req.get("stream", True)
+    stream_mode = bool(req.get("stream", False))
 
     if stream_mode:
         async def streamed_response_generator():
