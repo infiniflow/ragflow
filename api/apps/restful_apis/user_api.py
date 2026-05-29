@@ -288,9 +288,13 @@ async def log_out():
         schema:
           type: object
     """
-    user_id = current_user.id
-    current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
-    current_user.save()
+    user = current_user._get_current_object() if hasattr(current_user, "_get_current_object") else current_user
+    user_id = user.id
+    user.access_token = f"INVALID_{secrets.token_hex(16)}"
+    saved = user.save()
+    if saved == 0:
+        logging.error("Logout failed to persist access token update: user_id=%s", user_id)
+        return get_json_result(code=RetCode.SERVER_ERROR, data=False, message="Failed to update access token")
     logout_user()
     logging.info("Logout: user_id=%s, access_token invalidated", user_id)
     return get_json_result(data=True)
