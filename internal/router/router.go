@@ -42,6 +42,7 @@ type Router struct {
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
 	agentHandler         *handler.AgentHandler
+	botHandler           *handler.BotHandler
 }
 
 // NewRouter create router
@@ -65,6 +66,7 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
+	botHandler *handler.BotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -86,6 +88,7 @@ func NewRouter(
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
+		botHandler:           botHandler,
 	}
 }
 
@@ -116,6 +119,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
+
+		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		apiNoAuth.GET("/chatbots/:dialog_id/info", r.botHandler.ChatbotInfo)
+		apiNoAuth.GET("/searchbots/detail", r.botHandler.SearchbotDetail)
 	}
 
 	// Protected routes
