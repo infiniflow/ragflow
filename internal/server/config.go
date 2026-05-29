@@ -39,6 +39,7 @@ type Config struct {
 	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
+	SMTP             SMTPConfig             `mapstructure:"smtp"`
 	Log              LogConfig              `mapstructure:"log"`
 	DocEngine        DocEngineConfig        `mapstructure:"doc_engine"`
 	StorageEngine    StorageConfig          `mapstructure:"storage_engine"`
@@ -211,6 +212,18 @@ type RedisConfig struct {
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+// SMTPConfig email delivery configuration.
+type SMTPConfig struct {
+	MailServer        string   `mapstructure:"mail_server"`
+	MailPort          int      `mapstructure:"mail_port"`
+	MailUseSSL        bool     `mapstructure:"mail_use_ssl"`
+	MailUseTLS        bool     `mapstructure:"mail_use_tls"`
+	MailUsername      string   `mapstructure:"mail_username"`
+	MailPassword      string   `mapstructure:"mail_password"`
+	MailDefaultSender []string `mapstructure:"mail_default_sender"`
+	MailFrontendURL   string   `mapstructure:"mail_frontend_url"`
 }
 
 var (

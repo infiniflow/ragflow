@@ -28,9 +28,22 @@ import (
 	"ragflow/internal/service"
 )
 
+type tenantService interface {
+	ListTenantDefaultModels(userID string) ([]service.ModelItem, error)
+	SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType string) error
+	GetTenantInfo(userID string) (*service.TenantInfoResponse, error)
+	GetTenantList(userID string) ([]*service.TenantListItem, error)
+	InviteTenantUser(tenantID, currentUserID, email string) (*service.TenantInvitedUserResponse, common.ErrorCode, error)
+	CreateTenantUserInvite(tenantID, currentUserID, email string) (common.ErrorCode, error)
+	CreateMetadataStore(tenantID string) (common.ErrorCode, error)
+	DeleteMetadataStore(tenantID string) (common.ErrorCode, error)
+	CreateChunkStore(req *service.CreateDatasetTableRequest) (*service.CreateChunkStoreResponse, common.ErrorCode, error)
+	DeleteChunkStore(kbID string) (common.ErrorCode, error)
+}
+
 // TenantHandler tenant handler
 type TenantHandler struct {
-	tenantService *service.TenantService
+	tenantService tenantService
 	userService   *service.UserService
 	kbService     *service.KnowledgebaseService
 }
@@ -42,6 +55,10 @@ func NewTenantHandler(tenantService *service.TenantService, userService *service
 		userService:   userService,
 		kbService:     kbService,
 	}
+}
+
+type AddTenantUserRequest struct {
+	Email string `json:"email"`
 }
 
 func (h *TenantHandler) GetModels(c *gin.Context) {
@@ -192,6 +209,53 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 		"message": "success",
 		"data":    tenantList,
 	})
+}
+
+// AddTenantUser invites an existing user to join the current owner's team.
+// @Summary Add Tenant User
+// @Description Invite an existing user into the team identified by tenant_id
+// @Tags tenants
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param tenant_id path string true "tenant ID"
+// @Param request body AddTenantUserRequest true "invite user request"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/tenants/{tenant_id}/users [post]
+func (h *TenantHandler) AddTenantUser(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req AddTenantUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.tenantService.InviteTenantUser(c.Param("tenant_id"), user.ID, req.Email)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	inviter := user.Nickname
+	if inviter == "" {
+		inviter = user.Email
+	}
+	if err := sendTenantInviteEmail(req.Email, req.Email, c.Param("tenant_id"), inviter); err != nil {
+		jsonError(c, common.CodeServerError, "Failed to send invite email.")
+		return
+	}
+	code, err = h.tenantService.CreateTenantUserInvite(c.Param("tenant_id"), user.ID, req.Email)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // CreateMetadataStore handles the create metadata store request
@@ -407,9 +471,9 @@ func (h *TenantHandler) InsertChunksFromFile(c *gin.Context) {
 
 	// Parse JSON - format: {"index_name"/"table_name": ..., "knowledgebase_id": ..., "chunks": [...]}
 	var debugFormat struct {
-		IndexName       string `json:"index_name"`
-		TableName       string `json:"table_name"`
-		KnowledgebaseID string `json:"knowledgebase_id"`
+		IndexName       string                   `json:"index_name"`
+		TableName       string                   `json:"table_name"`
+		KnowledgebaseID string                   `json:"knowledgebase_id"`
 		Chunks          []map[string]interface{} `json:"chunks"`
 	}
 

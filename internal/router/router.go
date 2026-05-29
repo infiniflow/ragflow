@@ -160,6 +160,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
+				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantUser)
 			}
 
 			v1.GET("/tenant/list", r.tenantHandler.TenantList)
