@@ -54,8 +54,9 @@ type NovitaModel struct {
 // NewNovitaModel creates a new Novita model instance.
 //
 // Same transport convention as other Go drivers in this package:
-// clone http.DefaultTransport, override the connection-pool fields,
-// no client-level Timeout so SSE streams are not capped.
+// newPooledTransport keeps ProxyFromEnvironment, DialContext, HTTP/2, and
+// TLS defaults while overriding only the connection-pool fields. No
+// client-level Timeout so SSE streams are not capped.
 func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel {
 	transport := newPooledTransport()
 	transport.DisableCompression = false

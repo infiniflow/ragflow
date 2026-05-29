@@ -160,6 +160,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
+				tenants.PATCH("/:tenant_id", r.tenantHandler.AcceptTenantInvite)
+				tenants.GET("/:tenant_id/users", r.tenantHandler.ListTenantMembers)
+				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantMember)
+				tenants.DELETE("/:tenant_id/users", r.tenantHandler.RemoveTenantMember)
 			}
 
 			v1.GET("/tenant/list", r.tenantHandler.TenantList)
@@ -337,6 +341,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
+				system.GET("/status", r.systemHandler.GetStatus)
 				log := system.Group("/log")
 				{
 					// /api/v1/system/log GET
