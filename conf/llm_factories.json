@@ -2928,6 +2928,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-V3.1",
                     "tags": "LLM,CHAT,160",
                     "max_tokens": 160000,
@@ -3117,7 +3131,21 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/moonshotai/Kimi-K2.6",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "Pro/zai-org/GLM-4.7",
+                    "tags": "LLM,CHAT,205k",
+                    "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/zai-org/GLM-5.1",
                     "tags": "LLM,CHAT,205k",
                     "max_tokens": 205000,
                     "model_type": "chat",

@@ -53,9 +53,14 @@ func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, regi
 		return driver, nil
 	}
 
-	newDriver := driver.NewInstance(map[string]string{
+	baseURLByRegion := map[string]string{
 		region: baseURL,
-	})
+	}
+	if region == "" {
+		baseURLByRegion["default"] = baseURL
+	}
+
+	newDriver := driver.NewInstance(baseURLByRegion)
 	if newDriver == nil {
 		return nil, fmt.Errorf("provider %s does not support custom base_url", providerName)
 	}

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import base64
+import binascii
 import datetime
 import logging
 import re
@@ -64,6 +65,31 @@ from rag.prompts.generator import cross_languages, keyword_extraction
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
 DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE = "DOC_STOP_PARSING_INVALID_STATE"
+
+
+def _decode_chunk_image_base64(image_base64):
+    if not isinstance(image_base64, str) or not image_base64.strip():
+        return None, "`image_base64` must be a non-empty string"
+    try:
+        image_binary = base64.b64decode(image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return None, "Invalid `image_base64`"
+    if not image_binary:
+        return None, "`image_base64` is empty"
+    return image_binary, None
+
+
+def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary):
+    try:
+        store_chunk_image(dataset_id, chunk_id, image_binary)
+    except Exception:
+        logging.exception(
+            "Failed to store chunk image. dataset_id=%s chunk_id=%s",
+            dataset_id,
+            chunk_id,
+        )
+        return "Failed to store chunk image"
+    return None
 
 
 class Chunk(BaseModel):
@@ -507,8 +533,13 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
 
-    image_base64 = req.get("image_base64")
-    if image_base64:
+    if "image_base64" in req:
+        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
+        if image_err:
+            return get_error_data_result(message=image_err)
+        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
+        if store_err:
+            return get_error_data_result(message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
@@ -519,9 +550,6 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
-
-    if image_base64:
-        store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
     key_mapping = {
@@ -647,8 +675,13 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
-    image_base64 = req.get("image_base64")
-    if image_base64:
+    if "image_base64" in req:
+        image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
+        if image_err:
+            return get_error_data_result(message=image_err)
+        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
+        if store_err:
+            return get_error_data_result(message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
@@ -671,8 +704,6 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
     settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(dataset_tenant_id), dataset_id)
-    if image_base64:
-        store_chunk_image(dataset_id, chunk_id, base64.b64decode(image_base64))
     return get_result()
 
 
