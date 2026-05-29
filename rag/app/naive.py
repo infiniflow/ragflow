@@ -54,6 +54,7 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+from rag.nlp.markdown_heading import group_markdown_sections_by_headings
 
 
 def _normalize_section_text_for_rtl_presentation_forms(sections):
@@ -1068,51 +1069,78 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
     if is_markdown:
-        merged_chunks = []
-        merged_images = []
+        chunk_by_heading = bool(parser_config.get("markdown_chunk_by_heading", False))
         chunk_limit = max(0, int(parser_config.get("chunk_token_num", 128)))
+        heading_depth = max(1, min(6, int(parser_config.get("markdown_heading_depth", 6) or 6)))
 
-        current_text = ""
-        current_tokens = 0
-        current_image = None
+        if chunk_by_heading:
+            chunks = group_markdown_sections_by_headings(
+                sections,
+                max_token_num=chunk_limit,
+                max_depth=heading_depth,
+            )
+            chunk_images = [None] * len(chunks)
+            if section_images and any(img is not None for img in section_images):
+                for idx, sec in enumerate(sections):
+                    sec_image = section_images[idx] if idx < len(section_images) else None
+                    if not sec_image:
+                        continue
+                    text = sec[0] if isinstance(sec, tuple) else sec
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    for chunk_idx, chunk in enumerate(chunks):
+                        if text.strip() in chunk or chunk in text.strip():
+                            chunk_images[chunk_idx] = concat_img(chunk_images[chunk_idx], sec_image) if chunk_images[chunk_idx] else sec_image
+                            break
+            has_images = any(img is not None for img in chunk_images)
+            if has_images:
+                res.extend(tokenize_chunks_with_images(chunks, doc, is_english, chunk_images, child_delimiters_pattern=child_deli))
+            else:
+                res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+        else:
+            merged_chunks = []
+            merged_images = []
+            current_text = ""
+            current_tokens = 0
+            current_image = None
 
-        for idx, sec in enumerate(sections):
-            text = sec[0] if isinstance(sec, tuple) else sec
-            sec_tokens = num_tokens_from_string(text)
-            sec_image = section_images[idx] if section_images and idx < len(section_images) else None
+            for idx, sec in enumerate(sections):
+                text = sec[0] if isinstance(sec, tuple) else sec
+                sec_tokens = num_tokens_from_string(text)
+                sec_image = section_images[idx] if section_images and idx < len(section_images) else None
 
-            if current_text and current_tokens + sec_tokens > chunk_limit:
-                merged_chunks.append(current_text)
-                merged_images.append(current_image)
-                overlap_part = ""
-                if overlapped_percent > 0:
-                    overlap_len = int(len(current_text) * overlapped_percent / 100)
-                    if overlap_len > 0:
-                        overlap_part = current_text[-overlap_len:]
-                current_text = overlap_part
-                current_tokens = num_tokens_from_string(current_text)
-                current_image = current_image if overlap_part else None
+                if current_text and current_tokens + sec_tokens > chunk_limit:
+                    merged_chunks.append(current_text)
+                    merged_images.append(current_image)
+                    overlap_part = ""
+                    if overlapped_percent > 0:
+                        overlap_len = int(len(current_text) * overlapped_percent / 100)
+                        if overlap_len > 0:
+                            overlap_part = current_text[-overlap_len:]
+                    current_text = overlap_part
+                    current_tokens = num_tokens_from_string(current_text)
+                    current_image = current_image if overlap_part else None
+
+                if current_text:
+                    current_text += "\n" + text
+                else:
+                    current_text = text
+                current_tokens += sec_tokens
+
+                if sec_image:
+                    current_image = concat_img(current_image, sec_image) if current_image else sec_image
 
             if current_text:
-                current_text += "\n" + text
+                merged_chunks.append(current_text)
+                merged_images.append(current_image)
+
+            chunks = merged_chunks
+            has_images = merged_images and any(img is not None for img in merged_images)
+
+            if has_images:
+                res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
             else:
-                current_text = text
-            current_tokens += sec_tokens
-
-            if sec_image:
-                current_image = concat_img(current_image, sec_image) if current_image else sec_image
-
-        if current_text:
-            merged_chunks.append(current_text)
-            merged_images.append(current_image)
-
-        chunks = merged_chunks
-        has_images = merged_images and any(img is not None for img in merged_images)
-
-        if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
-        else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
+                res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
     else:
         if section_images:
             if all(image is None for image in section_images):

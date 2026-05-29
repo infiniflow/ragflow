@@ -28,6 +28,8 @@ export const formSchema = z
         auto_keywords: z.number().optional(),
         auto_questions: z.number().optional(),
         html4excel: z.boolean(),
+        markdown_chunk_by_heading: z.boolean().optional(),
+        markdown_heading_depth: z.number().int().min(1).max(6).optional(),
         tag_kb_ids: z.array(z.string()).nullish(),
         topn_tags: z.number().optional(),
         toc_extraction: z.boolean().optional(),
