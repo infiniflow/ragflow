@@ -2095,7 +2095,6 @@ def _load_chat_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.joint_services", joint_pkg)
 
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_svc.get_model_config_by_type_and_name = lambda *_a, **_k: {}
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
 
