@@ -102,6 +102,7 @@ def test_pagination_loses_nothing(page_size, top):
         )
 
 
+@pytest.mark.p1
 def test_reported_regression_page7_not_short():
     """The reported case: page_size=10, top=1024, reranker on. Page 7 (global
     offset 60) used to return only 4 of 10 results because the window was
@@ -118,6 +119,7 @@ def test_reported_regression_page7_not_short():
     assert len(surfaced) == cap
 
 
+@pytest.mark.p1
 def test_matches_legacy_window_on_non_buggy_paths():
     """Where the old formula already produced a page-aligned value, the new
     window is unchanged (no behavioral regression on the non-buggy paths)."""
