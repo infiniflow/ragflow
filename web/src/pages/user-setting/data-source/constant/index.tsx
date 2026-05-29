@@ -43,10 +43,10 @@ export enum DataSourceKey {
   POSTGRESQL = 'postgresql',
   REST_API = 'rest_api',
   RSS = 'rss',
-
-  //   SHAREPOINT = 'sharepoint',
-  //   SLACK = 'slack',
-  //   TEAMS = 'teams',
+  ONEDRIVE = 'onedrive',
+  TEAMS = 'teams',
+  SLACK = 'slack',
+  SHAREPOINT = 'sharepoint',
 }
 
 type DataSourceFeatureVisibility = {
@@ -128,6 +128,18 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.MOODLE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.ONEDRIVE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.TEAMS]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SLACK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SHAREPOINT]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MYSQL]: {
@@ -213,6 +225,21 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.MOODLE}Description`),
       icon: <SvgIcon name={'data-source/moodle'} width={38} />,
     },
+    [DataSourceKey.TEAMS]: {
+      name: 'Microsoft Teams',
+      description: t(`setting.${DataSourceKey.TEAMS}Description`),
+      icon: <SvgIcon name={'data-source/teams'} width={38} />,
+    },
+    [DataSourceKey.SLACK]: {
+      name: 'Slack',
+      description: t(`setting.${DataSourceKey.SLACK}Description`),
+      icon: <SvgIcon name={'data-source/slack'} width={38} />,
+    },
+    [DataSourceKey.SHAREPOINT]: {
+      name: 'SharePoint',
+      description: t(`setting.${DataSourceKey.SHAREPOINT}Description`),
+      icon: <SvgIcon name={'data-source/sharepoint'} width={38} />,
+    },
     [DataSourceKey.JIRA]: {
       name: 'Jira',
       description: t(`setting.${DataSourceKey.JIRA}Description`),
@@ -293,6 +320,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'PostgreSQL',
       description: t(`setting.${DataSourceKey.POSTGRESQL}Description`),
       icon: <SvgIcon name={'data-source/postgresql'} width={38} />,
+    },
+    [DataSourceKey.ONEDRIVE]: {
+      name: 'OneDrive',
+      description: t(`setting.${DataSourceKey.ONEDRIVE}Description`),
+      icon: <SvgIcon name={'data-source/onedrive'} width={38} />,
     },
   };
 };
@@ -380,6 +412,49 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 export const DataSourceFormFields = {
+  [DataSourceKey.ONEDRIVE]: [
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.onedriveTenantIdTip'),
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      tooltip: t('setting.onedriveClientIdTip'),
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.onedriveClientSecretTip'),
+    },
+    {
+      label: 'Folder Path (optional)',
+      name: 'config.folder_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/Documents/Reports',
+      tooltip: t('setting.onedriveFolderPathTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
   [DataSourceKey.RSS]: [
     {
       label: 'Feed URL',
@@ -650,6 +725,71 @@ export const DataSourceFormFields = {
     {
       label: 'API Token',
       name: 'config.credentials.moodle_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
+  [DataSourceKey.TEAMS]: [
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.teamsTenantIdTip'),
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
+  [DataSourceKey.SLACK]: [
+    {
+      label: 'Slack Bot Token',
+      name: 'config.credentials.slack_bot_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.slackBotTokenTip'),
+    },
+    {
+      label: 'Channels',
+      name: 'config.channels',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.slackChannelsTip'),
+    },
+  ],
+  [DataSourceKey.SHAREPOINT]: [
+    {
+      label: 'Site URL',
+      name: 'config.credentials.site_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://contoso.sharepoint.com/sites/MySite',
+      tooltip: t('setting.sharepointSiteUrlTip'),
+    },
+    {
+      label: 'Tenant ID',
+      name: 'config.credentials.tenant_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
       required: true,
     },
@@ -1509,6 +1649,39 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.TEAMS]: {
+    name: '',
+    source: DataSourceKey.TEAMS,
+    config: {
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.SLACK]: {
+    name: '',
+    source: DataSourceKey.SLACK,
+    config: {
+      channels: [],
+      credentials: {
+        slack_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SHAREPOINT]: {
+    name: '',
+    source: DataSourceKey.SHAREPOINT,
+    config: {
+      credentials: {
+        site_url: '',
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
+      },
+    },
+  },
   [DataSourceKey.JIRA]: {
     name: '',
     source: DataSourceKey.JIRA,
@@ -1719,6 +1892,19 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.ONEDRIVE]: {
+    name: '',
+    source: DataSourceKey.ONEDRIVE,
+    config: {
+      folder_path: '',
+      batch_size: 2,
+      credentials: {
+        tenant_id: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },

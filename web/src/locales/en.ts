@@ -1238,6 +1238,20 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      teamsDescription:
+        'Connect Microsoft Teams via Microsoft Graph to sync channel posts and replies.',
+      teamsTenantIdTip:
+        'Azure AD tenant ID. Requires an app with Team.ReadBasic.All and ChannelMessage.Read.All application permissions (admin consent).',
+      slackDescription:
+        'Connect your Slack workspace to sync channel messages and threads.',
+      slackBotTokenTip:
+        'Slack bot user OAuth token (starts with xoxb-). The app needs the channels:read, channels:history, and users:read scopes.',
+      slackChannelsTip:
+        'Optional: channel names to sync (e.g., general). Leave empty to sync all accessible channels.',
+      sharepointDescription:
+        'Connect a SharePoint site via Microsoft Graph to sync its document libraries.',
+      sharepointSiteUrlTip:
+        'Full URL of the SharePoint site to index, e.g. https://contoso.sharepoint.com/sites/MySite. Requires an Azure AD app with Sites.Read.All and Files.Read.All application permissions (admin consent).',
       bitbucketDescription: 'Connect Bitbucket to sync PR content.',
       bitbucketTopWorkspaceTip:
         'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
@@ -1371,6 +1385,16 @@ Example: Virtual Hosted Style`,
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      onedriveDescription:
+        'Connect OneDrive or OneDrive for Business to index files and folders via Microsoft Graph delta queries.',
+      onedriveTenantIdTip:
+        'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
+      onedriveClientIdTip:
+        'Application (client) ID of the Azure AD app registration with Files.Read.All permission.',
+      onedriveClientSecretTip:
+        'Client secret value generated in the Azure AD app registration.',
+      onedriveFolderPathTip:
+        'Optional sub-folder path to limit indexing (e.g. /Documents/Reports). Leave blank to index the entire drive.',
       restApiQueryParamsTip:
         'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
       restApiHeadersTip:
@@ -1500,6 +1524,10 @@ Example: Virtual Hosted Style`,
       addLlmTitle: 'Add LLM',
       editLlmTitle: 'Edit {{name}} model',
       editModel: 'Edit model',
+      instanceName: 'Instance name',
+      instanceNameMessage: 'Please input the instance name!',
+      instanceNameTip:
+        'A unique name to identify this provider instance under the same factory.',
       modelName: 'Model name',
       modelID: 'Model ID',
       modelUid: 'Model UID',
