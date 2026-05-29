@@ -149,3 +149,48 @@ def test_message_fit_in_clamps_dominant_last_message_to_budget(monkeypatch):
     assert used_tokens == 8
     assert trimmed[0]["content"] == ""
     assert trimmed[-1]["content"] == "abcdefgh"
+
+
+@pytest.mark.p1
+def test_message_fit_in_keeps_recent_history_within_budget(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
+    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+
+    messages = [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "old-user"},
+        {"role": "assistant", "content": "old-assistant"},
+        {"role": "user", "content": "recent-user"},
+        {"role": "assistant", "content": "recent-assistant"},
+        {"role": "user", "content": "now"},
+    ]
+
+    used_tokens, trimmed = generator.message_fit_in(messages, max_length=31)
+
+    assert used_tokens == 31
+    assert [m["content"] for m in trimmed] == [
+        "S",
+        "recent-user",
+        "recent-assistant",
+        "now",
+    ]
+
+
+@pytest.mark.p1
+def test_message_fit_in_preserves_only_contiguous_recent_history(monkeypatch):
+    generator = _load_generator_module(monkeypatch)
+    monkeypatch.setattr(generator, "num_tokens_from_string", lambda text: len(text))
+    monkeypatch.setattr(generator, "encoder", _CharEncoder())
+
+    messages = [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "too-large-msg"},
+        {"role": "user", "content": "now"},
+    ]
+
+    used_tokens, trimmed = generator.message_fit_in(messages, max_length=9)
+
+    assert used_tokens == 4
+    assert [m["content"] for m in trimmed] == ["S", "now"]

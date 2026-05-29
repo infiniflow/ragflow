@@ -67,10 +67,10 @@ def chunks_format(reference):
 
 
 def message_fit_in(msg, max_length=4000):
-    def count():
-        nonlocal msg
+    def count(messages=None):
+        messages = msg if messages is None else messages
         tks_cnts = []
-        for m in msg:
+        for m in messages:
             tks_cnts.append({"role": m["role"], "count": num_tokens_from_string(m["content"])})
         total = 0
         for m in tks_cnts:
@@ -81,48 +81,106 @@ def message_fit_in(msg, max_length=4000):
         limit = max(0, limit)
         return encoder.decode(encoder.encode(content)[:limit])
 
+    def trim_messages(messages, limit):
+        limit = max(0, limit)
+        trimmed = []
+        remaining = limit
+        for m in messages:
+            m = dict(m)
+            tokens = num_tokens_from_string(m["content"])
+            if tokens <= remaining:
+                remaining -= tokens
+            else:
+                m["content"] = trim_content(m["content"], remaining)
+                remaining = 0
+            trimmed.append(m)
+        return trimmed
+
+    def fit_protected(messages):
+        c = count(messages)
+        if c <= max_length:
+            return c, messages
+
+        if len(messages) == 1:
+            messages[0] = dict(messages[0])
+            messages[0]["content"] = trim_content(messages[0]["content"], max_length)
+            return count(messages), messages
+
+        system_messages = [dict(m) for m in messages[:-1]]
+        last_message = dict(messages[-1])
+        ll = count(system_messages)
+        ll2 = num_tokens_from_string(last_message["content"])
+        total = ll + ll2
+        if total <= 0:
+            logging.debug(
+                "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
+                total,
+                max_length,
+                ll,
+                ll2,
+                [m.get("role") for m in messages],
+            )
+            return 0, messages
+
+        if ll / total > 0.8:
+            preserved_last = min(ll2, max_length)
+            last_message["content"] = trim_content(last_message["content"], preserved_last)
+            remaining = max(0, max_length - preserved_last)
+            fitted = trim_messages(system_messages, remaining) + [last_message]
+            return count(fitted), fitted
+
+        preserved_system = min(ll, max_length)
+        fitted_system = trim_messages(system_messages, preserved_system)
+        remaining = max(0, max_length - count(fitted_system))
+        last_message["content"] = trim_content(last_message["content"], remaining)
+        fitted = fitted_system + [last_message]
+        return count(fitted), fitted
+
     c = count()
     if c < max_length:
         return c, msg
-
-    msg_ = [m for m in msg if m["role"] == "system"]
-    if len(msg) > 1:
-        msg_.append(msg[-1])
-    msg = msg_
-    c = count()
-    if c < max_length:
-        return c, msg
-
-    ll = num_tokens_from_string(msg_[0]["content"])
-    ll2 = num_tokens_from_string(msg_[-1]["content"])
-    total = ll + ll2
-    if total <= 0:
-        logging.debug(
-            "message_fit_in degenerate token counts total=%s max_length=%s ll=%s ll2=%s preserved_roles=%s",
-            total,
-            max_length,
-            ll,
-            ll2,
-            [m.get("role") for m in msg],
-        )
-        return 0, msg
 
     if len(msg) == 1:
         msg[0]["content"] = trim_content(msg[0]["content"], max_length)
         return count(), msg
 
-    if ll / total > 0.8:
-        preserved_last = min(ll2, max_length)
-        msg[-1]["content"] = trim_content(msg_[-1]["content"], preserved_last)
-        remaining = max(0, max_length - preserved_last)
-        msg[0]["content"] = trim_content(msg_[0]["content"], remaining)
-        return count(), msg
+    system_messages = [m for m in msg[:-1] if m["role"] == "system"]
+    historical_messages = [m for m in msg[:-1] if m["role"] != "system"]
+    protected_messages = system_messages + [msg[-1]]
+    used, fitted_protected = fit_protected(protected_messages)
+    remaining = max(0, max_length - used)
+    if remaining <= 0:
+        logging.debug(
+            "message_fit_in trimmed all history: max_length=%s used=%s protected_count=%s history_count=%s",
+            max_length,
+            used,
+            len(fitted_protected),
+            len(historical_messages),
+        )
+        return used, fitted_protected
 
-    preserved_system = min(ll, max_length)
-    msg[0]["content"] = trim_content(msg_[0]["content"], preserved_system)
-    remaining = max(0, max_length - preserved_system)
-    msg[-1]["content"] = trim_content(msg_[-1]["content"], remaining)
-    return count(), msg
+    recent_history = []
+    remaining_before_history = remaining
+    for m in reversed(historical_messages):
+        tokens = num_tokens_from_string(m["content"])
+        if tokens > remaining:
+            break
+        recent_history.insert(0, m)
+        remaining -= tokens
+
+    fitted = fitted_protected[:-1] + recent_history + fitted_protected[-1:]
+    fitted_token_count = count(fitted)
+    logging.debug(
+        "message_fit_in trimmed history: max_length=%s protected_used=%s remaining_before_history=%s remaining_after_history=%s kept_history=%s dropped_history=%s final_used=%s",
+        max_length,
+        used,
+        remaining_before_history,
+        remaining,
+        len(recent_history),
+        max(0, len(historical_messages) - len(recent_history)),
+        fitted_token_count,
+    )
+    return fitted_token_count, fitted
 
 
 def kb_prompt(kbinfos, max_tokens, hash_id=False):

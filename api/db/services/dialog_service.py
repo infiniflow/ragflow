@@ -314,13 +314,34 @@ async def async_chat_solo(dialog, messages, stream=True):
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
+
+    system_prompt = prompt_config.get("system", "")
+    model_max_tokens = model_config.get("max_tokens") if model_config else None
+    if not model_max_tokens:
+        model_max_tokens = getattr(chat_mdl, "max_length", 8192)
+    model_max_tokens = int(model_max_tokens or 8192)
+    gen_conf = deepcopy(dialog.llm_setting or {})
+    used_token_count, fitted_msg = message_fit_in([{"role": "system", "content": system_prompt}, *msg], int(model_max_tokens * 0.95))
+    system_prompt = fitted_msg[0]["content"] if fitted_msg and fitted_msg[0]["role"] == "system" else ""
+    msg = fitted_msg[1:] if fitted_msg and fitted_msg[0]["role"] == "system" else fitted_msg
+    if "max_tokens" in gen_conf:
+        gen_conf["max_tokens"] = min(gen_conf["max_tokens"], max(0, model_max_tokens - used_token_count))
+    logger.debug(
+        "async_chat_solo fitted message history: used_token_count=%s model_max_tokens=%s generation_max_tokens=%s system_prompt_kept=%s message_count=%s",
+        used_token_count,
+        model_max_tokens,
+        gen_conf.get("max_tokens"),
+        bool(fitted_msg and fitted_msg[0].get("role") == "system"),
+        len(msg),
+    )
+
     if "chat" in llm_types and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     if stream:
         if "chat" in llm_types:
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
+            stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, gen_conf)
         else:
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+            stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, gen_conf, images=image_files)
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
@@ -329,9 +350,9 @@ async def async_chat_solo(dialog, messages, stream=True):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
         if "chat" in llm_types:
-            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+            answer = await chat_mdl.async_chat(system_prompt, msg, gen_conf)
         else:
-            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+            answer = await chat_mdl.async_chat(system_prompt, msg, gen_conf, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
