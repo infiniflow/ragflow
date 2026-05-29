@@ -160,6 +160,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
+				tenants.PATCH("/:tenant_id", r.tenantHandler.AcceptTenantInvite)
+				tenants.GET("/:tenant_id/users", r.tenantHandler.ListTenantMembers)
+				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantMember)
+				tenants.DELETE("/:tenant_id/users", r.tenantHandler.RemoveTenantMember)
 			}
 
 			v1.GET("/tenant/list", r.tenantHandler.TenantList)
@@ -256,6 +260,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			mcp := v1.Group("/mcp")
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 			}
 
 			// Skill search routes
@@ -337,13 +342,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
-				log := system.Group("/log")
+				system.GET("/status", r.systemHandler.GetStatus)
+				system.GET("/stats", r.systemHandler.GetStats)
+
+				config := system.Group("/config")
 				{
-					// /api/v1/system/log GET
-					log.GET("", r.systemHandler.GetLogLevel)
-					// /api/v1/system/log PUT
-					log.PUT("", r.systemHandler.SetLogLevel)
+					config.GET("/log", r.systemHandler.GetLogLevel)
+					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				//log := system.Group("/log")
+				//{
+				//	// /api/v1/system/log GET
+				//	log.GET("", r.systemHandler.GetLogLevel)
+				//	// /api/v1/system/log PUT
+				//	log.PUT("", r.systemHandler.SetLogLevel)
+				//}
 
 				tokens := system.Group("/tokens")
 				{
