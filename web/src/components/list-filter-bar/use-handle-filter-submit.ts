@@ -48,21 +48,24 @@ export function useHandleFilterSubmit() {
     [setPagination],
   );
 
-  const checkValue = useCallback((filters: FilterCollection[]) => {
-    if (!filters?.length || !filterValue) {
-      return;
-    }
-    const validFields = filters.reduce((pre, cur) => {
-      return [...pre, ...getFilterIds(cur as FilterType)];
-    }, [] as string[]);
-    if (!validFields.length) {
-      return;
-    }
-    setFilterValue((preValue) => {
-      const newValue: FilterValue = mergeFilterValue(preValue, validFields);
-      return newValue;
-    });
-  }, []);
+  const checkValue = useCallback(
+    (filters: FilterCollection[]) => {
+      if (!filters?.length || !filterValue) {
+        return;
+      }
+      const validFields = filters.reduce((pre, cur) => {
+        return [...pre, ...getFilterIds(cur as FilterType)];
+      }, [] as string[]);
+      if (!validFields.length) {
+        return;
+      }
+      setFilterValue((preValue) => {
+        const newValue: FilterValue = mergeFilterValue(preValue, validFields);
+        return newValue;
+      });
+    },
+    [filterValue],
+  );
 
   return { filterValue, setFilterValue, handleFilterSubmit, checkValue };
 }
