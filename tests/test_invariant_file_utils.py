@@ -163,11 +163,15 @@ def test_file_utils_no_unsanitized_shell_input(payload):
         return
 
     # -----------------------------------------------------------------------
-    # Strategy 2: Module not available – test the invariant via a simulated
-    # implementation that mirrors the vulnerable pattern, then verify our
-    # detection logic catches it.
+    # Strategy 2: Module not available – skip rather than silently passing
+    # via simulation so that the real fix in repair_pdf_with_ghostscript is
+    # always exercised when the full dependency set is present.
     # -----------------------------------------------------------------------
-    _test_invariant_via_simulation(payload)
+    pytest.skip(
+        "api.utils.file_utils could not be imported in this environment. "
+        "Skipping rather than falling back to simulation so the real security "
+        "fix in repair_pdf_with_ghostscript is always exercised when present."
+    )
 
 
 def _test_real_module(file_utils, payload):
@@ -236,6 +240,25 @@ def _test_real_module(file_utils, payload):
                 for args, kwargs in captured_calls:
                     _check_subprocess_call_safety_raw(args, kwargs, payload)
 
+        # Directly target repair_pdf_with_ghostscript – the only function in
+        # file_utils.py that calls subprocess.run.  The generic loop above
+        # silently skips it because it expects bytes, not a str.
+        if hasattr(file_utils, 'repair_pdf_with_ghostscript'):
+            captured_calls.clear()
+            try:
+                file_utils.repair_pdf_with_ghostscript(
+                    payload.encode() if isinstance(payload, str) else payload
+                )
+            except Exception:
+                pass
+            for args, kwargs in captured_calls:
+                # shell=True must never be used here
+                assert not kwargs.get('shell', False), (
+                    "SECURITY VIOLATION: repair_pdf_with_ghostscript called "
+                    "subprocess with shell=True."
+                )
+                _check_subprocess_call_safety_raw(args, kwargs, payload)
+
 
 def _check_subprocess_call_safety_raw(args, kwargs, payload):
     """Check raw args/kwargs from a subprocess call."""
@@ -281,7 +304,8 @@ def _test_invariant_via_simulation(payload):
     def unsafe_process_file_shell_true(filename):
         """Unsafe: uses shell=True with user input – should be caught."""
         cmd = f"file {filename}"
-        return subprocess.run(cmd, shell=True, capture_output=True)
+        return subprocess.run(  # nosec B602 B605 -- intentional unsafe pattern; subprocess is mocked and this exists only to verify detection logic catches shell=True violations
+            cmd, shell=True, capture_output=True)
 
     # -----------------------------------------------------------------------
     # Verify SAFE implementation: payload must be rejected
@@ -344,7 +368,8 @@ def _test_invariant_via_simulation(payload):
         # We assert this pattern is NEVER acceptable
         def would_be_violation():
             cmd = f"process_file {payload}"
-            subprocess.run(cmd, shell=True)
+            subprocess.run(  # nosec B602 B605 -- intentional unsafe pattern; subprocess is mocked and this exists only to confirm detection logic identifies shell=True violations
+                cmd, shell=True)
 
         would_be_violation()
 
