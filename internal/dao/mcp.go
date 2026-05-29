@@ -105,6 +105,9 @@ func (dao *MCPServerDAO) GetMCPServerByIDAndTenantID(id, tenantID string) (*enti
 	var server entity.MCPServer
 	err := DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &server, nil
