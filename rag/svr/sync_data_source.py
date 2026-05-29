@@ -61,6 +61,7 @@ from common.data_source import (
     RDBMSConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    OneDriveConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -997,6 +998,52 @@ class SharePoint(SyncBase):
         return document_batches()
 
 
+class OneDrive(SyncBase):
+    SOURCE_NAME: str = FileSource.ONEDRIVE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = OneDriveConnector(
+            batch_size=batch_size,
+            folder_path=self.conf.get("folder_path") or None,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the lastModifiedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every drive's root each run.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        self.log_connection(
+            "OneDrive",
+            self.conf.get("folder_path", "/") or "/",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
 class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
@@ -1857,6 +1904,7 @@ func_factory = {
     FileSource.GOOGLE_DRIVE: GoogleDrive,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
+    FileSource.ONEDRIVE: OneDrive,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,

@@ -65,6 +65,27 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 	})
 }
 
+// DeleteMCPServer deletes an MCP server for the current user.
+func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	result, code, err := h.mcpService.DeleteMCPServer(user.ID, c.Param("mcp_id"))
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    result,
+	})
+}
+
 // mcpErrorResponse maps the import / test sentinel errors to the response
 // codes Python's mcp_api emits.
 func mcpErrorResponse(c *gin.Context, err error) bool {

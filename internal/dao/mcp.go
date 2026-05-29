@@ -16,7 +16,13 @@
 
 package dao
 
-import "ragflow/internal/entity"
+import (
+	"errors"
+
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
 
 // MCPServerDAO MCP server data access object.
 type MCPServerDAO struct{}
@@ -24,6 +30,18 @@ type MCPServerDAO struct{}
 // NewMCPServerDAO creates an MCP server DAO.
 func NewMCPServerDAO() *MCPServerDAO {
 	return &MCPServerDAO{}
+}
+
+// GetByID returns an MCP server by ID.
+func (dao *MCPServerDAO) GetByID(id string) (*entity.MCPServer, error) {
+	var server entity.MCPServer
+	if err := DB.Where("id = ?", id).First(&server).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &server, nil
 }
 
 // ExistsByNameAndTenant returns whether an MCP server name already exists for a tenant.
@@ -40,4 +58,13 @@ func (dao *MCPServerDAO) ExistsByNameAndTenant(name, tenantID string) (bool, err
 // CreateMCPServer creates an MCP server.
 func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
 	return DB.Create(server).Error
+}
+
+// DeleteMCPServer deletes an MCP server owned by a tenant.
+func (dao *MCPServerDAO) DeleteMCPServer(id, tenantID string) (bool, error) {
+	result := DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&entity.MCPServer{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }

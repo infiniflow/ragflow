@@ -481,7 +481,7 @@ def _load_session_module(monkeypatch):
                 raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
         return _MockModelConfig2(mock_tenant_id, "model-1").to_dict()
 
-    def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
+    def _get_model_config_from_provider_instance(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
             raise Exception("Model Name is required")
         return _MockModelConfig2(tenant_id, model_name, model_type).to_dict()
@@ -525,7 +525,7 @@ def _load_session_module(monkeypatch):
         return _MockModelConfig2(tenant_id, model_name, model_type_val).to_dict()
     
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
-    tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
+    tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -2095,7 +2095,6 @@ def _load_chat_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.joint_services", joint_pkg)
 
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_svc.get_model_config_by_type_and_name = lambda *_a, **_k: {}
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
 
@@ -2184,10 +2183,6 @@ def _load_chat_api_module(monkeypatch):
     api_utils_mod.server_error_response = lambda e: {"code": _RetCode.SERVER_ERROR, "message": str(e)}
     api_utils_mod.validate_request = lambda *_a, **_k: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     rag_gen_mod = ModuleType("rag.prompts.generator")
     rag_gen_mod.chunks_format = lambda chunks: chunks
