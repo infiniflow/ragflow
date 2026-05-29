@@ -1385,6 +1385,16 @@ Example: Virtual Hosted Style`,
         'Datetime/timestamp column for incremental sync. Only rows modified after the last sync will be fetched.',
       rest_apiDescription:
         'Connect any REST API endpoint as a data source using a flexible, configuration-driven connector.',
+      onedriveDescription:
+        'Connect OneDrive or OneDrive for Business to index files and folders via Microsoft Graph delta queries.',
+      onedriveTenantIdTip:
+        'Azure Active Directory tenant ID (Directory ID) of the Microsoft 365 organisation.',
+      onedriveClientIdTip:
+        'Application (client) ID of the Azure AD app registration with Files.Read.All permission.',
+      onedriveClientSecretTip:
+        'Client secret value generated in the Azure AD app registration.',
+      onedriveFolderPathTip:
+        'Optional sub-folder path to limit indexing (e.g. /Documents/Reports). Leave blank to index the entire drive.',
       restApiQueryParamsTip:
         'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
       restApiHeadersTip:
