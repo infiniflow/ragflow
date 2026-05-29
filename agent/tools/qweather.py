@@ -17,6 +17,7 @@ from abc import ABC
 import pandas as pd
 import requests
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.http_client import DEFAULT_TIMEOUT
 
 
 class QWeatherParam(ComponentParamBase):
@@ -71,7 +72,8 @@ class QWeather(ComponentBase, ABC):
                 return
 
             response = requests.get(
-                url="https://geoapi.qweather.com/v2/city/lookup?location=" + ans + "&key=" + self._param.web_apikey).json()
+                url="https://geoapi.qweather.com/v2/city/lookup?location=" + ans + "&key=" + self._param.web_apikey,
+                timeout=DEFAULT_TIMEOUT).json()
             if response["code"] == "200":
                 location_id = response["location"][0]["id"]
             else:
@@ -84,7 +86,7 @@ class QWeather(ComponentBase, ABC):
 
             if self._param.type == "weather":
                 url = base_url + "weather/" + self._param.time_period + "?location=" + location_id + "&key=" + self._param.web_apikey + "&lang=" + self._param.lang
-                response = requests.get(url=url).json()
+                response = requests.get(url=url, timeout=DEFAULT_TIMEOUT).json()
                 if self.check_if_canceled("Qweather processing"):
                     return
                 if response["code"] == "200":
@@ -104,7 +106,7 @@ class QWeather(ComponentBase, ABC):
 
             elif self._param.type == "indices":
                 url = base_url + "indices/1d?type=0&location=" + location_id + "&key=" + self._param.web_apikey + "&lang=" + self._param.lang
-                response = requests.get(url=url).json()
+                response = requests.get(url=url, timeout=DEFAULT_TIMEOUT).json()
                 if self.check_if_canceled("Qweather processing"):
                     return
                 if response["code"] == "200":
@@ -117,7 +119,7 @@ class QWeather(ComponentBase, ABC):
 
             elif self._param.type == "airquality":
                 url = base_url + "air/now?location=" + location_id + "&key=" + self._param.web_apikey + "&lang=" + self._param.lang
-                response = requests.get(url=url).json()
+                response = requests.get(url=url, timeout=DEFAULT_TIMEOUT).json()
                 if self.check_if_canceled("Qweather processing"):
                     return
                 if response["code"] == "200":

@@ -19,6 +19,7 @@ import pandas as pd
 import time
 import requests
 from agent.component.base import ComponentBase, ComponentParamBase
+from common.http_client import DEFAULT_TIMEOUT
 
 
 class TuShareParam(ComponentParamBase):
@@ -62,7 +63,7 @@ class TuShare(ComponentBase, ABC):
                 "params": {"src": self._param.src, "start_date": self._param.start_date,
                            "end_date": self._param.end_date}
             }
-            response = requests.post(url="http://api.tushare.pro", data=json.dumps(params).encode('utf-8'))
+            response = requests.post(url="http://api.tushare.pro", data=json.dumps(params).encode('utf-8'), timeout=DEFAULT_TIMEOUT)
             response = response.json()
             if self.check_if_canceled("TuShare processing"):
                 return
