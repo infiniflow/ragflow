@@ -54,7 +54,7 @@ def get_model_config_by_id(
         config_dict["api_key_payload"] = api_key_payload
     if is_tools is not None:
         config_dict["is_tools"] = is_tools
-    llm = LLMService.query(llm_name=config_dict["llm_name"])
+    llm = LLMService.query(llm_name=config_dict["llm_name"], fid=config_dict["llm_factory"])
     if "is_tools" not in config_dict and llm:
         config_dict["is_tools"] = llm[0].is_tools
     return config_dict
@@ -136,7 +136,7 @@ def get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_nam
         raise LookupError(
             f"Tenant Model with name {model_name} has type {config_model_type}, expected {model_type_val}"
         )
-    llm = LLMService.query(llm_name=config_dict["llm_name"])
+    llm = LLMService.query(llm_name=config_dict["llm_name"], fid=config_dict["llm_factory"])
     if "is_tools" not in config_dict and llm:
         config_dict["is_tools"] = llm[0].is_tools
     return config_dict

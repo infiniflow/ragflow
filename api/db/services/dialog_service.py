@@ -20,6 +20,8 @@ import time
 import uuid
 from copy import deepcopy
 
+from rag.advanced_rag.agentic_rag import RAGTools
+
 logger = logging.getLogger(__name__)
 from datetime import datetime
 from functools import partial
@@ -1681,3 +1683,114 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     mindmap = MindMapExtractor(chat_mdl)
     mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
     return mind_map.output
+
+
+async def rag_agent(dialog, messages, stream=True, **kwargs):
+    logging.debug("Begin rag_agent")
+    assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
+    prompt_config = dialog.prompt_config
+    check_llm_ts = timer()
+    kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
+    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    tenant_ids = list(set([kb.tenant_id for kb in kbs]))
+    rag_tools = RAGTools(tenant_ids, 
+                         chat_mdl,
+                         embed_mdl=embd_mdl,
+                         kb_ids=dialog.kb_ids, 
+                         tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None
+                         )
+
+    chat_start_ts = timer()
+    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+    if llm_type == "image2text":
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    else:
+        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+
+    attachments = None
+    if "doc_ids" in kwargs:
+        attachments = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+    attachments_ = ""
+    image_attachments = []
+    image_files = []
+    if "doc_ids" in messages[-1]:
+        attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
+    if "files" in messages[-1]:
+        if llm_type == "chat":
+            text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
+        else:
+            text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
+        attachments_ = "\n\n".join(text_attachments)
+    msg = deepcopy(messages)
+    if llm_type == "chat" and image_attachments:
+        factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
+        convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+
+    async def decorate_answer(answer):
+        nonlocal rag_tools, messages
+
+        refs = []
+        ans = answer.split("</think>")
+        think = ""
+        if len(ans) == 2:
+            think = ans[0] + "</think>"
+            answer = ans[1]
+
+        idx = set([])
+        normalized_answer = normalize_arabic_digits(answer) or ""
+        for match in CITATION_MARKER_PATTERN.finditer(normalized_answer):
+            i = int(match.group(1))
+            if i < len(rag_tools.kbinfos["chunks"]):
+                idx.add(i)
+
+            answer, idx = repair_bad_citation_formats(answer, rag_tools.kbinfos, idx)
+
+            idx = set([rag_tools.kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
+            recall_docs = [d for d in rag_tools.kbinfos["doc_aggs"] if d["doc_id"] in idx]
+            if not recall_docs:
+                recall_docs = rag_tools.kbinfos["doc_aggs"]
+            rag_tools.kbinfos["doc_aggs"] = recall_docs
+
+            refs = deepcopy(rag_tools.kbinfos)
+            for c in refs["chunks"]:
+                if c.get("vector"):
+                    del c["vector"]
+
+        if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
+            answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+
+        return {"answer": think + answer, "reference": refs, "prompt": "", "created_at": time.time()}
+
+    gen_conf = dialog.llm_setting
+    if stream:
+        if llm_type == "chat":
+            stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), msg, gen_conf)
+        else:
+            stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), msg, gen_conf, images=image_files)
+        last_state = None
+        async for kind, value, state in _stream_with_think_delta(stream_iter):
+            last_state = state
+            if kind == "marker":
+                flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
+                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
+                continue
+            yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
+        full_answer = last_state.full_text if last_state else ""
+        if full_answer:
+            final = await decorate_answer(_extract_visible_answer(full_answer))
+            final["final"] = True
+            final["audio_binary"] = None
+            yield final
+    else:
+        if llm_type == "chat":
+            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg[1:], gen_conf)
+        else:
+            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg[1:], gen_conf, images=image_files)
+        user_content = msg[-1].get("content", "[content not available]")
+        logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        res = await decorate_answer(answer)
+        res["audio_binary"] = tts(tts_mdl, answer)
+        yield res
+
+    return

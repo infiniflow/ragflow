@@ -91,14 +91,33 @@ def _py_type_to_json(py_type: Any) -> dict[str, Any]:
     return {"type": "string"}
 
 
-_PARAM_RE = re.compile(r"^\s*:param\s+(?P<name>\w+)\s*:\s*(?P<desc>.+?)\s*$")
+_PARAM_RE = re.compile(r"^\s*:param\s+(?P<name>\w+)\s*:\s*(?P<desc>.*?)\s*$")
+_GOOGLE_ARGS_HDR_RE = re.compile(r"^(Args|Arguments|Parameters)\s*:\s*$")
+_GOOGLE_SECTION_HDR_RE = re.compile(
+    r"^(Returns?|Yields?|Raises|Notes?|Examples?|Attributes?|Todo|See Also|Warning|Warnings|Tip)\s*:\s*$"
+)
+# Google-style parameter line: leading indent, identifier, optional ``(type)``,
+# then ``: description``. The description can be empty (continuation lines fill it).
+_GOOGLE_PARAM_RE = re.compile(
+    r"^(?P<indent>\s+)(?P<name>\w+)\s*(?:\([^)]*\))?\s*:\s*(?P<desc>.*)$"
+)
 
 
 def _parse_param_docs(docstring: str | None) -> tuple[str, dict[str, str]]:
-    """Pull a short function description and ``:param name:`` lines out of a docstring.
+    """Pull a function description and per-parameter descriptions out of a docstring.
 
-    Intentionally minimal — Google/NumPy styles are not parsed. Anything
-    before the first ``:param`` line becomes the function description.
+    Recognises two conventions and handles multi-line descriptions in both:
+
+    * **reST / Sphinx**: ``:param name: description`` followed by deeper-indented
+      continuation lines.
+    * **Google**: an ``Args:`` (or ``Arguments:`` / ``Parameters:``) section
+      whose body is ``    name: description`` lines, with deeper-indented
+      continuation lines folded onto the same entry. Other Google sections
+      (``Returns:``, ``Raises:``, ...) terminate the description but are
+      otherwise dropped — they aren't sent to the LLM.
+
+    Both styles can co-exist in one docstring. Anything before the first
+    parameter entry / section header becomes the function description.
     """
     if not docstring:
         return "", {}
@@ -106,12 +125,65 @@ def _parse_param_docs(docstring: str | None) -> tuple[str, dict[str, str]]:
     lines = inspect.cleandoc(docstring).splitlines()
     desc_lines: list[str] = []
     param_docs: dict[str, str] = {}
+    state = "desc"  # "desc" | "rst_param" | "google_args" | "other_section"
+    current_param: str | None = None
+    current_indent = 0
+    after_first_param = False
+
+    def _append_continuation(name: str, text: str) -> None:
+        param_docs[name] = (param_docs[name] + " " + text).strip() if param_docs.get(name) else text
+
     for line in lines:
+        stripped = line.strip()
+        line_indent = len(line) - len(line.lstrip())
+
+        # reST :param: line — works in any state, resets it.
         m = _PARAM_RE.match(line)
         if m:
-            param_docs[m.group("name")] = m.group("desc")
-        elif not param_docs:
+            current_param = m.group("name")
+            current_indent = line_indent
+            param_docs[current_param] = m.group("desc").strip()
+            state = "rst_param"
+            after_first_param = True
+            continue
+
+        # Google section headers.
+        if _GOOGLE_ARGS_HDR_RE.match(stripped):
+            state = "google_args"
+            current_param = None
+            after_first_param = True
+            continue
+        if _GOOGLE_SECTION_HDR_RE.match(stripped):
+            state = "other_section"
+            current_param = None
+            after_first_param = True
+            continue
+
+        # Google ``    name: desc`` entry inside an Args block.
+        if state == "google_args":
+            gm = _GOOGLE_PARAM_RE.match(line)
+            if gm:
+                current_param = gm.group("name")
+                current_indent = line_indent
+                param_docs[current_param] = gm.group("desc").strip()
+                continue
+
+        # Continuation line for the most recent reST or Google param.
+        if state in ("rst_param", "google_args") and current_param and stripped:
+            if line_indent > current_indent:
+                _append_continuation(current_param, stripped)
+                continue
+
+        # Blank line ends the current param's continuation but stays in-state.
+        if not stripped:
+            current_param = None
+            continue
+
+        # Lines outside any param block, before the first param/section,
+        # accumulate as the function description.
+        if not after_first_param:
             desc_lines.append(line)
+
     return "\n".join(desc_lines).strip(), param_docs
 
 

@@ -111,6 +111,48 @@ def test_schemas_passthrough_for_bind_tools():
     assert [s["function"]["name"] for s in schemas] == ["get_weather", "add"]
 
 
+def test_google_style_docstring_is_parsed():
+    @tool
+    def formalize(messages: list) -> str:
+        """Rewrite the latest user message into a self-contained question.
+
+        Args:
+            messages: the conversation so far, oldest first. Each item
+                should be prefixed with the speaker.
+
+        Returns:
+            A single self-contained question.
+        """
+
+    schema = formalize.openai_schema["function"]
+    assert schema["description"] == "Rewrite the latest user message into a self-contained question."
+    msg_desc = schema["parameters"]["properties"]["messages"]["description"]
+    assert msg_desc.startswith("the conversation so far, oldest first.")
+    assert "prefixed with the speaker" in msg_desc
+    # The Returns: section must not leak into either description.
+    assert "self-contained question" not in msg_desc
+    assert "Returns" not in schema["description"]
+
+
+def test_multiline_rst_param_is_folded():
+    @tool
+    def search(question: str, keywords: str) -> str:
+        """Search the user's knowledge bases.
+
+        :param question: the self-contained natural-language question
+            (run formalize_question first if the user message is a
+            follow-up that depends on earlier turns).
+        :param keywords: 3-8 keyword terms plus synonyms.
+        """
+
+    props = search.openai_schema["function"]["parameters"]["properties"]
+    q_desc = props["question"]["description"]
+    assert q_desc.startswith("the self-contained natural-language question")
+    assert "run formalize_question first" in q_desc
+    assert "follow-up" in q_desc
+    assert props["keywords"]["description"] == "3-8 keyword terms plus synonyms."
+
+
 def test_async_tool_timeout_raises():
     @tool
     async def slow() -> str:
