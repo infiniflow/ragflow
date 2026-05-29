@@ -38,14 +38,18 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
 
-    if not TenantLLMService.query(
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
-        return f"`llm_id` {llm_id} doesn't exist"
-    return None
+    # Try the requested model_type first, then fall back to the compatible type.
+    # image2text (multimodal) models are valid as chat models per tenant_model_service.
+    fallbacks = {"chat": ("chat", "image2text"), "image2text": ("image2text", "chat")}
+    for mt in fallbacks[model_type]:
+        if TenantLLMService.query(
+            tenant_id=tenant_id,
+            llm_name=llm_name,
+            llm_factory=llm_factory,
+            model_type=mt,
+        ):
+            return None
+    return f"`llm_id` {llm_id} doesn't exist"
 
 
 import logging
