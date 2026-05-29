@@ -205,22 +205,36 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	}
 	return nil
 }
-func (n *NatsEngine) GetMessages(messageCount int, ackPolicy bool) ([]map[string]string, error) {
-	resultMessages := make([]map[string]string, 0)
+func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) {
+	resultMessages := make([]common.TaskHandle, 0)
 	messages, err := n.consumer.Fetch(messageCount, jetstream.FetchMaxWait(1*time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch messages: %w", err)
+	}
 	for msg := range messages.Messages() {
-		messageMap := make(map[string]string)
-		messageMap["subject"] = msg.Subject()
-		messageMap["message"] = string(msg.Data())
-		common.Debug(fmt.Sprintf("New message: %s", string(msg.Data())))
-		if ackPolicy {
-			err = msg.Ack()
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		resultMessages = append(resultMessages, messageMap)
+		resultMessages = append(resultMessages, NewNatsMessageHandle(msg))
 	}
 	return resultMessages, nil
+}
+
+type NatsMessageHandle struct {
+	message jetstream.Msg
+}
+
+func NewNatsMessageHandle(message jetstream.Msg) *NatsMessageHandle {
+	return &NatsMessageHandle{
+		message: message,
+	}
+}
+
+func (m *NatsMessageHandle) GetMessage() string {
+	return string(m.message.Data())
+}
+
+func (m *NatsMessageHandle) Ack() error {
+	return m.message.Ack()
+}
+
+func (m *NatsMessageHandle) Nack() error {
+	return m.message.Nak()
 }

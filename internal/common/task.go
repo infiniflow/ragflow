@@ -16,19 +16,8 @@
 
 package common
 
-const (
-	// PAGERANK_FLD is the field name for pagerank score
-	PAGERANK_FLD = "pagerank_fea"
-	// TAG_FLD is the field name for tag features
-	TAG_FLD = "tag_feas"
-)
-
-// task status
-const (
-	CREATED   = "CREATED"
-	RUNNING   = "RUNNING"
-	COMPLETED = "COMPLETED"
-	FAILED    = "FAILED"
-	STOPPED   = "STOPPED"
-	STOPPING  = "STOPPING"
-)
+type TaskHandle interface {
+	GetMessage() string
+	Ack() error
+	Nack() error
+}

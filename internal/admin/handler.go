@@ -1296,12 +1296,8 @@ type PullMessageFromQueueRequest struct {
 func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	var req PullMessageFromQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "file uri and from is required", 400)
+		errorResponse(c, fmt.Sprintf("message count and ack_policy are required, error: %s", err.Error()), 400)
 		return
-	}
-	ackPolicy := false
-	if req.AckPolicy == "ACK" {
-		ackPolicy = true
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
@@ -1309,12 +1305,26 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 	}
-	messages, err := msgQueueEngine.GetMessages(req.MessageCount, ackPolicy)
-	if err != nil {
-		errorResponse(c, err.Error(), 400)
+	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
+	if req.AckPolicy == "ACK" {
+		for _, message := range messages {
+			err = message.Ack()
+			if err != nil {
+				errorResponse(c, fmt.Sprintf("fail to ack message: %s", err.Error()), 400)
+				return
+			}
+		}
+	} else {
+		for _, message := range messages {
+			err = message.Nack()
+			if err != nil {
+				errorResponse(c, fmt.Sprintf("fail to nack message: %s", err.Error()), 400)
+				return
+			}
+		}
 	}
 
-	success(c, messages, "List messages from queue successfully")
+	success(c, messages, "Pull messages from queue successfully")
 }
 
 func (h *Handler) ShowMessageQueue(c *gin.Context) {

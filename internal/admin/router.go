@@ -59,9 +59,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
 
-			// Tasks
-			protected.GET("/tasks", r.handler.ListTasks)
-
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
 			protected.POST("/users", r.handler.CreateUser)
@@ -153,6 +150,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 			protected.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
 			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
+
+			// Tasks
+			protected.GET("/tasks", r.handler.ListTasks)
 		}
 	}
 

@@ -18,6 +18,7 @@ package engine
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
 
@@ -82,7 +83,7 @@ type MessageQueue interface {
 	Init() error
 	InitConsumer(subject string) error
 	PublishTask(subject string, payload []byte) error
-	GetMessages(messageCount int, ackPolicy bool) ([]map[string]string, error)
+	GetMessages(messageCount int) ([]common.TaskHandle, error)
 	ListMessages(messageType string, pending bool) ([]map[string]string, error)
 	ShowMessageQueue() (map[string]string, error)
 }

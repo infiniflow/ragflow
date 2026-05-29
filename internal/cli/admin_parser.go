@@ -1744,4 +1744,5 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
 }

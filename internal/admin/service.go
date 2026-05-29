@@ -43,45 +43,49 @@ import (
 
 // Service admin service layer
 type Service struct {
-	userDAO           *dao.UserDAO
-	licenseDAO        *dao.LicenseDAO
-	timeRecordDAO     *dao.TimeRecordDAO
-	systemSettingsDAO *dao.SystemSettingsDAO
-	tenantDAO         *dao.TenantDAO
-	userTenantDAO     *dao.UserTenantDAO
-	tenantLLMDAO      *dao.TenantLLMDAO
-	fileDAO           *dao.FileDAO
-	documentDAO       *dao.DocumentDAO
-	taskDAO           *dao.TaskDAO
-	kbDAO             *dao.KnowledgebaseDAO
-	canvasDAO         *dao.UserCanvasDAO
-	chatDAO           *dao.ChatDAO
-	chatSessionDAO    *dao.ChatSessionDAO
-	apiTokenDAO       *dao.APITokenDAO
-	api4ConvDAO       *dao.API4ConversationDAO
-	llmDAO            *dao.LLMDAO
+	userDAO             *dao.UserDAO
+	licenseDAO          *dao.LicenseDAO
+	timeRecordDAO       *dao.TimeRecordDAO
+	systemSettingsDAO   *dao.SystemSettingsDAO
+	tenantDAO           *dao.TenantDAO
+	userTenantDAO       *dao.UserTenantDAO
+	tenantLLMDAO        *dao.TenantLLMDAO
+	fileDAO             *dao.FileDAO
+	documentDAO         *dao.DocumentDAO
+	taskDAO             *dao.TaskDAO
+	kbDAO               *dao.KnowledgebaseDAO
+	canvasDAO           *dao.UserCanvasDAO
+	chatDAO             *dao.ChatDAO
+	chatSessionDAO      *dao.ChatSessionDAO
+	apiTokenDAO         *dao.APITokenDAO
+	api4ConvDAO         *dao.API4ConversationDAO
+	llmDAO              *dao.LLMDAO
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDao *dao.IngestionTaskLogDAO
 }
 
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:           dao.NewUserDAO(),
-		licenseDAO:        dao.NewLicenseDAO(),
-		timeRecordDAO:     dao.NewTimeRecordDAO(),
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
-		tenantDAO:         dao.NewTenantDAO(),
-		userTenantDAO:     dao.NewUserTenantDAO(),
-		tenantLLMDAO:      dao.NewTenantLLMDAO(),
-		fileDAO:           dao.NewFileDAO(),
-		documentDAO:       dao.NewDocumentDAO(),
-		taskDAO:           dao.NewTaskDAO(),
-		kbDAO:             dao.NewKnowledgebaseDAO(),
-		canvasDAO:         dao.NewUserCanvasDAO(),
-		chatDAO:           dao.NewChatDAO(),
-		chatSessionDAO:    dao.NewChatSessionDAO(),
-		apiTokenDAO:       dao.NewAPITokenDAO(),
-		api4ConvDAO:       dao.NewAPI4ConversationDAO(),
-		llmDAO:            dao.NewLLMDAO(),
+		userDAO:             dao.NewUserDAO(),
+		licenseDAO:          dao.NewLicenseDAO(),
+		timeRecordDAO:       dao.NewTimeRecordDAO(),
+		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
+		tenantDAO:           dao.NewTenantDAO(),
+		userTenantDAO:       dao.NewUserTenantDAO(),
+		tenantLLMDAO:        dao.NewTenantLLMDAO(),
+		fileDAO:             dao.NewFileDAO(),
+		documentDAO:         dao.NewDocumentDAO(),
+		taskDAO:             dao.NewTaskDAO(),
+		kbDAO:               dao.NewKnowledgebaseDAO(),
+		canvasDAO:           dao.NewUserCanvasDAO(),
+		chatDAO:             dao.NewChatDAO(),
+		chatSessionDAO:      dao.NewChatSessionDAO(),
+		apiTokenDAO:         dao.NewAPITokenDAO(),
+		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
+		llmDAO:              dao.NewLLMDAO(),
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
 	}
 }
 
@@ -98,39 +102,41 @@ func (s *Service) Logout(user interface{}) error {
 // ListTasks
 func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 
-	//tasks, err := s.taskDAO.GetAllTasks()
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//var result []map[string]interface{}
-	//for _, task := range tasks {
-	//	// task.ChunkIDs is a string, delimiter is space, count the word count
-	//	ChunkCount := strings.Count(*task.ChunkIDs, " ")
-	//	result = append(result, map[string]interface{}{
-	//		"id":          task.ID,
-	//		"task_type":   task.TaskType,
-	//		"document_id": task.DocID,
-	//		"chunk_count": ChunkCount,
-	//		"from_page":   task.FromPage,
-	//		"to_page":     task.ToPage,
-	//		"priority":    task.Priority,
-	//		"duration":    task.ProcessDuration,
-	//		"progress":    task.Progress,
-	//		//"message":     *task.ProgressMsg,
-	//		"retry_count": task.RetryCount,
-	//		"digest":      task.Digest,
-	//	})
-	//}
+	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
+	if err != nil {
+		return nil, err
+	}
 
-	//ingestionMgr := GetIngestionManager()
-	//ingestionTasks, err := ingestionMgr.ListIngestionTasks()
-	//if err != nil {
-	//	return nil, fmt.Errorf("fail to list ingestion tasks")
-	//}
-	//
-	//return ingestionTasks, nil
-	return nil, nil
+	showTasks := []map[string]interface{}{}
+	for _, task := range ingestionTasks {
+		var user *entity.User
+		user, err = s.userDAO.GetByTenantID(task.UserID)
+		if err != nil {
+			return nil, err
+		}
+		//var document *entity.Document
+		//document, err = s.documentDAO.GetByID(task.DocumentID)
+		//if err != nil {
+		//	return nil, err
+		//}
+
+		var latestLog *entity.IngestionTaskLog
+		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		showTask := map[string]interface{}{
+			"id":          task.ID,
+			"user_id":     task.UserID,
+			"user":        user.Email,
+			"document_id": task.DocumentID,
+			"status":      task.Status,
+			"step":        int(latestLog.Checkpoint["current_step"].(float64)),
+		}
+		showTasks = append(showTasks, showTask)
+	}
+	return showTasks, nil
 }
 
 // GetUserByToken get user by access token

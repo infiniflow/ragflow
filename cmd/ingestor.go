@@ -161,13 +161,8 @@ func main() {
 
 	ingestor := ingestion.NewIngestor(name, 2, []string{"pdf", "docx", "txt"})
 
-	// Connect to the admin server
-	if err := ingestor.Connect(); err != nil {
-		common.Fatal(fmt.Sprintf("Error: %s", err.Error()))
-	}
-
 	go func() {
-		err := ingestor.Init()
+		err := ingestor.Start()
 		if err != nil {
 			common.Error("Failed to initialize ingestor", err)
 			return

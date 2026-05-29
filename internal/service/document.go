@@ -333,18 +333,16 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 			continue
 		}
 
-		taskID := common.GenerateUUID()
 		task := &entity.IngestionTask{
-			ID:         taskID,
 			DocumentID: docID,
 			UserID:     userID,
 			DatasetID:  datasetID,
 			Schema:     nil,
-			Status:     "CREATED",
+			Status:     common.CREATED,
 		}
 
 		// save the task to database
-		err = s.ingestionTaskDAO.Create(task)
+		task, err = s.ingestionTaskDAO.CheckAndCreate(task)
 		if err != nil {
 			errorMessage := err.Error()
 			responses = append(responses, &ParseDocumentResponse{
@@ -354,17 +352,15 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 			continue
 		}
 
-		// message queue
-
-		// Send task to admin server for ingestion
-		//err = AdminServiceClient.SendIngestionTask(task.ID, "start_ingestion_task", "ragflow.server", userID)
-		//if err != nil {
-		//	return nil, err
-		//}
+		msgQueueEngine := engine.GetMessageQueueEngine()
+		err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+		if err != nil {
+			return nil, err
+		}
 
 		responses = append(responses, &ParseDocumentResponse{
 			DocumentID: docID,
-			Result:     &taskID,
+			Result:     &task.ID,
 		})
 	}
 
@@ -376,25 +372,17 @@ func (s *DocumentService) StopIngestions(tasks []string, userID string) ([]*enti
 
 	var taskResponses []*entity.IngestionTask
 	for _, taskID := range tasks {
-		task, err := s.ingestionTaskDAO.GetByID(taskID)
+		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
 		if err != nil {
 			return nil, err
 		}
 
-		if task == nil {
-			return nil, fmt.Errorf("no such task")
-		}
-
-		//if task.Status == "CREATED" || task.Status == "COMPLETED" || task.Status == "RUNNING" {
-		//	//err = AdminServiceClient.SendIngestionTask(task.ID, "stop_ingestion_task", "ragflow.server", userID)
-		//	if err != nil {
-		//		return nil, err
-		//	}
-		//}
-
-		err = s.ingestionTaskDAO.UpdateStatus(taskID, "CANCELLING")
-		if err != nil {
-			return nil, err
+		if task.Status == common.STOPPING {
+			msgQueueEngine := engine.GetMessageQueueEngine()
+			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		taskResponses = append(taskResponses, task)

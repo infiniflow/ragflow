@@ -18,6 +18,7 @@ package dao
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -27,6 +28,7 @@ func NewIngestionTaskDAO() *IngestionTaskDAO {
 	return &IngestionTaskDAO{}
 }
 
+// Use by api server to create task
 // created → running : After the ingestor component assigns the task, it changes the status to running
 // running → completed : Task executes successfully
 // running → failed : Error occurs during execution
@@ -36,11 +38,11 @@ func NewIngestionTaskDAO() *IngestionTaskDAO {
 // canceling → canceled : Cancellation completes
 // failed → created : Retry (back to start)
 // canceled → created : Retry/re-execute (back to start)
-func (dao *IngestionTaskDAO) Create(ingestionTask *entity.IngestionTask) error {
+func (dao *IngestionTaskDAO) CheckAndCreate(ingestionTask *entity.IngestionTask) (*entity.IngestionTask, error) {
 
 	tx := DB.Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return nil, tx.Error
 	}
 
 	defer func() {
@@ -52,32 +54,158 @@ func (dao *IngestionTaskDAO) Create(ingestionTask *entity.IngestionTask) error {
 
 	// Check if the task is created
 	var taskRecord *entity.IngestionTask
-	err := DB.Where("document_id = ?", ingestionTask.DocumentID).First(&taskRecord).Error
+	err := tx.Where("document_id = ?", ingestionTask.DocumentID).First(&taskRecord).Error
 	if err == nil {
 		// found
-		if taskRecord.Status == "FAILED" || taskRecord.Status == "CANCELLED" || taskRecord.Status == "CANCELLING" {
+		if taskRecord.Status == common.FAILED || taskRecord.Status == common.STOPPED {
 			// restart the task
+			err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskRecord.ID).Update("status", common.CREATED).Error
+			if err != nil {
+				tx.Rollback()
+				return nil, err
+			}
 		} else {
-			return fmt.Errorf("document id %s already exists, status: %s", ingestionTask.DocumentID, taskRecord.Status)
+			return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", ingestionTask.DocumentID, taskRecord.Status, taskRecord.ID)
+		}
+	} else {
+		// create ingestion task
+		ingestionTask.ID = common.GenerateUUID()
+		if err = tx.Create(ingestionTask).Error; err != nil {
+			tx.Rollback()
+			return nil, err
 		}
 	}
 
-	// create ingestion task
-	if err = DB.Create(ingestionTask).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
 	if err = tx.Commit().Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return taskRecord, nil
 }
 
 // UpdateStatus Update ingestion task status
 func (dao *IngestionTaskDAO) UpdateStatus(taskID, status string) error {
 	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", status).Error
+}
+
+// CheckAnd called by ingestor
+// if task status is RUNNING, COMPLETED, STOPPED, FAILED, just return without error
+// if task status is CREATE, update to RUNNING
+// if task status is STOPPING, update to STOPPED
+func (dao *IngestionTaskDAO) SetRunningByIngestor(taskID string) (*entity.IngestionTask, error) {
+
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	var committed bool
+
+	defer func() {
+		if committed {
+			tx.Commit()
+		} else {
+			tx.Rollback()
+			if r := recover(); r != nil {
+				panic(r)
+			}
+		}
+	}()
+
+	var tasks []*entity.IngestionTask
+	err := tx.Where("id = ?", taskID).Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("task %s not found", taskID)
+	}
+
+	if len(tasks) != 1 {
+		return nil, fmt.Errorf("task %s has multiple records", taskID)
+	}
+
+	taskStatus := tasks[0].Status
+	switch taskStatus {
+	case common.CREATED:
+		tasks[0].Status = common.RUNNING
+		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.RUNNING).Error
+		if err != nil {
+			return nil, err
+		}
+		committed = true
+		return tasks[0], nil
+	case common.STOPPING:
+		tasks[0].Status = common.STOPPED
+		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.STOPPED).Error
+		if err != nil {
+			return nil, err
+		}
+		committed = true
+		return tasks[0], nil
+	case common.RUNNING:
+		// this task was executing before, just return without error
+		committed = true
+		return tasks[0], nil
+	default:
+		return tasks[0], nil
+	}
+}
+
+func (dao *IngestionTaskDAO) SetStoppingByAPIServer(taskID string) (*entity.IngestionTask, error) {
+
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	var committed bool
+
+	defer func() {
+		if committed {
+			tx.Commit()
+		} else {
+			tx.Rollback()
+			if r := recover(); r != nil {
+				panic(r)
+			}
+		}
+	}()
+
+	var tasks []*entity.IngestionTask
+	err := tx.Where("id = ?", taskID).Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("task %s not found", taskID)
+	}
+
+	if len(tasks) != 1 {
+		return nil, fmt.Errorf("task %s has multiple records", taskID)
+	}
+
+	taskStatus := tasks[0].Status
+	switch taskStatus {
+	case common.CREATED:
+		tasks[0].Status = common.STOPPED
+		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.STOPPED).Error
+		if err != nil {
+			return nil, err
+		}
+		committed = true
+		return tasks[0], nil
+	case common.RUNNING:
+		tasks[0].Status = common.STOPPING
+		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.STOPPING).Error
+		if err != nil {
+			return nil, err
+		}
+		committed = true
+		return tasks[0], nil
+	default:
+		return tasks[0], nil
+	}
 }
 
 func (dao *IngestionTaskDAO) GetAllTasks(page, pageSize int) ([]*entity.IngestionTask, error) {
@@ -170,6 +298,9 @@ func (dao *IngestionTaskletDAO) Create(ingestionTasklet *entity.IngestionTasklet
 	return DB.Create(ingestionTasklet).Error
 }
 
+func (dao *IngestionTaskletDAO) UpdateStatus(taskletID, status string) error {
+	return DB.Model(&entity.IngestionTasklet{}).Where("id = ?", taskletID).Update("status", status).Error
+}
 func (dao *IngestionTaskletDAO) GetAllTasklets() ([]*entity.IngestionTasklet, error) {
 	var tasks []*entity.IngestionTasklet
 	err := DB.Find(&tasks).Error
@@ -208,6 +339,12 @@ func (dao *IngestionTaskletLogDAO) GetLogByLogID(logID string) (*entity.Ingestio
 	var task *entity.IngestionTaskletLog
 	err := DB.Where("id = ?", logID).First(&task).Error
 	return task, err
+}
+
+func (dao *IngestionTaskletLogDAO) LatestLogByTaskletID(taskletID string) (*entity.IngestionTaskletLog, error) {
+	var tasklet *entity.IngestionTaskletLog
+	err := DB.Where("tasklet_id = ?", taskletID).Order("create_time DESC").First(&tasklet).Error
+	return tasklet, err
 }
 
 func (dao *IngestionTaskletLogDAO) DeleteByTaskletID(taskID string) (int64, error) {
