@@ -1108,6 +1108,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       onedriveClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
       onedriveFolderPathTip:
         '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
+      outlookDescription:
+        '连接 Outlook / Microsoft 365 邮箱，通过 Microsoft Graph delta 查询索引邮件。',
+      outlookTenantIdTip:
+        'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      outlookClientIdTip:
+        '拥有 Mail.Read 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      outlookClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
+      outlookFolderTip:
+        '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
+      outlookUserIdsTip:
+        '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
       teamsDescription:
         '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
       teamsTenantIdTip:
