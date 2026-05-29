@@ -41,7 +41,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from peewee import OperationalError
 
-from common.constants import ActiveEnum
+from common.constants import ActiveEnum, LLMType
 from api.db.db_models import APIToken
 from api.utils.json_encode import CustomJSONEncoder
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
@@ -576,8 +576,7 @@ def check_duplicate_ids(ids, id_type="item"):
 
 
 def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, str | None]:
-    from api.db.services.llm_service import LLMService
-    from api.db.services.tenant_llm_service import TenantLLMService
+    from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 
     """
     Verifies availability of an embedding model for a specific tenant.
@@ -613,18 +612,9 @@ def verify_embedding_availability(embd_id: str, tenant_id: str) -> tuple[bool, s
         (False, {'code': 101, 'message': "Unsupported model: <invalid_model>"})
     """
     try:
-        llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(embd_id)
-        in_llm_service = bool(LLMService.query(llm_name=llm_name, fid=llm_factory, model_type="embedding"))
-
-        tenant_llms = TenantLLMService.get_my_llms(tenant_id=tenant_id)
-        is_tenant_model = any(llm["llm_name"] == llm_name and llm["llm_factory"] == llm_factory and llm["model_type"] == "embedding" for llm in tenant_llms)
-
-        is_builtin_model = llm_factory == "Builtin"
-        if not (is_builtin_model or is_tenant_model or in_llm_service):
-            return False, f"Unsupported model: <{embd_id}>"
-
-        if not (is_builtin_model or is_tenant_model):
-            return False, f"Unauthorized model: <{embd_id}>"
+        get_model_config_from_provider_instance(tenant_id, LLMType.EMBEDDING, embd_id)
+    except LookupError as e:
+        return False, str(e)
     except OperationalError as e:
         logging.exception(e)
         return False, "Database operation failed"

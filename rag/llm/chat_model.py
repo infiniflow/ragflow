@@ -90,7 +90,7 @@ def _apply_model_family_policies(
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower:
+        elif "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
             reasoning = sanitized_gen_conf.pop("reasoning", None)
             thinking = {"type": "enabled"}
             if reasoning is not None:

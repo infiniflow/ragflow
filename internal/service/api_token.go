@@ -43,12 +43,26 @@ func (s *SystemService) ListAPITokens(tenantID string) ([]*TokenResponse, error)
 
 	responses := make([]*TokenResponse, len(tokens))
 	for i, token := range tokens {
+		beta := token.Beta
+		if beta == nil || *beta == "" {
+			generatedBeta := utility.GenerateBetaAPIToken(utility.GenerateAPIToken())
+			if err := dao.DB.Model(&entity.APIToken{}).
+				Where("tenant_id = ? AND token = ?", tenantID, token.Token).
+				Updates(map[string]interface{}{
+					"beta": generatedBeta,
+				}).Error; err != nil {
+				return nil, err
+			}
+			beta = &generatedBeta
+			token.Beta = beta
+		}
+
 		responses[i] = &TokenResponse{
 			TenantID:   token.TenantID,
 			Token:      token.Token,
 			DialogID:   token.DialogID,
 			Source:     token.Source,
-			Beta:       token.Beta,
+			Beta:       beta,
 			CreateTime: token.CreateTime,
 			UpdateTime: token.UpdateTime,
 		}

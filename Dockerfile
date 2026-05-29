@@ -189,6 +189,7 @@ COPY mcp mcp
 COPY common common
 COPY memory memory
 COPY bin bin
+COPY tools/scripts tools/scripts
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./

@@ -17,6 +17,8 @@ import logging
 import json
 import os
 import re
+
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
 from common.constants import PAGERANK_FLD
 from common import settings
 from api.db.db_models import File
@@ -912,11 +914,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     :param req: search request
     :return: (success, result) or (success, error_message)
     """
-    from api.db.joint_services.tenant_model_service import (
-        get_model_config_by_id,
-        get_model_config_by_type_and_name,
-        get_tenant_default_model_by_type,
-    )
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.search_service import SearchService
@@ -985,7 +983,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
             if chat_id:
-                chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, search_config["chat_id"])
+                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
             else:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1018,28 +1016,17 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
-    if kb.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-    elif kb.embd_id:
-        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    if kb.embd_id:
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
         embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    if req.get("tenant_rerank_id"):
-        allowed_rerank_tenant_ids = {tenant_id, kb.tenant_id}
-        rerank_model_config = get_model_config_by_id(
-            req["tenant_rerank_id"],
-            allowed_tenant_ids=allowed_rerank_tenant_ids,
-            requester_tenant_id=tenant_id,
-        )
+    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    if rerank_id:
+        rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-    else:
-        rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
-        if rerank_id:
-            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, rerank_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
     if search_config.get("keyword", req.get("keyword", False)):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
@@ -1099,9 +1086,6 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     from common.doc_store.doc_store_base import OrderByExpr
     from rag.nlp import search
 
-    from api.db.joint_services.tenant_model_service import (
-        get_model_config_by_type_and_name,
-    )
     from api.db.services.llm_service import LLMBundle
     from common.constants import LLMType
 
@@ -1214,7 +1198,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
     if not ok:
         return False, err
 
-    embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, embd_id)
+    embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, embd_id)
     emb_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     n = int(req.get("check_num", 5))
@@ -1293,11 +1277,7 @@ async def search_datasets(tenant_id: str, req: dict):
     :param req: search request containing dataset_ids and other params
     :return: (success, result) or (success, error_message)
     """
-    from api.db.joint_services.tenant_model_service import (
-        get_model_config_by_id,
-        get_model_config_by_type_and_name,
-        get_tenant_default_model_by_type,
-    )
+    from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
     from api.db.services.doc_metadata_service import DocMetadataService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.search_service import SearchService
@@ -1373,7 +1353,7 @@ async def search_datasets(tenant_id: str, req: dict):
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_id = search_config.get("chat_id", "")
             if chat_id:
-                chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, search_config["chat_id"])
+                chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, search_config["chat_id"])
             else:
                 chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -1408,28 +1388,17 @@ async def search_datasets(tenant_id: str, req: dict):
     _question = question
     if langs:
         _question = await cross_languages(kb.tenant_id, None, _question, langs)
-    if kb.tenant_embd_id:
-        embd_model_config = get_model_config_by_id(kb.tenant_embd_id)
-    elif kb.embd_id:
-        embd_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
+    if kb.embd_id:
+        embd_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
     else:
         embd_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.EMBEDDING)
     embd_mdl = LLMBundle(kb.tenant_id, embd_model_config)
 
     rerank_mdl = None
-    if req.get("tenant_rerank_id"):
-        allowed_rerank_tenant_ids = {tenant_id, *[dataset.tenant_id for dataset in kbs]}
-        rerank_model_config = get_model_config_by_id(
-            req["tenant_rerank_id"],
-            allowed_tenant_ids=allowed_rerank_tenant_ids,
-            requester_tenant_id=tenant_id,
-        )
+    rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
+    if rerank_id:
+        rerank_model_config = get_model_config_from_provider_instance(kb.tenant_id, LLMType.RERANK.value, rerank_id)
         rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
-    else:
-        rerank_id = search_config.get("rerank_id") or req.get("rerank_id")
-        if rerank_id:
-            rerank_model_config = get_model_config_by_type_and_name(kb.tenant_id, LLMType.RERANK.value, rerank_id)
-            rerank_mdl = LLMBundle(kb.tenant_id, rerank_model_config)
 
     if search_config.get("keyword", req.get("keyword", False)):
         default_chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)

@@ -1,12 +1,6 @@
 import { IModalManagerChildrenProps } from '@/components/modal-manager';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import { LLMFactory } from '@/constants/llm';
@@ -31,6 +25,7 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
 }
 
 type FieldType = {
+  instance_name?: string;
   api_key?: string;
   base_url?: string;
   group_id?: string;
@@ -50,7 +45,7 @@ const ApiKeyModal = ({
   llmFactory,
   loading,
   initialValue,
-  editMode = false,
+  // editMode = false,
   onOk,
   onVerify,
 }: IProps) => {
@@ -92,108 +87,100 @@ const ApiKeyModal = ({
     >
       <Form {...form}>
         <div className="space-y-4 py-4">
-          <FormField
-            name="api_key"
-            rules={{ required: t('apiKeyMessage') }}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel
-                  className="text-sm font-medium text-text-secondary"
-                  required
-                >
-                  {t('apiKey')}
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    {...field}
-                    data-testid="apikey-input"
-                    onKeyDown={handleKeyDown}
-                    className="w-full"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+          <RAGFlowFormItem
+            name="instance_name"
+            label={t('instanceName')}
+            tooltip={t('instanceNameTip')}
+            rules={{ required: t('instanceNameMessage') }}
+            required
+            labelClassName="text-sm font-medium text-text-secondary"
+          >
+            {(field) => (
+              <Input
+                {...field}
+                placeholder={t('instanceNameMessage')}
+                onKeyDown={handleKeyDown}
+                className="w-full"
+              />
             )}
-          />
+          </RAGFlowFormItem>
+
+          <RAGFlowFormItem
+            name="api_key"
+            label={t('apiKey')}
+            rules={{ required: t('apiKeyMessage') }}
+            required
+            labelClassName="text-sm font-medium text-text-secondary"
+          >
+            {(field) => (
+              <Input
+                {...field}
+                data-testid="apikey-input"
+                onKeyDown={handleKeyDown}
+                className="w-full"
+              />
+            )}
+          </RAGFlowFormItem>
 
           {modelsWithBaseUrl.some((x) => x === llmFactory) && (
-            <FormField
+            <RAGFlowFormItem
               name="base_url"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel
-                    className="text-sm font-medium text-text-primary"
-                    tooltip={
-                      llmFactory === LLMFactory.MiniMax
-                        ? t('minimaxBaseUrlTip')
-                        : llmFactory === LLMFactory.TongYiQianWen
-                          ? t('tongyiBaseUrlTip')
-                          : llmFactory === LLMFactory.SILICONFLOW
-                            ? t('siliconBaseUrlTip')
-                            : t('baseUrlTip')
-                    }
-                  >
-                    {t('baseUrl')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder={
-                        llmFactory === LLMFactory.TongYiQianWen
-                          ? t('tongyiBaseUrlPlaceholder')
-                          : llmFactory === LLMFactory.MiniMax
-                            ? t('minimaxBaseUrlPlaceholder')
-                            : llmFactory === LLMFactory.SILICONFLOW
-                              ? 'https://api.siliconflow.cn/v1'
-                              : 'https://api.openai.com/v1'
-                      }
-                      onKeyDown={handleKeyDown}
-                      className="w-full"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              label={t('baseUrl')}
+              tooltip={
+                llmFactory === LLMFactory.MiniMax
+                  ? t('minimaxBaseUrlTip')
+                  : llmFactory === LLMFactory.TongYiQianWen
+                    ? t('tongyiBaseUrlTip')
+                    : llmFactory === LLMFactory.SILICONFLOW
+                      ? t('siliconBaseUrlTip')
+                      : t('baseUrlTip')
+              }
+              labelClassName="text-sm font-medium text-text-primary"
+            >
+              {(field) => (
+                <Input
+                  {...field}
+                  placeholder={
+                    llmFactory === LLMFactory.TongYiQianWen
+                      ? t('tongyiBaseUrlPlaceholder')
+                      : llmFactory === LLMFactory.MiniMax
+                        ? t('minimaxBaseUrlPlaceholder')
+                        : llmFactory === LLMFactory.SILICONFLOW
+                          ? 'https://api.siliconflow.cn/v1'
+                          : 'https://api.openai.com/v1'
+                  }
+                  onKeyDown={handleKeyDown}
+                  className="w-full"
+                />
               )}
-            />
+            </RAGFlowFormItem>
           )}
 
           {llmFactory?.toLowerCase() === 'Anthropic'.toLowerCase() && (
-            <FormField
+            <RAGFlowFormItem
               name="base_url"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm font-medium text-text-primary">
-                    {t('baseUrl')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="https://api.anthropic.com/v1"
-                      onKeyDown={handleKeyDown}
-                      className="w-full"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              label={t('baseUrl')}
+              labelClassName="text-sm font-medium text-text-primary"
+            >
+              {(field) => (
+                <Input
+                  {...field}
+                  placeholder="https://api.anthropic.com/v1"
+                  onKeyDown={handleKeyDown}
+                  className="w-full"
+                />
               )}
-            />
+            </RAGFlowFormItem>
           )}
 
           {llmFactory?.toLowerCase() === 'Minimax'.toLowerCase() && (
-            <FormField
+            <RAGFlowFormItem
               name="group_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm font-medium text-text-primary">
-                    Group ID
-                  </FormLabel>
-                  <FormControl>
-                    <Input {...field} className="w-full" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              label="Group ID"
+              labelClassName="text-sm font-medium text-text-primary"
+            >
+              {(field) => <Input {...field} className="w-full" />}
+            </RAGFlowFormItem>
           )}
 
           <VerifyButton onVerify={onVerify} />
