@@ -265,7 +265,6 @@ func (h *HuaweiCloudModel) ChatWithMessages(modelName string, messages []Message
 		Answer:        &content,
 		ReasonContent: &reasonContent,
 	}, nil
-	panic("implement me")
 }
 
 func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
