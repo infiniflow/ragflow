@@ -375,6 +375,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """
 
     def new_task():
+        """Return a fresh task skeleton with a unique id and default progress fields."""
         return {
             "id": get_uuid(),
             "doc_id": doc["id"],
@@ -395,7 +396,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
-        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
+        if doc["parser_id"] in ["one", "knowledge_graph", "external"] or do_layout != "DeepDOC" or doc["parser_config"].get("toc_extraction", False):
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:

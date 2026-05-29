@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { AudioConfiguration } from './configuration/audio';
 import { BookConfiguration } from './configuration/book';
 import { EmailConfiguration } from './configuration/email';
+import { ExternalConfiguration } from './configuration/external';
 import { KnowledgeGraphConfiguration } from './configuration/knowledge-graph';
 import { LawsConfiguration } from './configuration/laws';
 import { ManualConfiguration } from './configuration/manual';
@@ -34,11 +35,8 @@ const ConfigurationComponentMap = {
   [DocumentParserType.Email]: EmailConfiguration,
   [DocumentParserType.Tag]: TagConfiguration,
   [DocumentParserType.KnowledgeGraph]: KnowledgeGraphConfiguration,
+  [DocumentParserType.External]: ExternalConfiguration,
 };
-
-function EmptyComponent() {
-  return <div></div>;
-}
 
 export function ChunkMethodForm() {
   const form = useFormContext();

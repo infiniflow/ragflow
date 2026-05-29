@@ -194,6 +194,7 @@ class TestDocumentsUpdated:
             ("knowledge_graph", 0, ""),
             ("email", 0, ""),
             ("tag", 0, ""),
+            ("external", 0, ""),
             ("", 102, "`chunk_method` (empty string) is not valid"),
             (
                 "other_chunk_method",

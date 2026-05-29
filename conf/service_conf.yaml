@@ -46,6 +46,15 @@ redis:
   host: 'localhost:6379'
 task_executor:
   message_queue_type: 'redis'
+external_loaders:
+  routes:
+    - extensions: [".pdf", ".docx", ".doc", ".odt", ".pptx", ".ppt"]
+      url: "http://localhost:8081/v1/process"
+      api_key: "changeme"
+      method: POST
+  fallback:
+    parser: naive
+
 user_default_llm:
   default_models:
     embedding_model:

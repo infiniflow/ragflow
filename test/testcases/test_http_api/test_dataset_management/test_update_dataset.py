@@ -427,8 +427,9 @@ class TestDatasetUpdate:
             "qa",
             "table",
             "tag",
+            "external",
         ],
-        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "external"],
     )
     def test_chunk_method(self, HttpApiAuth, add_dataset_func, chunk_method):
         dataset_id = add_dataset_func
@@ -455,7 +456,7 @@ class TestDatasetUpdate:
         payload = {"chunk_method": chunk_method}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
+        assert "Input should be in ['book', 'email', 'external', 'laws', 'manual', 'naive', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table', 'tag']" in res["message"], res
 
     @pytest.mark.p3
     def test_chunk_method_none(self, HttpApiAuth, add_dataset_func):
@@ -463,7 +464,7 @@ class TestDatasetUpdate:
         payload = {"chunk_method": None}
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in res["message"], res
+        assert "Input should be in ['book', 'email', 'external', 'laws', 'manual', 'naive', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table', 'tag']" in res["message"], res
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
