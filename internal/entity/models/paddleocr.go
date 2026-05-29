@@ -199,7 +199,13 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	var jsonlUrl string
 
 	for {
-		time.Sleep(3 * time.Second)
+		// Wait between polls but bail out immediately if the overall
+		// deadline fires instead of sleeping through it.
+		select {
+		case <-time.After(3 * time.Second):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 
 		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
 		pollReq.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))

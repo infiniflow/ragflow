@@ -841,24 +841,22 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
-
-	var resp *http.Response
 	for i := 0; i < count; i++ {
-		resp, err = g.httpClient.Do(req)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+
+		resp, err := g.httpClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to send request: %w", err)
 		}
-		defer resp.Body.Close()
 
-		var body []byte
-		body, err = io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read response: %w", err)
 		}
