@@ -20,6 +20,7 @@ import time
 from quart import Response, jsonify
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._generation_params import extract_generation_config, merge_generation_config
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
@@ -28,6 +29,7 @@ from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
+
 
 def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
@@ -136,6 +138,7 @@ async def openai_chat_completions(chat_id):
         dia.llm_id = requested_model
         if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
+    merge_generation_config(dia, extract_generation_config(req))
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):

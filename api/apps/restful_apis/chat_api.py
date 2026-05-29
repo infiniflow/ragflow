@@ -25,6 +25,7 @@ from types import SimpleNamespace
 from quart import Response, request
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 )
@@ -1140,11 +1141,7 @@ async def session_completion(chat_id_in_arg=""):
     session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
-    chat_model_config = {}
-    for model_config in ["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens"]:
-        config = req.get(model_config)
-        if config:
-            chat_model_config[model_config] = config
+    chat_model_config = pop_generation_config(req)
 
     try:
         conv = None
@@ -1187,7 +1184,6 @@ async def session_completion(chat_id_in_arg=""):
                     msg.append(m)
         else:
             dia = _build_default_completion_dialog()
-            dia.llm_setting = chat_model_config
 
         req.pop("messages", None)
         req.pop("question", None)
@@ -1209,6 +1205,7 @@ async def session_completion(chat_id_in_arg=""):
             if not tenant_info or not tenant_info.llm_id:
                 raise LookupError("No default chat model for tenant.")
             dia.llm_id = tenant_info.llm_id
+            merge_generation_config(dia, chat_model_config)
 
         stream_mode = req.pop("stream", True)
 
