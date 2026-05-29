@@ -1016,17 +1016,20 @@ class OneDrive(SyncBase):
         )
         self.connector.load_credentials(self.conf["credentials"])
 
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the lastModifiedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every drive's root each run.
         if task["reindex"] == "1" or not task["poll_range_start"]:
-            checkpoint = self.connector.build_dummy_checkpoint()
-            document_batch_generator = self.connector.load_from_checkpoint(
-                0, 0, checkpoint
-            )
+            start_ts = 0.0
         else:
-            end_ts = datetime.now(timezone.utc).timestamp()
-            document_batch_generator = self.connector.poll_source(
-                task["poll_range_start"].timestamp(),
-                end_ts,
-            )
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
 
         self.log_connection(
             "OneDrive",

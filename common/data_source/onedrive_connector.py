@@ -1,6 +1,7 @@
 """OneDrive data source connector"""
 
-from typing import Any
+import logging
+from typing import Any, Generator
 
 import msal
 import requests
@@ -17,7 +18,9 @@ from common.data_source.interfaces import (
     SecondsSinceUnixEpoch,
     SlimConnectorWithPermSync,
 )
-from common.data_source.models import ConnectorCheckpoint
+from common.data_source.models import ConnectorCheckpoint, SlimDocument
+
+logger = logging.getLogger(__name__)
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
@@ -136,7 +139,12 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> Any:
-        """Return documents modified between *start* and *end* (epoch seconds)."""
+        """Return documents modified at or after *start* (epoch seconds).
+
+        Kept for callers that prefer the time-window interface; internally
+        defers to the same delta-walk used by load_from_checkpoint and
+        filters in-window items by lastModifiedDateTime.
+        """
         return self._iter_documents(since_epoch=start)
 
     def load_from_checkpoint(
@@ -145,9 +153,19 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         end: SecondsSinceUnixEpoch,
         checkpoint: ConnectorCheckpoint,
     ) -> Any:
+        """Resume from *checkpoint*'s delta_links and apply the start filter.
+
+        The delta_links map carries per-drive @odata.deltaLink values from the
+        previous run; when present the walk resumes from those links instead
+        of crawling each drive's root, which is what makes incremental syncs
+        cheap. The start_time is still applied as a lastModifiedDateTime
+        floor so callers that pass a window (and have no persisted delta
+        link yet) don't have to re-process everything.
+        """
         if not isinstance(checkpoint, OneDriveCheckpoint):
             checkpoint = self.build_dummy_checkpoint()
-        return self._iter_documents(checkpoint=checkpoint)
+        since = start if start else None
+        return self._iter_documents(checkpoint=checkpoint, since_epoch=since)
 
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -157,22 +175,41 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
     ) -> Any:
         return self.load_from_checkpoint(start, end, checkpoint)
 
-    def retrieve_all_slim_docs_perm_sync(self, callback: Any = None) -> Any:
-        """Yield lightweight (id, name) tuples for prune-sync."""
+    def retrieve_all_slim_docs_perm_sync(
+        self,
+        callback: Any = None,
+    ) -> Generator[list[SlimDocument], None, None]:
+        """Yield batches of slim documents for prune / permission sync.
+
+        The prune collector in rag/svr/sync_data_source._collect_prune_snapshot
+        calls list.extend(batch) on each yielded value and then accesses
+        `.id` on every retained item (see
+        api/db/services/connector_service.cleanup_stale_documents_for_task).
+        Yielding SlimDocument batches matches both contracts.
+        """
+        if not self._access_token:
+            raise ConnectorMissingCredentialError("OneDrive")
+
+        batch: list[SlimDocument] = []
         for drive_id in self._list_drive_ids():
-            url = self._delta_url(drive_id)
+            url: str | None = self._delta_url(drive_id)
             while url:
-                resp = self._get(url)
-                if not resp.ok:
-                    break
-                data = resp.json()
+                data = self._get_json(url, context=f"prune drive={drive_id}")
                 for item in data.get("value", []):
-                    if "file" not in item:
+                    if "file" not in item or item.get("deleted"):
+                        continue
+                    item_id = item.get("id")
+                    if not item_id:
                         continue
                     if callback:
-                        callback(item["id"], item.get("name", ""))
-                    yield {"id": item["id"], "name": item.get("name", "")}
+                        callback(item_id, item.get("name", ""))
+                    batch.append(SlimDocument(id=item_id))
+                    if len(batch) >= self.batch_size:
+                        yield batch
+                        batch = []
                 url = data.get("@odata.nextLink")
+        if batch:
+            yield batch
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -185,16 +222,38 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
             timeout=60,
         )
 
+    def _get_json(self, url: str, *, context: str) -> dict:
+        """GET *url* and decode JSON. Raise on non-2xx so the caller never
+        treats a 429 / 5xx as an empty page and silently advances the
+        checkpoint past missing data.
+        """
+        resp = self._get(url)
+        if not resp.ok:
+            body_snippet = resp.text[:200] if resp.text else ""
+            logger.error(
+                "OneDrive Graph request failed (%s): HTTP %s url=%s body=%s",
+                context,
+                resp.status_code,
+                url,
+                body_snippet,
+            )
+            raise UnexpectedValidationError(
+                f"OneDrive Graph request failed ({context}): HTTP {resp.status_code} {body_snippet}"
+            )
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise UnexpectedValidationError(
+                f"OneDrive Graph response is not JSON ({context}): {exc}"
+            )
+
     def _list_drive_ids(self) -> list[str]:
         """Return all drive IDs visible to the service principal."""
         ids: list[str] = []
         url: str | None = f"{_GRAPH_BASE}/drives"
         while url:
-            resp = self._get(url)
-            if not resp.ok:
-                break
-            data = resp.json()
-            ids.extend(d["id"] for d in data.get("value", []))
+            data = self._get_json(url, context="list drives")
+            ids.extend(d["id"] for d in data.get("value", []) if d.get("id"))
             url = data.get("@odata.nextLink")
         return ids
 
@@ -234,10 +293,7 @@ class OneDriveConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
             next_delta: str | None = None
 
             while url:
-                resp = self._get(url)
-                if not resp.ok:
-                    break
-                data = resp.json()
+                data = self._get_json(url, context=f"delta drive={drive_id}")
 
                 for item in data.get("value", []):
                     # Skip folders and deleted items
