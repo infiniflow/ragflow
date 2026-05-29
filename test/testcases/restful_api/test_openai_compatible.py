@@ -141,6 +141,26 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
 
 
 @pytest.mark.p2
+def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_client, create_chat):
+    chat_id = create_chat("restful_openai_default_nonstream_chat")
+    res = rest_client.post(
+        f"/openai/{chat_id}/chat/completions",
+        json={
+            "model": "model",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        timeout=60,
+    )
+    assert res.status_code == 200
+    assert "application/json" in res.headers.get("Content-Type", ""), res.headers.get("Content-Type", "")
+
+    payload = res.json()
+    assert payload["object"] == "chat.completion", payload
+    assert isinstance(payload["choices"], list) and payload["choices"], payload
+    assert payload["choices"][0].get("finish_reason") == "stop", payload
+
+
+@pytest.mark.p2
 def test_openai_compatible_nonstream_with_reference_output_shape(rest_client, create_chat):
     chat_id = create_chat("restful_openai_reference_chat")
     res = rest_client.post(
