@@ -1087,6 +1087,8 @@ func (p *Parser) parseRemoveCommand() (*Command, error) {
 		return p.parseRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseRemoveChunk()
+	case TokenTask:
+		return p.parseUserRemoveTask()
 	default:
 		return nil, fmt.Errorf("unknown REMOVE target: %s", p.curToken.Value)
 	}
@@ -3889,6 +3891,27 @@ func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
 		}
 		cmd.Params["dataset_id"] = datasetID
 	}
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseUserRemoveTask() (*Command, error) {
+	p.nextToken() // consume TASK
+
+	taskIDStr, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("user_remove_task_command")
+
+	taskIDs := strings.Split(taskIDStr, " ")
+
+	cmd.Params["task_ids"] = taskIDs
 
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {

@@ -3384,7 +3384,7 @@ func (c *RAGFlowClient) UserStopIngestionCommand(cmd *Command) (ResponseIf, erro
 		"tasks": []string{taskID},
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/datasets/ingestions", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/datasets/ingestions", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
@@ -3396,6 +3396,46 @@ func (c *RAGFlowClient) UserStopIngestionCommand(cmd *Command) (ResponseIf, erro
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	taskIDs, ok := cmd.Params["task_ids"].([]*string)
+	if !ok {
+		return nil, fmt.Errorf("task_ids not provided")
+	}
+
+	payload := map[string]interface{}{
+		"task_ids": taskIDs,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/datasets/ingestions", "web", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove tasks: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to remove tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("remove tasks failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {

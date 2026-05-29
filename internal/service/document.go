@@ -368,7 +368,25 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 	return responses, nil
 }
 
-func (s *DocumentService) StopIngestions(tasks []string, userID string) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) StopIngestions(tasks []string, userID string) ([]map[string]string, error) {
+
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServer(taskID)
+		if err != nil {
+			taskRecord["delete"] = "fail"
+		} else {
+			taskRecord["delete"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
+}
+
+func (s *DocumentService) RemoveIngestions(tasks []string, userID string) ([]*entity.IngestionTask, error) {
 
 	var taskResponses []*entity.IngestionTask
 	for _, taskID := range tasks {

@@ -352,6 +352,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UserStopIngestionCommand(cmd)
 	case "user_list_ingestion_tasks":
 		return c.ListUserIngestionTasks(cmd)
+	case "user_remove_task_command":
+		return c.UserRemoveTaskCommand(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

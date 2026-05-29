@@ -791,12 +791,12 @@ func (h *DocumentHandler) StartParseDocuments(c *gin.Context) {
 	})
 }
 
-type StopParseDocumentsRequest struct {
+type StopIngestionsRequest struct {
 	Tasks []string `json:"tasks" binding:"required"`
 }
 
-func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
-	var req StopParseDocumentsRequest
+func (h *DocumentHandler) StopIngestions(c *gin.Context) {
+	var req StopIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeBadRequest,
@@ -808,6 +808,34 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	parseResult, err := h.documentService.StopIngestions(req.Tasks, userID)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    parseResult,
+	})
+}
+
+type RemoveIngestionsRequest struct {
+	TaskIDs []string `json:"task_ids" binding:"required"`
+}
+
+func (h *DocumentHandler) RemoveIngestions(c *gin.Context) {
+	var req RemoveIngestionsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	parseResult, err := h.documentService.StopIngestions(req.TaskIDs, userID)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return

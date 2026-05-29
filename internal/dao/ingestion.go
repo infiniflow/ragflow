@@ -208,6 +208,106 @@ func (dao *IngestionTaskDAO) SetStoppingByAPIServer(taskID string) (*entity.Inge
 	}
 }
 
+type TaskletInfo struct {
+	TaskletID     string   `json:"tasklet_id"`
+	FilesToDelete []string `json:"files_to_delete"`
+}
+
+type TaskInfo struct {
+	TaskID        string        `json:"task_id"`
+	FilesToDelete []string      `json:"files_to_delete"`
+	Tasklets      []TaskletInfo `json:"tasklets"`
+}
+
+func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID string) (*TaskInfo, error) {
+
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	var committed bool
+
+	defer func() {
+		if committed {
+			tx.Commit()
+		} else {
+			tx.Rollback()
+			if r := recover(); r != nil {
+				panic(r)
+			}
+		}
+	}()
+
+	var tasks []*entity.IngestionTask
+	err := tx.Where("id = ?", taskID).Find(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("task %s not found", taskID)
+	}
+
+	if len(tasks) != 1 {
+		return nil, fmt.Errorf("task %s has multiple records", taskID)
+	}
+
+	taskStatus := tasks[0].Status
+	switch taskStatus {
+	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
+		// get all ingestion tasklets
+		var tasklets []*entity.IngestionTasklet
+		err = tx.Where("task_id = ?", taskID).Find(&tasklets).Error
+		if err != nil {
+			return nil, err
+		}
+		var Tasklets []TaskletInfo
+		for _, tasklet := range tasklets {
+			// get all ingestion tasklet log
+			var taskletLogs []*entity.IngestionTaskletLog
+			err = tx.Where("tasklet_id = ?", tasklet.ID).Find(&taskletLogs).Error
+
+			var filesToDelete []string
+			for _, taskletLog := range taskletLogs {
+				fileToDelete := taskletLog.Checkpoint["file"].(string)
+				filesToDelete = append(filesToDelete, fileToDelete)
+			}
+			Tasklets = append(Tasklets, TaskletInfo{
+				TaskletID:     tasklet.ID,
+				FilesToDelete: filesToDelete,
+			})
+		}
+
+		// get all ingestion task log
+		var taskLogs []*entity.IngestionTaskLog
+		err = tx.Where("task_id = ?", taskID).Find(&taskLogs).Error
+		if err != nil {
+			return nil, err
+		}
+		var filesToDelete []string
+		for _, taskLog := range taskLogs {
+			fileToDelete := taskLog.Checkpoint["file"].(string)
+			filesToDelete = append(filesToDelete, fileToDelete)
+		}
+
+		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Delete(&entity.IngestionTask{}).Error
+		if err != nil {
+			return nil, err
+		}
+		committed = true
+
+		taskInfo := &TaskInfo{
+			TaskID:        taskID,
+			FilesToDelete: filesToDelete,
+			Tasklets:      Tasklets,
+		}
+
+		return taskInfo, nil
+	default:
+		return nil, fmt.Errorf("task %s is executing, cannot be removed", taskID)
+	}
+}
+
 func (dao *IngestionTaskDAO) GetAllTasks(page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
 	var err error
