@@ -141,11 +141,13 @@ class LLMBundle(LLM4Tenant):
         # `len(vts[0])` and the error surfaces as the unhelpful
         # `'NoneType' object is not subscriptable` (fixes #15343).
         if embeddings is None or len(embeddings) == 0:
+            state = "embeddings is None" if embeddings is None else "len(embeddings)==0"
             logging.error(
-                "LLMBundle.encode: Embedding model '%s' (factory '%s') returned no vectors for %d input texts",
+                "LLMBundle.encode: Embedding model '%s' (factory '%s') returned no vectors for %d input texts (%s)",
                 self.model_config.get("llm_name", "<unknown>"),
                 self.model_config.get("llm_factory", "<unknown>"),
                 len(safe_texts),
+                state,
             )
             raise RuntimeError(
                 "Embedding model '{name}' (factory '{factory}') returned no vectors. "
@@ -183,10 +185,12 @@ class LLMBundle(LLM4Tenant):
         # surfaces as a clear RuntimeError instead of a subscript crash
         # downstream (fixes #15343).
         if emd is None or len(emd) == 0:
+            state = "emd is None" if emd is None else "len(emd)==0"
             logging.error(
-                "LLMBundle.encode_queries: Embedding model '%s' (factory '%s') returned no vector for query",
+                "LLMBundle.encode_queries: Embedding model '%s' (factory '%s') returned no vector for query (%s)",
                 self.model_config.get("llm_name", "<unknown>"),
                 self.model_config.get("llm_factory", "<unknown>"),
+                state,
             )
             raise RuntimeError(
                 "Embedding model '{name}' (factory '{factory}') returned no vector "
