@@ -61,6 +61,8 @@ from common.data_source import (
     RDBMSConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    TeamsConnector,
+    SlackConnector,
     SharePointConnector,
 )
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
@@ -999,14 +1001,124 @@ class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
     async def _generate(self, task: dict):
-        pass
+        from common.data_source.config import DocumentSource
+        from common.data_source.interfaces import StaticCredentialsProvider
+
+        channels_conf = self.conf.get("channels")
+        if isinstance(channels_conf, str):
+            channels = [c.strip() for c in channels_conf.split(",") if c.strip()]
+        elif isinstance(channels_conf, list):
+            channels = [str(c).strip() for c in channels_conf if str(c).strip()]
+        else:
+            channels = None
+
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = SlackConnector(
+            channels=channels or None,
+            channel_regex_enabled=bool(self.conf.get("channel_regex_enabled", False)),
+            batch_size=batch_size,
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        if not credentials.get("slack_bot_token"):
+            raise ValueError("Slack connector is missing the bot token credential.")
+
+        credentials_provider = StaticCredentialsProvider(
+            tenant_id=task["tenant_id"],
+            connector_name=DocumentSource.SLACK,
+            credential_json=credentials,
+        )
+        self.connector.set_credentials_provider(credentials_provider)
+        self.connector.validate_connector_settings()
+
+        poll_start = task["poll_range_start"]
+        if task["reindex"] == "1" or not poll_start:
+            document_generator = self.connector.load_from_state()
+            _begin_info = "totally"
+        else:
+            end_time = datetime.now(timezone.utc).timestamp()
+            document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
+            _begin_info = f"from {poll_start}"
+
+        self.log_connection(
+            "Slack",
+            f"channels({', '.join(channels) if channels else 'all'})",
+            task,
+        )
+        return document_generator
 
 
 class Teams(SyncBase):
     SOURCE_NAME: str = FileSource.TEAMS
 
     async def _generate(self, task: dict):
-        pass
+        self.connector = TeamsConnector(
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+            _begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            _begin_info = f"from {task['poll_range_start']}"
+
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(
+                    self.connector.load_from_checkpoint(start_time, end_time, checkpoint)
+                )
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning(
+                            "Teams connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading Teams documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        self.log_connection("Microsoft Teams", "workspace", task)
+        return document_batches()
 
 
 class WebDAV(SyncBase):
