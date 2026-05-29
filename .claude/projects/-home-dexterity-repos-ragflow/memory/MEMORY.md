@@ -1,0 +1,1 @@
+- [Go toolchain & pre-broken main](go-toolchain-and-prebroken-main.md) — go is at /tmp/go/bin; `go build ./...` and the models test suite are pre-broken on main

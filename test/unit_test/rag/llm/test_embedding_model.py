@@ -27,6 +27,7 @@
   with input order and output shape preserved.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -35,6 +36,7 @@ import pytest
 
 from rag.llm.embedding_model import (
     DEFAULT_MAX_TOKENS,
+    BedrockEmbed,
     EmbeddingError,
     LocalAIEmbed,
     MistralEmbed,
@@ -100,6 +102,7 @@ class _BadRespNoText:
         raise ValueError("malformed response payload")
 
 
+@pytest.mark.p1
 class TestDeterministicErrors:
     def test_api_error_raises_embedding_error(self):
         embed = _make_openai()
@@ -151,6 +154,7 @@ class TestDeterministicErrors:
 # --------------------------------------------------------------------------- #
 # 2. Token accounting (no fabricated 1024 / += 128)
 # --------------------------------------------------------------------------- #
+@pytest.mark.p1
 class TestTokenAccounting:
     def test_openai_uses_reported_usage(self):
         embed = _make_openai(total_tokens=42)
@@ -186,6 +190,7 @@ class TestTokenAccounting:
 # --------------------------------------------------------------------------- #
 # 3. Truncation boundary (no 8196 overshoot)
 # --------------------------------------------------------------------------- #
+@pytest.mark.p2
 class TestTruncationBoundary:
     def test_default_limit_is_8192(self):
         assert DEFAULT_MAX_TOKENS == 8192
@@ -219,6 +224,7 @@ class TestTruncationBoundary:
 # --------------------------------------------------------------------------- #
 # 4. Batching for Zhipu and Ollama (ceil(n / batch_size) requests)
 # --------------------------------------------------------------------------- #
+@pytest.mark.p1
 class TestBatching:
     def test_zhipu_batches_instead_of_per_text(self):
         embed = ZhipuEmbed("key", "embedding-3")
@@ -295,3 +301,70 @@ class TestBatching:
         vectors, _ = embed.encode(texts)
         assert embed.client.embed.call_count == 2
         assert vectors.shape[0] == 20
+
+
+# --------------------------------------------------------------------------- #
+# 5. Provider-specific request/response shapes
+# --------------------------------------------------------------------------- #
+@pytest.mark.p2
+class TestNvidiaInputType:
+    """NVIDIA NIM expects input_type=passage for documents and =query for queries;
+    using "query" for documents degrades retrieval (asymmetric embeddings)."""
+
+    def _mock_resp(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": [{"index": 0, "embedding": [1.0]}], "usage": {"total_tokens": 1}}
+        return resp
+
+    def test_documents_use_passage(self):
+        embed = NvidiaEmbed("key", "nvidia/nv-embed-v1")
+        with patch("rag.llm.embedding_model.requests.post", return_value=self._mock_resp()) as post:
+            embed.encode(["a document"])
+        assert post.call_args.kwargs["json"]["input_type"] == "passage"
+
+    def test_queries_use_query(self):
+        embed = NvidiaEmbed("key", "nvidia/nv-embed-v1")
+        with patch("rag.llm.embedding_model.requests.post", return_value=self._mock_resp()) as post:
+            embed.encode_queries("a query")
+        assert post.call_args.kwargs["json"]["input_type"] == "query"
+
+
+@pytest.mark.p2
+class TestBedrockResponseParsing:
+    """Bedrock Titan returns {"embedding": [...]}; Cohere returns
+    {"embeddings": [[...]]}. Both must parse without KeyError."""
+
+    @staticmethod
+    def _make(model_prefix):
+        embed = BedrockEmbed.__new__(BedrockEmbed)
+        embed.model_name = f"{model_prefix}.embed-model"
+        embed.is_amazon = model_prefix == "amazon"
+        embed.is_cohere = model_prefix == "cohere"
+        embed.client = MagicMock()
+        return embed
+
+    @staticmethod
+    def _body(payload):
+        body = MagicMock()
+        body.read.return_value = json.dumps(payload).encode()
+        return {"body": body}
+
+    def test_cohere_reads_embeddings_plural(self):
+        embed = self._make("cohere")
+        embed.client.invoke_model.return_value = self._body({"embeddings": [[1.0, 2.0]]})
+        vectors, _ = embed.encode(["hello"])
+        assert vectors.shape == (1, 2)
+        np.testing.assert_array_equal(vectors[0], np.array([1.0, 2.0]))
+
+    def test_amazon_reads_embedding_singular(self):
+        embed = self._make("amazon")
+        embed.client.invoke_model.return_value = self._body({"embedding": [3.0, 4.0]})
+        vectors, _ = embed.encode(["hello"])
+        np.testing.assert_array_equal(vectors[0], np.array([3.0, 4.0]))
+
+    def test_cohere_query_reads_embeddings_plural(self):
+        embed = self._make("cohere")
+        embed.client.invoke_model.return_value = self._body({"embeddings": [[5.0, 6.0]]})
+        vector, _ = embed.encode_queries("q")
+        np.testing.assert_array_equal(vector, np.array([5.0, 6.0]))

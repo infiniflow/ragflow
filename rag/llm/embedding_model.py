@@ -641,6 +641,12 @@ class BedrockEmbed(Base):
         else:  # assume_role
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
 
+    def _extract_vector(self, model_response):
+        # Titan returns {"embedding": [...]}; Cohere returns {"embeddings": [[...]]}.
+        if self.is_cohere:
+            return model_response["embeddings"][0]
+        return model_response["embedding"]
+
     def encode(self, texts: list):
         def _call(batch):
             # Titan accepts a single input per call, so batch_size is 1.
@@ -652,7 +658,7 @@ class BedrockEmbed(Base):
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
             # Bedrock does not report token usage; count locally.
-            return [model_response["embedding"]], num_tokens_from_string(text)
+            return [self._extract_vector(model_response)], num_tokens_from_string(text)
 
         return self._batched_encode(texts, _call, batch_size=1, truncate_to=DEFAULT_MAX_TOKENS)
 
@@ -666,7 +672,7 @@ class BedrockEmbed(Base):
         try:
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
-            return np.array(model_response["embedding"]), token_count
+            return np.array(self._extract_vector(model_response)), token_count
         except Exception as _e:
             logger.exception("BedrockEmbed: query embedding request failed")
             raise EmbeddingError(f"Embedding request failed for BedrockEmbed. Error: {_e}") from _e
@@ -770,10 +776,10 @@ class NvidiaEmbed(Base):
         if model_name == "snowflake/arctic-embed-l":
             self.base_url = "https://ai.api.nvidia.com/v1/retrieval/snowflake/arctic-embed-l/embeddings"
 
-    def _call(self, batch):
+    def _call(self, batch, input_type="query"):
         payload = {
             "input": batch,
-            "input_type": "query",
+            "input_type": input_type,
             "model": self.model_name,
             "encoding_format": "float",
             "truncate": "END",  # NVIDIA truncates oversized inputs server-side.
@@ -782,10 +788,11 @@ class NvidiaEmbed(Base):
         return self._openai_http_embeddings(response)
 
     def encode(self, texts: list):
-        return self._batched_encode(texts, self._call, batch_size=16)
+        # NVIDIA NIM expects "passage" for documents (indexing) and "query" for retrieval.
+        return self._batched_encode(texts, lambda b: self._call(b, "passage"), batch_size=16)
 
     def encode_queries(self, text):
-        vectors, token_count = self._batched_encode([text], self._call, batch_size=16)
+        vectors, token_count = self._batched_encode([text], lambda b: self._call(b, "query"), batch_size=16)
         return vectors[0], token_count
 
 
