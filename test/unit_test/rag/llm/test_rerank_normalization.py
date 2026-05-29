@@ -34,6 +34,8 @@ from rag.llm.rerank_model import (
     NvidiaRerank,
 )
 
+pytestmark = pytest.mark.p1
+
 
 def _mock_post(payload):
     """Patch ``requests.post`` so ``response.json()`` returns ``payload``."""
@@ -96,10 +98,21 @@ def test_normalization_preserves_ordering():
     assert list(np.argsort(rank)) == list(np.argsort(raw))
 
 
-def test_out_of_range_flat_batch_is_zeroed():
-    # An out-of-range batch with no spread carries no usable signal.
-    rank, _ = _RawRerank([5.0, 5.0, 5.0]).similarity("q", ["a", "b", "c"])
-    assert np.allclose(rank, 0.0)
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        # Single out-of-range candidate: clamped, never zeroed and never NaN.
+        ([5.0], [1.0]),
+        ([-3.0], [0.0]),
+        # Spreadless out-of-range batch: clamped per element, not collapsed.
+        ([5.0, 5.0, 5.0], [1.0, 1.0, 1.0]),
+        ([-2.0, -2.0, -2.0], [0.0, 0.0, 0.0]),
+    ],
+)
+def test_spreadless_out_of_range_batch_is_clamped(raw, expected):
+    rank, _ = _RawRerank(raw).similarity("q", ["x"] * len(raw))
+    assert np.allclose(rank, expected)
+    assert not np.isnan(rank).any()
 
 
 # --- Empty input short-circuits before any backend call ----------------------

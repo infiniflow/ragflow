@@ -48,7 +48,16 @@ class Base(ABC):
         if not query or not texts:
             return np.zeros(len(texts) if texts else 0, dtype=float), 0
         rank, token_count = self._compute_rank(query, texts)
-        return self._normalize_rank(np.asarray(rank, dtype=float)), token_count
+        rank = np.asarray(rank, dtype=float)
+        if rank.size:
+            logging.debug(
+                "Rerank %s scores before normalization: count=%d min=%.4f max=%.4f",
+                self.__class__.__name__,
+                rank.size,
+                float(np.min(rank)),
+                float(np.max(rank)),
+            )
+        return self._normalize_rank(rank), token_count
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         """Provider-specific scoring. ``query`` and ``texts`` are non-empty."""
@@ -62,10 +71,12 @@ class Base(ABC):
         (Cohere, Jina, Voyage, ...) are returned unchanged, so their absolute
         magnitudes, ``similarity_threshold`` semantics and reported
         ``vector_similarity`` are preserved. Only out-of-range output (e.g.
-        NVIDIA's unbounded, often negative logits) is min-max rescaled, which
-        stops a negative logit from dragging a relevant chunk below pure
-        keyword matches once weighted by ``vtweight``. An out-of-range batch
-        with no spread carries no usable signal and collapses to zeros.
+        NVIDIA's unbounded, often negative logits) is rescaled: a batch with a
+        usable spread is min-max mapped onto ``[0, 1]`` (which stops a negative
+        logit from dragging a relevant chunk below pure keyword matches once
+        weighted by ``vtweight``), while a spreadless batch (including a single
+        candidate) has no relative signal and is clamped instead, so a lone
+        high score is not silently zeroed.
         """
         if rank.size == 0:
             return rank
@@ -74,9 +85,10 @@ class Base(ABC):
 
         if min_rank >= 0.0 and max_rank <= 1.0:
             return rank
-        if np.isclose(min_rank, max_rank, atol=1e-3):
-            return np.zeros_like(rank)
-        return (rank - min_rank) / (max_rank - min_rank)
+        span = max_rank - min_rank
+        if span < 1e-3:
+            return np.clip(rank, 0.0, 1.0)
+        return (rank - min_rank) / span
 
 
 class JinaRerank(Base):
