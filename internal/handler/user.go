@@ -66,10 +66,14 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	user, code, err := h.userService.Register(&req)
 	if err != nil {
+		var data interface{} = false
+		if code == common.CodeExceptionError {
+			data = nil
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
-			"data":    false,
+			"data":    data,
 		})
 		return
 	}

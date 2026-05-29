@@ -1,5 +1,5 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
-import { useModelOptions } from '@/components/llm-setting-items/llm-form-field';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { MemoryOptions, MemoryType } from '@/pages/memories/constants';
 import { TFunction } from 'i18next';
@@ -28,7 +28,6 @@ export const defaultMemoryModelForm = {
   memory_size: 0,
 };
 export const MemoryModelForm = () => {
-  const { modelOptions } = useModelOptions();
   const { t } = useTranslation();
   const { data } = useFetchMemoryMessageList();
   return (
@@ -40,7 +39,6 @@ export const MemoryModelForm = () => {
           placeholder: t('memories.selectModel'),
           required: true,
           horizontal: true,
-          // hideLabel: true,
           type: FormFieldType.Custom,
           disabled: true,
           render: (field) => (
@@ -58,12 +56,17 @@ export const MemoryModelForm = () => {
         field={{
           name: 'llm_id',
           label: t('memories.llm'),
-          placeholder: t('memories.selectModel'),
           required: true,
           horizontal: true,
-          type: FormFieldType.Select,
+          type: FormFieldType.Custom,
           disabled: data?.messages?.total_count > 0,
-          options: modelOptions as { value: string; label: string }[],
+          render: (field) => (
+            <ModelTreeSelect
+              value={field.value}
+              onChange={field.onChange}
+              placeholder={t('memories.selectModel')}
+            />
+          ),
           tooltip: t('memories.llmTooltip'),
         }}
       />
@@ -93,7 +96,6 @@ export const MemoryModelForm = () => {
           type: FormFieldType.Number,
           horizontal: true,
           tooltip: t('memory.config.memorySizeTooltip'),
-          // placeholder: t('memory.config.memorySizePlaceholder'),
           required: false,
         }}
       />

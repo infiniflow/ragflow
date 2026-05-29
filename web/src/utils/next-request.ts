@@ -148,8 +148,6 @@ request.interceptors.response.use(
     return response;
   },
   function (error) {
-    console.log('🚀 ~ error:', error);
-
     // Handle HTTP 401 (token expired / invalid)
     const status = error?.response?.status;
     if (status === 401) {
