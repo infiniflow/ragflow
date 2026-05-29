@@ -631,7 +631,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 	// In-memory placeholder search result for this endpoint only.
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"message": "success",
+		"message": true,
 		"data":    []map[string]interface{}{},
 	})
 }

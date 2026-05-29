@@ -42,7 +42,7 @@ func TestSearchMessage(t *testing.T) {
 
 		var resp struct {
 			Code    int                      `json:"code"`
-			Message string                   `json:"message"`
+			Message bool                     `json:"message"`
 			Data    []map[string]interface{} `json:"data"`
 		}
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -51,12 +51,11 @@ func TestSearchMessage(t *testing.T) {
 		if resp.Code != int(common.CodeSuccess) {
 			t.Fatalf("expected success code %d, got %d", common.CodeSuccess, resp.Code)
 		}
-		if resp.Message != "success" {
-			t.Fatalf("expected message success, got %q", resp.Message)
+		if !resp.Message {
+			t.Fatalf("expected message=true, got %v", resp.Message)
 		}
 		if len(resp.Data) != 0 {
 			t.Fatalf("expected empty data, got %d items", len(resp.Data))
 		}
 	})
 }
-
