@@ -1091,10 +1091,11 @@ func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User,
 	}
 
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetByBeta(token)
-	if err != nil {
+	userTokens, err := apiTokenDAO.GetByBeta(token)
+	if err != nil || len(userTokens) == 0 {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
 	}
+	userToken := userTokens[0]
 
 	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
 	if err != nil {

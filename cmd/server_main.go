@@ -229,6 +229,7 @@ func startServer(config *server.Config) {
 	systemService := service.NewSystemService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
+	botService := service.NewBotService()
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()

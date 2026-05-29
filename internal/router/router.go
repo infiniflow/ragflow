@@ -200,6 +200,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agentbotGroup := apiNoAuth.Group("/agentbots")
 			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
 		}
+		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		apiNoAuth.GET("/chatbots/:dialog_id/info", r.botHandler.ChatbotInfo)
+		apiNoAuth.GET("/searchbots/detail", r.botHandler.SearchbotDetail)
 	}
 
 	// Protected routes
