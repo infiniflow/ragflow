@@ -29,6 +29,13 @@
       "model_types": [
         "embedding"
       ]
+    },
+    {
+      "name": "yxzwayne/bge-reranker-v2-m3:7f7c6e9d18336e2cbf07d88e9362d881d2fe4d6a9854ec1260f115cabc106a8c",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
     }
   ]
 }

@@ -86,6 +86,19 @@ class LLMBundle(LLM4Tenant):
     def __init__(self, tenant_id: str, model_config: dict, lang="Chinese", **kwargs):
         super().__init__(tenant_id, model_config, lang, **kwargs)
 
+    def close(self):
+        """Release resources held by this LLMBundle instance."""
+        super().close()
+
+    def __enter__(self):
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager and release resources."""
+        self.close()
+        return False
+
     def bind_tools(self, toolcall_session, tools):
         if not self.is_tools:
             logging.warning(f"Model {self.model_config['llm_name']} does not support tool call, but you have assigned one or more tools to it!")
@@ -124,7 +137,7 @@ class LLMBundle(LLM4Tenant):
 
         embeddings, used_tokens = self.mdl.encode(safe_texts)
         if self.model_config["llm_factory"] == "Builtin":
-            logging.info("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
+            logging.debug("LLMBundle.encode_queries query: {}, emd len: {}, used_tokens: {}. Builtin model don't need to update token usage".format(texts, len(embeddings), used_tokens))
         elif not TenantLLMService.increase_usage_by_id(self.model_config["id"], used_tokens):
             logging.error("LLMBundle.encode can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 

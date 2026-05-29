@@ -46,6 +46,7 @@ from api.utils.api_utils import (
     server_error_response,
     token_required,
 )
+from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -244,7 +245,7 @@ async def retrieval_test(tenant_id):
     if "question" not in req:
         return get_error_data_result("`question` is required.")
     page = int(req.get("page", 1))
-    size = int(req.get("page_size", 30))
+    size = validate_rest_api_page_size(int(req.get("page_size", 30)))
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
     if not question:
         return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
@@ -365,7 +366,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
     doc = doc[0]
     req = request.args
     page = int(req.get("page", 1))
-    size = int(req.get("page_size", 30))
+    size = validate_rest_api_page_size(int(req.get("page_size", 30)))
     question = req.get("keywords", "")
     query = {
         "doc_ids": [document_id],

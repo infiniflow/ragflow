@@ -18,6 +18,9 @@ package dao
 
 import (
 	"ragflow/internal/entity"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 // ConnectorDAO connector data access object
@@ -102,4 +105,165 @@ func (dao *ConnectorDAO) UpdateByID(id string, updates map[string]interface{}) e
 // DeleteByID delete connector by ID
 func (dao *ConnectorDAO) DeleteByID(id string) error {
 	return DB.Where("id = ?", id).Delete(&entity.Connector{}).Error
+}
+
+// CancelRunningOrScheduledLogs marks active sync logs as canceled for a connector.
+func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(connectorID string) error {
+	return DB.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND status IN ?", connectorID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
+		Update("status", string(entity.TaskStatusCancel)).Error
+}
+
+// ListDocumentsByKBAndSourceType lists connector documents in a dataset.
+func (dao *ConnectorDAO) ListDocumentsByKBAndSourceType(kbID, sourceType string) ([]*entity.Document, error) {
+	var documents []*entity.Document
+	err := DB.Where("kb_id = ? AND source_type = ?", kbID, sourceType).Find(&documents).Error
+	return documents, err
+}
+
+// RebuildConnector replaces old connector documents with scheduled sync tasks.
+func (dao *ConnectorDAO) RebuildConnector(connector *entity.Connector, kbID string, documents []*entity.Document) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("connector_id = ? AND kb_id = ?", connector.ID, kbID).Delete(&entity.SyncLogs{}).Error; err != nil {
+			return err
+		}
+
+		if len(documents) > 0 {
+			docIDs := make([]string, 0, len(documents))
+			var tokenNum int64
+			var chunkNum int64
+			for _, document := range documents {
+				docIDs = append(docIDs, document.ID)
+				tokenNum += document.TokenNum
+				chunkNum += document.ChunkNum
+			}
+
+			var mappings []entity.File2Document
+			if err := tx.Where("document_id IN ?", docIDs).Find(&mappings).Error; err != nil {
+				return err
+			}
+			fileIDs := make([]string, 0, len(mappings))
+			seenFileIDs := make(map[string]struct{}, len(mappings))
+			for _, mapping := range mappings {
+				if mapping.FileID == nil || *mapping.FileID == "" {
+					continue
+				}
+				if _, ok := seenFileIDs[*mapping.FileID]; ok {
+					continue
+				}
+				seenFileIDs[*mapping.FileID] = struct{}{}
+				fileIDs = append(fileIDs, *mapping.FileID)
+			}
+
+			if err := tx.Where("doc_id IN ?", docIDs).Delete(&entity.Task{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("document_id IN ?", docIDs).Delete(&entity.File2Document{}).Error; err != nil {
+				return err
+			}
+			if len(fileIDs) > 0 {
+				if err := tx.Unscoped().
+					Where("id IN ? AND source_type = ?", fileIDs, string(entity.FileSourceKnowledgebase)).
+					Delete(&entity.File{}).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Where("id IN ?", docIDs).Delete(&entity.Document{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&entity.Knowledgebase{}).
+				Where("id = ?", kbID).
+				Updates(map[string]interface{}{
+					"doc_num":   gorm.Expr("doc_num - ?", len(docIDs)),
+					"token_num": gorm.Expr("token_num - ?", tokenNum),
+					"chunk_num": gorm.Expr("chunk_num - ?", chunkNum),
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Model(&entity.Connector{}).
+			Where("id = ?", connector.ID).
+			Update("status", string(entity.TaskStatusSchedule)).Error; err != nil {
+			return err
+		}
+
+		if err := createRebuildSyncLog(tx, connector.ID, kbID, connectorTaskTypeSync, true); err != nil {
+			return err
+		}
+		if syncDeletedFiles, _ := connector.Config["sync_deleted_files"].(bool); syncDeletedFiles {
+			if err := createRebuildSyncLog(tx, connector.ID, kbID, connectorTaskTypePrune, false); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+const (
+	connectorTaskTypeSync  = "sync"
+	connectorTaskTypePrune = "prune"
+)
+
+func createRebuildSyncLog(tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
+	fromBeginning := "0"
+	if reindex {
+		fromBeginning = "1"
+	}
+	now := time.Now().Local()
+	return tx.Create(&entity.SyncLogs{
+		ID:               generateUUID(),
+		ConnectorID:      connectorID,
+		KbID:             kbID,
+		TaskType:         taskType,
+		Status:           string(entity.TaskStatusSchedule),
+		FromBeginning:    &fromBeginning,
+		TimeStarted:      &now,
+		ErrorMsg:         "",
+		TotalDocsIndexed: 0,
+	}).Error
+}
+
+// ListLogsByConnectorID lists sync logs for one connector with pagination.
+func (dao *ConnectorDAO) ListLogsByConnectorID(connectorID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
+	baseQuery := DB.Model(&entity.SyncLogs{}).
+		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
+		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
+		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
+		Where("sync_logs.connector_id = ?", connectorID)
+
+	var total int64
+	if err := baseQuery.Distinct("sync_logs.id").Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var logs []*entity.ConnectorSyncLog
+	err := baseQuery.
+		Select(
+			"sync_logs.id",
+			"sync_logs.connector_id",
+			"sync_logs.task_type",
+			"sync_logs.kb_id",
+			"sync_logs.update_date",
+			"sync_logs.new_docs_indexed",
+			"sync_logs.total_docs_indexed",
+			"sync_logs.docs_removed_from_index",
+			"sync_logs.error_msg",
+			"sync_logs.error_count",
+			"sync_logs.time_started",
+			"connector.refresh_freq AS refresh_freq",
+			"connector.prune_freq AS prune_freq",
+			"knowledgebase.name AS kb_name",
+			"sync_logs.status",
+		).
+		Distinct().
+		Order("sync_logs.update_date DESC").
+		Offset(offset).
+		Limit(limit).
+		Scan(&logs).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return logs, total, nil
 }
