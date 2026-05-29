@@ -149,6 +149,8 @@ async def create(tenant_id: str = None):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
+    except LookupError as e:
+        return get_error_argument_result(str(e))
     except ValueError as e:
         return get_error_argument_result(str(e))
     except Exception as e:

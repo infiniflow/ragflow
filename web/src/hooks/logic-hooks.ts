@@ -29,7 +29,7 @@ import {
 import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './use-user-setting-request';
+import { useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -746,12 +746,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-export const useFetchModelId = () => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
-
-  return tenantInfo?.llm_id ?? '';
 };
 
 const ChunkTokenNumMap = {
