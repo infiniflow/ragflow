@@ -21,6 +21,7 @@ from test_common import (
     document_change_status,
     document_filter,
     document_infos,
+    document_thumbnail,
     document_metadata_summary,
     document_metadata_update,
     document_update_metadata_setting,
@@ -53,6 +54,14 @@ class TestAuthorization:
         res = document_infos(invalid_auth, "kb_id", {"doc_ids": ["doc_id"]})
         assert res["code"] == expected_code, res
         assert expected_fragment in res["message"], res
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("invalid_auth, expected_code, expected_fragment", INVALID_AUTH_CASES)
+    def test_thumbnail_auth_invalid(self, invalid_auth, expected_code, expected_fragment, add_document_func):
+        _, doc_id = add_document_func
+        res = document_thumbnail(invalid_auth, doc_id)
+        assert res.status_code == expected_code, res.text
+        assert expected_fragment in res.text, res.text
 
     ## The inputs has been changed to add 'doc_ids'
     ## TODO: 
@@ -451,8 +460,7 @@ class TestDocumentMetadataUnit:
         assert "download boom" in res["message"]
 
 
-    @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
-    def test_get_image_success_and_exception_unit(self, document_app_module, monkeypatch):
+    def test_get_document_thumbnail_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
 
         class _Headers(dict):
@@ -470,20 +478,80 @@ class TestDocumentMetadataUnit:
         async def fake_make_response(data):
             return _ImageResponse(data)
 
+        kb_accessible_calls = []
+        monkeypatch.setattr(
+            module.DocumentService,
+            "get_by_id",
+            lambda _doc_id: (True, SimpleNamespace(kb_id="kb-1", thumbnail="thumbnail_doc-1.png")),
+        )
+        def fake_kb_accessible_denied(kb_id, user_id):
+            kb_accessible_calls.append((kb_id, user_id))
+            return False
+
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", fake_kb_accessible_denied)
+        res = _run(module.get_document_thumbnail("doc-1"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Document not found!" in res["message"]
+        assert kb_accessible_calls == [("kb-1", "user-1")]
+
+        monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda _kb_id, _user_id: True)
         monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
         monkeypatch.setattr(module, "make_response", fake_make_response)
         monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"image-bytes"))
-        res = _run(module.get_image("bucket-name"))
+        res = _run(module.get_document_thumbnail("doc-1"))
         assert isinstance(res, _ImageResponse)
         assert res.data == b"image-bytes"
-        assert res.headers["Content-Type"] == "image/JPEG"
+        assert res.headers["content_type"] == "image/png"
+        assert res.headers["extension"] == "png"
 
         async def raise_error(*_args, **_kwargs):
             raise RuntimeError("image boom")
 
         monkeypatch.setattr(module, "thread_pool_exec", raise_error)
         monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
-        res = _run(module.get_image("bucket-name"))
+        res = _run(module.get_document_thumbnail("doc-1"))
+        assert res["code"] == 500
+        assert "image boom" in res["message"]
+
+    def test_get_document_image_authorization_success_and_exception_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return b"image-bytes"
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "_get_accessible_chunk_image_doc_id", lambda _image_id: None)
+        res = _run(module.get_document_image("bucket-name.jpg"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Image not found." in res["message"]
+
+        monkeypatch.setattr(module, "_get_accessible_chunk_image_doc_id", lambda _image_id: "doc-1")
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args, **_kwargs: b"image-bytes"))
+        res = _run(module.get_document_image("bucket-name.jpg"))
+        assert isinstance(res, _ImageResponse)
+        assert res.data == b"image-bytes"
+        assert res.headers["content_type"] == "image/jpeg"
+        assert res.headers["extension"] == "jpg"
+
+        async def raise_error(*_args, **_kwargs):
+            raise RuntimeError("image boom")
+
+        monkeypatch.setattr(module, "thread_pool_exec", raise_error)
+        monkeypatch.setattr(module, "server_error_response", lambda e: {"code": 500, "message": str(e)})
+        res = _run(module.get_document_image("bucket-name.jpg"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
 

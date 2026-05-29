@@ -419,6 +419,11 @@ def document_get(auth, document_id, *, headers=HEADERS, data=None):
     return res
 
 
+def document_thumbnail(auth, document_id, *, headers=HEADERS, data=None):
+    res = requests.get(url=f"{HOST_ADDRESS}/api/{VERSION}/documents/{document_id}/thumbnail", headers=headers, auth=auth, data=data)
+    return res
+
+
 def document_download(auth, attachment_id, *, ext="markdown", headers=HEADERS, data=None):
     res = requests.get(
         url=f"{HOST_ADDRESS}/api/{VERSION}/agents/attachments/{attachment_id}/download",
