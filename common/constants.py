@@ -66,6 +66,11 @@ class StatusEnum(Enum):
     INVALID = "0"
 
 
+class ActiveStatusEnum(Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
 class ActiveEnum(Enum):
     ACTIVE = "1"
     INACTIVE = "0"
@@ -149,6 +154,8 @@ class FileSource(StrEnum):
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
+    ONEDRIVE = "onedrive"
+    OUTLOOK = "outlook"
 
 
 class PipelineTaskType(StrEnum):
@@ -246,7 +253,7 @@ class ForgettingPolicy(StrEnum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_QUEUE_NAME = "te"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
 

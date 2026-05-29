@@ -51,7 +51,7 @@ func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (p *PaddleOCRModel) Name() string {
-	return "paddle_ocr"
+	return "paddle_ocr.net"
 }
 
 func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -248,6 +248,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 
 	var fullMarkdown strings.Builder
 	scanner := bufio.NewScanner(resResp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

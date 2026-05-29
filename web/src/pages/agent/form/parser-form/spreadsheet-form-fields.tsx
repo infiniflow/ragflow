@@ -1,18 +1,19 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
+import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   FlattenMediaToTextFormField,
-  LargeModelFormField,
   ParserMethodFormField,
 } from './common-form-fields';
 import { CommonProps } from './interface';
@@ -31,9 +32,6 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
 export function SpreadsheetFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
-  const modelOptions = useComposeLlmOptionsByModelTypes([
-    LlmModelType.Image2text,
-  ]);
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
 
@@ -103,10 +101,12 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
       ></ParserMethodFormField>
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
-        <LargeModelFormField
-          prefix={prefix}
-          options={modelOptions}
-        ></LargeModelFormField>
+        <ModelTreeSelectFormField
+          name={buildFieldNameWithPrefix('vlm.llm_id', prefix)}
+          label={t('chat.model')}
+          modelTypes={ModelTypeMap.img2txt_id}
+          allowClear
+        />
       )}
       {tcadpOptionsShown && (
         <>
