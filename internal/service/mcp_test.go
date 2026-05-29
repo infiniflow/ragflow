@@ -18,42 +18,67 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
-
-	"ragflow/internal/entity"
 )
 
 func TestIsValidMCPServerType(t *testing.T) {
-	valid := []string{entity.MCPServerTypeSSE, entity.MCPServerTypeStreamableHTTP, "sse", "streamable-http"}
-	for _, v := range valid {
-		if !entity.IsValidMCPServerType(v) {
+	for _, v := range []string{mcpServerTypeSSE, mcpServerTypeStreamableHTTP} {
+		if !isValidMCPServerType(v) {
 			t.Errorf("expected %q to be a valid MCP server type", v)
 		}
 	}
-	invalid := []string{"", "stdio", "http", "SSE"}
-	for _, v := range invalid {
-		if entity.IsValidMCPServerType(v) {
+	for _, v := range []string{"", "stdio", "http", "SSE"} {
+		if isValidMCPServerType(v) {
 			t.Errorf("expected %q to be an invalid MCP server type", v)
 		}
 	}
 }
 
-func TestServerTestValidation(t *testing.T) {
+func TestServerInputValidation(t *testing.T) {
 	s := &MCPService{}
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer("", entity.MCPServerTypeSSE); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer("id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
-	// Invalid server type is rejected.
-	if _, err := s.TestServer("http://localhost:1234/sse", "stdio"); !errors.Is(err, ErrMCPInvalidType) {
-		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
+	// nil body is treated as empty URL.
+	if _, err := s.TestServer("id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
-	// Valid request shape: the live MCP client is not ported yet, so the call
-	// surfaces ErrMCPTestUnsupported rather than attempting a connection.
-	if _, err := s.TestServer("http://localhost:1234/sse", entity.MCPServerTypeSSE); !errors.Is(err, ErrMCPTestUnsupported) {
-		t.Errorf("expected ErrMCPTestUnsupported for valid request, got %v", err)
+	// Invalid server type is rejected before connecting.
+	if _, err := s.TestServer("id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
+	}
+}
+
+func TestImportServersValidationErrors(t *testing.T) {
+	s := &MCPService{}
+
+	// Missing url and type produce an in-band error per entry rather than
+	// failing the batch.
+	configs := map[string]map[string]interface{}{
+		"missing-fields": {"foo": "bar"},
+		"bad-type":       {"url": "http://example.com", "type": "stdio"},
+	}
+	results, err := s.ImportServers("tenant-1", configs, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Success {
+			t.Errorf("expected failure result for %q", r.Server)
+		}
+		if r.Server == "missing-fields" && !strings.Contains(r.Message, "Missing required fields") {
+			t.Errorf("unexpected message for missing-fields: %q", r.Message)
+		}
+		if r.Server == "bad-type" && !strings.Contains(r.Message, "Unsupported MCP server type") {
+			t.Errorf("unexpected message for bad-type: %q", r.Message)
+		}
 	}
 }

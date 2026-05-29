@@ -329,19 +329,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
-			// MCP server routes.
-			// Note: gin (v1.9.1) cannot register a static segment and a path
-			// param at the same tree node, so the bulk-import endpoint lives at
-			// POST /mcp/import instead of the Python path /mcp/servers/import,
-			// which would collide with /mcp/servers/:mcp_id.
+			// MCP server routes. Per-server CRUD ships via separate PRs that
+			// share the same handler/service: GET list (#15253), GET by id
+			// (#15254), POST create (#15260, merged), PUT (#15261), DELETE
+			// (#15262). This PR adds only the non-overlapping endpoints:
+			// import and test.
 			mcp := v1.Group("/mcp")
 			{
-				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
-				mcp.POST("/import", r.mcpHandler.ImportMCPServers)
-				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
-				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
-				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
 				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)
 			}
 

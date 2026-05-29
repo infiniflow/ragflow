@@ -19,157 +19,26 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strconv"
-	"strings"
-
-	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
-// MCPHandler MCP server handler
+// MCPHandler handles MCP server requests.
 type MCPHandler struct {
-	mcpService  *service.MCPService
-	userService *service.UserService
+	mcpService *service.MCPService
 }
 
-// NewMCPHandler create MCP server handler
-func NewMCPHandler(mcpService *service.MCPService, userService *service.UserService) *MCPHandler {
+// NewMCPHandler creates an MCP handler.
+func NewMCPHandler(mcpService *service.MCPService) *MCPHandler {
 	return &MCPHandler{
-		mcpService:  mcpService,
-		userService: userService,
+		mcpService: mcpService,
 	}
 }
 
-// mcpErrorResponse maps service sentinel errors to the response codes used by the
-// Python mcp_api, and writes the JSON response. Returns true when handled.
-func mcpErrorResponse(c *gin.Context, err error) bool {
-	switch {
-	case err == nil:
-		return false
-	case errors.Is(err, service.ErrMCPNotFound),
-		errors.Is(err, service.ErrMCPInvalidType),
-		errors.Is(err, service.ErrMCPInvalidName),
-		errors.Is(err, service.ErrMCPInvalidURL),
-		errors.Is(err, service.ErrMCPDuplicateName),
-		errors.Is(err, service.ErrMCPTestUnsupported):
-		// Python returns these as data errors (RetCode.DATA_ERROR).
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": mcpErrorMessage(err)})
-	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
-	}
-	return true
-}
-
-// mcpErrorMessage capitalizes sentinel messages to match the Python wording.
-func mcpErrorMessage(err error) string {
-	switch {
-	case errors.Is(err, service.ErrMCPInvalidType):
-		return "Unsupported MCP server type."
-	case errors.Is(err, service.ErrMCPInvalidURL):
-		return "Invalid url."
-	case errors.Is(err, service.ErrMCPDuplicateName):
-		return "Duplicated MCP server name."
-	default:
-		return err.Error()
-	}
-}
-
-// parseMCPIDs reads mcp_ids / mcp_id query params, splitting comma-separated values.
-// Mirrors Python's _get_mcp_ids_from_args.
-func parseMCPIDs(c *gin.Context) []string {
-	var ids []string
-	for _, item := range c.QueryArray("mcp_ids") {
-		for _, id := range strings.Split(item, ",") {
-			if id != "" {
-				ids = append(ids, id)
-			}
-		}
-	}
-	if len(ids) > 0 {
-		return ids
-	}
-	for _, id := range strings.Split(c.Query("mcp_id"), ",") {
-		if id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
-
-// ListMCPServers lists MCP servers for the tenant.
-// @Summary List MCP Servers
-// @Tags mcp
-// @Produce json
-// @Router /api/v1/mcp/servers [get]
-func (h *MCPHandler) ListMCPServers(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	keywords := c.Query("keywords")
-	page, _ := strconv.Atoi(c.Query("page"))
-	pageSize, _ := strconv.Atoi(c.Query("page_size"))
-	orderby := c.DefaultQuery("orderby", "create_time")
-	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
-	ids := parseMCPIDs(c)
-
-	result, err := h.mcpService.ListServers(user.ID, ids, page, pageSize, orderby, desc, keywords)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
-}
-
-// GetMCPServer returns one MCP server (or its export when mode=download).
-// @Summary Get MCP Server
-// @Tags mcp
-// @Produce json
-// @Param mcp_id path string true "MCP server ID"
-// @Router /api/v1/mcp/servers/{mcp_id} [get]
-func (h *MCPHandler) GetMCPServer(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	mcpID := c.Param("mcp_id")
-	if mcpID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "mcp_id is required"})
-		return
-	}
-
-	if c.Query("mode") == "download" {
-		exported, err := h.mcpService.ExportServers([]string{mcpID}, user.ID)
-		if mcpErrorResponse(c, err) {
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": exported, "message": "success"})
-		return
-	}
-
-	server, err := h.mcpService.GetServer(mcpID, user.ID)
-	if mcpErrorResponse(c, err) {
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": server, "message": "success"})
-}
-
-// CreateMCPServer creates an MCP server for the tenant.
-// @Summary Create MCP Server
-// @Tags mcp
-// @Accept json
-// @Produce json
-// @Param request body service.CreateMCPRequest true "MCP server creation parameters"
-// @Router /api/v1/mcp/servers [post]
+// CreateMCPServer creates an MCP server for the current user.
 func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -177,94 +46,69 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 		return
 	}
 
-	var req service.CreateMCPRequest
+	var req service.CreateMCPServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
+		jsonError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	server, err := h.mcpService.CreateServer(user.ID, &req)
-	if mcpErrorResponse(c, err) {
+	result, code, err := h.mcpService.CreateMCPServer(user.ID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": server, "message": "success"})
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    result,
+	})
 }
 
-// UpdateMCPServer updates an MCP server for the tenant.
-// @Summary Update MCP Server
-// @Tags mcp
-// @Accept json
-// @Produce json
-// @Param mcp_id path string true "MCP server ID"
-// @Param request body service.UpdateMCPRequest true "MCP server update parameters"
-// @Router /api/v1/mcp/servers/{mcp_id} [put]
-func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
+// mcpErrorResponse maps the import / test sentinel errors to the response
+// codes Python's mcp_api emits.
+func mcpErrorResponse(c *gin.Context, err error) bool {
+	if err == nil {
+		return false
 	}
-
-	mcpID := c.Param("mcp_id")
-	if mcpID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "mcp_id is required"})
-		return
+	switch {
+	case errors.Is(err, service.ErrMCPInvalidType),
+		errors.Is(err, service.ErrMCPInvalidName),
+		errors.Is(err, service.ErrMCPInvalidURL):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": mcpErrorMessage(err)})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
 	}
-
-	var req service.UpdateMCPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
-		return
-	}
-
-	server, err := h.mcpService.UpdateServer(mcpID, user.ID, &req)
-	if mcpErrorResponse(c, err) {
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": server, "message": "success"})
+	return true
 }
 
-// DeleteMCPServer deletes an MCP server for the tenant.
-// @Summary Delete MCP Server
-// @Tags mcp
-// @Produce json
-// @Param mcp_id path string true "MCP server ID"
-// @Router /api/v1/mcp/servers/{mcp_id} [delete]
-func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
+func mcpErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, service.ErrMCPInvalidType):
+		return "Unsupported MCP server type."
+	case errors.Is(err, service.ErrMCPInvalidURL):
+		return "Invalid url."
+	default:
+		return err.Error()
 	}
-
-	mcpID := c.Param("mcp_id")
-	if mcpID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "mcp_id is required"})
-		return
-	}
-
-	err := h.mcpService.DeleteServer(mcpID, user.ID)
-	if mcpErrorResponse(c, err) {
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
 }
 
-// ImportMCPRequest is the body for the bulk import endpoint.
+// ImportMCPRequest is the body for the bulk-import endpoint.
 type ImportMCPRequest struct {
 	MCPServers map[string]map[string]interface{} `json:"mcpServers"`
+	Timeout    float64                           `json:"timeout,omitempty"`
 }
 
-// ImportMCPServers bulk-imports MCP servers from a JSON config.
+// ImportMCPServers bulk-imports MCP servers from a JSON config, fetching the
+// remote tool list for each entry and persisting it under variables.tools.
+// Mirrors Python's import_multiple.
+//
 // @Summary Import MCP Servers
 // @Tags mcp
 // @Accept json
 // @Produce json
 // @Param request body handler.ImportMCPRequest true "import config"
-// @Router /api/v1/mcp/import [post]
+// @Router /api/v1/mcp/servers/import [post]
 func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -282,7 +126,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		return
 	}
 
-	results, err := h.mcpService.ImportServers(user.ID, req.MCPServers)
+	results, err := h.mcpService.ImportServers(user.ID, req.MCPServers, req.Timeout)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
 		return
@@ -291,21 +135,17 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": gin.H{"results": results}, "message": "success"})
 }
 
-// TestMCPRequest is the body for the test endpoint.
-type TestMCPRequest struct {
-	URL        string `json:"url"`
-	ServerType string `json:"server_type"`
-}
-
-// TestMCPServer connects to an MCP server and lists its tools.
-// Note: the live MCP client is not yet ported to Go; this returns a data error
-// (see service.TestServer). Tracked as a follow-up per issue #15275.
+// TestMCPServer opens a live MCP session and returns the tools the server
+// advertises. The mcp_id path parameter identifies the stored record the
+// user is trying to validate; the actual connection uses the request body
+// so the user can preview unsaved edits — matching Python's test_mcp.
+//
 // @Summary Test MCP Server
 // @Tags mcp
 // @Accept json
 // @Produce json
 // @Param mcp_id path string true "MCP server ID"
-// @Param request body handler.TestMCPRequest true "test parameters"
+// @Param request body service.TestServerRequest true "test parameters"
 // @Router /api/v1/mcp/servers/{mcp_id}/test [post]
 func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
@@ -314,16 +154,21 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 		return
 	}
 
-	var req TestMCPRequest
+	mcpID := c.Param("mcp_id")
+	if mcpID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "mcp_id is required"})
+		return
+	}
+
+	var req service.TestServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
 		return
 	}
 
-	tools, err := h.mcpService.TestServer(req.URL, req.ServerType)
+	tools, err := h.mcpService.TestServer(mcpID, &req)
 	if mcpErrorResponse(c, err) {
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": tools, "message": "success"})
 }

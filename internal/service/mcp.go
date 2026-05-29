@@ -17,276 +17,161 @@
 package service
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/mcpclient"
 )
 
-// Sentinel errors mapped by the handler to the response codes used by the Python mcp_api.
-var (
-	// ErrMCPNotFound mirrors Python's "Cannot find MCP server ..." data error.
-	ErrMCPNotFound = errors.New("cannot find MCP server")
-	// ErrMCPInvalidType mirrors Python's "Unsupported MCP server type.".
-	ErrMCPInvalidType = errors.New("unsupported MCP server type")
-	// ErrMCPInvalidName mirrors Python's invalid-name/length error.
-	ErrMCPInvalidName = errors.New("invalid MCP name")
-	// ErrMCPInvalidURL mirrors Python's "Invalid url.".
-	ErrMCPInvalidURL = errors.New("invalid url")
-	// ErrMCPDuplicateName mirrors Python's "Duplicated MCP server name.".
-	ErrMCPDuplicateName = errors.New("duplicated MCP server name")
-	// ErrMCPTestUnsupported is returned by Test until the Go MCP client lands.
-	ErrMCPTestUnsupported = errors.New("MCP connection test is not yet implemented in the Go server")
+const (
+	mcpServerTypeSSE            = "sse"
+	mcpServerTypeStreamableHTTP = "streamable-http"
+	mcpServerNameLimit          = 255
+	defaultMCPFetchTimeoutSec   = 10
 )
 
-const mcpNameMaxBytes = 255
-
-// MCPService MCP server service
+// MCPService handles MCP server operations.
 type MCPService struct {
-	mcpDAO *dao.MCPServerDAO
+	mcpServerDAO *dao.MCPServerDAO
+	tenantDAO    *dao.TenantDAO
 }
 
-// NewMCPService create MCP server service
+// NewMCPService creates an MCP service.
 func NewMCPService() *MCPService {
 	return &MCPService{
-		mcpDAO: dao.NewMCPServerDAO(),
+		mcpServerDAO: dao.NewMCPServerDAO(),
+		tenantDAO:    dao.NewTenantDAO(),
 	}
 }
 
-// ListMCPServersResponse mirrors Python's {"mcp_servers": [...], "total": n}.
-type ListMCPServersResponse struct {
-	MCPServers []*entity.MCPServer `json:"mcp_servers"`
-	Total      int                 `json:"total"`
+// CreateMCPServerRequest is the request payload for creating an MCP server.
+type CreateMCPServerRequest struct {
+	Name        string          `json:"name"`
+	URL         string          `json:"url"`
+	ServerType  string          `json:"server_type"`
+	Description *string         `json:"description,omitempty"`
+	Variables   json.RawMessage `json:"variables,omitempty"`
+	Headers     json.RawMessage `json:"headers,omitempty"`
 }
 
-// ListServers lists a tenant's MCP servers with keyword/order filters and applies
-// in-memory pagination, mirroring Python's list_mcp.
-func (s *MCPService) ListServers(tenantID string, idList []string, page, pageSize int, orderby string, desc bool, keywords string) (*ListMCPServersResponse, error) {
-	servers, err := s.mcpDAO.GetServers(tenantID, idList, orderby, desc, keywords)
+// CreateMCPServerResponse is the response payload for creating an MCP server.
+type CreateMCPServerResponse struct {
+	ID          string         `json:"id"`
+	TenantID    string         `json:"tenant_id"`
+	Name        string         `json:"name"`
+	URL         string         `json:"url"`
+	ServerType  string         `json:"server_type"`
+	Description *string        `json:"description,omitempty"`
+	Variables   entity.JSONMap `json:"variables"`
+	Headers     entity.JSONMap `json:"headers"`
+}
+
+// CreateMCPServer creates an MCP server owned by a tenant.
+func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+	if !isValidMCPServerType(req.ServerType) {
+		return nil, common.CodeDataError, errors.New("Unsupported MCP server type.")
+	}
+
+	if req.Name == "" || len([]byte(req.Name)) > mcpServerNameLimit {
+		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(req.Name)))
+	}
+
+	exists, err := s.mcpServerDAO.ExistsByNameAndTenant(req.Name, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, common.CodeServerError, err
 	}
-	total := len(servers)
-
-	if page > 0 && pageSize > 0 {
-		start := (page - 1) * pageSize
-		end := page * pageSize
-		if start >= total {
-			servers = []*entity.MCPServer{}
-		} else {
-			if end > total {
-				end = total
-			}
-			servers = servers[start:end]
-		}
+	if exists {
+		return nil, common.CodeDataError, errors.New("Duplicated MCP server name.")
 	}
 
-	return &ListMCPServersResponse{MCPServers: servers, Total: total}, nil
-}
-
-// GetServer returns a tenant-scoped MCP server. Mirrors Python's detail.
-func (s *MCPService) GetServer(mcpID, tenantID string) (*entity.MCPServer, error) {
-	server, err := s.mcpDAO.GetByIDAndTenant(mcpID, tenantID)
-	if err != nil {
-		return nil, ErrMCPNotFound
-	}
-	return server, nil
-}
-
-// ExportServers returns the {"mcpServers": {...}} export envelope for the given ids,
-// scoped to the tenant. Mirrors Python's _export_mcp_servers. Returns ErrMCPNotFound
-// when no requested server is accessible.
-func (s *MCPService) ExportServers(mcpIDs []string, tenantID string) (map[string]interface{}, error) {
-	exported := map[string]interface{}{}
-	for _, id := range mcpIDs {
-		server, err := s.mcpDAO.GetByID(id)
-		if err != nil || server.TenantID != tenantID {
-			continue
-		}
-		token := ""
-		var tools interface{} = map[string]interface{}{}
-		if server.Variables != nil {
-			if v, ok := server.Variables["authorization_token"].(string); ok {
-				token = v
-			}
-			if v, ok := server.Variables["tools"]; ok {
-				tools = v
-			}
-		}
-		exported[server.Name] = map[string]interface{}{
-			"type":                server.ServerType,
-			"url":                 server.URL,
-			"name":                server.Name,
-			"authorization_token": token,
-			"tools":               tools,
-		}
-	}
-	if len(exported) == 0 {
-		return nil, ErrMCPNotFound
-	}
-	return map[string]interface{}{"mcpServers": exported}, nil
-}
-
-// CreateMCPRequest holds the fields accepted when creating an MCP server.
-type CreateMCPRequest struct {
-	Name        string                 `json:"name"`
-	URL         string                 `json:"url"`
-	ServerType  string                 `json:"server_type"`
-	Description *string                `json:"description,omitempty"`
-	Variables   map[string]interface{} `json:"variables,omitempty"`
-	Headers     map[string]interface{} `json:"headers,omitempty"`
-}
-
-// CreateServer creates a tenant-scoped MCP server. Mirrors Python's create, minus the
-// live tool-discovery step (get_mcp_tools); variables.tools is not populated here.
-func (s *MCPService) CreateServer(tenantID string, req *CreateMCPRequest) (*entity.MCPServer, error) {
-	if !entity.IsValidMCPServerType(req.ServerType) {
-		return nil, ErrMCPInvalidType
-	}
-	if req.Name == "" || len([]byte(req.Name)) > mcpNameMaxBytes {
-		return nil, ErrMCPInvalidName
-	}
 	if req.URL == "" {
-		return nil, ErrMCPInvalidURL
+		return nil, common.CodeDataError, errors.New("Invalid url.")
 	}
 
-	existing, err := s.mcpDAO.GetByNameAndTenant(req.Name, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if len(existing) > 0 {
-		return nil, ErrMCPDuplicateName
+	if _, err := s.tenantDAO.GetByID(tenantID); err != nil {
+		return nil, common.CodeDataError, errors.New("Tenant not found.")
 	}
 
-	variables := entity.JSONMap{}
-	for k, v := range req.Variables {
-		variables[k] = v
-	}
-	// tools are populated by live discovery, which is not yet ported to Go.
+	headers := safeJSONMap(req.Headers)
+	variables := safeJSONMap(req.Variables)
 	delete(variables, "tools")
-
-	headers := entity.JSONMap{}
-	for k, v := range req.Headers {
-		headers[k] = v
-	}
+	variables["tools"] = map[string]interface{}{}
 
 	server := &entity.MCPServer{
 		ID:          common.GenerateUUID(),
-		TenantID:    tenantID,
 		Name:        req.Name,
+		TenantID:    tenantID,
 		URL:         req.URL,
 		ServerType:  req.ServerType,
 		Description: req.Description,
 		Variables:   variables,
 		Headers:     headers,
 	}
-	if err := s.mcpDAO.Create(server); err != nil {
-		return nil, fmt.Errorf("failed to create MCP server: %w", err)
+
+	if err := s.mcpServerDAO.CreateMCPServer(server); err != nil {
+		return nil, common.CodeDataError, errors.New("Failed to create MCP server.")
 	}
-	return server, nil
+
+	return &CreateMCPServerResponse{
+		ID:          server.ID,
+		TenantID:    server.TenantID,
+		Name:        server.Name,
+		URL:         server.URL,
+		ServerType:  server.ServerType,
+		Description: server.Description,
+		Variables:   server.Variables,
+		Headers:     server.Headers,
+	}, common.CodeSuccess, nil
 }
 
-// UpdateMCPRequest holds the mutable fields for an MCP server update. Pointer fields
-// distinguish "not provided" (fall back to existing) from explicit values, matching
-// Python's req.get(field, mcp_server.field) semantics.
-type UpdateMCPRequest struct {
-	Name        *string                 `json:"name,omitempty"`
-	URL         *string                 `json:"url,omitempty"`
-	ServerType  *string                 `json:"server_type,omitempty"`
-	Description *string                 `json:"description,omitempty"`
-	Variables   *map[string]interface{} `json:"variables,omitempty"`
-	Headers     *map[string]interface{} `json:"headers,omitempty"`
+func isValidMCPServerType(serverType string) bool {
+	return serverType == mcpServerTypeSSE || serverType == mcpServerTypeStreamableHTTP
 }
 
-// UpdateServer updates a tenant-scoped MCP server. Mirrors Python's update, minus the
-// live tool-discovery step; variables.tools is not populated here.
-func (s *MCPService) UpdateServer(mcpID, tenantID string, req *UpdateMCPRequest) (*entity.MCPServer, error) {
-	current, err := s.mcpDAO.GetByIDAndTenant(mcpID, tenantID)
-	if err != nil {
-		return nil, ErrMCPNotFound
+func safeJSONMap(raw json.RawMessage) entity.JSONMap {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return entity.JSONMap{}
 	}
 
-	serverType := current.ServerType
-	if req.ServerType != nil {
-		serverType = *req.ServerType
-	}
-	if serverType != "" && !entity.IsValidMCPServerType(serverType) {
-		return nil, ErrMCPInvalidType
+	var value map[string]interface{}
+	if err := json.Unmarshal(raw, &value); err == nil && value != nil {
+		return entity.JSONMap(value)
 	}
 
-	name := current.Name
-	if req.Name != nil {
-		name = *req.Name
-	}
-	if name != "" && len([]byte(name)) > mcpNameMaxBytes {
-		return nil, ErrMCPInvalidName
+	var textValue string
+	if err := json.Unmarshal(raw, &textValue); err != nil || textValue == "" {
+		return entity.JSONMap{}
 	}
 
-	url := current.URL
-	if req.URL != nil {
-		url = *req.URL
+	if err := json.Unmarshal([]byte(textValue), &value); err != nil || value == nil {
+		return entity.JSONMap{}
 	}
-	if url == "" {
-		return nil, ErrMCPInvalidURL
-	}
-
-	variables := entity.JSONMap{}
-	if req.Variables != nil {
-		for k, v := range *req.Variables {
-			variables[k] = v
-		}
-	} else if current.Variables != nil {
-		for k, v := range current.Variables {
-			variables[k] = v
-		}
-	}
-	delete(variables, "tools")
-
-	headers := entity.JSONMap{}
-	if req.Headers != nil {
-		for k, v := range *req.Headers {
-			headers[k] = v
-		}
-	} else if current.Headers != nil {
-		for k, v := range current.Headers {
-			headers[k] = v
-		}
-	}
-
-	updates := map[string]interface{}{
-		"name":        name,
-		"url":         url,
-		"server_type": serverType,
-		"variables":   variables,
-		"headers":     headers,
-	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
-	}
-
-	if err := s.mcpDAO.UpdateByIDAndTenant(mcpID, tenantID, updates); err != nil {
-		return nil, fmt.Errorf("failed to update MCP server: %w", err)
-	}
-
-	updated, err := s.mcpDAO.GetByID(mcpID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch updated MCP server: %w", err)
-	}
-	return updated, nil
+	return entity.JSONMap(value)
 }
 
-// DeleteServer deletes a tenant-scoped MCP server. Mirrors Python's rm.
-func (s *MCPService) DeleteServer(mcpID, tenantID string) error {
-	server, err := s.mcpDAO.GetByID(mcpID)
-	if err != nil || server.TenantID != tenantID {
-		return ErrMCPNotFound
-	}
-	return s.mcpDAO.DeleteByID(mcpID)
-}
+// ---------- import + test (this PR's additions) ----------
 
-// ImportResult is a single per-server outcome in the bulk import response.
+// Sentinel errors mapped by the handler to Python's response codes for the
+// import / test endpoints. Per-server CRUD errors stay inside CreateMCPServer.
+var (
+	// ErrMCPInvalidType mirrors Python's "Unsupported MCP server type.".
+	ErrMCPInvalidType = errors.New("unsupported MCP server type")
+	// ErrMCPInvalidName mirrors Python's invalid-name/length error.
+	ErrMCPInvalidName = errors.New("invalid MCP name")
+	// ErrMCPInvalidURL mirrors Python's "Invalid url.".
+	ErrMCPInvalidURL = errors.New("invalid url")
+)
+
+// ImportResult is a single per-server outcome in the bulk import response,
+// matching the shape returned by Python's import_multiple.
 type ImportResult struct {
 	Server  string `json:"server"`
 	Success bool   `json:"success"`
@@ -296,12 +181,21 @@ type ImportResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
-// Mirrors Python's import_multiple (name de-duplication with a "_N" suffix), minus
-// the live tool-discovery step.
-func (s *MCPService) ImportServers(tenantID string, servers map[string]map[string]interface{}) ([]ImportResult, error) {
-	results := make([]ImportResult, 0, len(servers))
+// ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}}
+// map. For each entry: validate type and URL, de-duplicate the name with a
+// "_N" suffix, fetch the remote tool list via mcpclient (SSRF-guarded), and
+// persist the server with tools stored under variables.tools. Mirrors
+// Python's import_multiple.
+//
+// timeoutSeconds controls how long each tool-fetch call waits; <=0 falls back
+// to the Python default of 10 s.
+func (s *MCPService) ImportServers(tenantID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultMCPFetchTimeoutSec
+	}
+	timeout := time.Duration(timeoutSeconds * float64(time.Second))
 
+	results := make([]ImportResult, 0, len(servers))
 	for serverName, config := range servers {
 		url, hasURL := config["url"].(string)
 		stype, hasType := config["type"].(string)
@@ -309,40 +203,56 @@ func (s *MCPService) ImportServers(tenantID string, servers map[string]map[strin
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Missing required fields (type or url)"})
 			continue
 		}
-		if serverName == "" || len([]byte(serverName)) > mcpNameMaxBytes {
+		if serverName == "" || len([]byte(serverName)) > mcpServerNameLimit {
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: fmt.Sprintf("Invalid MCP name or length is %d which is large than 255.", len(serverName))})
 			continue
 		}
-
-		// De-duplicate the name with a "_N" suffix, mirroring Python's loop.
-		baseName := serverName
-		newName := baseName
-		counter := 0
-		for {
-			existing, err := s.mcpDAO.GetByNameAndTenant(newName, tenantID)
-			if err != nil {
-				return nil, err
-			}
-			if len(existing) == 0 {
-				break
-			}
-			newName = fmt.Sprintf("%s_%d", baseName, counter)
-			counter++
+		if !isValidMCPServerType(stype) {
+			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Unsupported MCP server type."})
+			continue
 		}
 
-		variables := entity.JSONMap{}
+		baseName := serverName
+		newName, err := s.nextAvailableMCPName(baseName, tenantID)
+		if err != nil {
+			return nil, err
+		}
+
+		variables := map[string]interface{}{}
+		stringVars := map[string]string{}
 		for k, v := range config {
 			if k == "type" || k == "url" || k == "headers" {
 				continue
 			}
 			variables[k] = v
+			if sv, ok := v.(string); ok {
+				stringVars[k] = sv
+			}
 		}
 		delete(variables, "tools")
+		delete(stringVars, "tools")
 
-		headers := entity.JSONMap{}
-		if token, ok := config["authorization_token"]; ok {
+		headers := map[string]string{}
+		headerVals := map[string]interface{}{}
+		if token, ok := config["authorization_token"].(string); ok {
 			headers["authorization_token"] = token
+			headerVals["authorization_token"] = token
 		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		tools, fetchErr := mcpclient.FetchTools(ctx, mcpclient.FetchOptions{
+			URL:        url,
+			ServerType: stype,
+			Headers:    headers,
+			Variables:  stringVars,
+			Timeout:    timeout,
+		})
+		cancel()
+		if fetchErr != nil {
+			results = append(results, ImportResult{Server: baseName, Success: false, Message: fetchErr.Error()})
+			continue
+		}
+		variables["tools"] = toolsAsMap(tools)
 
 		server := &entity.MCPServer{
 			ID:         common.GenerateUUID(),
@@ -350,10 +260,10 @@ func (s *MCPService) ImportServers(tenantID string, servers map[string]map[strin
 			Name:       newName,
 			URL:        url,
 			ServerType: stype,
-			Variables:  variables,
-			Headers:    headers,
+			Variables:  entity.JSONMap(variables),
+			Headers:    entity.JSONMap(headerVals),
 		}
-		if err := s.mcpDAO.Create(server); err != nil {
+		if err := s.mcpServerDAO.CreateMCPServer(server); err != nil {
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Failed to create MCP server."})
 			continue
 		}
@@ -364,20 +274,114 @@ func (s *MCPService) ImportServers(tenantID string, servers map[string]map[strin
 		}
 		results = append(results, result)
 	}
-
 	return results, nil
 }
 
-// TestServer would open a live MCP connection and enumerate the server's tools.
-// The Go server has no MCP client yet (the Python path uses MCPToolCallSession /
-// get_mcp_tools over SSE / streamable-HTTP), so this validates the request shape
-// and returns ErrMCPTestUnsupported. Tracked as a follow-up per issue #15275.
-func (s *MCPService) TestServer(url, serverType string) ([]map[string]interface{}, error) {
-	if url == "" {
-		return nil, ErrMCPInvalidURL
+func (s *MCPService) nextAvailableMCPName(base, tenantID string) (string, error) {
+	name := base
+	counter := 0
+	for {
+		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(name, tenantID)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return name, nil
+		}
+		name = fmt.Sprintf("%s_%d", base, counter)
+		counter++
 	}
-	if !entity.IsValidMCPServerType(serverType) {
+}
+
+// TestServerRequest is the body of POST /mcp/servers/:mcp_id/test. The mcp_id
+// from the URL path is threaded through to the connect call for log
+// correlation; the connection itself is opened from the request body so the
+// user can preview unsaved edits — matching Python's test_mcp.
+type TestServerRequest struct {
+	URL        string                 `json:"url"`
+	ServerType string                 `json:"server_type"`
+	Headers    map[string]interface{} `json:"headers,omitempty"`
+	Variables  map[string]interface{} `json:"variables,omitempty"`
+	Timeout    float64                `json:"timeout,omitempty"`
+}
+
+// TestServer opens a live MCP session and returns the tools the server
+// advertises. Mirrors Python's test_mcp. mcpID is used for log correlation
+// only.
+func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+	if req == nil || req.URL == "" {
+		return nil, fmt.Errorf("%w: Invalid MCP url.", ErrMCPInvalidURL)
+	}
+	if !isValidMCPServerType(req.ServerType) {
 		return nil, ErrMCPInvalidType
 	}
-	return nil, ErrMCPTestUnsupported
+	timeoutSec := req.Timeout
+	if timeoutSec <= 0 {
+		timeoutSec = defaultMCPFetchTimeoutSec
+	}
+	timeout := time.Duration(timeoutSec * float64(time.Second))
+
+	headers := map[string]string{}
+	for k, v := range req.Headers {
+		if sv, ok := v.(string); ok {
+			headers[k] = sv
+		}
+	}
+	vars := map[string]string{}
+	for k, v := range req.Variables {
+		if sv, ok := v.(string); ok {
+			vars[k] = sv
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	tools, err := mcpclient.FetchTools(ctx, mcpclient.FetchOptions{
+		URL:        req.URL,
+		ServerType: req.ServerType,
+		Headers:    headers,
+		Variables:  vars,
+		Timeout:    timeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Test MCP error (id=%s): %v", mcpID, err)
+	}
+
+	out := make([]map[string]interface{}, 0, len(tools))
+	for _, t := range tools {
+		raw := t.Raw
+		if raw == nil {
+			raw = map[string]interface{}{"name": t.Name}
+			if t.Description != "" {
+				raw["description"] = t.Description
+			}
+			if t.InputSchema != nil {
+				raw["inputSchema"] = t.InputSchema
+			}
+		}
+		raw["enabled"] = true
+		out = append(out, raw)
+	}
+	return out, nil
+}
+
+// toolsAsMap mirrors Python's `{tool["name"]: tool ...}` shape used when
+// persisting variables.tools.
+func toolsAsMap(tools []mcpclient.Tool) map[string]interface{} {
+	m := map[string]interface{}{}
+	for _, t := range tools {
+		if t.Raw != nil {
+			m[t.Name] = t.Raw
+			continue
+		}
+		entry := map[string]interface{}{"name": t.Name}
+		if t.Description != "" {
+			entry["description"] = t.Description
+		}
+		if t.InputSchema != nil {
+			entry["inputSchema"] = t.InputSchema
+		}
+		m[t.Name] = entry
+	}
+	return m
 }
