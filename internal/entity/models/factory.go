@@ -49,6 +49,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewSiliconflowModel(baseURL, urlSuffix), nil
 	case "google":
 		return NewGoogleModel(baseURL, urlSuffix), nil
+	case "google vertex", "google cloud":
+		return NewGoogleVertexModel(baseURL, urlSuffix), nil
 	case "aliyun":
 		return NewAliyunModel(baseURL, urlSuffix), nil
 	case "volcengine":

@@ -1,0 +1,53 @@
+{
+  "name": "Google Vertex",
+  "class": "gemini",
+  "models": [
+    {
+      "name": "gemini-2.5-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gemini-2.5-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "gemini-embedding-001",
+      "max_tokens": 2048,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro"
+      ]
+    },
+    "reasoning_effort": {
+      "default_value": "high",
+      "supported_modes": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro"
+      ]
+    }
+  }
+}

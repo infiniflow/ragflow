@@ -210,6 +210,51 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	}
 }
 
+func TestGoogleVertexProviderConfigLoadsIntoProviderManager(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "google_vertex.json"), readProviderConfig(t, "google_vertex.json"), 0o600); err != nil {
+		t.Fatalf("write google_vertex config: %v", err)
+	}
+
+	pm, err := NewProviderManager(dir)
+	if err != nil {
+		t.Fatalf("NewProviderManager: %v", err)
+	}
+
+	provider := pm.FindProvider("Google Vertex")
+	if provider == nil {
+		t.Fatal("Google Vertex provider not found")
+	}
+	if provider.Class != "gemini" {
+		t.Errorf("provider.Class=%q, want gemini", provider.Class)
+	}
+	if _, ok := provider.ModelDriver.(*modeldrivers.GoogleModel); !ok {
+		t.Fatalf("ModelDriver=%T, want *models.GoogleModel", provider.ModelDriver)
+	}
+	if provider.ModelDriver.Name() != "google vertex" {
+		t.Errorf("ModelDriver.Name()=%q, want google vertex", provider.ModelDriver.Name())
+	}
+	if len(provider.Models) != 3 {
+		t.Fatalf("Google Vertex model count=%d, want 3", len(provider.Models))
+	}
+
+	model, err := pm.GetModelByName("Google Vertex", "gemini-2.5-flash")
+	if err != nil {
+		t.Fatalf("GetModelByName: %v", err)
+	}
+	if !model.ModelTypeMap["chat"] || !model.ModelTypeMap["vision"] {
+		t.Fatalf("gemini-2.5-flash types=%v, want chat and vision", model.ModelTypeMap)
+	}
+
+	embedding, err := pm.GetModelByName("Google Vertex", "gemini-embedding-001")
+	if err != nil {
+		t.Fatalf("GetModelByName embedding: %v", err)
+	}
+	if !embedding.ModelTypeMap["embedding"] {
+		t.Fatalf("gemini-embedding-001 types=%v, want embedding", embedding.ModelTypeMap)
+	}
+}
+
 func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "siliconflow.json"), readProviderConfig(t, "siliconflow.json"), 0o600); err != nil {

@@ -7,9 +7,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"google.golang.org/genai"
 )
 
 var googleListModelsMu sync.Mutex
+var googleVertexListModelsMu sync.Mutex
 
 func withGoogleListModelsStub(t *testing.T, fn func(context.Context, string) ([]string, error)) {
 	t.Helper()
@@ -20,6 +23,18 @@ func withGoogleListModelsStub(t *testing.T, fn func(context.Context, string) ([]
 	t.Cleanup(func() {
 		googleListModels = original
 		googleListModelsMu.Unlock()
+	})
+}
+
+func withGoogleVertexListModelsStub(t *testing.T, fn func(context.Context, *APIConfig, map[string]string) ([]string, error)) {
+	t.Helper()
+
+	googleVertexListModelsMu.Lock()
+	original := googleVertexListModels
+	googleVertexListModels = fn
+	t.Cleanup(func() {
+		googleVertexListModels = original
+		googleVertexListModelsMu.Unlock()
 	})
 }
 
@@ -241,6 +256,107 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	}
 	if models != nil {
 		t.Fatalf("expected no models on error, got %v", models)
+	}
+}
+
+func TestGoogleVertexFactoryRoutesAliases(t *testing.T) {
+	for _, providerName := range []string{"Google Vertex", "Google Cloud"} {
+		t.Run(providerName, func(t *testing.T) {
+			driver, err := NewModelFactory().CreateModelDriver(providerName, nil, URLSuffix{})
+			if err != nil {
+				t.Fatalf("CreateModelDriver: %v", err)
+			}
+			model, ok := driver.(*GoogleModel)
+			if !ok {
+				t.Fatalf("driver=%T, want *GoogleModel", driver)
+			}
+			if model.Backend != genai.BackendVertexAI {
+				t.Fatalf("Backend=%v, want %v", model.Backend, genai.BackendVertexAI)
+			}
+			if model.Name() != "google vertex" {
+				t.Fatalf("Name()=%q, want google vertex", model.Name())
+			}
+		})
+	}
+}
+
+func TestGoogleVertexListModelsUsesVertexLister(t *testing.T) {
+	baseURL := map[string]string{"default": "https://vertex.example"}
+	model := NewGoogleVertexModel(baseURL, URLSuffix{})
+	apiKey := `{"google_project_id":"test-project","google_region":"us-central1"}`
+	expected := []string{"publishers/google/models/gemini-2.5-flash"}
+
+	withGoogleVertexListModelsStub(t, func(_ context.Context, gotConfig *APIConfig, gotBaseURL map[string]string) ([]string, error) {
+		if gotConfig == nil || gotConfig.ApiKey == nil || *gotConfig.ApiKey != apiKey {
+			t.Fatalf("apiConfig.ApiKey=%v, want %q", gotConfig, apiKey)
+		}
+		if !reflect.DeepEqual(gotBaseURL, baseURL) {
+			t.Fatalf("baseURL=%v, want %v", gotBaseURL, baseURL)
+		}
+		return expected, nil
+	})
+
+	models, err := model.ListModels(&APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if !reflect.DeepEqual(models, expected) {
+		t.Fatalf("models=%v, want %v", models, expected)
+	}
+}
+
+func TestGoogleVertexClientConfigPlainAPIKey(t *testing.T) {
+	apiKey := "vertex-api-key"
+	region := "us-central1"
+
+	cfg, err := googleVertexClientConfig(&APIConfig{ApiKey: &apiKey, Region: &region}, nil)
+	if err != nil {
+		t.Fatalf("googleVertexClientConfig: %v", err)
+	}
+	if cfg.Backend != genai.BackendVertexAI {
+		t.Fatalf("Backend=%v, want %v", cfg.Backend, genai.BackendVertexAI)
+	}
+	if cfg.APIKey != apiKey {
+		t.Fatalf("APIKey=%q, want %q", cfg.APIKey, apiKey)
+	}
+	if cfg.Project != "" || cfg.Location != "" {
+		t.Fatalf("Project=%q Location=%q, want empty in API key mode", cfg.Project, cfg.Location)
+	}
+}
+
+func TestGoogleVertexClientConfigProjectAndRegion(t *testing.T) {
+	key := `{"google_project_id":"test-project","google_region":"europe-west4"}`
+
+	cfg, err := googleVertexClientConfig(&APIConfig{ApiKey: &key}, nil)
+	if err != nil {
+		t.Fatalf("googleVertexClientConfig: %v", err)
+	}
+	if cfg.Backend != genai.BackendVertexAI {
+		t.Fatalf("Backend=%v, want %v", cfg.Backend, genai.BackendVertexAI)
+	}
+	if cfg.Project != "test-project" {
+		t.Fatalf("Project=%q, want test-project", cfg.Project)
+	}
+	if cfg.Location != "europe-west4" {
+		t.Fatalf("Location=%q, want europe-west4", cfg.Location)
+	}
+	if cfg.APIKey != "" {
+		t.Fatalf("APIKey=%q, want empty", cfg.APIKey)
+	}
+}
+
+func TestGoogleVertexClientConfigUsesRegionalBaseURL(t *testing.T) {
+	region := "europe-west4"
+
+	cfg, err := googleVertexClientConfig(&APIConfig{Region: &region}, map[string]string{
+		"default":      "https://default.example/",
+		"europe-west4": "https://region.example/",
+	})
+	if err != nil {
+		t.Fatalf("googleVertexClientConfig: %v", err)
+	}
+	if cfg.HTTPOptions.BaseURL != "https://region.example/" {
+		t.Fatalf("BaseURL=%q, want regional URL", cfg.HTTPOptions.BaseURL)
 	}
 }
 
