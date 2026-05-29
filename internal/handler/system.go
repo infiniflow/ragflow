@@ -115,6 +115,27 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 	})
 }
 
+// GetStatus get RAGFlow status
+func (h *SystemHandler) GetStatus(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	status, err := h.systemService.GetStatus()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    status,
+		"message": "success",
+	})
+}
+
 // GetVersion get RAGFlow version
 // @Summary Get RAGFlow Version
 // @Description Get the current version of the application
