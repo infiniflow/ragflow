@@ -312,7 +312,7 @@ def create_patch_embedding_model(vectors=None, vector_size=128):
     mock_model.__exit__ = MagicMock(return_value=False)
 
     return patch(
-        "rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name",
+        "rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance",
         return_value=MagicMock(),
     ), patch(
         "rag.svr.task_executor_refactor.task_handler.LLMBundle",

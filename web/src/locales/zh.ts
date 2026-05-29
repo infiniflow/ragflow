@@ -1112,7 +1112,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         'Slack 机器人用户 OAuth Token（以 xoxb- 开头）。应用需具备 channels:read、channels:history 和 users:read 权限。',
       slackChannelsTip:
         '可选：需要同步的频道名称（例如 general）。留空则同步所有可访问的频道。',
-      sharepointDescription: '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
+      sharepointDescription:
+        '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
       sharepointSiteUrlTip:
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
@@ -1243,6 +1244,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addLlmTitle: '添加 LLM',
       editLlmTitle: '编辑 {{name}} 模型',
       editModel: '编辑模型',
+      instanceName: '实例名称',
+      instanceNameMessage: '请输入实例名称！',
+      instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',

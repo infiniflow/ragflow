@@ -56,7 +56,7 @@ class TestExtractKeywords:
             {"content_with_weight": "This is test content two"},
         ]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -84,7 +84,7 @@ class TestExtractKeywords:
         ctx.has_canceled_func = MagicMock(return_value=True)
         docs = [{"content_with_weight": "This is test content"}]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -106,7 +106,7 @@ class TestExtractKeywords:
         ctx = self._create_mock_context()
         docs = []
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -146,7 +146,7 @@ class TestGenerateQuestions:
             {"content_with_weight": "This is test content one"},
         ]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -174,7 +174,7 @@ class TestGenerateQuestions:
         ctx.has_canceled_func = MagicMock(return_value=True)
         docs = [{"content_with_weight": "This is test content"}]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -223,7 +223,7 @@ class TestGenerateMetadata:
             {"content_with_weight": "This is test content", "metadata_obj": {"category": "test"}},
         ]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -256,7 +256,7 @@ class TestGenerateMetadata:
             {"content_with_weight": "This is test content", "metadata_obj": {"category": "test"}},
         ]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -307,7 +307,7 @@ class TestApplyTags:
             {"content_with_weight": "This is test content"},
         ]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:
@@ -337,7 +337,7 @@ class TestApplyTags:
             {"content_with_weight": "This is test content"},
         ]
 
-        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name") as mock_config:
+        with patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance") as mock_config:
             mock_config.return_value = MagicMock()
 
             with patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle") as mock_llm:

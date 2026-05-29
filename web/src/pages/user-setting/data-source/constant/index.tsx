@@ -1657,8 +1657,8 @@ export const DataSourceFormDefaultValues = {
         tenant_id: '',
         client_id: '',
         client_secret: '',
-      }
-    }
+      },
+    },
   },
   [DataSourceKey.SLACK]: {
     name: '',

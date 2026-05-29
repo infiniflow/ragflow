@@ -41,6 +41,7 @@ type Router struct {
 	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
 }
 
 // NewRouter create router
@@ -63,6 +64,7 @@ func NewRouter(
 	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
+	agentHandler *handler.AgentHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -83,6 +85,7 @@ func NewRouter(
 		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
 	}
 }
 
@@ -157,6 +160,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
+				tenants.PATCH("/:tenant_id", r.tenantHandler.AcceptTenantInvite)
+				tenants.GET("/:tenant_id/users", r.tenantHandler.ListTenantMembers)
+				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantMember)
+				tenants.DELETE("/:tenant_id/users", r.tenantHandler.RemoveTenantMember)
 			}
 
 			v1.GET("/tenant/list", r.tenantHandler.TenantList)
@@ -314,6 +321,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			// Agent routes
+			agents := v1.Group("/agents")
+			{
+				agents.GET("", r.agentHandler.ListAgents)
+			}
+
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
@@ -322,11 +335,13 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
+				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
 			system := v1.Group("/system")
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
+				system.GET("/status", r.systemHandler.GetStatus)
 				log := system.Group("/log")
 				{
 					// /api/v1/system/log GET
