@@ -871,7 +871,13 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
-		time.Sleep(timeOut)
+		// Wait before the next poll, but honor context cancellation /
+		// longOpCallTimeout instead of blocking uninterruptibly.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(timeOut):
+		}
 	}
 
 	// if resp show the file is ok, download it. otherwise, provide timeout info
