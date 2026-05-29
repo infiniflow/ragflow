@@ -49,9 +49,9 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue_dataflow
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from api.apps.restful_apis.chat_api import _get_bool_request_flag
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
+    get_bool_request_flag,
     get_data_error_result,
     get_json_result,
     get_result,
@@ -1162,7 +1162,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     req.pop("agent_id", None)
     req.pop("openai-compatible", None)
     if "enable_thinking" in req:
-        req["enable_thinking"] = _get_bool_request_flag(req, "enable_thinking")
+        req["enable_thinking"] = get_bool_request_flag(req, "enable_thinking")
     session_id = req.get("session_id")
     workflow_session = False
     workflow_conv = None
