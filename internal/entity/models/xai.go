@@ -32,11 +32,29 @@ import (
 	"time"
 )
 
-// nonStreamCallTimeout caps the time spent on a single non-streaming
-// request (ChatWithMessages, ListModels). The shared httpClient itself
-// has no client-wide timeout, so streaming requests can run as long as
-// the API keeps the SSE connection open.
-const nonStreamCallTimeout = 120 * time.Second
+// Per-call context deadlines shared by every provider in this package.
+//
+// The shared httpClient sets no Client.Timeout: that field also bounds the time
+// spent reading the response body, which would sever long-lived SSE streams in
+// ChatStreamlyWithSender once a generation outlasts the limit. Each call wraps
+// its request in a context.WithTimeout sized to the operation instead:
+//
+//   - nonStreamCallTimeout for interactive non-streaming calls
+//     (chat, embed, rerank, list models, check connection, balance).
+//   - streamCallTimeout for streaming chat, bounded generously so slow or
+//     reasoning-heavy generations are not truncated mid-stream.
+//   - longOpCallTimeout for heavy synchronous file work (OCR, document
+//     parsing, audio transcription/synthesis) that legitimately runs for
+//     minutes. Kept distinct from streamCallTimeout so the two can be tuned
+//     independently even though they currently share a value.
+//
+// They are vars rather than consts so tests can shrink them to milliseconds
+// and exercise the deadline behaviour without real-time waits.
+var (
+	nonStreamCallTimeout = 120 * time.Second
+	streamCallTimeout    = 10 * time.Minute
+	longOpCallTimeout    = 10 * time.Minute
+)
 
 // XAIModel implements ModelDriver for xAI (Grok models)
 type XAIModel struct {
