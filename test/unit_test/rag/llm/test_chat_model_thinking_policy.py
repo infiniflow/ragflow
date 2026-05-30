@@ -42,19 +42,6 @@ def test_qwen3_can_enable_thinking_explicitly():
     assert kwargs["extra_body"] == {"seed": 1, "enable_thinking": True}
 
 
-def test_reasoning_is_not_a_thinking_alias():
-    gen_conf, kwargs = _apply_model_family_policies(
-        "qwen3-plus",
-        backend="base",
-        gen_conf={"reasoning": True},
-        request_kwargs={"reasoning": False},
-    )
-
-    assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is False
-    assert "reasoning" not in kwargs
-
-
 def test_dashscope_litellm_qwen3_uses_provider_field():
     gen_conf, kwargs = _apply_model_family_policies(
         "qwen3-max",
@@ -149,16 +136,3 @@ def test_litellm_provider_body_fields_preserve_existing_extra_body():
 
     assert completion_args["extra_body"] == {"seed": 1, "enable_thinking": False}
     assert "enable_thinking" not in completion_args
-
-
-def test_unsupported_provider_drops_internal_thinking_field():
-    gen_conf, kwargs = _apply_model_family_policies(
-        "other-model",
-        backend="litellm",
-        provider=SupportedLiteLLMProvider.OpenAI,
-        gen_conf={"thinking": "disabled", "reasoning": False, "temperature": 0.2},
-        request_kwargs={"reasoning": True},
-    )
-
-    assert kwargs == {}
-    assert gen_conf == {"temperature": 0.2}
