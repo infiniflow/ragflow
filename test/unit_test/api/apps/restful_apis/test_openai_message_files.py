@@ -67,6 +67,12 @@ def _load_openai_api(monkeypatch):
     _stub(monkeypatch, "api.db.services.tenant_llm_service", TenantLLMService=SimpleNamespace())
     _stub(
         monkeypatch,
+        "api.db.joint_services.tenant_model_service",
+        get_model_config_from_provider_instance=lambda *_a, **_k: None,
+        get_api_key=lambda *_a, **_k: None,
+    )
+    _stub(
+        monkeypatch,
         "api.utils.api_utils",
         get_error_data_result=lambda message="", code=None: {"code": code or 102, "message": message, "data": None},
         get_request_json=lambda: {},

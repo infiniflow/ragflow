@@ -347,6 +347,7 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -637,6 +638,12 @@ type qianfanOCRResponse struct {
 func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	if (fileURL == nil || *fileURL == "") && (content == nil || len(content) == 0) {
 		return nil, fmt.Errorf("image url or content is required")
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	region := "default"

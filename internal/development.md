@@ -386,19 +386,19 @@ RAGFlow(user)> ocr with 'paddleocr-vl-0.9b@test@baidu' file './internal/text.jpg
 
 ### 6.26 Chunk Management Commands
 
-- Create a dataset table with vector size
+- Create a chunk store with vector size
 ```
-RAGFlow(user)> CREATE DATASET TABLE 'test' VECTOR SIZE 384
+RAGFlow(user)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
 ```
 
 - Insert data from JSON files
 ```
-RAGFlow(user)> INSERT DATASET FROM FILE 'insert_kb.json'
+RAGFlow(user)> INSERT CHUNKS FROM FILE 'insert_kb.json'
 ```
 
 - Update a chunk's content
 ```
-RAGFlow(user)> UPDATE CHUNK 'deb165dc6a732a64' OF DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
+RAGFlow(user)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
 ```
 
 - Remove tags from a dataset
@@ -408,17 +408,17 @@ RAGFlow(user)> REMOVE TAGS 'tag1', 'tag2' FROM DATASET 'test'
 
 - Remove specific chunks from a document
 ```
-RAGFlow(user)> REMOVE CHUNKS '29cc4f6d7a5c6e7c' '0360e3d8519eab12' FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+RAGFlow(user)> REMOVE CHUNKS '29cc4f6d7a5c6e7c' '0360e3d8519eab12' FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
 ```
 
 - Remove all chunks from a document
 ```
-RAGFlow(user)> REMOVE ALL CHUNKS FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+RAGFlow(user)> REMOVE ALL CHUNKS FROM DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
 ```
 
-- Drop dataset table
+- Drop chunk store
 ```
-RAGFlow(user)> DROP DATASET TABLE 'test'
+RAGFlow(user)> DROP CHUNK STORE FOR DATASET 'test'
 ```
 
 - Search chunks
@@ -428,17 +428,17 @@ RAGFlow(user)> SEARCH '曹操' ON DATASETS 'test'
 
 - Get chunks
 ```
-RAGFlow(user)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+RAGFlow(user)> GET CHUNK '29cc4f6d7a5c6e7c' OF DATASET 'test' DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test'
 ```
 
 ### 6.27 Metadata Management Commands
 
-- Create metadata table
+- Create metadata store
 ```
-RAGFlow(user)> CREATE METADATA TABLE
+RAGFlow(user)> CREATE METADATA STORE
 ```
 
-- Insert data from JSON files
+- Insert metadata from JSON files
 ```
 RAGFlow(user)> INSERT METADATA FROM FILE 'insert_metadata.json'
 ```
@@ -447,9 +447,19 @@ RAGFlow(user)> INSERT METADATA FROM FILE 'insert_metadata.json'
 RAGFlow(user)> SET METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' TO '{"author": ["John", "Tom"], "category": "tech"}';
 ```
 
-- Drop metadata table
+- Delete metadata of a document
 ```
-RAGFlow(user)> DROP METADATA TABLE
+DELETE METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3'
+```
+
+- Delete metadata keys of a document
+```
+DELETE METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' KEYS '["key1", "key2"]'     
+```
+
+- Drop metadata store
+```
+RAGFlow(user)> DROP METADATA STORE
 ```
 
 - List metadata
