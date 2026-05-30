@@ -90,6 +90,8 @@ ALLOWED_GEN_CONF_KEYS = frozenset(
         "logprobs",
         "top_logprobs",
         "extra_headers",
+        "thinking",
+        "enable_thinking",
     }
 )
 
@@ -117,9 +119,38 @@ def _apply_model_family_policies(
     sanitized_gen_conf = deepcopy(gen_conf) if gen_conf else {}
     sanitized_kwargs = dict(request_kwargs) if request_kwargs else {}
 
-    # Qwen3 family disables thinking by extra_body on non-stream chat requests.
+    def _thinking_type():
+        val = sanitized_gen_conf.pop("thinking", None)
+        if isinstance(val, dict):
+            val = val.get("type")
+
+        enable_thinking = sanitized_gen_conf.pop("enable_thinking", None)
+
+        if isinstance(val, str) and val in {"enabled", "disabled"}:
+            return val
+        if isinstance(enable_thinking, bool):
+            return "enabled" if enable_thinking else "disabled"
+        return None
+
+    def _merge_extra_body(target: dict, extra: dict) -> None:
+        body = target.get("extra_body")
+        if not isinstance(body, dict):
+            body = {}
+        body.update(extra)
+        target["extra_body"] = body
+
+    thinking_type = _thinking_type()
+
+    # Qwen3 keeps the existing default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
-        sanitized_kwargs["extra_body"] = {"enable_thinking": False}
+        enable_thinking = thinking_type == "enabled" if thinking_type else False
+        if backend == "litellm" and provider in {
+            SupportedLiteLLMProvider.Tongyi_Qianwen,
+            SupportedLiteLLMProvider.Dashscope,
+        }:
+            sanitized_gen_conf["enable_thinking"] = enable_thinking
+        else:
+            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
@@ -137,26 +168,48 @@ def _apply_model_family_policies(
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
-            reasoning = sanitized_gen_conf.pop("reasoning", None)
-            thinking = {"type": "enabled"}
-            if reasoning is not None:
-                thinking = {"type": "enabled"} if reasoning else {"type": "disabled"}
-            elif not isinstance(thinking, dict) or thinking.get("type") not in {"enabled", "disabled"}:
-                thinking = {"type": "disabled"}
-            sanitized_gen_conf["thinking"] = thinking
+        elif provider == SupportedLiteLLMProvider.Moonshot and (
+            thinking_type or "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower
+        ):
+            effective_thinking = thinking_type or "enabled"
+            sanitized_gen_conf["thinking"] = {"type": effective_thinking}
 
-            thinking_enabled = thinking.get("type") == "enabled"
-            sanitized_gen_conf["temperature"] = 1.0 if thinking_enabled else 0.6
+            sanitized_gen_conf.pop("temperature", None)
             sanitized_gen_conf["top_p"] = 0.95
             sanitized_gen_conf["n"] = 1
             sanitized_gen_conf["presence_penalty"] = 0.0
             sanitized_gen_conf["frequency_penalty"] = 0.0
+        elif (
+            provider == SupportedLiteLLMProvider.ZHIPU_AI
+            and "glm" in model_name_lower
+            and thinking_type
+        ):
+            sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
         return sanitized_gen_conf, sanitized_kwargs
 
     return sanitized_gen_conf, sanitized_kwargs
 
+
+def _move_litellm_provider_body_fields(provider: SupportedLiteLLMProvider | str | None, completion_args: dict) -> dict:
+    provider_body_fields = {
+        SupportedLiteLLMProvider.Tongyi_Qianwen: {"enable_thinking"},
+        SupportedLiteLLMProvider.Dashscope: {"enable_thinking"},
+        SupportedLiteLLMProvider.Moonshot: {"thinking"},
+        SupportedLiteLLMProvider.ZHIPU_AI: {"thinking"},
+    }.get(provider, set())
+
+    body = completion_args.get("extra_body")
+    if not isinstance(body, dict):
+        body = {}
+    moved = False
+    for key in provider_body_fields:
+        if key in completion_args:
+            body[key] = completion_args.pop(key)
+            moved = True
+    if moved or body:
+        completion_args["extra_body"] = body
+    return completion_args
 
 class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
@@ -197,12 +250,6 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
-        gen_conf, _ = _apply_model_family_policies(
-            self.model_name,
-            backend="base",
-            gen_conf=gen_conf,
-        )
-
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -213,10 +260,17 @@ class Base(ABC):
         logging.info("[HISTORY STREAMLY]" + json.dumps(history, ensure_ascii=False, indent=4))
         reasoning_start = False
 
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         request_kwargs = {"model": self.model_name, "messages": history, "stream": True, **gen_conf}
         stop = kwargs.get("stop")
         if stop:
             request_kwargs["stop"] = stop
+        request_kwargs.update(extra_request_kwargs)
 
         response = await self.async_client.chat.completions.create(**request_kwargs)
         async for resp in response:
@@ -407,6 +461,12 @@ class Base(ABC):
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -418,7 +478,7 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
                     tk_count += total_token_count_from_response(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
@@ -473,6 +533,12 @@ class Base(ABC):
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
+        gen_conf, extra_request_kwargs = _apply_model_family_policies(
+            self.model_name,
+            backend="base",
+            gen_conf=gen_conf,
+            request_kwargs={},
+        )
         tools = self.tools
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -487,7 +553,7 @@ class Base(ABC):
                     reasoning_start = False
                     logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
 
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs)
 
                     final_tool_calls = {}
                     answer = ""
@@ -619,9 +685,10 @@ class Base(ABC):
 
             return final_ans.strip(), tol_token
 
-        _, kwargs = _apply_model_family_policies(
+        gen_conf, kwargs = _apply_model_family_policies(
             self.model_name,
             backend="base",
+            gen_conf=gen_conf,
             request_kwargs=kwargs,
         )
 
@@ -2054,6 +2121,7 @@ class LiteLLMBase(ABC):
             api_base = completion_args.get("api_base", self.base_url)
             separator = "&" if "?" in api_base else "?"
             completion_args["api_base"] = f"{api_base}{separator}GroupId={self.group_id}"
+        _move_litellm_provider_body_fields(self.provider, completion_args)
         if extra_headers:
             completion_args["extra_headers"] = extra_headers
         return completion_args
