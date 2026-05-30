@@ -413,9 +413,9 @@ type TaskAssignment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	TaskType      string                 `protobuf:"bytes,2,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
-	Config        string                 `protobuf:"bytes,3,opt,name=config,proto3" json:"config,omitempty"`
-	ComeFrom      string                 `protobuf:"bytes,4,opt,name=come_from,json=comeFrom,proto3" json:"come_from,omitempty"`
-	AssignedTo    string                 `protobuf:"bytes,5,opt,name=assigned_to,json=assignedTo,proto3" json:"assigned_to,omitempty"`
+	ComeFrom      string                 `protobuf:"bytes,3,opt,name=come_from,json=comeFrom,proto3" json:"come_from,omitempty"`
+	AssignedTo    string                 `protobuf:"bytes,4,opt,name=assigned_to,json=assignedTo,proto3" json:"assigned_to,omitempty"`
+	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -464,13 +464,6 @@ func (x *TaskAssignment) GetTaskType() string {
 	return ""
 }
 
-func (x *TaskAssignment) GetConfig() string {
-	if x != nil {
-		return x.Config
-	}
-	return ""
-}
-
 func (x *TaskAssignment) GetComeFrom() string {
 	if x != nil {
 		return x.ComeFrom
@@ -481,6 +474,13 @@ func (x *TaskAssignment) GetComeFrom() string {
 func (x *TaskAssignment) GetAssignedTo() string {
 	if x != nil {
 		return x.AssignedTo
+	}
+	return ""
+}
+
+func (x *TaskAssignment) GetUserId() string {
+	if x != nil {
+		return x.UserId
 	}
 	return ""
 }
@@ -705,14 +705,14 @@ const file_internal_proto_ingestion_proto_rawDesc = "" +
 	" estimated_remaining_time_seconds\x18\x04 \x01(\x03R\x1destimatedRemainingTimeSeconds\x12\x1b\n" +
 	"\tcome_from\x18\x05 \x01(\tR\bcomeFrom\x12\x1d\n" +
 	"\n" +
-	"start_time\x18\x06 \x01(\x03R\tstartTime\"\x9c\x01\n" +
+	"start_time\x18\x06 \x01(\x03R\tstartTime\"\x9d\x01\n" +
 	"\x0eTaskAssignment\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1b\n" +
-	"\ttask_type\x18\x02 \x01(\tR\btaskType\x12\x16\n" +
-	"\x06config\x18\x03 \x01(\tR\x06config\x12\x1b\n" +
-	"\tcome_from\x18\x04 \x01(\tR\bcomeFrom\x12\x1f\n" +
-	"\vassigned_to\x18\x05 \x01(\tR\n" +
-	"assignedTo\"b\n" +
+	"\ttask_type\x18\x02 \x01(\tR\btaskType\x12\x1b\n" +
+	"\tcome_from\x18\x03 \x01(\tR\bcomeFrom\x12\x1f\n" +
+	"\vassigned_to\x18\x04 \x01(\tR\n" +
+	"assignedTo\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\"b\n" +
 	"\n" +
 	"TaskResult\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x16\n" +

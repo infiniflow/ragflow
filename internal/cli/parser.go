@@ -129,10 +129,7 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminShutdownCommand()
 	case TokenRestart:
 		return p.parseAdminRestartCommand()
-	case TokenStart:
-		return p.parseStartIngestion()
-	case TokenStop:
-		return p.parseStopIngestion()
+
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -213,6 +210,11 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
+	case TokenStart:
+		return p.parseUserStartIngestion()
+	case TokenStop:
+		return p.parseUserStopIngestion()
+
 	case TokenLS:
 		return p.parseCEListCommand()
 	case TokenCat:

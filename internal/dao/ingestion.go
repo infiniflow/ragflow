@@ -17,16 +17,26 @@
 package dao
 
 import (
+	"fmt"
 	"ragflow/internal/entity"
 )
 
-type IngestionDAO struct{}
+type IngestionTaskDAO struct{}
 
-func NewIngestionDAO() *IngestionDAO {
-	return &IngestionDAO{}
+func NewIngestionTaskDAO() *IngestionTaskDAO {
+	return &IngestionTaskDAO{}
 }
 
-func (dao *IngestionDAO) Create(ingestionTask *entity.IngestionTask) error {
+// created → running : After the ingestor component assigns the task, it changes the status to running
+// running → completed : Task executes successfully
+// running → failed : Error occurs during execution
+// created → canceling : User cancels before the task is picked up by the ingestor
+// running → canceling : User cancels during execution
+// completed → canceling : User cancels a completed task (e.g., for cleanup/rollback)
+// canceling → canceled : Cancellation completes
+// failed → created : Retry (back to start)
+// canceled → created : Retry/re-execute (back to start)
+func (dao *IngestionTaskDAO) Create(ingestionTask *entity.IngestionTask) error {
 
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -40,71 +50,167 @@ func (dao *IngestionDAO) Create(ingestionTask *entity.IngestionTask) error {
 		}
 	}()
 
+	// Check if the task is created
+	var taskRecord *entity.IngestionTask
+	err := DB.Where("document_id = ?", ingestionTask.DocumentID).First(&taskRecord).Error
+	if err == nil {
+		// found
+		if taskRecord.Status == "FAILED" || taskRecord.Status == "CANCELLED" || taskRecord.Status == "CANCELLING" {
+			// restart the task
+		} else {
+			return fmt.Errorf("document id %s already exists, status: %s", ingestionTask.DocumentID, taskRecord.Status)
+		}
+	}
+
 	// create ingestion task
-	if err := DB.Create(ingestionTask).Error; err != nil {
+	if err = DB.Create(ingestionTask).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	taskLog := &entity.IngestionTaskLog{
-		TaskID: ingestionTask.ID,
-		Stage:  0,
-	}
-
-	// create task log
-	if err := DB.Create(taskLog).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	if err := tx.Commit().Error; err != nil {
+	if err = tx.Commit().Error; err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (dao *IngestionDAO) GetAllTasks() ([]*entity.IngestionTask, error) {
+// UpdateStatus Update ingestion task status
+func (dao *IngestionTaskDAO) UpdateStatus(taskID, status string) error {
+	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", status).Error
+}
+
+func (dao *IngestionTaskDAO) GetAllTasks(page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	err := DB.Find(&tasks).Error
+	var err error
+	if pageSize == 0 {
+		err = DB.Find(&tasks).Error
+	} else {
+		err = DB.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+	}
 	return tasks, err
 }
 
-func (dao *IngestionDAO) ListByUserID(userID string) ([]*entity.IngestionTask, error) {
+func (dao *IngestionTaskDAO) ListByUserID(userID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	err := DB.Where("user_id = ?", userID).Find(&tasks).Error
+	var err error
+	if pageSize == 0 {
+		err = DB.Where("user_id = ?", userID).Order("create_time DESC").Find(&tasks).Error
+	} else {
+		err = DB.Where("user_id = ?", userID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+	}
+
 	return tasks, err
 }
 
-func (dao *IngestionDAO) GetByID(id string) (*entity.IngestionTask, error) {
+func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(userID, datasetID string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	var tasks []*entity.IngestionTask
+	var err error
+	if pageSize == 0 {
+		err = DB.Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Find(&tasks).Error
+	} else {
+		err = DB.Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+	}
+
+	return tasks, err
+}
+
+func (dao *IngestionTaskDAO) GetByID(id string) (*entity.IngestionTask, error) {
 	var task *entity.IngestionTask
 	err := DB.Where("id = ?", id).First(&task).Error
 	return task, err
 }
 
-type IngestionLogDAO struct{}
-
-func NewIngestionLogDAO() *IngestionLogDAO {
-	return &IngestionLogDAO{}
+func (dao *IngestionTaskDAO) GetByDocumentID(documentId string) (*entity.IngestionTask, error) {
+	var task *entity.IngestionTask
+	err := DB.Where("document_id = ?", documentId).First(&task).Error
+	return task, err
 }
 
-func (dao *IngestionLogDAO) Create(ingestionLog *entity.IngestionTaskLog) error {
+type IngestionTaskLogDAO struct{}
+
+func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
+	return &IngestionTaskLogDAO{}
+}
+
+func (dao *IngestionTaskLogDAO) Create(ingestionLog *entity.IngestionTaskLog) error {
 	return DB.Create(ingestionLog).Error
 }
 
-func (dao *IngestionDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
+func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
-	err := DB.Where("task_id = ?", taskID).Find(&tasks).Error
+	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").Find(&tasks).Error
 	return tasks, err
 }
 
-func (dao *IngestionDAO) GetLogByLogID(logID string) (*entity.IngestionTaskLog, error) {
+func (dao *IngestionTaskLogDAO) LatestLogByTaskID(taskID string) (*entity.IngestionTaskLog, error) {
+	var task *entity.IngestionTaskLog
+	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").First(&task).Error
+	return task, err
+}
+
+func (dao *IngestionTaskLogDAO) GetLogByLogID(logID string) (*entity.IngestionTaskLog, error) {
 	var task *entity.IngestionTaskLog
 	err := DB.Where("id = ?", logID).First(&task).Error
 	return task, err
 }
 
-func (dao *IngestionDAO) DeleteByTaskID(taskID string) (int64, error) {
+func (dao *IngestionTaskLogDAO) DeleteByTaskID(taskID string) (int64, error) {
 	result := DB.Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
+	return result.RowsAffected, result.Error
+}
+
+type IngestionTaskletDAO struct{}
+
+func NewIngestionTaskletDAO() *IngestionTaskletDAO {
+	return &IngestionTaskletDAO{}
+}
+
+func (dao *IngestionTaskletDAO) Create(ingestionTasklet *entity.IngestionTasklet) error {
+	return DB.Create(ingestionTasklet).Error
+}
+
+func (dao *IngestionTaskletDAO) GetAllTasklets() ([]*entity.IngestionTasklet, error) {
+	var tasks []*entity.IngestionTasklet
+	err := DB.Find(&tasks).Error
+	return tasks, err
+}
+
+func (dao *IngestionTaskletDAO) ListByUserID(userID string) ([]*entity.IngestionTasklet, error) {
+	var tasks []*entity.IngestionTasklet
+	err := DB.Where("user_id = ?", userID).Find(&tasks).Error
+	return tasks, err
+}
+
+func (dao *IngestionTaskletDAO) GetByID(id string) (*entity.IngestionTasklet, error) {
+	var task *entity.IngestionTasklet
+	err := DB.Where("id = ?", id).First(&task).Error
+	return task, err
+}
+
+type IngestionTaskletLogDAO struct{}
+
+func NewIngestionTaskletLogDAO() *IngestionTaskletLogDAO {
+	return &IngestionTaskletLogDAO{}
+}
+
+func (dao *IngestionTaskletLogDAO) Create(ingestionLog *entity.IngestionTaskletLog) error {
+	return DB.Create(ingestionLog).Error
+}
+
+func (dao *IngestionTaskletLogDAO) ListLogsByTaskletID(taskID string) ([]*entity.IngestionTaskletLog, error) {
+	var tasks []*entity.IngestionTaskletLog
+	err := DB.Where("task_id = ?", taskID).Find(&tasks).Error
+	return tasks, err
+}
+
+func (dao *IngestionTaskletLogDAO) GetLogByLogID(logID string) (*entity.IngestionTaskletLog, error) {
+	var task *entity.IngestionTaskletLog
+	err := DB.Where("id = ?", logID).First(&task).Error
+	return task, err
+}
+
+func (dao *IngestionTaskletLogDAO) DeleteByTaskletID(taskID string) (int64, error) {
+	result := DB.Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskletLog{})
 	return result.RowsAffected, result.Error
 }

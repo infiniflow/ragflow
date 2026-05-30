@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"sync"
 	"time"
 
@@ -50,6 +52,9 @@ type IngestionManager struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	ingestionTaskDAO    *dao.IngestionTaskDAO
+	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
 }
 
 type TaskState struct {
@@ -90,16 +95,61 @@ func GetIngestionManager() *IngestionManager {
 func NewAdminServer() *IngestionManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	ingestionManager = &IngestionManager{
-		taskStates:       make(map[string]*TaskState),
-		ingestionServers: make(map[string]*IngestorState),
-		taskQueue:        make(chan *pendingTask, 10000),
-		slotFreed:        make(chan struct{}, 100),
-		ctx:              ctx,
-		cancel:           cancel,
+		taskStates:          make(map[string]*TaskState),
+		ingestionServers:    make(map[string]*IngestorState),
+		taskQueue:           make(chan *pendingTask, 10000),
+		slotFreed:           make(chan struct{}, 100),
+		ctx:                 ctx,
+		cancel:              cancel,
+		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
 	}
 	go ingestionManager.dispatchLoop()
 	//go ingestionManager.heartbeatCheckLoop() no need to check heartbeat timeout
 	return ingestionManager
+}
+
+func (s *IngestionManager) RestoreTasks() error {
+	ingestionTasks, err := ingestionManager.ingestionTaskDAO.GetAllTasks(0, 0)
+	if err != nil {
+		return err
+	}
+	for _, ingestionTask := range ingestionTasks {
+		switch ingestionTask.Status {
+		case "CREATED":
+		case "CANCELLING":
+			{
+				var log *entity.IngestionTaskLog
+				log, err = s.ingestionTaskLogDAO.LatestLogByTaskID(ingestionTask.ID)
+
+				if log == nil {
+					// no log means not assigned
+					task := &common.TaskAssignment{
+						TaskId:   ingestionTask.ID,
+						UserId:   ingestionTask.UserID,
+						ComeFrom: "Admin",
+						TaskType: ingestionTask.Status,
+					}
+					s.tryAssign(task)
+				}
+			}
+		default:
+			// COMPLETED / FAILED / CANCELED, ignore
+			continue
+		}
+	}
+
+	// created no log, select an ingestor and send
+	// cancelling no log, select an ingestor and send
+
+	// created has log, send to the ingestor that ingestor will restore it
+	// cancelling has log, send to the ingestor that ingestor will restore it
+	// running with log, send to the ingestor that ingestor will restore it
+
+	// status with log, but ingestor name can't be found. Administrator will be responsible to reassign it to other ingestor
+
+	// completed / failed/ canceled, ignore
+	return nil
 }
 
 // Action handles the bidirectional streaming RPC from ingestion servers
@@ -376,46 +426,37 @@ func (s *IngestionManager) checkHeartbeats() {
 	}
 }
 
-func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *IngestorState {
+func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) (*IngestorState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	switch task.TaskType {
-	case "start_ingestion_task":
+	case "CREATED":
+		if s.taskStates[task.TaskId] == nil {
+			// already dispatched or running
+			return nil, fmt.Errorf("task: %s is already dispatched or running", task.TaskId)
+		}
 		for _, ingestor := range s.ingestionServers {
 			if ingestor.Status == "active" {
 				s.taskStates[task.TaskId] = &TaskState{
 					taskID:     task.TaskId,
 					status:     "DISPATCHED",
-					comeFrom:   "CLI",
+					comeFrom:   task.ComeFrom,
 					startTime:  nil,
 					lastUpdate: time.Now().Truncate(time.Second),
 					assignTo:   ingestor.ID,
 				}
-				return ingestor
+				return ingestor, nil
 			}
 		}
-	case "cancel_ingestion_task":
-		taskState := s.taskStates[task.TaskId]
-		if taskState != nil {
-			switch taskState.status {
-			case "COMPLETED":
-				return nil
-			case "DISPATCHED":
-				{
-					taskState.status = "CANCELING"
-					return s.ingestionServers[taskState.assignTo]
-				}
-			default:
-				return s.ingestionServers[taskState.assignTo]
-			}
-		}
-
-	case "shutdown_ingestor":
-		return s.ingestionServers[task.AssignedTo]
+		// no ingestor  available
+	case "CANCELING":
+		return s.ingestionServers[task.AssignedTo], nil
+	case "SHUTDOWN":
+		return s.ingestionServers[task.AssignedTo], nil
 	}
 
-	return nil
+	return nil, fmt.Errorf("no ingestor available")
 }
 
 // tryAssign repeatedly tries to find an available ingestor and assign the task.
@@ -423,12 +464,25 @@ func (s *IngestionManager) SelectIngestorForTask(task *common.TaskAssignment) *I
 func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 	for {
 
-		target := s.SelectIngestorForTask(task)
+		target, err := s.SelectIngestorForTask(task)
+		if err != nil {
+			common.Info(err.Error())
+			return
+		}
+
 		if target != nil {
+			// CREATED, has available ingestor
+			// CANCELLING and SHUTDOWN, has available ingestor
 			task.AssignedTo = target.ID
 			s.assignToIngestor(task, target)
 			return
 		}
+
+		// for CREATED, no available ingestor, loop until one ingestor is available
+		// for CANCELLING, corresponding ingestor isn't started.
+		// - ingestion task hasn't started in ingestor
+		// - corresponding ingestor is shutdown, manually assign the cancelling task to another ingestor
+		// for SHUTDOWN, corresponding ingestor isn't started, return since the ingestor isn't started from admin point of view
 
 		if task.TaskType == "start_ingestion_task" {
 			// Receives a start ingestion task, save and change the states
@@ -460,9 +514,10 @@ func (s *IngestionManager) tryAssign(task *common.TaskAssignment) {
 }
 
 func (s *IngestionManager) assignToIngestor(task *common.TaskAssignment, state *IngestorState) {
+
 	err := state.Stream.Send(&common.AdminMessage{
 		MessageType:    "TASK_ASSIGNMENT",
-		TaskAssignment: task,
+		TaskAssignment: task, // CREATED, CANCELLING, SHUTDOWN
 	})
 	if err != nil {
 		common.Info(fmt.Sprintf("Failed to assign task %s to ingestor %s: %v", task.TaskId, state.ID, err))
@@ -534,20 +589,52 @@ func (s *IngestionManager) ListIngestionTasks() ([]map[string]interface{}, error
 
 	var result []map[string]interface{}
 
+	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	//ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	//UserID     string  `gorm:"column:user_id;size:32;not null" json:"user_id"`
+	//DocumentID string  `gorm:"column:document_id;size:32;not null;index" json:"document_id"`
+	//DatasetID  string  `gorm:"column:dataset_id;size:32;not null" json:"dataset_id"`
+	//Schema     JSONMap `gorm:"column:schema;type:longtext" json:"schema"`
+	//Status     string  `gorm:"column:status;size:32;not null;" json:"status"`
+	//CreateTime *int64     `gorm:"column:create_time;index" json:"create_time,omitempty"`
+	//CreateDate *time.Time `gorm:"column:create_date;index" json:"create_date,omitempty"`
+	//UpdateTime *int64     `gorm:"column:update_time;index" json:"update_time,omitempty"`
+	//UpdateDate *time.Time `gorm:"column:update_date;index" json:"update_date,omitempty"`
+	var taskID2index = make(map[string]int)
+	for idx, task := range ingestionTasks {
+		result = append(result, map[string]interface{}{
+			"id":          task.ID,
+			"user_id":     task.UserID,
+			"dataset_id":  task.DatasetID,
+			"document_id": task.DocumentID,
+			"schema":      task.Schema,
+			"status":      task.Status,
+			"create_time": task.CreateTime,
+			"from":        "",
+			"assign_to":   "",
+			"ETA":         time.Duration(0),
+			"error":       "",
+			"last_update": time.Time{},
+			"phase":       "",
+		})
+		taskID2index[task.ID] = idx
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index, taskState := range s.taskStates {
 		common.Info(fmt.Sprintf("Task %s: %s", index, taskState.taskID))
-		result = append(result, map[string]interface{}{
-			"id":          taskState.taskID,
-			"status":      taskState.status,
-			"from":        taskState.comeFrom,
-			"assign_to":   taskState.assignTo,
-			"last_update": taskState.lastUpdate,
-			"start_time":  taskState.startTime,
-			"ETA":         taskState.estimatedRemainingTime,
-			"error":       taskState.errorMessage,
-		})
+		taskResult := result[taskID2index[taskState.taskID]]
+		taskResult["phase"] = taskState.status
+		taskResult["from"] = taskState.comeFrom
+		taskResult["assign_to"] = taskState.assignTo
+		taskResult["last_update"] = taskState.lastUpdate
+		taskResult["error"] = taskState.errorMessage
+		taskResult["ETA"] = taskState.estimatedRemainingTime
 	}
 
 	return result, nil
