@@ -22,7 +22,7 @@ from quart import Response, jsonify
 from api.apps import current_user, login_required
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
@@ -33,17 +33,18 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
 
-    if not TenantLLMService.query(
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        get_model_config_from_provider_instance(
+            tenant_id=tenant_id,
+            model_name=llm_id,
+            model_type=model_type,
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {llm_id}: {e}")
         return f"`llm_id` {llm_id} doesn't exist"
     return None
 
@@ -133,7 +134,7 @@ async def openai_chat_completions(chat_id):
         if llm_id_error:
             return get_error_data_result(message=llm_id_error, code=RetCode.ARGUMENT_ERROR)
         dia.llm_id = requested_model
-        if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
+        if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
 
     metadata_condition = extra_body.get("metadata_condition") or {}
@@ -162,7 +163,7 @@ async def openai_chat_completions(chat_id):
 
     tools = None
     toolcall_session = None
-    stream_mode = req.get("stream", True)
+    stream_mode = bool(req.get("stream", False))
 
     if stream_mode:
         async def streamed_response_generator():

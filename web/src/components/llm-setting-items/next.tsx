@@ -27,7 +27,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
-  options?: any[];
+  modelTypes?: string[];
   llmId?: string;
   llmSelectTestId?: string;
   llmOptionTestIdPrefix?: string;
@@ -58,6 +58,7 @@ export const LlmSettingFieldSchema = {
   presence_penalty: z.coerce.number().optional(),
   frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
+  parameter: z.string().optional(),
 };
 
 export const LlmSettingSchema = {
@@ -68,7 +69,7 @@ export const LlmSettingSchema = {
 
 export function LlmSettingFieldItems({
   prefix,
-  options,
+  modelTypes,
   llmSelectTestId,
   llmOptionTestIdPrefix,
   showFields = [
@@ -136,7 +137,7 @@ export function LlmSettingFieldItems({
   return (
     <div className="space-y-5">
       <LLMFormField
-        options={options}
+        modelTypes={modelTypes}
         name={llmId ?? getFieldWithPrefix('llm_id')}
         testId={llmSelectTestId}
         optionTestIdPrefix={llmOptionTestIdPrefix}
