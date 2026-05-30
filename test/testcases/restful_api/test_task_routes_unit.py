@@ -130,12 +130,18 @@ def _load_task_module(
 
     api_service_mod = ModuleType("api.db.services.api_service")
     api_service_mod.query_calls = []
+    api_service_mod.message_lookup_calls = []
 
     class _StubAPI4ConversationService:
         @staticmethod
         def query(**kwargs):
             api_service_mod.query_calls.append(kwargs)
             return [SimpleNamespace(message=messages) for messages in canvas_messages or []]
+
+        @staticmethod
+        def get_workflow_conversations_by_message_id(user_id, message_id):
+            api_service_mod.message_lookup_calls.append((user_id, message_id))
+            return [SimpleNamespace(message=messages) for messages in canvas_messages or [] if str(message_id).lower() in repr(messages).lower()]
 
     api_service_mod.API4ConversationService = _StubAPI4ConversationService
     monkeypatch.setitem(sys.modules, "api.db.services.api_service", api_service_mod)
@@ -246,6 +252,27 @@ def _load_task_module(
 
 
 @pytest.mark.p2
+def test_cancel_missing_task_returns_success_without_side_effects(monkeypatch):
+    module, document_service, knowledgebase_service, api_service, redis_conn = _load_task_module(
+        monkeypatch,
+        task=None,
+        document=None,
+    )
+
+    payload = _run(module._cancel_task("missing-task-id"))
+
+    assert payload["code"] == 0, payload
+    assert payload["data"] is True, payload
+    assert document_service.access_checks == []
+    assert knowledgebase_service.access_checks == []
+    assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
+    assert redis_conn.set_calls == []
+    assert module.TaskService.model.update_calls == 0
+    assert document_service.update_calls == []
+
+
+@pytest.mark.p2
 def test_cancel_task_rejects_inaccessible_document_before_side_effects(monkeypatch):
     task = SimpleNamespace(doc_id="doc-1", progress=0, progress_msg="")
     document = SimpleNamespace(run="1")
@@ -264,6 +291,30 @@ def test_cancel_task_rejects_inaccessible_document_before_side_effects(monkeypat
     assert document_service.access_checks == [("doc-1", "user-1")]
     assert knowledgebase_service.access_checks == []
     assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
+    assert redis_conn.set_calls == []
+    assert module.TaskService.model.update_calls == 0
+    assert document_service.update_calls == []
+
+
+@pytest.mark.p2
+def test_cancel_task_rejects_missing_doc_id_before_side_effects(monkeypatch):
+    task = SimpleNamespace(doc_id="", progress=0, progress_msg="")
+    module, document_service, knowledgebase_service, api_service, redis_conn = _load_task_module(
+        monkeypatch,
+        task=task,
+        document=None,
+    )
+
+    payload = _run(module._cancel_task("task-1"))
+
+    assert payload["code"] == 109, payload
+    assert payload["data"] is False, payload
+    assert payload["message"] == "No authorization.", payload
+    assert document_service.access_checks == []
+    assert knowledgebase_service.access_checks == []
+    assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
     assert redis_conn.set_calls == []
     assert module.TaskService.model.update_calls == 0
     assert document_service.update_calls == []
@@ -286,6 +337,7 @@ def test_cancel_task_authorized_document_sets_cancel_state(monkeypatch):
     assert document_service.access_checks == [("doc-1", "user-1")]
     assert knowledgebase_service.access_checks == []
     assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
     assert redis_conn.set_calls == [("task-1-cancel", "x")]
     assert module.TaskService.model.update_calls == 1
     assert module.TaskService.model.updates[0]["progress"] == -1
@@ -310,6 +362,60 @@ def test_cancel_task_authorizes_dataset_index_tasks(monkeypatch):
     assert knowledgebase_service.lookup_calls == [{"graphrag_task_id": "task-1"}, {"raptor_task_id": "task-1"}]
     assert knowledgebase_service.access_checks == [("kb-1", "user-1")]
     assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
+    assert redis_conn.set_calls == [("task-1-cancel", "x")]
+    assert module.TaskService.model.update_calls == 1
+    assert document_service.update_calls == []
+
+
+@pytest.mark.p2
+def test_cancel_task_authorizes_graphrag_index_tasks(monkeypatch):
+    task = SimpleNamespace(doc_id="graph-raptor-doc", progress=0, progress_msg="")
+    module, document_service, knowledgebase_service, api_service, redis_conn = _load_task_module(
+        monkeypatch,
+        task=task,
+        document=None,
+        index_task_kb={"field": "graphrag_task_id", "task_id": "task-1", "kb_id": "kb-1"},
+    )
+
+    payload = _run(module._cancel_task("task-1"))
+
+    assert payload["code"] == 0, payload
+    assert payload["data"] is True, payload
+    assert document_service.access_checks == []
+    assert knowledgebase_service.lookup_calls == [{"graphrag_task_id": "task-1"}]
+    assert knowledgebase_service.access_checks == [("kb-1", "user-1")]
+    assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
+    assert redis_conn.set_calls == [("task-1-cancel", "x")]
+    assert module.TaskService.model.update_calls == 1
+    assert document_service.update_calls == []
+
+
+@pytest.mark.p2
+def test_cancel_task_authorizes_mindmap_index_tasks(monkeypatch):
+    task = SimpleNamespace(doc_id="graph-raptor-doc", progress=0, progress_msg="")
+    module, document_service, knowledgebase_service, api_service, redis_conn = _load_task_module(
+        monkeypatch,
+        task=task,
+        document=None,
+        index_task_kb={"field": "mindmap_task_id", "task_id": "task-1", "kb_id": "kb-1"},
+    )
+
+    payload = _run(module._cancel_task("task-1"))
+
+    assert payload["code"] == 0, payload
+    assert payload["data"] is True, payload
+    assert document_service.access_checks == []
+    assert knowledgebase_service.lookup_calls == [
+        {"graphrag_task_id": "task-1"},
+        {"raptor_task_id": "task-1"},
+        {"mindmap_task_id": "task-1"},
+    ]
+    assert len(knowledgebase_service.lookup_calls) == 3
+    assert knowledgebase_service.access_checks == [("kb-1", "user-1")]
+    assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
     assert redis_conn.set_calls == [("task-1-cancel", "x")]
     assert module.TaskService.model.update_calls == 1
     assert document_service.update_calls == []
@@ -335,6 +441,7 @@ def test_cancel_task_rejects_inaccessible_dataset_index_task(monkeypatch):
     assert knowledgebase_service.lookup_calls == [{"graphrag_task_id": "task-1"}]
     assert knowledgebase_service.access_checks == [("kb-1", "user-1")]
     assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == []
     assert redis_conn.set_calls == []
     assert module.TaskService.model.update_calls == 0
     assert document_service.update_calls == []
@@ -357,7 +464,8 @@ def test_cancel_task_authorizes_canvas_debug_tasks_from_user_conversation(monkey
     assert payload["data"] is True, payload
     assert document_service.access_checks == []
     assert knowledgebase_service.access_checks == []
-    assert api_service.query_calls == [{"user_id": "user-1", "source": "workflow"}]
+    assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == [("user-1", "task-1")]
     assert redis_conn.set_calls == [("task-1-cancel", "x")]
     assert module.TaskService.model.update_calls == 1
     assert document_service.update_calls == []
@@ -381,7 +489,8 @@ def test_cancel_task_rejects_canvas_debug_tasks_from_other_users(monkeypatch):
     assert payload["message"] == "No authorization.", payload
     assert document_service.access_checks == []
     assert knowledgebase_service.access_checks == []
-    assert api_service.query_calls == [{"user_id": "user-1", "source": "workflow"}]
+    assert api_service.query_calls == []
+    assert api_service.message_lookup_calls == [("user-1", "task-1")]
     assert redis_conn.set_calls == []
     assert module.TaskService.model.update_calls == 0
     assert document_service.update_calls == []

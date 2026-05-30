@@ -29,6 +29,8 @@ from api.utils.api_utils import (
 from common.constants import RetCode, TaskStatus
 from rag.utils.redis_conn import REDIS_CONN
 
+LOGGER = logging.getLogger(__name__)
+
 _INDEX_TASK_FIELDS = ("graphrag_task_id", "raptor_task_id", "mindmap_task_id")
 
 
@@ -40,15 +42,46 @@ def _is_index_task_accessible(task_id, user_id):
     for task_field in _INDEX_TASK_FIELDS:
         kb = KnowledgebaseService.get_or_none(**{task_field: task_id})
         if kb:
-            return KnowledgebaseService.accessible(kb.id, user_id)
+            accessible = KnowledgebaseService.accessible(kb.id, user_id)
+            LOGGER.debug(
+                "Resolved index task authorization: task_id=%s user_id=%s task_field=%s kb_id=%s accessible=%s",
+                task_id,
+                user_id,
+                task_field,
+                kb.id,
+                accessible,
+            )
+            return accessible
     return False
 
 
 def _is_canvas_task_accessible(task_id, user_id):
-    for conversation in API4ConversationService.query(user_id=user_id, source="workflow"):
-        messages = conversation.message or []
-        if any(isinstance(message, dict) and message.get("id") == task_id for message in messages):
-            return True
+    try:
+        conversations = API4ConversationService.get_workflow_conversations_by_message_id(user_id, task_id)
+        for conversation in conversations:
+            messages = conversation.message or []
+            if any(isinstance(message, dict) and message.get("id") == task_id for message in messages):
+                LOGGER.debug(
+                    "Resolved canvas task authorization: task_id=%s user_id=%s accessible=%s",
+                    task_id,
+                    user_id,
+                    True,
+                )
+                return True
+        LOGGER.debug(
+            "Resolved canvas task authorization: task_id=%s user_id=%s accessible=%s",
+            task_id,
+            user_id,
+            False,
+        )
+    except Exception as e:
+        LOGGER.warning(
+            "Failed to resolve canvas task authorization: task_id=%s user_id=%s error=%s",
+            task_id,
+            user_id,
+            str(e),
+            exc_info=True,
+        )
     return False
 
 
@@ -59,7 +92,7 @@ def _can_cancel_task(task_id, task, user_id):
         return _is_index_task_accessible(task_id, user_id)
     if task.doc_id == CANVAS_DEBUG_DOC_ID:
         return _is_canvas_task_accessible(task_id, user_id)
-    return True
+    return False
 
 
 @manager.route("/tasks/<task_id>/cancel", methods=["POST"])  # noqa: F821
