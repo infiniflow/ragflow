@@ -276,6 +276,45 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
 
 
 @pytest.mark.p2
+def test_retrieval_document_ids_and_metadata_condition_contract(rest_client, ensure_parsed_document):
+    dataset_id, document_id = ensure_parsed_document()
+
+    invalid_doc_ids_res = rest_client.post(
+        "/retrieval",
+        json={"question": "chunk", "dataset_ids": [dataset_id], "document_ids": "bad"},
+    )
+    assert invalid_doc_ids_res.status_code == 200
+    invalid_doc_ids_payload = invalid_doc_ids_res.json()
+    assert invalid_doc_ids_payload["code"] == 102, invalid_doc_ids_payload
+    assert invalid_doc_ids_payload["message"] == "`documents` should be a list", invalid_doc_ids_payload
+
+    not_owned_doc_res = rest_client.post(
+        "/retrieval",
+        json={"question": "chunk", "dataset_ids": [dataset_id], "document_ids": ["not-owned"]},
+    )
+    assert not_owned_doc_res.status_code == 200
+    not_owned_doc_payload = not_owned_doc_res.json()
+    assert not_owned_doc_payload["code"] == 102, not_owned_doc_payload
+    assert not_owned_doc_payload["message"] == "The datasets don't own the document not-owned", not_owned_doc_payload
+
+    metadata_condition_res = rest_client.post(
+        "/retrieval",
+        json={
+            "question": "chunk",
+            "dataset_ids": [dataset_id],
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "missing"}],
+            },
+        },
+    )
+    assert metadata_condition_res.status_code == 200
+    metadata_condition_payload = metadata_condition_res.json()
+    assert metadata_condition_payload["code"] == 0, metadata_condition_payload
+    assert metadata_condition_payload["data"]["chunks"] == [], metadata_condition_payload
+
+
+@pytest.mark.p2
 def test_retrieval_rerank_unknown_contract(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(

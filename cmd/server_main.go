@@ -195,6 +195,7 @@ func startServer(config *server.Config) {
 	searchService := service.NewSearchService()
 	fileService := service.NewFileService()
 	memoryService := service.NewMemoryService()
+	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 
 	// Initialize doc engine for skill search
@@ -216,11 +217,13 @@ func startServer(config *server.Config) {
 	searchHandler := handler.NewSearchHandler(searchService, userService)
 	fileHandler := handler.NewFileHandler(fileService, userService)
 	memoryHandler := handler.NewMemoryHandler(memoryService)
+	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
+	agentHandler := handler.NewAgentHandler(service.NewAgentService())
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, skillSearchHandler, providerHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

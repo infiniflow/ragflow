@@ -7,9 +7,13 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback } from 'react';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
+import {
+  useFetchInstanceNameSet,
+  useHideWhenInstanceExists,
+  VerifyResult,
+} from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback, useMemo } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -21,7 +25,7 @@ const FishAudioModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -30,58 +34,78 @@ const FishAudioModal = ({
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
+  const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['tts']),
-      defaultValue: 'tts',
-      validation: { message: t('modelTypeMessage') },
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('FishAudioModelNameMessage'),
-      validation: { message: t('FishAudioModelNameMessage') },
-    },
-    {
-      name: 'fish_audio_ak',
-      label: t('addFishAudioAK'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('FishAudioAKMessage'),
-      validation: { message: t('FishAudioAKMessage') },
-    },
-    {
-      name: 'fish_audio_refid',
-      label: t('addFishAudioRefID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('FishAudioRefIDMessage'),
-      validation: { message: t('FishAudioRefIDMessage') },
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensInvalidMessage'),
+  const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+
+  const fields: FormFieldConfig[] = useMemo(
+    () => [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: { message: t('instanceNameMessage') },
       },
-    },
-  ];
+      {
+        name: 'model_type',
+        label: t('modelType'),
+        type: FormFieldType.MultiSelect,
+        required: true,
+        options: buildModelTypeOptions(['tts']),
+        defaultValue: ['tts'],
+      },
+      {
+        name: 'llm_name',
+        label: t('modelName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('FishAudioModelNameMessage'),
+        validation: { message: t('FishAudioModelNameMessage') },
+      },
+      {
+        name: 'fish_audio_ak',
+        label: t('addFishAudioAK'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('FishAudioAKMessage'),
+        validation: { message: t('FishAudioAKMessage') },
+        shouldRender: hideWhenInstanceExists,
+      },
+      {
+        name: 'fish_audio_refid',
+        label: t('addFishAudioRefID'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('FishAudioRefIDMessage'),
+        validation: { message: t('FishAudioRefIDMessage') },
+        shouldRender: hideWhenInstanceExists,
+      },
+      {
+        name: 'max_tokens',
+        label: t('maxTokens'),
+        type: FormFieldType.Number,
+        required: true,
+        placeholder: t('maxTokensTip'),
+        validation: {
+          min: 0,
+          message: t('maxTokensInvalidMessage'),
+        },
+      },
+    ],
+    [t, buildModelTypeOptions, hideWhenInstanceExists],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
-    const data: Record<string, any> = {
+    const data: IAddProviderInstanceRequestBody & {
+      fish_audio_ak: string;
+      fish_audio_refid: string;
+    } = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
       model_type: values.model_type,
@@ -90,8 +114,7 @@ const FishAudioModal = ({
       max_tokens: values.max_tokens as number,
     };
 
-    console.info(data);
-    await onOk?.(data as IAddLlmRequestBody);
+    await onOk?.(data);
   };
 
   const handleVerify = useCallback(
@@ -114,7 +137,11 @@ const FishAudioModal = ({
       <DynamicForm.Root
         fields={fields}
         onSubmit={(data) => console.log(data)}
-        defaultValues={{ model_type: 'tts' }}
+        defaultValues={{
+          instance_name: '',
+          model_type: ['tts'],
+          max_tokens: 8192,
+        }}
         labelClassName="font-normal"
       >
         {onVerify && (

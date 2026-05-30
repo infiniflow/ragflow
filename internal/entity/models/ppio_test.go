@@ -9,6 +9,9 @@ import (
 	"testing"
 )
 
+// roundTripperFunc is the package-wide test helper for stubbing
+// http.RoundTripper. It lives here (the first provider test to need it) and is
+// shared by the other provider tests in this package; do not redeclare it.
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
