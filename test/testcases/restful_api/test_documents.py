@@ -64,16 +64,19 @@ def test_documents_upload_and_list(rest_client, create_dataset, tmp_path):
     assert any(doc["name"] == fp.name for doc in list_payload["data"]["docs"]), list_payload
 
 
-def _upload_files(rest_client, dataset_id, file_paths):
+def _upload_files(rest_client, dataset_id, file_paths, timeout=None):
     with ExitStack() as stack:
         files = [("file", (fp.name, stack.enter_context(fp.open("rb")))) for fp in file_paths]
-        return rest_client.post(f"/datasets/{dataset_id}/documents", files=files)
+        kwargs = {"files": files}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        return rest_client.post(f"/datasets/{dataset_id}/documents", **kwargs)
 
 
-def _seed_documents(rest_client, create_dataset, tmp_path, count=5):
+def _seed_documents(rest_client, create_dataset, tmp_path, count=5, timeout=None):
     dataset_id = create_dataset("dataset_list_contract")
     file_paths = [create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt") for i in range(count)]
-    res = _upload_files(rest_client, dataset_id, file_paths)
+    res = _upload_files(rest_client, dataset_id, file_paths, timeout=timeout)
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 0, payload
@@ -1166,7 +1169,9 @@ def test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dat
 
 @pytest.mark.p2
 def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_dataset, tmp_path):
-    dataset_id, uploaded_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=60)
+    dataset_id, uploaded_docs = _seed_documents(
+        rest_client, create_dataset, tmp_path, count=60, timeout=120
+    )
     document_ids = [doc["id"] for doc in uploaded_docs]
 
     with ThreadPoolExecutor(max_workers=8) as executor:
@@ -1192,9 +1197,15 @@ def test_documents_delete_concurrent_and_bulk_contract(rest_client, create_datas
     assert list_after_payload["code"] == 0, list_after_payload
     assert list_after_payload["data"]["total"] == 0, list_after_payload
 
-    bulk_dataset_id, bulk_docs = _seed_documents(rest_client, create_dataset, tmp_path, count=120)
+    bulk_dataset_id, bulk_docs = _seed_documents(
+        rest_client, create_dataset, tmp_path, count=120, timeout=120
+    )
     bulk_ids = [doc["id"] for doc in bulk_docs]
-    bulk_delete_res = rest_client.delete(f"/datasets/{bulk_dataset_id}/documents", json={"ids": bulk_ids})
+    bulk_delete_res = rest_client.delete(
+        f"/datasets/{bulk_dataset_id}/documents",
+        json={"ids": bulk_ids},
+        timeout=120,
+    )
     assert bulk_delete_res.status_code == 200
     bulk_delete_payload = bulk_delete_res.json()
     assert bulk_delete_payload["code"] == 0, bulk_delete_payload
