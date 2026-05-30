@@ -683,46 +683,11 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 	})
 }
 
-type ParseDocumentRequest struct {
-	Documents []string `json:"documents" binding:"required"`
-}
-
-func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
-	datasetID := c.Param("dataset_id")
-
-	var req ParseDocumentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	userID := c.GetString("user_id")
-
-	if !h.datasetService.Accessible(datasetID, userID) {
-		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
-		return
-	}
-
-	parseResult, err := h.documentService.ParseDocuments(datasetID, userID, req.Documents)
-	if err != nil {
-		jsonError(c, common.CodeExceptionError, err.Error())
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"message": "success",
-		"data":    parseResult,
-	})
-}
-
 type ListIngestionsRequest struct {
 	DatasetID *string `json:"dataset_id"`
 }
 
-func (h *DocumentHandler) ListIngestions(c *gin.Context) {
+func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var req ListIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -743,7 +708,7 @@ func (h *DocumentHandler) ListIngestions(c *gin.Context) {
 		}
 	}
 
-	parseResult, err = h.documentService.ListIngestions(userID, req.DatasetID, 0, 0)
+	parseResult, err = h.documentService.ListIngestionTasks(userID, req.DatasetID, 0, 0)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return
@@ -761,7 +726,7 @@ type StartParseDocumentsRequest struct {
 	Documents []string `json:"documents" binding:"required"`
 }
 
-func (h *DocumentHandler) StartParseDocuments(c *gin.Context) {
+func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	var req StartParseDocumentsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -795,7 +760,7 @@ type StopIngestionsRequest struct {
 	Tasks []string `json:"tasks" binding:"required"`
 }
 
-func (h *DocumentHandler) StopIngestions(c *gin.Context) {
+func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 	var req StopIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -807,7 +772,7 @@ func (h *DocumentHandler) StopIngestions(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	parseResult, err := h.documentService.StopIngestions(req.Tasks, userID)
+	parseResult, err := h.documentService.StopIngestionTasks(req.Tasks, userID)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return
@@ -823,7 +788,7 @@ type RemoveIngestionsRequest struct {
 	TaskIDs []string `json:"task_ids" binding:"required"`
 }
 
-func (h *DocumentHandler) RemoveIngestions(c *gin.Context) {
+func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 	var req RemoveIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -835,7 +800,7 @@ func (h *DocumentHandler) RemoveIngestions(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	parseResult, err := h.documentService.StopIngestions(req.TaskIDs, userID)
+	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.TaskIDs, userID)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return
@@ -843,6 +808,6 @@ func (h *DocumentHandler) RemoveIngestions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    parseResult,
+		"data":    deletedTasks,
 	})
 }

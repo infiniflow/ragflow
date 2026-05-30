@@ -3415,7 +3415,7 @@ func (c *RAGFlowClient) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) 
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	taskIDs, ok := cmd.Params["task_ids"].([]*string)
+	taskIDs, ok := cmd.Params["task_ids"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("task_ids not provided")
 	}
@@ -3433,7 +3433,7 @@ func (c *RAGFlowClient) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) 
 		return nil, fmt.Errorf("failed to remove tasks: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result SimpleResponse
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("remove tasks failed: invalid JSON (%w)", err)
 	}

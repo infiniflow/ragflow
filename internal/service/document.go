@@ -212,79 +212,7 @@ func (s *DocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) (
 	return responses, total, nil
 }
 
-type ParseDocumentResponse struct {
-	DocumentID string  `json:"document_id"`
-	Result     *string `json:"result"`
-}
-
-func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
-	// deduplicate the document id
-	uniqueDocIDs := common.Deduplicate(docIDs)
-	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
-		return nil, fmt.Errorf("no documents to parse")
-	}
-
-	var responses []*ParseDocumentResponse
-
-	// query database, if the document ids are valid
-	for _, docID := range uniqueDocIDs {
-		doc, err := s.documentDAO.GetByID(docID)
-
-		if err != nil {
-			errorMessage := err.Error()
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     &errorMessage,
-			})
-			continue
-		}
-
-		if doc == nil {
-			errorMessage := "no such document"
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     &errorMessage,
-			})
-			continue
-		}
-
-		if doc.Status != nil && *doc.Status != "0" {
-			errorMessage := fmt.Sprintf("document %s is already parsed", docID)
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     &errorMessage,
-			})
-			continue
-		}
-
-		//// create task for each document
-		//task := &entity.IngestionTask{
-		//	ID:         uuid.New().String(),
-		//	DocumentID: docID,
-		//	UserID:     userID,
-		//	Config:     nil,
-		//	TryCount:   1,
-		//}
-		//
-		//// save the task to database
-		//err = s.ingestionTaskDAO.Create(task)
-		//if err != nil {
-		//	errorMessage := err.Error()
-		//	responses = append(responses, &ParseDocumentResponse{
-		//		DocumentID: docID,
-		//		Result:     &errorMessage,
-		//	})
-		//	continue
-		//}
-
-		// Send task to message queue
-	}
-
-	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
-	return responses, nil
-}
-
-func (s *DocumentService) ListIngestions(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) ListIngestionTasks(userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	offset := (page - 1) * pageSize
 
 	var tasks []*entity.IngestionTask
@@ -300,6 +228,11 @@ func (s *DocumentService) ListIngestions(userID string, datasetID *string, page,
 	}
 
 	return tasks, nil
+}
+
+type ParseDocumentResponse struct {
+	DocumentID string `json:"document_id"`
+	Result     string `json:"result"`
 }
 
 func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
@@ -319,7 +252,7 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 			errorMessage := err.Error()
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     &errorMessage,
+				Result:     errorMessage,
 			})
 			continue
 		}
@@ -328,7 +261,7 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 			errorMessage := "no such document"
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     &errorMessage,
+				Result:     errorMessage,
 			})
 			continue
 		}
@@ -347,7 +280,7 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 			errorMessage := err.Error()
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
-				Result:     &errorMessage,
+				Result:     errorMessage,
 			})
 			continue
 		}
@@ -360,7 +293,7 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 
 		responses = append(responses, &ParseDocumentResponse{
 			DocumentID: docID,
-			Result:     &task.ID,
+			Result:     fmt.Sprintf("task_id: %s", task.ID),
 		})
 	}
 
@@ -368,25 +301,7 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 	return responses, nil
 }
 
-func (s *DocumentService) StopIngestions(tasks []string, userID string) ([]map[string]string, error) {
-
-	var deletedTasks []map[string]string
-	for _, taskID := range tasks {
-		taskRecord := map[string]string{
-			"task_id": taskID,
-		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServer(taskID)
-		if err != nil {
-			taskRecord["delete"] = "fail"
-		} else {
-			taskRecord["delete"] = "success"
-		}
-		deletedTasks = append(deletedTasks, taskRecord)
-	}
-	return deletedTasks, nil
-}
-
-func (s *DocumentService) RemoveIngestions(tasks []string, userID string) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) StopIngestionTasks(tasks []string, userID string) ([]*entity.IngestionTask, error) {
 
 	var taskResponses []*entity.IngestionTask
 	for _, taskID := range tasks {
@@ -406,6 +321,24 @@ func (s *DocumentService) RemoveIngestions(tasks []string, userID string) ([]*en
 		taskResponses = append(taskResponses, task)
 	}
 	return taskResponses, nil
+}
+
+func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([]map[string]string, error) {
+
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServer(taskID, userID)
+		if err != nil {
+			taskRecord["delete"] = fmt.Sprintf("fail: %s", err.Error())
+		} else {
+			taskRecord["delete"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
 }
 
 // toResponse convert model.Document to DocumentResponse

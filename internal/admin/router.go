@@ -46,7 +46,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		admin.POST("/reports", r.handler.Reports)
 
-		//admin.POST("/ingestion/tasks", r.handler.StartIngestion)
+		//admin.POST("/ingestion/tasks", r.handler.StartIngestionTask)
 		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
 		//admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 

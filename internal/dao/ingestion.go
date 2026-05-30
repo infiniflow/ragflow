@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -74,6 +75,7 @@ func (dao *IngestionTaskDAO) CheckAndCreate(ingestionTask *entity.IngestionTask)
 			tx.Rollback()
 			return nil, err
 		}
+		taskRecord = ingestionTask
 	}
 
 	if err = tx.Commit().Error; err != nil {
@@ -219,7 +221,7 @@ type TaskInfo struct {
 	Tasklets      []TaskletInfo `json:"tasklets"`
 }
 
-func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID string) (*TaskInfo, error) {
+func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID, userID string) (*TaskInfo, error) {
 
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -252,6 +254,10 @@ func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID string) (*TaskInfo, error)
 		return nil, fmt.Errorf("task %s has multiple records", taskID)
 	}
 
+	if tasks[0].UserID != userID {
+		return nil, errors.New("task does not belong to the user")
+	}
+
 	taskStatus := tasks[0].Status
 	switch taskStatus {
 	case common.CREATED, common.STOPPED, common.COMPLETED, common.FAILED:
@@ -261,18 +267,26 @@ func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID string) (*TaskInfo, error)
 		if err != nil {
 			return nil, err
 		}
-		var Tasklets []TaskletInfo
+		var TaskletInfos []TaskletInfo
 		for _, tasklet := range tasklets {
 			// get all ingestion tasklet log
 			var taskletLogs []*entity.IngestionTaskletLog
 			err = tx.Where("tasklet_id = ?", tasklet.ID).Find(&taskletLogs).Error
 
-			var filesToDelete []string
+			fileMap := make(map[string]bool)
 			for _, taskletLog := range taskletLogs {
-				fileToDelete := taskletLog.Checkpoint["file"].(string)
-				filesToDelete = append(filesToDelete, fileToDelete)
+				files, ok := taskletLog.Checkpoint["files"].([]string)
+				if ok {
+					for _, file := range files {
+						fileMap[file] = true
+					}
+				}
 			}
-			Tasklets = append(Tasklets, TaskletInfo{
+			var filesToDelete []string
+			for file := range fileMap {
+				filesToDelete = append(filesToDelete, file)
+			}
+			TaskletInfos = append(TaskletInfos, TaskletInfo{
 				TaskletID:     tasklet.ID,
 				FilesToDelete: filesToDelete,
 			})
@@ -284,24 +298,32 @@ func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID string) (*TaskInfo, error)
 		if err != nil {
 			return nil, err
 		}
-		var filesToDelete []string
+
+		fileMap := make(map[string]bool)
 		for _, taskLog := range taskLogs {
-			fileToDelete := taskLog.Checkpoint["file"].(string)
-			filesToDelete = append(filesToDelete, fileToDelete)
+			files, ok := taskLog.Checkpoint["files"].([]string)
+			if ok {
+				for _, file := range files {
+					fileMap[file] = true
+				}
+			}
+		}
+		var filesToDelete []string
+		for file := range fileMap {
+			filesToDelete = append(filesToDelete, file)
 		}
 
 		err = tx.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Delete(&entity.IngestionTask{}).Error
 		if err != nil {
 			return nil, err
 		}
-		committed = true
 
 		taskInfo := &TaskInfo{
 			TaskID:        taskID,
 			FilesToDelete: filesToDelete,
-			Tasklets:      Tasklets,
+			Tasklets:      TaskletInfos,
 		}
-
+		committed = true
 		return taskInfo, nil
 	default:
 		return nil, fmt.Errorf("task %s is executing, cannot be removed", taskID)

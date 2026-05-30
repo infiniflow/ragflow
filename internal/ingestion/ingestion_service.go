@@ -499,10 +499,16 @@ func (e *Ingestor) executeTask(taskCtx *TaskContext) {
 
 	var checkpointMap map[string]interface{}
 	checkpointMap = latestLog.Checkpoint
-	currentStepFlt := checkpointMap["current_step"].(float64)
-	currentStep := int(currentStepFlt)
-	totalStepFlt := checkpointMap["total_step"].(float64)
-	totalStep := int(totalStepFlt)
+	currentStep, ok := common.GetInt(checkpointMap["current_step"])
+	if !ok {
+		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
+		return
+	}
+	totalStep, ok := common.GetInt(checkpointMap["total_step"])
+	if !ok {
+		common.Fatal(fmt.Sprintf("Failed to get current step from task log for task %s", task.ID))
+		return
+	}
 	for i := currentStep; i < totalStep; i++ {
 		select {
 		case <-ctx.Done():
