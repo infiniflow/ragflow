@@ -79,6 +79,46 @@ func NewAPI4ConversationDAO() *API4ConversationDAO {
 	return &API4ConversationDAO{}
 }
 
+// ConversationStatsRow is one daily aggregate row for api_4_conversation.
+type ConversationStatsRow struct {
+	Dt       string  `gorm:"column:dt"`
+	PV       int64   `gorm:"column:pv"`
+	UV       int64   `gorm:"column:uv"`
+	Tokens   float64 `gorm:"column:tokens"`
+	Duration float64 `gorm:"column:duration"`
+	Round    float64 `gorm:"column:round"`
+	ThumbUp  int64   `gorm:"column:thumb_up"`
+}
+
+// Stats returns daily conversation aggregates for a tenant.
+func (dao *API4ConversationDAO) Stats(tenantID, fromDate, toDate string, source *string) ([]ConversationStatsRow, error) {
+	var rows []ConversationStatsRow
+	dateExpr := "DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00')"
+	db := DB.Table("api_4_conversation AS a").
+		Select(`
+			DATE_FORMAT(a.create_date, '%Y-%m-%d 00:00:00') AS dt,
+			COUNT(a.id) AS pv,
+			COUNT(DISTINCT a.user_id) AS uv,
+			COALESCE(SUM(a.tokens), 0) AS tokens,
+			COALESCE(SUM(a.duration), 0) AS duration,
+			COALESCE(AVG(a.round), 0) AS round,
+			COALESCE(SUM(a.thumb_up), 0) AS thumb_up
+		`).
+		Joins("JOIN dialog AS d ON a.dialog_id = d.id AND d.tenant_id = ?", tenantID).
+		Where("a.create_date >= ? AND a.create_date <= ?", fromDate, toDate)
+
+	if source == nil {
+		db = db.Where("a.source IS NULL")
+	} else {
+		db = db.Where("a.source = ?", *source)
+	}
+
+	err := db.Group(dateExpr).
+		Order(dateExpr).
+		Scan(&rows).Error
+	return rows, err
+}
+
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)
 func (dao *API4ConversationDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {

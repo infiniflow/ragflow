@@ -27,6 +27,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 
 	"ragflow/internal/service"
 )
@@ -65,10 +66,14 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	user, code, err := h.userService.Register(&req)
 	if err != nil {
+		var data interface{} = false
+		if code == common.CodeExceptionError {
+			data = nil
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
-			"data":    false,
+			"data":    data,
 		})
 		return
 	}
@@ -411,27 +416,11 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param request body service.UpdateSettingsRequest true "user settings"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/user/setting [post]
+// @Router /api/v1/users/me [patch]
 func (h *UserHandler) Setting(c *gin.Context) {
-	// Extract token from request
-	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeUnauthorized,
-			"message": "Missing Authorization header",
-			"data":    false,
-		})
-		return
-	}
-
-	// Get user by token
-	user, code, err := h.userService.GetUserByToken(token)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    code,
-			"message": err.Error(),
-			"data":    false,
-		})
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -447,8 +436,16 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	}
 
 	// Update user settings
-	code, err = h.userService.UpdateUserSettings(user, &req)
+	code, err := h.userService.UpdateUserSettings(user, &req)
 	if err != nil {
+		if code == common.CodeExceptionError {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    code,
+				"message": err.Error(),
+				"data":    nil,
+			})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
 			"message": err.Error(),
@@ -459,7 +456,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"message": "settings updated successfully",
+		"message": "success",
 		"data":    true,
 	})
 }
@@ -553,22 +550,63 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	var req service.SetTenantInfoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
+	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
+
+	var payload map[string]interface{}
+	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeArgumentError,
-			"message": err.Error(),
-			"data":    false,
+			"message": missingArgumentMessage,
+			"data":    nil,
 		})
 		return
 	}
 
-	err := h.userService.SetTenantInfo(user.ID, &req)
+	missing := make([]string, 0, len(requiredKeys))
+	for _, key := range requiredKeys {
+		if _, ok := payload[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"message": fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)),
+			"data":    nil,
+		})
+		return
+	}
+
+	req := service.SetTenantInfoRequest{Raw: payload}
+	if value, ok := payload["tenant_id"].(string); ok {
+		req.TenantID = &value
+	}
+	if value, ok := payload["asr_id"].(string); ok {
+		req.ASRID = &value
+	}
+	if value, ok := payload["embd_id"].(string); ok {
+		req.EmbdID = &value
+	}
+	if value, ok := payload["img2txt_id"].(string); ok {
+		req.Img2TxtID = &value
+	}
+	if value, ok := payload["llm_id"].(string); ok {
+		req.LLMID = &value
+	}
+	if value, ok := payload["rerank_id"].(string); ok {
+		req.RerankID = &value
+	}
+	if value, ok := payload["tts_id"].(string); ok {
+		req.TTSID = &value
+	}
+
+	code, err := h.userService.SetTenantInfo(user.ID, &req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
+			"code":    code,
 			"message": err.Error(),
-			"data":    false,
+			"data":    nil,
 		})
 		return
 	}
@@ -578,4 +616,15 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		"message": "success",
 		"data":    true,
 	})
+}
+
+func joinStrings(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	result := values[0]
+	for i := 1; i < len(values); i++ {
+		result += "," + values[i]
+	}
+	return result
 }
