@@ -113,6 +113,64 @@ func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(tenantIDs []string, userID s
 	return results, err
 }
 
+// ListByTenantIDs lists agent canvases accessible to the given owner IDs with optional
+// keyword filter, pagination, and ordering.
+// Mirrors Python UserCanvasService.get_by_tenant_ids (list route only).
+func (dao *UserCanvasDAO) ListByTenantIDs(
+	ownerIDs []string,
+	userID string,
+	page, pageSize int,
+	orderby string,
+	desc bool,
+	keywords string,
+	canvasCategory string,
+) ([]*entity.UserCanvas, int64, error) {
+	if len(ownerIDs) == 0 {
+		return nil, 0, nil
+	}
+
+	// Canvases owned by any of the ownerIDs that are "team"-permission, plus all owned by userID.
+	base := DB.Model(&entity.UserCanvas{}).
+		Where(
+			DB.Where("user_id IN ? AND permission = ?", ownerIDs, "team").
+				Or("user_id = ?", userID),
+		)
+
+	if canvasCategory != "" {
+		base = base.Where("canvas_category = ?", canvasCategory)
+	} else {
+		base = base.Where("canvas_category = ?", "agent_canvas")
+	}
+
+	if keywords != "" {
+		like := "%" + keywords + "%"
+		base = base.Where("title LIKE ?", like)
+	}
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	order := orderby
+	if desc {
+		order += " DESC"
+	} else {
+		order += " ASC"
+	}
+	query := base.Order(order)
+
+	if page > 0 && pageSize > 0 {
+		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+
+	var canvases []*entity.UserCanvas
+	if err := query.Find(&canvases).Error; err != nil {
+		return nil, 0, err
+	}
+	return canvases, total, nil
+}
+
 // GetByCanvasID get user canvas by canvas ID (alias for GetByID)
 func (dao *UserCanvasDAO) GetByCanvasID(canvasID string) (*entity.UserCanvas, error) {
 	return dao.GetByID(canvasID)

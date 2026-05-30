@@ -4542,6 +4542,7 @@ Use this mode for the native agent API.
 - `"user_id"`: `string` (optional)
 - `"return_trace"`: `boolean` (optional, default `false`)
 - `"release"`: `boolean` (optional, default `false`)
+- `"chat_template_kwargs": object` (optional)
 
 #### Streaming events to handle
 
@@ -4643,6 +4644,8 @@ curl --request POST \
   Variables specified in the **Begin** component.
 - `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"chat_template_kwargs"`: (*Body parameter*), `object`  
+  Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
 For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:
@@ -4714,6 +4717,7 @@ Use the same endpoint and add `"openai-compatible": true`.
 - `"stream"`: `boolean`
 - `"session_id"`: `string` (optional)
 - `"model"`: `string` (optional, accepted for compatibility)
+- `"chat_template_kwargs": object` (optional)
 
 ##### Request examples
 
@@ -4734,7 +4738,10 @@ curl --request POST \
                 "role": "user",
                 "content": "Hello"
             }
-        ]
+        ],
+        "chat_template_kwargs": {
+            "enable_thinking": true
+        }
      }'
 ```
 
@@ -4774,6 +4781,8 @@ curl --request POST \
   Optional existing session ID.
 - `"model"`: (*Body parameter*), `string`  
   Optional compatibility field. The server still routes by `agent_id`.
+- `"chat_template_kwargs"`: (*Body parameter*), `object`  
+  Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 ##### Response
 

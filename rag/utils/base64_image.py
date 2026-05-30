@@ -33,7 +33,7 @@ test_image = base64.b64decode(test_image_base64)
 async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str = "imagetemps"):
     import logging
     from io import BytesIO
-    from rag.svr.task_executor import minio_limiter
+    from rag.svr.task_executor_limiter import minio_limiter
 
     if "image" not in d:
         return
