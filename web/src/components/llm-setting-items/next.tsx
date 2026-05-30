@@ -37,6 +37,7 @@ interface LlmSettingFieldItemsProps {
     | 'presence_penalty'
     | 'frequency_penalty'
     | 'max_tokens'
+    | 'thinking'
   >;
 }
 
@@ -59,6 +60,7 @@ export const LlmSettingFieldSchema = {
   frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
   parameter: z.string().optional(),
+  thinking: z.string().optional(),
 };
 
 export const LlmSettingSchema = {
@@ -78,6 +80,7 @@ export function LlmSettingFieldItems({
     'presence_penalty',
     'frequency_penalty',
     'max_tokens',
+    'thinking',
   ],
   llmId,
 }: LlmSettingFieldItemsProps) {
@@ -236,6 +239,41 @@ export function LlmSettingFieldItems({
             checkParameterIsEqual();
           }}
         ></SliderInputSwitchFormField>
+      )}
+      {showFields.some((item) => item === 'thinking') && (
+        <FormField
+          control={form.control}
+          name={getFieldWithPrefix('thinking')}
+          render={({ field }) => (
+            <FormItem className="flex justify-between items-center">
+              <FormLabel className="flex-1" tooltip={t('thinkingTip')}>
+                {t('thinking')}
+              </FormLabel>
+              <FormControl>
+                <Select
+                  value={field.value ?? 'default'}
+                  onValueChange={field.onChange}
+                >
+                  <SelectTrigger className="flex-1 !m-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">
+                      {t('thinkingDefault')}
+                    </SelectItem>
+                    <SelectItem value="enabled">
+                      {t('thinkingEnabled')}
+                    </SelectItem>
+                    <SelectItem value="disabled">
+                      {t('thinkingDisabled')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       )}
     </div>
   );
