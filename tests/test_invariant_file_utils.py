@@ -72,40 +72,17 @@ def _try_import_file_utils():
 # Core invariant check helpers
 # ---------------------------------------------------------------------------
 
-def _assert_no_shell_metacharacters_in_args(args_list, payload):
+def _check_subprocess_call_safety_raw(captured_calls, payload):
     """
-    Given a list of arguments that would be passed to subprocess,
-    assert that the raw payload string does not appear verbatim in a
-    way that would be interpreted by a shell.
-    """
-    dangerous_chars = [';', '|', '&', '`', '$', '>', '<', '\n', '\r']
-
-    for arg in args_list:
-        arg_str = str(arg)
-        # If the payload itself (or its dangerous parts) appear unquoted
-        # in a shell=True invocation that is a single string, that's dangerous.
-        for char in dangerous_chars:
-            if char in payload and char in arg_str:
-                # The dangerous character from the payload survived into the arg
-                # Check if it's properly quoted/escaped
-                # A safe arg should not contain raw metacharacters from user input
-                assert False, (
-                    f"Shell metacharacter '{char}' from payload survived "
-                    f"into subprocess argument: {arg_str!r}"
-                )
-
-
-def _check_subprocess_call_safety(mock_run, payload):
-    """
-    Inspect all calls made to subprocess.run (or Popen) and verify:
+    Inspect raw captured subprocess.run call tuples and verify:
     1. shell=True is not used with user-controlled input
     2. If shell=True IS used, the payload is not present unescaped
     3. If shell=False (list form), the payload is not split across args
        in a way that injects new commands
     """
-    for c in mock_run.call_args_list:
-        args, kwargs = c
+    dangerous_chars = [';', '|', '&', '`', '$']
 
+    for args, kwargs in captured_calls:
         shell_used = kwargs.get('shell', False)
         cmd = args[0] if args else kwargs.get('args', [])
 
@@ -120,7 +97,6 @@ def _check_subprocess_call_safety(mock_run, payload):
                 f"Command: {cmd_str!r}"
             )
             # Also check for dangerous metacharacters from the payload
-            dangerous_chars = [';', '|', '&', '`', '$']
             for char in dangerous_chars:
                 if char in payload:
                     assert char not in cmd_str, (
@@ -141,258 +117,198 @@ def _check_subprocess_call_safety(mock_run, payload):
 
 
 # ---------------------------------------------------------------------------
-# Parametrized property test
+# Tests using the real module (skipped if module unavailable)
+# ---------------------------------------------------------------------------
+
+class TestRepairPdfWithGhostscriptSecurity:
+    """
+    Security invariant tests for repair_pdf_with_ghostscript.
+
+    These tests verify that subprocess calls never use shell=True,
+    which would allow shell injection via crafted filenames.
+    """
+
+    @pytest.fixture(autouse=True)
+    def require_module(self):
+        """Skip entire class if the module cannot be imported."""
+        fu = _try_import_file_utils()
+        if fu is None:
+            pytest.skip(
+                "api.utils.file_utils could not be imported – "
+                "full app dependencies required to run this security test."
+            )
+        self.fu = fu
+
+    def _run_with_mocked_subprocess(self, input_bytes=b"%PDF-1.4 fake"):
+        """
+        Run repair_pdf_with_ghostscript with subprocess.run and shutil.which
+        both mocked. Returns the list of (args, kwargs) tuples captured.
+
+        shutil.which is mocked to return '/usr/bin/gs' so the early-exit
+        guard inside repair_pdf_with_ghostscript is bypassed and the
+        subprocess call is always reached.
+        """
+        captured_calls = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        def capturing_run(*args, **kwargs):
+            captured_calls.append((args, kwargs))
+            return mock_result
+
+        # Patch both subprocess.run AND shutil.which so the gs-not-found
+        # early return is bypassed even in CI environments without Ghostscript.
+        with patch("subprocess.run", side_effect=capturing_run), \
+             patch("shutil.which", return_value="/usr/bin/gs"):
+            try:
+                self.fu.repair_pdf_with_ghostscript(input_bytes)
+            except Exception:
+                # We only care about what was passed to subprocess, not the
+                # overall success of the function.
+                pass
+
+        return captured_calls
+
+    def test_shell_false_is_set(self):
+        """Verify that shell=False (or absent) for every subprocess call."""
+        captured_calls = self._run_with_mocked_subprocess()
+
+        assert captured_calls, (
+            "No subprocess.run calls were captured. "
+            "Check that shutil.which mock is working and the function "
+            "actually reaches the subprocess call."
+        )
+
+        for args, kwargs in captured_calls:
+            shell_used = kwargs.get("shell", False)
+            assert not shell_used, (
+                f"SECURITY VIOLATION: shell=True detected in subprocess call.\n"
+                f"kwargs: {kwargs!r}"
+            )
+
+    @pytest.mark.parametrize("payload", SHELL_INJECTION_PAYLOADS)
+    def test_no_shell_injection_via_payload(self, payload):
+        """
+        Verify that shell metacharacters in a crafted payload do not
+        result in shell injection when passed through the subprocess call.
+        """
+        # Use the payload as fake PDF bytes to simulate a crafted input
+        fake_input = payload.encode("utf-8", errors="replace")
+        captured_calls = self._run_with_mocked_subprocess(input_bytes=fake_input)
+
+        # Even if no subprocess call was made (e.g. early validation),
+        # that is also safe – but we assert calls were made to confirm
+        # the mock is working.
+        assert captured_calls, (
+            "No subprocess.run calls captured – shutil.which mock may not "
+            "be reaching the subprocess invocation."
+        )
+
+        _check_subprocess_call_safety_raw(captured_calls, payload)
+
+
+# ---------------------------------------------------------------------------
+# Standalone invariant test (parametrized, module-level)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("payload", SHELL_INJECTION_PAYLOADS)
-def test_file_utils_no_unsanitized_shell_input(payload):
+def test_repair_pdf_shell_injection_invariant(payload):
     """
-    Invariant: Shell commands constructed in file_utils.py must NEVER include
-    unsanitized user input. Filenames or paths containing shell metacharacters
-    must be either rejected (raise an exception / return an error) or properly
-    sanitized before being passed to subprocess. Using shell=True with
-    user-controlled data is always a violation.
+    Top-level parametrized test: for each adversarial payload, verify
+    that repair_pdf_with_ghostscript never invokes subprocess with
+    shell=True or with the raw payload in a shell command string.
+
+    Skips (not fails) when the module cannot be imported.
     """
-    file_utils = _try_import_file_utils()
+    fu = _try_import_file_utils()
+    if fu is None:
+        pytest.skip(
+            "api.utils.file_utils could not be imported – "
+            "full app dependencies required to run this security test."
+        )
 
-    # -----------------------------------------------------------------------
-    # Strategy 1: If the real module is available, test it directly
-    # -----------------------------------------------------------------------
-    if file_utils is not None:
-        _test_real_module(file_utils, payload)
-        return
+    captured_calls = []
 
-    # -----------------------------------------------------------------------
-    # Strategy 2: Module not available – skip rather than silently passing
-    # via simulation so that the real fix in repair_pdf_with_ghostscript is
-    # always exercised when the full dependency set is present.
-    # -----------------------------------------------------------------------
-    pytest.skip(
-        "api.utils.file_utils could not be imported in this environment. "
-        "Skipping rather than falling back to simulation so the real security "
-        "fix in repair_pdf_with_ghostscript is always exercised when present."
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = ""
+    mock_result.stderr = ""
+
+    def capturing_run(*args, **kwargs):
+        captured_calls.append((args, kwargs))
+        return mock_result
+
+    # Mock shutil.which to bypass the gs-not-found early return so the
+    # subprocess call is always reached in CI environments without Ghostscript.
+    with patch("subprocess.run", side_effect=capturing_run), \
+         patch("shutil.which", return_value="/usr/bin/gs"):
+        try:
+            fu.repair_pdf_with_ghostscript(b"%PDF-1.4 fake content")
+        except Exception:
+            pass
+
+    assert captured_calls, (
+        "No subprocess.run calls captured. "
+        "Ensure shutil.which mock bypasses the early-exit guard."
     )
 
-
-def _test_real_module(file_utils, payload):
-    """Test the real file_utils module with injection payloads."""
-    captured_calls = []
-    original_run = subprocess.run
-
-    def mock_subprocess_run(*args, **kwargs):
-        captured_calls.append((args, kwargs))
-        # Return a safe mock result instead of executing
-        result = MagicMock()
-        result.returncode = 0
-        result.stdout = b""
-        result.stderr = b""
-        return result
-
-    def mock_subprocess_popen(*args, **kwargs):
-        captured_calls.append((args, kwargs))
-        mock_proc = MagicMock()
-        mock_proc.returncode = 0
-        mock_proc.communicate.return_value = (b"", b"")
-        return mock_proc
-
-    with patch('subprocess.run', side_effect=mock_subprocess_run), \
-         patch('subprocess.Popen', side_effect=mock_subprocess_popen), \
-         patch('subprocess.call', side_effect=mock_subprocess_run), \
-         patch('subprocess.check_output', side_effect=mock_subprocess_run), \
-         patch('subprocess.check_call', side_effect=mock_subprocess_run):
-
-        # Create a temporary directory and file with the payload as name
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Try to create a file with the payload name (may fail on OS level)
-            safe_filename = "test_payload_file.txt"
-            test_file = os.path.join(tmpdir, safe_filename)
-            with open(test_file, 'w') as f:
-                f.write("test content")
-
-            # Discover and call functions in file_utils that might process files
-            functions_to_test = []
-            for attr_name in dir(file_utils):
-                attr = getattr(file_utils, attr_name)
-                if callable(attr) and not attr_name.startswith('__'):
-                    functions_to_test.append((attr_name, attr))
-
-            for func_name, func in functions_to_test:
-                captured_calls.clear()
-                try:
-                    # Try calling with payload as filename argument
-                    func(payload)
-                except (TypeError, ValueError, AttributeError):
-                    # Function rejected the input – acceptable
-                    pass
-                except Exception:
-                    # Any other exception means input was rejected – acceptable
-                    pass
-
-                # Try calling with payload as path
-                try:
-                    func(os.path.join(tmpdir, payload))
-                except (TypeError, ValueError, AttributeError):
-                    pass
-                except Exception:
-                    pass
-
-                # Check all captured subprocess calls for safety
-                for args, kwargs in captured_calls:
-                    _check_subprocess_call_safety_raw(args, kwargs, payload)
-
-        # Directly target repair_pdf_with_ghostscript – the only function in
-        # file_utils.py that calls subprocess.run.  The generic loop above
-        # silently skips it because it expects bytes, not a str.
-        if hasattr(file_utils, 'repair_pdf_with_ghostscript'):
-            captured_calls.clear()
-            try:
-                file_utils.repair_pdf_with_ghostscript(
-                    payload.encode() if isinstance(payload, str) else payload
-                )
-            except Exception:
-                pass
-            for args, kwargs in captured_calls:
-                # shell=True must never be used here
-                assert not kwargs.get('shell', False), (
-                    "SECURITY VIOLATION: repair_pdf_with_ghostscript called "
-                    "subprocess with shell=True."
-                )
-                _check_subprocess_call_safety_raw(args, kwargs, payload)
+    _check_subprocess_call_safety_raw(captured_calls, payload)
 
 
-def _check_subprocess_call_safety_raw(args, kwargs, payload):
-    """Check raw args/kwargs from a subprocess call."""
-    shell_used = kwargs.get('shell', False)
-    cmd = args[0] if args else kwargs.get('args', [])
+# ---------------------------------------------------------------------------
+# Detection-logic self-tests (verify the checker itself works)
+# ---------------------------------------------------------------------------
 
-    if shell_used:
-        cmd_str = cmd if isinstance(cmd, str) else ' '.join(str(a) for a in cmd)
-        assert payload not in cmd_str, (
-            f"SECURITY VIOLATION: shell=True with raw payload in command.\n"
-            f"Payload: {payload!r}\nCommand: {cmd_str!r}"
-        )
-        dangerous_chars = [';', '|', '&', '`', '$', '\n']
-        for char in dangerous_chars:
-            if char in payload and char in cmd_str:
-                # Verify the payload's dangerous char isn't in the command
-                # (it could legitimately be there from a fixed part of the command,
-                #  but if the payload is present, it's a violation)
-                assert payload not in cmd_str, (
-                    f"SECURITY VIOLATION: Metacharacter '{char}' from payload "
-                    f"in shell=True command.\nPayload: {payload!r}\n"
-                    f"Command: {cmd_str!r}"
-                )
-
-
-def _test_invariant_via_simulation(payload):
+class TestDetectionLogicSelfTest:
     """
-    When the real module is unavailable, simulate the vulnerable pattern
-    and verify our invariant detection works correctly.
-    This ensures the test itself is valid as a regression guard.
+    Verify that _check_subprocess_call_safety_raw correctly identifies
+    dangerous patterns. These tests use intentionally unsafe patterns
+    to confirm the detection logic fires as expected.
     """
-    # Simulate what a SAFE implementation should do
-    def safe_process_file(filename):
-        """Safe: uses list form (shell=False), never shell=True with user input."""
-        import re
-        # Sanitize: only allow alphanumeric, dots, dashes, underscores
-        if not re.match(r'^[a-zA-Z0-9._\-]+$', filename):
-            raise ValueError(f"Invalid filename: {filename!r}")
-        # Safe: list form, no shell=True
-        return subprocess.run(['file', '--', filename], shell=False,
-                              capture_output=True)
 
-    def unsafe_process_file_shell_true(filename):
-        """Unsafe: uses shell=True with user input – should be caught."""
-        cmd = f"file {filename}"
-        return subprocess.run(  # nosec B602 B605 -- intentional unsafe pattern; subprocess is mocked and this exists only to verify detection logic catches shell=True violations
-            cmd, shell=True, capture_output=True)
+    def test_detects_shell_true_with_metacharacter(self):
+        """Checker must raise on shell=True with a dangerous payload."""
+        payload = "; rm -rf /"
+        # Intentionally unsafe pattern used only to test the detector.
+        unsafe_cmd = f"gs -dBATCH {payload}"  # nosec B604 – test-only simulation
+        captured = [
+            (
+                (unsafe_cmd,),
+                {"shell": True},  # nosec B604 – test-only simulation
+            )
+        ]
+        with pytest.raises(AssertionError, match="SECURITY VIOLATION"):
+            _check_subprocess_call_safety_raw(captured, payload)
 
-    # -----------------------------------------------------------------------
-    # Verify SAFE implementation: payload must be rejected
-    # -----------------------------------------------------------------------
-    dangerous_chars = [';', '|', '&', '`', '$', '\n', '\r', ' ']
-    payload_is_dangerous = any(c in payload for c in dangerous_chars)
+    def test_allows_shell_false_list_form(self):
+        """Checker must not raise when shell=False and cmd is a list."""
+        payload = "; rm -rf /"
+        safe_cmd = ["gs", "-dBATCH", "-sDEVICE=pdfwrite", "-o", "output.pdf", "input.pdf"]
+        captured = [
+            (
+                (safe_cmd,),
+                {"shell": False},
+            )
+        ]
+        # Should not raise
+        _check_subprocess_call_safety_raw(captured, payload)
 
-    if payload_is_dangerous:
-        with pytest.raises((ValueError, Exception)):
-            safe_process_file(payload)
-    # If payload has no dangerous chars, safe_process_file may succeed – that's OK
+    def test_detects_payload_in_shell_true_string(self):
+        """Checker must raise when payload appears verbatim in shell=True cmd."""
+        payload = "$(whoami)"
+        unsafe_cmd = f"gs -dBATCH {payload} output.pdf"  # nosec B604 – test-only simulation
+        captured = [
+            (
+                (unsafe_cmd,),
+                {"shell": True},  # nosec B604 – test-only simulation
+            )
+        ]
+        with pytest.raises(AssertionError, match="SECURITY VIOLATION"):
+            _check_subprocess_call_safety_raw(captured, payload)
 
-    # -----------------------------------------------------------------------
-    # Verify UNSAFE implementation IS caught by our detection logic
-    # -----------------------------------------------------------------------
-    if payload_is_dangerous:
-        with patch('subprocess.run') as mock_run:
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
-
-            # Call the unsafe function
-            try:
-                unsafe_process_file_shell_true(payload)
-            except Exception:
-                pass
-
-            # Now verify our detection catches the violation
-            if mock_run.called:
-                violation_detected = False
-                for c in mock_run.call_args_list:
-                    args, kwargs = c
-                    shell_used = kwargs.get('shell', False)
-                    if shell_used:
-                        cmd = args[0] if args else ''
-                        cmd_str = cmd if isinstance(cmd, str) else str(cmd)
-                        if payload in cmd_str:
-                            violation_detected = True
-                            break
-                        for char in dangerous_chars:
-                            if char in payload and char in cmd_str:
-                                violation_detected = True
-                                break
-
-                # The unsafe implementation SHOULD have been detected
-                # This confirms our test logic works
-                assert violation_detected, (
-                    f"Test logic error: unsafe implementation was not detected "
-                    f"for payload {payload!r}. The detection logic needs review."
-                )
-
-    # -----------------------------------------------------------------------
-    # Final assertion: the invariant itself
-    # -----------------------------------------------------------------------
-    # Verify that if we intercept subprocess calls, shell=True + user input = violation
-    with patch('subprocess.run') as mock_run:
-        mock_run.return_value = MagicMock(returncode=0, stdout=b'', stderr=b'')
-
-        # Simulate a call that a vulnerable implementation might make
-        # We assert this pattern is NEVER acceptable
-        def would_be_violation():
-            cmd = f"process_file {payload}"
-            subprocess.run(  # nosec B602 B605 -- intentional unsafe pattern; subprocess is mocked and this exists only to confirm detection logic identifies shell=True violations
-                cmd, shell=True)
-
-        would_be_violation()
-
-        # Verify the call was made and detect the violation
-        assert mock_run.called
-        for c in mock_run.call_args_list:
-            args, kwargs = c
-            shell_used = kwargs.get('shell', False)
-            if shell_used:
-                cmd = args[0] if args else ''
-                cmd_str = cmd if isinstance(cmd, str) else str(cmd)
-                if payload in cmd_str:
-                    # This IS a violation – our test correctly identifies it
-                    # In a real secure implementation, this should never happen
-                    # The test passes because we've confirmed the detection works;
-                    # in production code, the assertion below would FAIL the test
-                    # if the real module made such a call.
-                    #
-                    # For the simulation, we assert the pattern is detectable:
-                    assert payload in cmd_str, (
-                        "Simulation sanity check: payload should be in cmd_str"
-                    )
-                    # Mark that we successfully detected the violation pattern
-                    return  # Detection confirmed
-
-    # If we reach here with a dangerous payload, the simulation ran correctly
+    def test_allows_empty_captured_calls_check(self):
+        """Checker must not raise on empty call list."""
+        _check_subprocess_call_safety_raw([], "; rm -rf /")
