@@ -38,8 +38,10 @@ type Router struct {
 	searchHandler        *handler.SearchHandler
 	fileHandler          *handler.FileHandler
 	memoryHandler        *handler.MemoryHandler
+	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler      *handler.ProviderHandler
+	agentHandler         *handler.AgentHandler
 }
 
 // NewRouter create router
@@ -59,8 +61,10 @@ func NewRouter(
 	searchHandler *handler.SearchHandler,
 	fileHandler *handler.FileHandler,
 	memoryHandler *handler.MemoryHandler,
+	mcpHandler *handler.MCPHandler,
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
+	agentHandler *handler.AgentHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -78,8 +82,10 @@ func NewRouter(
 		searchHandler:        searchHandler,
 		fileHandler:          fileHandler,
 		memoryHandler:        memoryHandler,
+		mcpHandler:           mcpHandler,
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
+		agentHandler:         agentHandler,
 	}
 }
 
@@ -100,6 +106,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
+		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -153,6 +160,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			tenants := v1.Group("/tenants")
 			{
 				tenants.GET("", r.tenantHandler.TenantList)
+				tenants.PATCH("/:tenant_id", r.tenantHandler.AcceptTenantInvite)
+				tenants.GET("/:tenant_id/users", r.tenantHandler.ListTenantMembers)
+				tenants.POST("/:tenant_id/users", r.tenantHandler.AddTenantMember)
+				tenants.DELETE("/:tenant_id/users", r.tenantHandler.RemoveTenantMember)
 			}
 
 			v1.GET("/tenant/list", r.tenantHandler.TenantList)
@@ -246,6 +257,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
 
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+			}
+
 			// Skill search routes
 			skills := v1.Group("/skills")
 			{
@@ -305,23 +322,42 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.PATCH("/", r.tenantHandler.SetModels)
 			}
 
+			// Agent routes
+			agents := v1.Group("/agents")
+			{
+				agents.GET("", r.agentHandler.ListAgents)
+			}
+
 			connector := v1.Group("/connectors")
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
 				connector.POST("/", r.connectorHandler.CreateConnector)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
+				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
+				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
+				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
 			}
 
 			system := v1.Group("/system")
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
-				log := system.Group("/log")
+				system.GET("/status", r.systemHandler.GetStatus)
+				system.GET("/stats", r.systemHandler.GetStats)
+
+				config := system.Group("/config")
 				{
-					// /api/v1/system/log GET
-					log.GET("", r.systemHandler.GetLogLevel)
-					// /api/v1/system/log PUT
-					log.PUT("", r.systemHandler.SetLogLevel)
+					config.GET("/log", r.systemHandler.GetLogLevel)
+					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				//log := system.Group("/log")
+				//{
+				//	// /api/v1/system/log GET
+				//	log.GET("", r.systemHandler.GetLogLevel)
+				//	// /api/v1/system/log PUT
+				//	log.PUT("", r.systemHandler.SetLogLevel)
+				//}
 
 				tokens := system.Group("/tokens")
 				{
@@ -412,6 +448,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		connector := authorized.Group("/v1/connector")
 		{
 			connector.GET("/list", r.connectorHandler.ListConnectors)
+			connector.GET("/:connector_id", r.connectorHandler.GetConnector)
+			connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 		}
 
 		// File routes

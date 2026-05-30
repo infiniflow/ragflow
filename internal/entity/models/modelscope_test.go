@@ -79,6 +79,20 @@ func TestModelScopeFactoryRoute(t *testing.T) {
 	}
 }
 
+func TestModelScopeNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewModelScopeModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewModelScopeModel returned nil")
+	}
+}
+
 func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T) {
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
