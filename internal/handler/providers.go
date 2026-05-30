@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -723,45 +724,51 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	})
 }
 
+func prepareAddCustomModelRequest(req *service.AddCustomModelRequest, providerName, instanceName string) error {
+	if providerName == "" {
+		return errors.New("Provider name is required")
+	}
+
+	if instanceName == "" {
+		return errors.New("Instance name is required")
+	}
+
+	if req.ProviderName != "" && !strings.EqualFold(req.ProviderName, providerName) {
+		return errors.New("Provider name does not match path")
+	}
+
+	if req.InstanceName != "" && !strings.EqualFold(req.InstanceName, instanceName) {
+		return errors.New("Instance name does not match path")
+	}
+
+	if req.ModelName == "" {
+		return errors.New("Model name is required")
+	}
+
+	if len(req.ModelTypes) == 0 {
+		return errors.New("Model type is required")
+	}
+
+	req.ProviderName = providerName
+	req.InstanceName = instanceName
+	return nil
+}
+
 func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
 	var req service.AddCustomModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusOK, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    common.CodeBadRequest,
 			"message": err.Error(),
 		})
 		return
 	}
 
-	if req.ProviderName == "" {
+	if err := prepareAddCustomModelRequest(&req, c.Param("provider_name"), c.Param("instance_name")); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Provider name is required",
-		})
-		return
-	}
-
-	if req.InstanceName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Instance name is required",
-		})
-		return
-	}
-
-	if req.ModelName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model name is required",
-		})
-		return
-	}
-
-	if req.ModelTypes == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "Model type is required",
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
 		})
 		return
 	}
