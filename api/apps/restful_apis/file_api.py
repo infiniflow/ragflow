@@ -22,6 +22,7 @@ from api.db import FileType
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
+    construct_json_result,
     get_error_argument_result,
     get_error_data_result,
     get_json_result,
@@ -301,7 +302,8 @@ async def download(tenant_id: str = None, file_id: str = None):
             blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
 
         if not blob:
-            return get_error_data_result(message="File content not found in storage.")
+            logging.error("File content not found in storage for file_id=%s", file_id)
+            return construct_json_result(message="File content not found in storage.", code=RetCode.DATA_ERROR)
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
