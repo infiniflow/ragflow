@@ -164,6 +164,7 @@ class RAGFlowConnector:
 
     async def list_chats(self, *, api_key: str, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
         """Return accessible chat assistants as newline-delimited JSON for MCP tool descriptions."""
+        logging.info("Listing chat assistants via MCP (page=%s, page_size=%s)", page, page_size)
         params = {"page": page, "page_size": page_size, "orderby": orderby, "desc": json.dumps(desc)}
         res = await self._get("/chats", params, api_key=api_key)
         if not res or res.status_code != 200:
@@ -171,12 +172,17 @@ class RAGFlowConnector:
             if res is not None:
                 try:
                     error_message = res.json().get("message")
+                    logging.warning("list_chats request failed: status=%s message=%s", res.status_code, error_message)
                 except Exception:
                     error_message = None
+                    logging.warning("list_chats request failed: status=%s (parse error)", res.status_code)
             raise Exception([types.TextContent(type="text", text=error_message or "Cannot list chats.")])
         res_json = res.json()
         if res_json.get("code") != 0:
+            logging.warning("list_chats API error: code=%s message=%s", res_json.get("code"), res_json.get("message"))
             raise Exception([types.TextContent(type="text", text=res_json.get("message", "Cannot list chats."))])
+        chat_count = len(res_json.get("data", []))
+        logging.info("list_chats returned %d chat(s)", chat_count)
         result_list = []
         for data in res_json.get("data", []):
             d = {"id": data.get("id"), "name": data.get("name"), "description": data.get("description", "")}
