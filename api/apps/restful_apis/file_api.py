@@ -300,6 +300,9 @@ async def download(tenant_id: str = None, file_id: str = None):
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
             blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
 
+        if not blob:
+            return get_error_data_result(message="File content not found in storage.")
+
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
         ext = ext.group(1) if ext else None
