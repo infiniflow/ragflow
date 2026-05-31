@@ -272,6 +272,9 @@ async def agent_bot_completions(agent_id):
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
 
+    if not await thread_pool_exec(UserCanvasService.accessible, agent_id, objs[0].tenant_id):
+        return get_error_data_result(message=f"Can't find agent by ID: {agent_id}")
+
     if req.get("stream", True):
         async def stream():
             try:
@@ -356,6 +359,9 @@ async def begin_inputs(agent_id):
     objs = await thread_pool_exec(APIToken.query, beta=token)
     if not objs:
         return get_error_data_result(message='Authentication error: API key is invalid!"')
+
+    if not await thread_pool_exec(UserCanvasService.accessible, agent_id, objs[0].tenant_id):
+        return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
     e, cvs = await thread_pool_exec(UserCanvasService.get_by_id, agent_id)
     if not e:
