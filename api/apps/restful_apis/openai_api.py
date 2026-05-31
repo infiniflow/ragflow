@@ -150,6 +150,9 @@ def _resolve_message_files(files):
                 }
             )
         elif "id" in entry:
+            missing = [f for f in ("created_by", "mime_type", "name") if f not in entry]
+            if missing:
+                raise ValueError(f"files[{idx}] reference is missing: {', '.join(missing)}")
             resolved.append(entry)
         else:
             raise ValueError(f"files[{idx}] must contain either 'blob' or 'id'.")

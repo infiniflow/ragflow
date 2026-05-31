@@ -173,6 +173,13 @@ class TestResolveMessageFiles:
         with pytest.raises(ValueError, match="exceeds"):
             module._resolve_message_files([{"blob": blob, "display_name": "big.bin"}])
 
+    def test_reference_missing_required_fields_raises(self, monkeypatch):
+        """An ``id``-style reference missing one of the required downstream
+        fields is rejected with a clear error."""
+        module, _ = _load_openai_api(monkeypatch)
+        with pytest.raises(ValueError, match="missing: created_by, mime_type, name"):
+            module._resolve_message_files([{"id": "doc-9"}])
+
     def test_entry_without_blob_or_id_raises(self, monkeypatch):
         module, _ = _load_openai_api(monkeypatch)
         with pytest.raises(ValueError, match="either 'blob' or 'id'"):
