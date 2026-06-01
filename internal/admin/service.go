@@ -100,7 +100,7 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // ListTasks
-func (s *Service) ListTasks() ([]map[string]interface{}, error) {
+func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 
 	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(0, 0)
 	if err != nil {
@@ -120,20 +120,27 @@ func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 		//	return nil, err
 		//}
 
+		var showTask map[string]interface{}
 		var latestLog *entity.IngestionTaskLog
 		latestLog, err = s.ingestionTaskLogDao.LatestLogByTaskID(task.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		showTask := map[string]interface{}{
+		showTask = map[string]interface{}{
 			"id":          task.ID,
 			"user_id":     task.UserID,
 			"user":        user.Email,
 			"document_id": task.DocumentID,
 			"status":      task.Status,
-			"step":        int(latestLog.Checkpoint["current_step"].(float64)),
 		}
+		if err == nil {
+			showTask = map[string]interface{}{
+				"id":          task.ID,
+				"user_id":     task.UserID,
+				"user":        user.Email,
+				"document_id": task.DocumentID,
+				"status":      task.Status,
+				"step":        int(latestLog.Checkpoint["current_step"].(float64)),
+			}
+		}
+
 		showTasks = append(showTasks, showTask)
 	}
 	return showTasks, nil
@@ -143,11 +150,11 @@ func (s *Service) ListTasks() ([]map[string]interface{}, error) {
 func (s *Service) GetUserByToken(token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(token)
 	if err != nil {
-		return nil, ErrInvalidToken
+		return nil, common.ErrInvalidToken
 	}
 
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		return nil, ErrNotAdmin
+		return nil, common.ErrNotAdmin
 	}
 
 	if user.IsActive != "1" {
@@ -484,7 +491,7 @@ func (s *Service) GetUserDetails(username string) (map[string]interface{}, error
 	var user entity.User
 	err := dao.DB.Where("email = ?", username).First(&user).Error
 	if err != nil {
-		return nil, ErrUserNotFound
+		return nil, common.ErrUserNotFound
 	}
 
 	return map[string]interface{}{
@@ -1711,11 +1718,6 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	}
 	GlobalServerStore.UpdateServerInfo(message.ServerName, status)
 	return common.CodeLicenseValid, ""
-}
-
-func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	// TODO: Implement with sandbox manager
-	return []map[string]interface{}{}, nil
 }
 
 // InitDefaultAdmin initialize default admin user

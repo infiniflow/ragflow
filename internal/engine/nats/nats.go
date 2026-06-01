@@ -18,6 +18,7 @@ package nats
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
@@ -227,8 +228,13 @@ func NewNatsMessageHandle(message jetstream.Msg) *NatsMessageHandle {
 	}
 }
 
-func (m *NatsMessageHandle) GetMessage() string {
-	return string(m.message.Data())
+func (m *NatsMessageHandle) GetMessage() common.TaskMessage {
+	// convert to task message
+	var taskMessage common.TaskMessage
+	if err := json.Unmarshal(m.message.Data(), &taskMessage); err != nil {
+		common.Error("failed to unmarshal message", err)
+	}
+	return taskMessage
 }
 
 func (m *NatsMessageHandle) Ack() error {

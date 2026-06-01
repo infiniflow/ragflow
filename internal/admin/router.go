@@ -150,9 +150,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 			protected.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
 			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
-
-			// Tasks
-			protected.GET("/tasks", r.handler.ListTasks)
 		}
 	}
 

@@ -798,6 +798,14 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 		return
 	}
 
+	if req.TaskIDs == nil || len(req.TaskIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "task_ids is required",
+		})
+		return
+	}
+
 	userID := c.GetString("user_id")
 
 	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.TaskIDs, userID)

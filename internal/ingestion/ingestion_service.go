@@ -2,6 +2,7 @@ package ingestion
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -111,29 +112,48 @@ func (e *Ingestor) Start() error {
 			continue
 		}
 		for _, taskHandle := range taskHandles {
-			taskID := taskHandle.GetMessage()
-			common.Info(fmt.Sprintf("Received task id: %s", taskID))
+			taskMessage := taskHandle.GetMessage()
+			common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType))
+			if taskMessage.TaskType != common.TaskTypeIngestionTask {
+				common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
+				err = taskHandle.Ack()
+				if err != nil {
+					common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
+					return err
+				}
+				continue
+			}
 			var task *entity.IngestionTask
-			task, err = e.ingestionTaskDAO.SetRunningByIngestor(taskID)
+			task, err = e.ingestionTaskDAO.SetRunningByIngestor(taskMessage.TaskID)
 			if err != nil {
-				common.Error(fmt.Sprintf("error setting task %s to running", taskID), err)
-				return err
+				if errors.Is(err, common.ErrTaskNotFound) {
+					common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
+					err = taskHandle.Ack()
+					if err != nil {
+						common.Error(fmt.Sprintf("error ack task %s", taskMessage.TaskID), err)
+						return err
+					}
+					continue
+				} else {
+					common.Error(fmt.Sprintf("error setting task %s to running", taskMessage.TaskID), err)
+					return err
+				}
 			}
 			if task == nil {
-				common.Info(fmt.Sprintf("task %s is already stopped", taskID))
+				common.Info(fmt.Sprintf("task %s is already stopped", taskMessage.TaskID))
 			}
 
 			switch task.Status {
 			case common.COMPLETED, common.STOPPED, common.FAILED:
-				common.Info(fmt.Sprintf("task %s is already %s", taskID, task.Status))
+				common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
 				err = taskHandle.Ack()
 				if err != nil {
-					common.Error(fmt.Sprintf("error nack task %s", taskID), err)
+					common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), err)
 					return err
 				}
 				continue
 			case common.STOPPING, common.CREATED:
-				err = fmt.Errorf("task %s is in unexpected status %s", taskID, task.Status)
+				err = fmt.Errorf("task %s is in unexpected status %s", taskMessage.TaskID, task.Status)
 				return err
 			case common.RUNNING:
 			}
@@ -165,7 +185,7 @@ func (e *Ingestor) Start() error {
 
 				err = taskHandle.Nack()
 				if err != nil {
-					common.Error(fmt.Sprintf("error nack task %s", taskID), err)
+					common.Error(fmt.Sprintf("error nack task %s", taskMessage.TaskID), err)
 					return err
 				}
 			}

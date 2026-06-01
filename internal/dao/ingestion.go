@@ -120,7 +120,7 @@ func (dao *IngestionTaskDAO) SetRunningByIngestor(taskID string) (*entity.Ingest
 	}
 
 	if len(tasks) == 0 {
-		return nil, fmt.Errorf("task %s not found", taskID)
+		return nil, common.ErrTaskNotFound
 	}
 
 	if len(tasks) != 1 {

@@ -16,8 +16,19 @@
 
 package common
 
+const (
+	TaskTypeIngestionTask    = "ingestion_task"
+	TaskTypeIngestionTasklet = "ingestion_tasklet"
+	TaskTypeIngestionTest    = "ingestion_test"
+)
+
+type TaskMessage struct {
+	TaskID   string `json:"task_id" binding:"required"`
+	TaskType string `json:"task_type" binding:"required"`
+}
+
 type TaskHandle interface {
-	GetMessage() string
+	GetMessage() TaskMessage
 	Ack() error
 	Nack() error
 }

@@ -286,7 +286,19 @@ func (s *DocumentService) IngestDocuments(datasetID, userID string, docIDs []str
 		}
 
 		msgQueueEngine := engine.GetMessageQueueEngine()
-		err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+
+		taskMessage := common.TaskMessage{
+			TaskID:   task.ID,
+			TaskType: common.TaskTypeIngestionTask,
+		}
+
+		// convert task
+		taskMessageStr, err := json.Marshal(taskMessage)
+		if err != nil {
+			return nil, err
+		}
+
+		err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
 		if err != nil {
 			return nil, err
 		}

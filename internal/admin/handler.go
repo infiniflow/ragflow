@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -204,15 +205,6 @@ func (h *Handler) AuthCheck(c *gin.Context) {
 	successNoData(c, "Admin is authorized")
 }
 
-// ListTasks handle list tasks
-func (h *Handler) ListTasks(c *gin.Context) {
-	tasks, err := h.service.ListTasks()
-	if err != nil {
-		errorResponse(c, err.Error(), 500)
-	}
-	success(c, tasks, "Get all tasks")
-}
-
 // ListUsers handle list users
 func (h *Handler) ListUsers(c *gin.Context) {
 	users, err := h.service.ListUsers()
@@ -262,7 +254,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 
 	userDetails, err := h.service.GetUserDetails(username)
 	if err != nil {
-		if errors.Is(err, ErrUserNotFound) {
+		if errors.Is(err, common.ErrUserNotFound) {
 			errorResponse(c, "User not found", 404)
 			return
 		}
@@ -1264,8 +1256,18 @@ func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 	}
+	var result []map[string]string
+	for _, message := range messages {
+		var taskMessage common.TaskMessage
+		json.Unmarshal([]byte(message["message"]), &taskMessage)
+		result = append(result, map[string]string{
+			"subject": message["subject"],
+			"id":      taskMessage.TaskID,
+			"type":    taskMessage.TaskType,
+		})
+	}
 
-	success(c, messages, "List messages from queue successfully")
+	success(c, result, "List messages from queue successfully")
 }
 
 type PublishMessageToQueueRequest struct {
@@ -1275,12 +1277,23 @@ type PublishMessageToQueueRequest struct {
 func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	var req PublishMessageToQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errorResponse(c, "file uri and from is required", 400)
+		errorResponse(c, "message is required", 400)
 		return
 	}
 
+	taskMessage := common.TaskMessage{
+		TaskID:   req.Message,
+		TaskType: common.TaskTypeIngestionTest,
+	}
+
+	// convert task
+	taskMessageStr, err := json.Marshal(taskMessage)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
+
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	err := msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(req.Message))
+	err = msgQueueEngine.PublishTask("tasks.RAGFLOW", taskMessageStr)
 	if err != nil {
 		errorResponse(c, err.Error(), 400)
 	}
@@ -1306,25 +1319,39 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		errorResponse(c, err.Error(), 400)
 	}
 	messages, err := msgQueueEngine.GetMessages(req.MessageCount)
+	var result []map[string]string
 	if req.AckPolicy == "ACK" {
 		for _, message := range messages {
-			err = message.Ack()
-			if err != nil {
-				errorResponse(c, fmt.Sprintf("fail to ack message: %s", err.Error()), 400)
-				return
+			taskMessage := message.GetMessage()
+			resultMessage := map[string]string{
+				"id":   taskMessage.TaskID,
+				"type": taskMessage.TaskType,
 			}
+			err = message.Ack()
+			if err == nil {
+				resultMessage["ack"] = "true"
+			} else {
+				resultMessage["ack"] = "false"
+			}
+			result = append(result, resultMessage)
 		}
 	} else {
 		for _, message := range messages {
-			err = message.Nack()
-			if err != nil {
-				errorResponse(c, fmt.Sprintf("fail to nack message: %s", err.Error()), 400)
-				return
+			taskMessage := message.GetMessage()
+			resultMessage := map[string]string{
+				"id":   taskMessage.TaskID,
+				"type": taskMessage.TaskType,
 			}
+			if err == nil {
+				resultMessage["nack"] = "true"
+			} else {
+				resultMessage["nack"] = "false"
+			}
+			result = append(result, resultMessage)
 		}
 	}
 
-	success(c, messages, "Pull messages from queue successfully")
+	success(c, result, "Pull messages from queue successfully")
 }
 
 func (h *Handler) ShowMessageQueue(c *gin.Context) {
@@ -1363,14 +1390,11 @@ func (h *Handler) CancelIngestionTask(c *gin.Context) {
 
 // ListIngestionTasks
 func (h *Handler) ListIngestionTasks(c *gin.Context) {
-
-	//tasks, err := ingestionManager.ListIngestionTasks()
-	//if err != nil {
-	//	errorResponse(c, err.Error(), 400)
-	//	return
-	//}
-
-	success(c, nil, "")
+	tasks, err := h.service.ListIngestionTasks()
+	if err != nil {
+		errorResponse(c, err.Error(), 500)
+	}
+	success(c, tasks, "Get all tasks")
 }
 
 func (h *Handler) ListIngestors(c *gin.Context) {

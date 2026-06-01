@@ -17,18 +17,9 @@
 package admin
 
 import (
-	"errors"
 	"ragflow/internal/common"
 	"sync"
 	"time"
-)
-
-// Service errors
-var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrNotAdmin     = errors.New("user is not admin")
-	ErrUserInactive = errors.New("user is inactive")
-	ErrUserNotFound = errors.New("user not found")
 )
 
 // API server state
