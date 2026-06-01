@@ -45,7 +45,7 @@ class _BasePostProcessorTest:
     @staticmethod
     def _mock_llm_binding(chat_model_cls=MockChatModel):
         """Patch model config lookup + LLMBundle to return a MockChatModel."""
-        p1 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_by_type_and_name",
+        p1 = patch("rag.svr.task_executor_refactor.chunk_post_processor.get_model_config_from_provider_instance",
                    return_value=MagicMock())
         p2 = patch("rag.svr.task_executor_refactor.chunk_post_processor.LLMBundle",
                    return_value=chat_model_cls())

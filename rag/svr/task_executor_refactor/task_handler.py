@@ -32,8 +32,8 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_type_and_name,
     get_tenant_default_model_by_type,
+    get_model_config_from_provider_instance
 )
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
@@ -214,7 +214,7 @@ class TaskHandler:
 
         try:
             if task_embedding_id:
-                embd_model_config = get_model_config_by_type_and_name(
+                embd_model_config = get_model_config_from_provider_instance(
                     task_tenant_id, LLMType.EMBEDDING, task_embedding_id
                 )
             else:
@@ -271,7 +271,7 @@ class TaskHandler:
                 return
 
         # Bind LLM for raptor
-        chat_model_config = get_model_config_by_type_and_name(
+        chat_model_config = get_model_config_from_provider_instance(
             task_tenant_id, LLMType.CHAT, kb_task_llm_id
         )
         with LLMBundle(task_tenant_id, chat_model_config, lang=ctx.language) as chat_model:
@@ -372,7 +372,7 @@ class TaskHandler:
 
         graphrag_conf = kb_parser_config.get("graphrag", {})
         start_ts = timer()
-        chat_model_config = get_model_config_by_type_and_name(
+        chat_model_config = get_model_config_from_provider_instance(
             task_tenant_id, LLMType.CHAT, kb_task_llm_id
         )
         with LLMBundle(task_tenant_id, chat_model_config, lang=task_language) as chat_model:
@@ -534,7 +534,7 @@ class TaskHandler:
     def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:
         """Build table of contents."""
         progress_cb(msg="Start to generate table of content ...")
-        chat_model_config = get_model_config_by_type_and_name(
+        chat_model_config = get_model_config_from_provider_instance(
             ctx.tenant_id, LLMType.CHAT, ctx.llm_id
         )
         with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_mdl:

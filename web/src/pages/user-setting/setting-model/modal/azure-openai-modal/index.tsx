@@ -8,9 +8,13 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback, useRef } from 'react';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
+import {
+  useFetchInstanceNameSet,
+  useHideWhenInstanceExists,
+  VerifyResult,
+} from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -22,7 +26,7 @@ const AzureOpenAIModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -32,87 +36,107 @@ const AzureOpenAIModal = ({
   const { t: tg } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const formRef = useRef<DynamicFormRef>(null);
+  const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
-      defaultValue: 'embedding',
-      validation: {
-        message: t('modelTypeMessage'),
+  const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+
+  const fields: FormFieldConfig[] = useMemo(
+    () => [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: {
+          message: t('instanceNameMessage'),
+        },
       },
-    },
-    {
-      name: 'api_base',
-      label: t('addLlmBaseUrl'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('baseUrlNameMessage'),
-      validation: {
-        message: t('baseUrlNameMessage'),
+      {
+        name: 'model_type',
+        label: t('modelType'),
+        type: FormFieldType.MultiSelect,
+        required: true,
+        options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
+        defaultValue: ['embedding'],
       },
-    },
-    {
-      name: 'api_key',
-      label: t('apiKey'),
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: t('apiKeyMessage'),
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('modelNameMessage'),
-      defaultValue: 'gpt-3.5-turbo',
-      validation: {
-        message: t('modelNameMessage'),
+      {
+        name: 'api_base',
+        label: t('addLlmBaseUrl'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('baseUrlNameMessage'),
+        validation: {
+          message: t('baseUrlNameMessage'),
+        },
+        shouldRender: hideWhenInstanceExists,
       },
-    },
-    {
-      name: 'api_version',
-      label: t('apiVersion'),
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: t('apiVersionMessage'),
-      defaultValue: '2024-02-01',
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensMessage'),
+      {
+        name: 'api_key',
+        label: t('apiKey'),
+        type: FormFieldType.Text,
+        required: false,
+        placeholder: t('apiKeyMessage'),
+        shouldRender: hideWhenInstanceExists,
       },
-    },
-    {
-      name: 'vision',
-      label: t('vision'),
-      type: FormFieldType.Switch,
-      defaultValue: false,
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'chat';
+      {
+        name: 'llm_name',
+        label: t('modelName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('modelNameMessage'),
+        defaultValue: 'gpt-3.5-turbo',
+        validation: {
+          message: t('modelNameMessage'),
+        },
       },
-    },
-  ];
+      {
+        name: 'api_version',
+        label: t('apiVersion'),
+        type: FormFieldType.Text,
+        required: false,
+        placeholder: t('apiVersionMessage'),
+        defaultValue: '2024-02-01',
+      },
+      {
+        name: 'max_tokens',
+        label: t('maxTokens'),
+        type: FormFieldType.Number,
+        required: true,
+        placeholder: t('maxTokensTip'),
+        validation: {
+          min: 0,
+          message: t('maxTokensMessage'),
+        },
+      },
+      {
+        name: 'vision',
+        label: t('vision'),
+        type: FormFieldType.Switch,
+        defaultValue: false,
+        dependencies: ['model_type'],
+        shouldRender: (formValues: any) => {
+          const modelType = formValues?.model_type;
+          if (Array.isArray(modelType)) {
+            return modelType.includes('chat');
+          }
+          return modelType === 'chat';
+        },
+      },
+    ],
+    [t, buildModelTypeOptions, hideWhenInstanceExists],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
+    const modelType = values.model_type.map((t: string) =>
+      t === 'chat' && values.vision ? 'image2text' : t,
+    );
 
-    const data: IAddLlmRequestBody & { api_version?: string } = {
+    const data: IAddProviderInstanceRequestBody & { api_version?: string } = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
       model_type: modelType,
@@ -127,13 +151,11 @@ const AzureOpenAIModal = ({
 
   const verifyParamsFunc = useCallback(() => {
     const values = formRef.current?.getValues();
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
     return {
       llm_factory: llmFactory,
-      model_type: modelType,
+      model_type: values.model_type.map((t: string) =>
+        t === 'chat' && values.vision ? 'image2text' : t,
+      ),
     };
   }, [llmFactory]);
 
@@ -162,10 +184,12 @@ const AzureOpenAIModal = ({
         ref={formRef}
         defaultValues={
           {
-            model_type: 'embedding',
+            instance_name: '',
+            model_type: ['embedding'],
             llm_name: 'gpt-3.5-turbo',
             api_version: '2024-02-01',
             vision: false,
+            max_tokens: 8192,
           } as FieldValues
         }
         labelClassName="font-normal"

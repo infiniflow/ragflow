@@ -26,7 +26,7 @@ func (s *stubModelDriver) Name() string {
 	return "stub"
 }
 
-func TestNewModelDriverForBaseURLPreservesEmptyRegion(t *testing.T) {
+func TestNewModelDriverForBaseURLAddsDefaultFallbackForEmptyRegion(t *testing.T) {
 	expected := &stubModelDriver{}
 	var gotBaseURL map[string]string
 	driver := &stubModelDriver{
@@ -46,8 +46,8 @@ func TestNewModelDriverForBaseURLPreservesEmptyRegion(t *testing.T) {
 	if gotBaseURL[""] != "http://localhost:1234" {
 		t.Fatalf("expected empty-region base URL, got %#v", gotBaseURL)
 	}
-	if _, ok := gotBaseURL["default"]; ok {
-		t.Fatalf("unexpected default region key in base URL map: %#v", gotBaseURL)
+	if gotBaseURL["default"] != "http://localhost:1234" {
+		t.Fatalf("expected default-region fallback base URL, got %#v", gotBaseURL)
 	}
 }
 
