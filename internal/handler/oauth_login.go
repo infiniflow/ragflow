@@ -18,8 +18,8 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/gin-gonic/gin"
 
@@ -64,12 +64,14 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 
 	init, code, err := h.userService.OAuthLoginInitiate(channel, cache.Get())
 	if err != nil {
-		// An invalid channel name is the only data error here; everything
-		// else surfaces as a 500.
+		// Mirror Python's oauth_login: the raised ValueError propagates to
+		// server_error_response, which replies HTTP 200 with code 100 and
+		// the exception's repr() as the message (no short error code).
 		if errors.Is(err, service.ErrOAuthInvalidChannel) {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    code,
-				"message": err.Error(),
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeExceptionError,
+				"data":    nil,
+				"message": fmt.Sprintf("ValueError('Invalid channel name: %s')", channel),
 			})
 			return
 		}
@@ -108,7 +110,7 @@ func (h *UserHandler) OAuthCallback(c *gin.Context) {
 
 	result, _, err := h.userService.OAuthCallback(c.Request.Context(), channel, queryCode, queryState, cookieState, cache.Get())
 	if err != nil {
-		c.Redirect(http.StatusFound, frontendBase+"?error="+url.QueryEscape(callbackErrorCode(err)))
+		c.Redirect(http.StatusFound, frontendBase+"?error="+callbackError(channel, err))
 		return
 	}
 
@@ -126,16 +128,19 @@ func (h *UserHandler) OAuthCallback(c *gin.Context) {
 	setOAuthAuthCookie(c, authToken)
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Expose-Headers", "Authorization")
-	c.Redirect(http.StatusFound, frontendBase+"?auth="+url.QueryEscape(result.User.ID))
+	c.Redirect(http.StatusFound, frontendBase+"?auth="+result.User.ID)
 }
 
-// callbackErrorCode maps the OAuth callback errors to the short `?error=`
-// codes Python's oauth_callback already uses, so the SPA does not need to
-// distinguish Go vs Python backends.
-func callbackErrorCode(err error) string {
+// callbackError maps the OAuth callback errors to the `?error=` strings
+// Python's oauth_callback emits. Python redirects with `?error={str(e)}`,
+// so an invalid channel surfaces the full "Invalid channel name: <channel>"
+// message (str of the ValueError), while the other failures use the short
+// tokens Python hard-codes. The value is intentionally not URL-encoded to
+// match Python's raw f-string redirect.
+func callbackError(channel string, err error) string {
 	switch {
 	case errors.Is(err, service.ErrOAuthInvalidChannel):
-		return "invalid_channel"
+		return "Invalid channel name: " + channel
 	case errors.Is(err, service.ErrOAuthInvalidState):
 		return "invalid_state"
 	case errors.Is(err, service.ErrOAuthMissingCode):
