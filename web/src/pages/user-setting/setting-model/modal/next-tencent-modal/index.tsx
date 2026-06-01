@@ -153,7 +153,7 @@ const TencentCloudModal = ({
       open={visible || false}
       onOpenChange={(open) => !open && hideModal?.()}
       maskClosable={false}
-      footer={null}
+      footer={<div className="p-4"></div>}
     >
       <DynamicForm.Root
         fields={fields}
