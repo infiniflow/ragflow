@@ -31,6 +31,7 @@ from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.dashscope_utils import DASHSCOPE_INTL_NATIVE_API_URL, dashscope_native_api_url_scope
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 
@@ -392,13 +393,12 @@ class QWenCV(GptV4):
 
         try:
             try:
-                return call_api()
-            except Exception as e1:
-                import dashscope
-
-                dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
-                try:
+                with dashscope_native_api_url_scope(None):
                     return call_api()
+            except Exception as e1:
+                try:
+                    with dashscope_native_api_url_scope(DASHSCOPE_INTL_NATIVE_API_URL):
+                        return call_api()
                 except Exception as e2:
                     raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
         finally:
