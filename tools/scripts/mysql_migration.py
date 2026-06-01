@@ -24,6 +24,7 @@ This script provides a flexible MySQL data migration tool that supports:
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -534,9 +535,33 @@ class TenantModelStage(MigrationStage):
     """Migrate tenant_llm to tenant_model"""
 
     name = "tenant_model"
-    description = "Migrate tenant_llm to tenant_model (only status='0' records)"
+    description = "Migrate tenant_llm to tenant_model (status='0' records, plus status='1' for empty-llm factories)"
     source_tables = ["tenant_llm", "tenant_model_provider", "tenant_model_instance"]
     target_tables = ["tenant_model"]
+
+    @staticmethod
+    def _get_empty_llm_factories() -> list[str]:
+        """Load factory names whose llm field is an empty list from conf/llm_factories.json"""
+        conf_path = os.path.join(PROJECT_BASE, "conf", "llm_factories.json")
+        with open(conf_path, "r") as f:
+            data = json.load(f)
+        factories = []
+        for key, items in data.items():
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        llm = item.get("llm")
+                        if isinstance(llm, list) and len(llm) == 0:
+                            factories.append(item["name"])
+        return factories
+
+    def _build_status_condition(self) -> str:
+        """Build SQL WHERE condition for status filtering"""
+        empty_factories = self._get_empty_llm_factories()
+        if empty_factories:
+            placeholders = ", ".join(f"'{f}'" for f in empty_factories)
+            return f"(tl.status = '0' OR (tl.status = '1' AND tl.llm_factory IN ({placeholders})))"
+        return "tl.status = '0'"
 
     def current_timestamp(self) -> int:
         return int(time.time())
@@ -581,24 +606,26 @@ class TenantModelStage(MigrationStage):
             logger.info("Target table 'tenant_model' does not exist, will create")
             return True
 
-        # Check if there's data to migrate (only status='0' records)
+        status_condition = self._build_status_condition()
+
+        # Check if there's data to migrate
         cursor = self.db.execute_sql(
-            "SELECT COUNT(*) FROM ("
-            "  SELECT tl.id "
-            "  FROM tenant_llm tl "
-            "  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
-            "  INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
-            "  WHERE tl.status = '0' "
-            "  AND NOT EXISTS ("
-            "    SELECT 1 FROM tenant_model tm "
-            "    WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
-            "  )"
-            ") AS distinct_records"
+            f"SELECT COUNT(*) FROM ("
+            f"  SELECT tl.id "
+            f"  FROM tenant_llm tl "
+            f"  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"  INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
+            f"  WHERE {status_condition} "
+            f"  AND NOT EXISTS ("
+            f"    SELECT 1 FROM tenant_model tm "
+            f"    WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
+            f"  )"
+            f") AS distinct_records"
         )
         count = cursor.fetchone()[0]
 
         if count == 0:
-            logger.info("No new data to migrate from tenant_llm to tenant_model (status='0' only)")
+            logger.info("No new data to migrate from tenant_llm to tenant_model")
             return False
 
         logger.info(f"Found {count} rows to migrate from tenant_llm to tenant_model")
@@ -635,19 +662,21 @@ class TenantModelStage(MigrationStage):
             logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data migration")
             return 0, self.target_tables
 
+        status_condition = self._build_status_condition()
+
         # Get records from tenant_llm with provider_id and instance_id lookup
-        # Only migrate records where status='0'
+        # Migrate status='0' records, plus status='1' for empty-llm factories
         cursor = self.db.execute_sql(
-            "SELECT tl.id, tl.llm_name, tmp.id as provider_id, tmi.id as instance_id, "
-            "       tl.model_type, tl.status "
-            "FROM tenant_llm tl "
-            "INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
-            "INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
-            "WHERE tl.status = '0' "
-            "AND NOT EXISTS ("
-            "  SELECT 1 FROM tenant_model tm "
-            "  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
-            ")"
+            f"SELECT tl.id, tl.llm_name, tmp.id as provider_id, tmi.id as instance_id, "
+            f"       tl.model_type, tl.status "
+            f"FROM tenant_llm tl "
+            f"INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
+            f"WHERE {status_condition} "
+            f"AND NOT EXISTS ("
+            f"  SELECT 1 FROM tenant_model tm "
+            f"  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
+            f")"
         )
 
         records = cursor.fetchall()
