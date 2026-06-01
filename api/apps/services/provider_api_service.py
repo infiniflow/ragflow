@@ -276,7 +276,6 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     for instance_obj in instance_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
         instances.append({
-            "api_key": instance_obj.api_key,
             "id": instance_obj.id,
             "instance_name": instance_obj.instance_name,
             "provider_id": provider_id,
