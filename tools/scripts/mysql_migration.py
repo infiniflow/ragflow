@@ -523,7 +523,6 @@ class TenantModelInstanceStage(MigrationStage):
             create_date DATETIME,
             update_time BIGINT,
             update_date DATETIME,
-            INDEX idx_api_key_provider_id (api_key, provider_id),
             INDEX idx_provider_id (provider_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
@@ -711,7 +710,6 @@ class TenantModelStage(MigrationStage):
             update_time BIGINT,
             update_date DATETIME,
             INDEX idx_instance_id (instance_id),
-            INDEX idx_provider_model_instance (provider_id, model_name, instance_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
         self.db.execute_sql(create_sql)
