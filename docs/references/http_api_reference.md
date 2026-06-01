@@ -123,6 +123,9 @@ curl --request POST \
 
 - `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
+  The last `user` message may carry an optional `"files"` field — a list of attachments whose content is parsed and added to the model's context for that turn. Each attachment is one of:
+  - An inline file: `{"blob": "<base64-encoded content>", "display_name": "report.pdf"}`. `blob` may optionally include a `data:<mime>;base64,` prefix; otherwise the MIME type is inferred from `display_name`.
+  - A reference to a previously uploaded file: `{"id": "<file_id>", "created_by": "<tenant_id>", "mime_type": "<mime>", "name": "<filename>"}`.
 
 - `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.

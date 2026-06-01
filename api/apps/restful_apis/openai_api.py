@@ -14,7 +14,10 @@
 #  limitations under the License.
 #
 
+import base64
 import json
+import logging
+import mimetypes
 import time
 
 from quart import Response, jsonify
@@ -22,10 +25,12 @@ from quart import Response, jsonify
 from api.apps import current_user, login_required
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.file_service import FileService
 from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
+from common.misc_utils import get_uuid
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import chunks_format
 
@@ -49,7 +54,6 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     return None
 
 
-import logging
 from api.utils.reference_metadata_utils import enrich_chunks_with_document_metadata
 
 def _build_reference_chunks(reference, include_metadata=False, metadata_fields=None):
@@ -89,6 +93,70 @@ def _build_sse_response(body):
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
     return resp
+
+
+MAX_INLINE_FILE_BYTES = 20 * 1024 * 1024
+_MAX_INLINE_FILE_B64_LEN = ((MAX_INLINE_FILE_BYTES + 2) // 3) * 4
+
+
+def _resolve_message_files(files):
+    """Normalize a message's ``files`` list into the stored-file form the
+    chat pipeline expects: ``{id, created_by, mime_type, name}``.
+
+    Inline entries — ``{"blob": "<base64>", "display_name": "a.txt"}`` per
+    issue #5637 — are decoded and persisted to object storage. Entries that
+    already reference a stored file are passed through unchanged.
+    """
+    resolved = []
+    for idx, entry in enumerate(files):
+        if not isinstance(entry, dict):
+            raise ValueError(f"files[{idx}] must be an object.")
+        if "blob" in entry:
+            display_name = entry.get("display_name")
+            if not isinstance(display_name, str) or not display_name.strip():
+                raise ValueError(f"files[{idx}].display_name is required for an inline file.")
+            raw = (entry["blob"] or "").strip()
+            mime = ""
+            if raw.startswith("data:"):
+                header, sep, raw = raw.partition(",")
+                if not sep:
+                    raise ValueError(f"files[{idx}].blob is a malformed data URI.")
+                mime = header[len("data:") :].split(";", 1)[0].strip()
+            if len(raw) > _MAX_INLINE_FILE_B64_LEN:
+                raise ValueError(f"files[{idx}].blob exceeds the {MAX_INLINE_FILE_BYTES // (1024 * 1024)} MB limit.")
+            try:
+                blob = base64.b64decode(raw, validate=True)
+            except ValueError:
+                raise ValueError(f"files[{idx}].blob is not valid base64.") from None
+            if len(blob) > MAX_INLINE_FILE_BYTES:
+                raise ValueError(f"files[{idx}].blob exceeds the {MAX_INLINE_FILE_BYTES // (1024 * 1024)} MB limit.")
+            mime_type = mime or mimetypes.guess_type(display_name)[0] or "application/octet-stream"
+            file_id = get_uuid()
+            FileService.put_blob(current_user.id, file_id, blob)
+            logging.info(
+                "Stored inline chat attachment: user=%s file_id=%s name=%s mime=%s bytes=%d",
+                current_user.id,
+                file_id,
+                display_name,
+                mime_type,
+                len(blob),
+            )
+            resolved.append(
+                {
+                    "id": file_id,
+                    "created_by": current_user.id,
+                    "name": display_name,
+                    "mime_type": mime_type,
+                }
+            )
+        elif "id" in entry:
+            missing = [f for f in ("created_by", "mime_type", "name") if f not in entry]
+            if missing:
+                raise ValueError(f"files[{idx}] reference is missing: {', '.join(missing)}")
+            resolved.append(entry)
+        else:
+            raise ValueError(f"files[{idx}] must contain either 'blob' or 'id'.")
+    return resolved
 
 
 @manager.route("/openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
@@ -152,6 +220,15 @@ async def openai_chat_completions(chat_id):
         if metadata_condition.get("conditions") and not filtered_doc_ids:
             filtered_doc_ids = ["-999"]
         doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
+
+    files = messages[-1].get("files")
+    if files is not None:
+        if not isinstance(files, list):
+            return get_error_data_result("messages[].files must be an array.", code=RetCode.ARGUMENT_ERROR)
+        try:
+            messages[-1]["files"] = _resolve_message_files(files)
+        except ValueError as e:
+            return get_error_data_result(str(e), code=RetCode.ARGUMENT_ERROR)
 
     msg = []
     for message in messages:
