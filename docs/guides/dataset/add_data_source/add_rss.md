@@ -46,8 +46,10 @@ To add an RSS feed to your dataset, follow these steps:
 3. Go to the **Dataset** tab and click **+ Add data source**.
 4. Select **RSS** from the list of available integrations.
 5. In the configuration dialog, configure the following settings:
-   - **Data source name**: Enter a descriptive name to identify this RSS feed.
-   - **RSS URL**: Enter the complete URL of the RSS feed (e.g., `https://news.ycombinator.com/rss`).
+   - **Name**: Enter a descriptive name to identify this RSS feed.
+   - **Feed URL**: Enter the complete URL of the RSS feed (e.g., `https://news.ycombinator.com/rss`).
+   - **Batch size**: Specify the maximum number of new articles or items RAGFlow should fetch and process during a single background sync cycle. The default is 2. This setting helps manage the ingestion rate and prevents system overload, especially when connecting to highly active feeds or performing the initial fetch.
+   - **Sync deleted files**: Toggle this option on to automatically remove parsed files from your dataset if the corresponding items are deleted from the upstream RSS feed. If disabled, RAGFlow retains all historically ingested content, even if it is no longer available in the source feed.
 6. Click **OK** to save the configuration.
 
 *Once configured, RAGFlow's background task executors will automatically poll the RSS feed. The system continuously downloads new entries for parsing and chunking, while concurrently running the deleted-file sync to remove files that are no longer present in the source feed, requiring no manual scheduling on your part.*
