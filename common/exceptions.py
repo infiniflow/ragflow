@@ -28,5 +28,6 @@ class NotFoundException(Exception):
         self.msg = msg
 
 class ModelException(Exception):
-    def __init__(self, msg):
+    def __init__(self, msg, retryable=False):
         self.msg = msg
+        self.retryable = retryable

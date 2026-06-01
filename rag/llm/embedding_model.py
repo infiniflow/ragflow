@@ -37,6 +37,14 @@ import base64
 logger = logging.getLogger(__name__)
 
 
+def _raise_model_exception_if_failed(resp):
+    status_code = resp.status_code
+    if status_code >= 400:
+        if status_code < 500 and status_code not in [408, 429]:
+            raise ModelException(f"status: {resp.status_code}, response: {resp.text}", retryable=False)
+        raise ModelException(f"status: {resp.status_code}, response: {resp.text}", retryable=True)
+
+
 def _dashscope_base_url_for_log(base_url: str) -> str:
     """Log host/path only (no query string) so secrets in URLs are not printed."""
     return base_url.split("?", 1)[0].strip()[:256]
@@ -502,6 +510,7 @@ class JinaMultiVecEmbed(Base):
                 data["truncate"] = True
 
             response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
+            _raise_model_exception_if_failed(response)
             try:
                 res = response.json()
                 for d in res["data"]:
@@ -780,6 +789,7 @@ class NvidiaEmbed(Base):
                 "truncate": "END",
             }
             response = requests.post(self.base_url, headers=self.headers, json=payload, timeout=30)
+            _raise_model_exception_if_failed(response)
             try:
                 res = response.json()
                 ress.extend([d["embedding"] for d in res["data"]])
@@ -920,6 +930,7 @@ class SILICONFLOWEmbed(Base):
                 "encoding_format": "float",
             }
             response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
+            _raise_model_exception_if_failed(response)
             try:
                 res = response.json()
                 ress.extend([d["embedding"] for d in res["data"]])
@@ -937,6 +948,7 @@ class SILICONFLOWEmbed(Base):
             "encoding_format": "float",
         }
         response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=30)
+        _raise_model_exception_if_failed(response)
         try:
             res = response.json()
             return np.array(res["data"][0]["embedding"]), total_token_count_from_response(res)
@@ -1047,19 +1059,15 @@ class HuggingFaceEmbed(Base):
 
     def encode(self, texts: list):
         response = requests.post(f"{self.base_url}/embed", json={"inputs": texts}, headers={"Content-Type": "application/json"}, timeout=30)
-        if response.status_code == 200:
-            embeddings = response.json()
-        else:
-            raise Exception(f"Error: {response.status_code} - {response.text}")
+        _raise_model_exception_if_failed(response)
+        embeddings = response.json()
         return np.array(embeddings), sum([num_tokens_from_string(text) for text in texts])
 
     def encode_queries(self, text: str):
         response = requests.post(f"{self.base_url}/embed", json={"inputs": text}, headers={"Content-Type": "application/json"}, timeout=30)
-        if response.status_code == 200:
-            embedding = response.json()[0]
-            return np.array(embedding), num_tokens_from_string(text)
-        else:
-            raise Exception(f"Error: {response.status_code} - {response.text}")
+        _raise_model_exception_if_failed(response)
+        embedding = response.json()[0]
+        return np.array(embedding), num_tokens_from_string(text)
 
 
 class VolcEngineEmbed(Base):
@@ -1256,6 +1264,7 @@ class PerplexityEmbed(Base):
                     "encoding_format": "base64_int8",
                 }
                 response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+                _raise_model_exception_if_failed(response)
                 try:
                     res = response.json()
                     for doc in res["data"]:
@@ -1275,6 +1284,7 @@ class PerplexityEmbed(Base):
                     "encoding_format": "base64_int8",
                 }
                 response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+                _raise_model_exception_if_failed(response)
                 try:
                     res = response.json()
                     for d in res["data"]:
