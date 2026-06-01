@@ -261,6 +261,24 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 		return
 	}
 
+	// Mirror Python's @validate_request("url", "server_type"): missing
+	// required fields → code 101 (ARGUMENT_ERROR), not code 102.
+	var missingFields []string
+	if req.URL == "" {
+		missingFields = append(missingFields, "url")
+	}
+	if req.ServerType == "" {
+		missingFields = append(missingFields, "server_type")
+	}
+	if len(missingFields) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "required argument are missing: " + strings.Join(missingFields, ", ") + "; ",
+		})
+		return
+	}
+
 	tools, err := h.mcpService.TestServer(mcpID, &req)
 	if mcpErrorResponse(c, err) {
 		return
