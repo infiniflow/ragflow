@@ -13,7 +13,6 @@ import (
 )
 
 type XunFeiModel struct {
-	UnsupportedModelDriver
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
@@ -21,9 +20,8 @@ type XunFeiModel struct {
 
 func NewXunFeiModel(baseURL map[string]string, urlSuffix URLSuffix) *XunFeiModel {
 	return &XunFeiModel{
-		UnsupportedModelDriver: UnsupportedModelDriver{ProviderName: "xunfei"},
-		BaseURL:                baseURL,
-		URLSuffix:              urlSuffix,
+		BaseURL:   baseURL,
+		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
 			Timeout: time.Second * 120,
 			Transport: &http.Transport{
@@ -326,6 +324,38 @@ func (x *XunFeiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	return scanner.Err()
 }
 
+func (x *XunFeiModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
 func (x *XunFeiModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
@@ -380,4 +410,20 @@ func (x *XunFeiModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	return models, nil
+}
+
+func (x *XunFeiModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }

@@ -38,7 +38,6 @@ import (
 // no reasoning_content pass-through (Mistral does not expose one), and a
 // distinct Name() so the factory can route to this driver.
 type MistralModel struct {
-	UnsupportedModelDriver
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
@@ -64,9 +63,8 @@ func NewMistralModel(baseURL map[string]string, urlSuffix URLSuffix) *MistralMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &MistralModel{
-		UnsupportedModelDriver: UnsupportedModelDriver{ProviderName: "mistral"},
-		BaseURL:                baseURL,
-		URLSuffix:              urlSuffix,
+		BaseURL:   baseURL,
+		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
 			Transport: transport,
 		},
@@ -629,6 +627,24 @@ func (m *MistralModel) Rerank(modelName *string, query string, documents []strin
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
+// TranscribeAudio transcribe audio
+func (m *MistralModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MistralModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", m.Name())
+}
+
+// AudioSpeech convert text to audio
+func (m *MistralModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MistralModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", m.Name())
+}
+
 // OCRFile OCR file
 func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	if (urls == nil || *urls == "") && (content == nil || len(content) == 0) {
@@ -712,4 +728,16 @@ func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 	return &OCRFileResponse{
 		Text: &resultText,
 	}, nil
+}
+
+func (m *MistralModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MistralModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
