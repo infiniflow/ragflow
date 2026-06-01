@@ -16,11 +16,17 @@
 
 DASHSCOPE_PROVIDERS = {"Tongyi-Qianwen", "Dashscope"}
 GPUSTACK_PROVIDER = "GPUStack"
+KIMI_K2_MODEL_HINTS = ("kimi-k2.5", "kimi-k2.6")
 
 
 def is_qwen3_thinking_model(model_name: str) -> bool:
     name = (model_name or "").lower()
     return "qwen3" in name and "thinking" in name
+
+
+def is_kimi_k2_model(model_name: str) -> bool:
+    name = (model_name or "").lower()
+    return any(hint in name for hint in KIMI_K2_MODEL_HINTS)
 
 
 def detect_thinking_family(provider: str | None = None) -> str:
@@ -35,6 +41,15 @@ def detect_thinking_family(provider: str | None = None) -> str:
     return "openai_thinking"
 
 
+def _apply_kimi_k2_thinking(conf: dict, thinking_enabled: bool) -> None:
+    conf["thinking"] = {"type": "enabled" if thinking_enabled else "disabled"}
+    conf["temperature"] = 1.0 if thinking_enabled else 0.6
+    conf["top_p"] = 0.95
+    conf["n"] = 1
+    conf["presence_penalty"] = 0.0
+    conf["frequency_penalty"] = 0.0
+
+
 def apply_enable_thinking_policy(
     model_name: str,
     provider: str | None,
@@ -43,6 +58,12 @@ def apply_enable_thinking_policy(
     """Map gen_conf.reasoning (model thinking) to model-family specific request params."""
     conf = dict(gen_conf or {})
     thinking_enabled = conf.pop("reasoning", None)
+
+    if is_kimi_k2_model(model_name):
+        enabled = True if thinking_enabled is None else thinking_enabled
+        _apply_kimi_k2_thinking(conf, enabled)
+        return conf, {}
+
     if thinking_enabled is None:
         return conf, {}
 
