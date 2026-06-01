@@ -1189,7 +1189,7 @@ def _ensure_dataset_ready_via_api(
     base_url: str, auth_header: str, dataset_name: str
 ) -> dict:
     headers = {"Authorization": auth_header}
-    list_url = _build_url(base_url, "/api/v1/datasets?page=1&page_size=200")
+    list_url = _build_url(base_url, "/api/v1/datasets?page=1&page_size=100")
 
     _, list_payload = _api_request_json(list_url, method="GET", headers=headers)
     existing = _find_dataset_by_name(list_payload, dataset_name)

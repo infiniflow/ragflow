@@ -25,6 +25,9 @@ import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
 
 const FormSchema = z.object({
+  instance_name: z.string().min(1, {
+    message: t('setting.instanceNameMessage'),
+  }),
   llm_name: z.string().min(1, {
     message: t('setting.mineru.modelNameRequired'),
   }),
@@ -71,6 +74,7 @@ const MinerUModal = ({
   const form = useForm<MinerUFormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
+      instance_name: '',
       mineru_backend: 'pipeline',
       mineru_delete_output: true,
     },
@@ -102,6 +106,14 @@ const MinerUModal = ({
             className="space-y-6"
             id="mineru-form"
           >
+            <RAGFlowFormItem
+              name="instance_name"
+              label={t('setting.instanceName')}
+              tooltip={t('setting.instanceNameTip')}
+              required
+            >
+              <Input placeholder={t('setting.instanceNameMessage')} />
+            </RAGFlowFormItem>
             <RAGFlowFormItem
               name="llm_name"
               label={t('setting.modelName')}

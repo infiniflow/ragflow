@@ -270,6 +270,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 
