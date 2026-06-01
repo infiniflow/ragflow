@@ -734,20 +734,31 @@ class Markdown(MarkdownParser):
                     current_hostname, current_ip = assert_url_is_safe(url)
                     current_url = url
                     response = None
-                    for _ in range(MAX_IMAGE_REDIRECTS + 1):
-                        with pin_dns(current_hostname, current_ip):
-                            response = requests.get(current_url, stream=True, timeout=30, allow_redirects=False)
-                        if response.status_code not in (301, 302, 303, 307, 308):
-                            break
-                        location = response.headers.get("Location")
-                        if not location:
-                            break
-                        current_url = urljoin(current_url, location)
-                        current_hostname, current_ip = assert_url_is_safe(current_url)
-                    else:
-                        raise ValueError(f"Exceeded {MAX_IMAGE_REDIRECTS} redirects fetching {url!r}")
-                    if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
-                        img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    try:
+                        for _ in range(MAX_IMAGE_REDIRECTS + 1):
+                            # Release the previous hop before opening the next: with
+                            # stream=True the connection isn't returned to the pool
+                            # until the body is read or the response is closed.
+                            if response is not None:
+                                response.close()
+                            with pin_dns(current_hostname, current_ip):
+                                response = requests.get(current_url, stream=True, timeout=30, allow_redirects=False)
+                            if response.status_code not in (301, 302, 303, 307, 308):
+                                break
+                            location = response.headers.get("Location")
+                            if not location:
+                                break
+                            current_url = urljoin(current_url, location)
+                            current_hostname, current_ip = assert_url_is_safe(current_url)
+                        else:
+                            raise ValueError(f"Exceeded {MAX_IMAGE_REDIRECTS} redirects fetching {url!r}")
+                        if response.status_code == 200 and response.headers.get("Content-Type", "").startswith("image/"):
+                            img_obj = Image.open(BytesIO(response.content)).convert("RGB")
+                    finally:
+                        # Always release the final/streamed response, including the
+                        # non-image and redirect-cap paths where the body is unread.
+                        if response is not None:
+                            response.close()
                 else:
                     local_path = Path(url)
                     if local_path.exists():

@@ -63,12 +63,16 @@ class _Resp:
         self.headers = headers or {}
         self.content = content
 
+    def close(self):
+        pass
+
 
 @pytest.fixture
 def parser():
     return Markdown(128)
 
 
+@pytest.mark.p1
 def test_blocks_internal_url_without_fetching(parser):
     """A markdown image pointing at an internal host must never be requested."""
     with (
@@ -83,6 +87,7 @@ def test_blocks_internal_url_without_fetching(parser):
     assert cache["http://169.254.169.254/latest/meta-data/"] is None
 
 
+@pytest.mark.p1
 def test_blocks_redirect_to_internal_target(parser):
     """A public URL that 302-redirects to a loopback target must be rejected."""
 
@@ -104,6 +109,7 @@ def test_blocks_redirect_to_internal_target(parser):
     assert images == []
 
 
+@pytest.mark.p1
 def test_fetches_legitimate_public_image(parser):
     png = _png_bytes()
     ok = _Resp(200, headers={"Content-Type": "image/png"}, content=png)
@@ -120,6 +126,7 @@ def test_fetches_legitimate_public_image(parser):
     assert isinstance(images[0], Image.Image)
 
 
+@pytest.mark.p1
 def test_redirect_chain_is_bounded(parser):
     """An endless redirect loop is abandoned instead of being followed forever."""
     loop = _Resp(302, headers={"Location": "http://public.example/next"})
