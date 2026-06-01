@@ -116,6 +116,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
+
+		// Document images are embedded directly in pages and match Python's public route.
+		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 	}
 
 	// Protected routes
@@ -199,6 +202,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/search", r.chunkHandler.RetrievalTest)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
+				// Dataset ingestion logs
+				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
+				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
+
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 
@@ -260,6 +268,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			mcp := v1.Group("/mcp")
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 			}
 
 			// Skill search routes
@@ -342,13 +351,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				log := system.Group("/log")
+				system.GET("/stats", r.systemHandler.GetStats)
+
+				config := system.Group("/config")
 				{
-					// /api/v1/system/log GET
-					log.GET("", r.systemHandler.GetLogLevel)
-					// /api/v1/system/log PUT
-					log.PUT("", r.systemHandler.SetLogLevel)
+					config.GET("/log", r.systemHandler.GetLogLevel)
+					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
+
+				//log := system.Group("/log")
+				//{
+				//	// /api/v1/system/log GET
+				//	log.GET("", r.systemHandler.GetLogLevel)
+				//	// /api/v1/system/log PUT
+				//	log.PUT("", r.systemHandler.SetLogLevel)
+				//}
 
 				tokens := system.Group("/tokens")
 				{
@@ -401,6 +418,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			doc.POST("/set_meta", r.documentHandler.SetMeta)
 			doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
 		}
+
+		v1.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
 		// Chunk routes
 		chunk := v1.Group("/chunk")
