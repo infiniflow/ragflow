@@ -85,7 +85,7 @@ class RAGTools:
             tools.append(self.filter_docs_by_metadata)
         if self.sql_kbs:
             tools.append(self.search_structured_data)
-        self.chat_mdl.bind_tools(None, tools)
+        chat_mdl.bind_tools(None, tools)
 
     def sys_prompt(self) -> str:
         """Return the system instruction the chat model should be initialised with.
@@ -452,7 +452,10 @@ class RAGTools:
 
         # Defensive: drop anything the LLM hallucinated outside our catalogue.
         known = {doc_id for doc_id, _ in docs}
-        return [doc_id for doc_id in ids if isinstance(doc_id, str) and doc_id in known]
+        res = [doc_id for doc_id in ids if isinstance(doc_id, str) and doc_id in known]
+        if not res:
+            return "Fail to pick the document IDs. Try other methods."
+        return res
 
     @tool
     async def search_knowledge_bases(
