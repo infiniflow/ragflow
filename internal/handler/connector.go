@@ -17,29 +17,31 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
-type connectorService interface {
+type connectorServiceIface interface {
 	ListConnectors(userID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(connectorID, userID string) (*entity.Connector, common.ErrorCode, error)
 	ListLog(connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
 	DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error)
 	RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error)
+	TestConnector(connectorID, userID string) error
 }
 
 // ConnectorHandler connector handler
 type ConnectorHandler struct {
-	connectorService connectorService
+	connectorService connectorServiceIface
 	userService      *service.UserService
 }
 
@@ -82,6 +84,25 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 		"data":    result.Connectors,
 		"message": "success",
 	})
+}
+
+// connectorErrorResponse maps service sentinel errors to the response codes used
+// by the Python connector_api, and writes the JSON response. It returns true when
+// the error was handled.
+func connectorErrorResponse(c *gin.Context, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, service.ErrConnectorNoAuth):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": "No authorization."})
+	case errors.Is(err, service.ErrConnectorNotFound):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "Can't find this Connector!"})
+	case errors.Is(err, service.ErrConnectorTestUnsupported):
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeArgumentError, "data": false, "message": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
+	}
+	return true
 }
 
 // GetConnector get connector
@@ -151,6 +172,9 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -225,6 +249,43 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		"data":    connector,
 		"message": "success",
 	})
+}
+
+// TestConnector validates an accessible connector's stored credentials.
+// @Summary Test Connector
+// @Description Validate connector credentials / connection (equivalent to Python's test_connector)
+// @Tags connector
+// @Produce json
+// @Param connector_id path string true "connector ID"
+// @Router /api/v1/connectors/{connector_id}/test [post]
+func (h *ConnectorHandler) TestConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	connectorID := c.Param("connector_id")
+	if connectorID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "connector_id is required"})
+		return
+	}
+
+	err := h.connectorService.TestConnector(connectorID, user.ID)
+	if errors.Is(err, service.ErrConnectorTestUnsupported) {
+		connectorErrorResponse(c, err)
+		return
+	}
+	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
+		// Validation failure (e.g. missing credentials): mirror Python's DATA_ERROR with data=false.
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+	if connectorErrorResponse(c, err) {
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
 }
 
 // DeleteConnector delete connector
