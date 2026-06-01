@@ -36,6 +36,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -1698,7 +1699,6 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin rag_agent")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     prompt_config = dialog.prompt_config
-    check_llm_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
@@ -1710,21 +1710,20 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                          tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None
                          )
 
-    chat_start_ts = timer()
     llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
     if llm_type == "image2text":
         llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
         llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
 
-    attachments = None
-    if "doc_ids" in kwargs:
-        attachments = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+    #attachments = None
+    #if "doc_ids" in kwargs:
+    #    attachments = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+    #if "doc_ids" in messages[-1]:
+    #    attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
     attachments_ = ""
     image_attachments = []
     image_files = []
-    if "doc_ids" in messages[-1]:
-        attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
     if "files" in messages[-1]:
         if llm_type == "chat":
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
@@ -1735,6 +1734,8 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     if llm_type == "chat" and image_attachments:
         factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+    if attachments_:
+        msg[-1]["content"] = msg[-1]["content"] + "\n" + attachments_
 
     async def decorate_answer(answer):
         nonlocal rag_tools, messages
@@ -1793,9 +1794,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             yield final
     else:
         if llm_type == "chat":
-            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg[1:], gen_conf)
+            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg, gen_conf)
         else:
-            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg[1:], gen_conf, images=image_files)
+            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), msg, gen_conf, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = await decorate_answer(answer)
