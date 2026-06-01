@@ -45,6 +45,7 @@ from rag.llm.embedding_model import (
     OpenAIEmbed,
     ZhipuEmbed,
 )
+from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string
 
 
@@ -138,17 +139,29 @@ class TestDeterministicErrors:
         with pytest.raises(EmbeddingError):
             embed.encode_queries("hi")
 
-    def test_http_provider_surfaces_response_body(self):
-        """HTTP providers surface the error payload through EmbeddingError."""
+    def test_http_bad_status_raises_model_exception_with_body(self):
+        """A bad HTTP status surfaces the response body via a retryable-aware
+        ModelException, which the API error handler understands."""
         embed = NvidiaEmbed("key", "nvidia/nv-embed-v1")
         bad = MagicMock()
         bad.status_code = 400
-        bad.json.return_value = {"error": "bad request: empty input"}
         bad.text = '{"error": "bad request: empty input"}'
+        with patch("rag.llm.embedding_model.requests.post", return_value=bad):
+            with pytest.raises(ModelException) as exc:
+                embed.encode(["hello"])
+        assert "bad request: empty input" in str(exc.value)
+
+    def test_http_malformed_ok_response_raises_embedding_error(self):
+        """A 200 response with an unexpected body still yields a deterministic
+        EmbeddingError carrying the payload detail."""
+        embed = NvidiaEmbed("key", "nvidia/nv-embed-v1")
+        bad = MagicMock()
+        bad.status_code = 200
+        bad.json.return_value = {"unexpected": "shape"}
         with patch("rag.llm.embedding_model.requests.post", return_value=bad):
             with pytest.raises(EmbeddingError) as exc:
                 embed.encode(["hello"])
-        assert "bad request: empty input" in str(exc.value)
+        assert "unexpected" in str(exc.value)
 
 
 # --------------------------------------------------------------------------- #

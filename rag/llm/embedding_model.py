@@ -27,6 +27,7 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
+from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
 import logging
@@ -40,11 +41,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TOKENS = 8192
 
 
-class EmbeddingError(Exception):
+class EmbeddingError(ModelException):
     """Raised when an embedding provider fails to return usable embeddings.
 
     A single, deterministic exception type for every provider failure path so
     callers see consistent behaviour regardless of which SDK raised underneath.
+    Subclasses ``ModelException`` so the API error handler (and its retry
+    semantics) treats embedding failures like any other model failure.
     """
 
 
@@ -53,6 +56,14 @@ def _sorted_by_index(items):
     results stay aligned with input order even if the provider returns them out
     of order. Stable no-op when items carry no ``index`` attribute."""
     return sorted(items, key=lambda d: getattr(d, "index", 0))
+
+
+def _raise_model_exception_if_failed(resp):
+    status_code = resp.status_code
+    if status_code >= 400:
+        if status_code < 500 and status_code not in [408, 429]:
+            raise ModelException(f"status: {resp.status_code}, response: {resp.text}", retryable=False)
+        raise ModelException(f"status: {resp.status_code}, response: {resp.text}", retryable=True)
 
 
 def _dashscope_base_url_for_log(base_url: str) -> str:
@@ -169,6 +180,9 @@ class Base(ABC):
             batch = texts[i : i + batch_size]
             try:
                 embeddings, tokens = call_fn(batch)
+            except ModelException:
+                # Already a structured (and possibly retryable) model error; keep it.
+                raise
             except Exception as e:
                 logger.exception("%s embedding request failed", type(self).__name__)
                 raise EmbeddingError(f"Embedding request failed for {type(self).__name__}. Error: {e}") from e
@@ -180,10 +194,12 @@ class Base(ABC):
     def _openai_http_embeddings(response):
         """Parse an OpenAI-compatible HTTP embeddings ``requests`` response.
 
-        Returns ``(embeddings, token_count)``. Raises with the response body
-        (so the detail reaches the caller via :class:`EmbeddingError`) when the
-        payload is not a successful ``{"data": [...]}`` response.
+        Returns ``(embeddings, token_count)``. Raises a retryable-aware
+        :class:`ModelException` on a bad HTTP status, or surfaces the response
+        body (via :class:`EmbeddingError`) when the payload is not a successful
+        ``{"data": [...]}`` response.
         """
+        _raise_model_exception_if_failed(response)
         res = response.json()
         if not isinstance(res, dict) or "data" not in res:
             raise ValueError(f"unexpected embeddings response (status {getattr(response, 'status_code', '?')}): {res}")
@@ -354,18 +370,21 @@ class QWenEmbed(Base):
         token_count = 0
         texts = [truncate(t, 2048) for t in texts]
         for i in range(0, len(texts), batch_size):
-            retry_max = 5
-            with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
-                resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-            while (resp["output"] is None or resp["output"].get("embeddings") is None) and retry_max > 0:
-                time.sleep(10)
+            retry_max, retry_wait_secs = 5, 10
+            for retry in range(retry_max):
                 with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
                     resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-                retry_max -= 1
-            if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
-                detail = resp.get("message") or resp
-                logger.error("QWenEmbed: retries exhausted, embedding call failed: %s", detail)
-                raise EmbeddingError(f"Embedding request failed for QWenEmbed. Error: retries exhausted: {detail}")
+                status_code = resp.status_code
+                if status_code >= 400 and status_code < 500 and status_code not in [408, 429]:
+                    # No need to retry for 4XX error
+                    raise ModelException(f"Error, status: {status_code}, response: {resp}")
+                if status_code == 200:
+                    break
+                if retry < retry_max - 1:
+                    logging.warning(f"Got error response from DashScope API (status: {status_code}, response: {resp}). Wait {retry_wait_secs} seconds. Retrying...")
+                    time.sleep(retry_wait_secs)
+                else:
+                    raise ModelException(f"Error after {retry_max} retries, status: {status_code}, response: {resp}")
             try:
                 embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
                 for e in resp["output"]["embeddings"]:
@@ -380,6 +399,10 @@ class QWenEmbed(Base):
     def encode_queries(self, text):
         with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
             resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
+        status_code = resp.status_code
+        if status_code != 200:
+            raise ModelException(f"Error: status: {status_code}: code: {resp.get('code')}, message: {resp.get('message')}")
+            # No need to retry for 4XX error
         try:
             return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:
@@ -528,6 +551,7 @@ class JinaMultiVecEmbed(Base):
                 data["task"] = task
                 data["truncate"] = True  # let Jina truncate oversized inputs server-side
             response = requests.post(self.base_url, headers=self.headers, json=data, timeout=30)
+            _raise_model_exception_if_failed(response)
             res = response.json()
             embs = []
             for d in res["data"]:
@@ -1017,15 +1041,13 @@ class HuggingFaceEmbed(Base):
 
     def encode(self, texts: list):
         response = requests.post(f"{self.base_url}/embed", json={"inputs": texts}, headers={"Content-Type": "application/json"}, timeout=30)
-        if response.status_code != 200:
-            raise EmbeddingError(f"Embedding request failed for HuggingFaceEmbed. Error: {response.status_code} - {response.text}")
+        _raise_model_exception_if_failed(response)
         # TEI auto-truncates oversized inputs, so no client-side truncation is needed.
         return np.array(response.json()), sum([num_tokens_from_string(text) for text in texts])
 
     def encode_queries(self, text: str):
         response = requests.post(f"{self.base_url}/embed", json={"inputs": text}, headers={"Content-Type": "application/json"}, timeout=30)
-        if response.status_code != 200:
-            raise EmbeddingError(f"Embedding request failed for HuggingFaceEmbed. Error: {response.status_code} - {response.text}")
+        _raise_model_exception_if_failed(response)
         return np.array(response.json()[0]), num_tokens_from_string(text)
 
 
@@ -1224,6 +1246,7 @@ class PerplexityEmbed(Base):
                     "encoding_format": "base64_int8",
                 }
                 response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+                _raise_model_exception_if_failed(response)
                 try:
                     res = response.json()
                     for doc in res["data"]:
@@ -1243,6 +1266,7 @@ class PerplexityEmbed(Base):
                     "encoding_format": "base64_int8",
                 }
                 response = requests.post(url, headers=self.headers, json=payload, timeout=30)
+                _raise_model_exception_if_failed(response)
                 try:
                     res = response.json()
                     for d in res["data"]:
