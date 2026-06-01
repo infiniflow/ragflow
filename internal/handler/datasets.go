@@ -171,6 +171,91 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 	})
 }
 
+// GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
+func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	result, code, err := h.datasetsService.GetIngestionSummary(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
+func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+
+	page := 0
+	if pageStr := c.Query("page"); pageStr != "" {
+		p, err := strconv.Atoi(pageStr)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page must be an integer")
+			return
+		}
+		page = p
+	}
+
+	pageSize := 0
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		ps, err := strconv.Atoi(pageSizeStr)
+		if err != nil {
+			jsonError(c, common.CodeArgumentError, "page_size must be an integer")
+			return
+		}
+		pageSize = ps
+	}
+
+	orderby := c.DefaultQuery("orderby", "create_time")
+	// desc defaults to true and is only disabled by the literal value "false".
+	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
+	operationStatus := c.QueryArray("operation_status")
+	createDateFrom := c.Query("create_date_from")
+	createDateTo := c.Query("create_date_to")
+	logType := c.DefaultQuery("log_type", "dataset")
+	keywords := c.Query("keywords")
+
+	result, code, err := h.datasetsService.ListIngestionLogs(datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
+// GetIngestionLog handles GET /api/v1/datasets/:dataset_id/ingestions/:log_id.
+func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	logID := c.Param("log_id")
+	result, code, err := h.datasetsService.GetIngestionLog(datasetID, user.ID, logID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, result, "success")
+}
+
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
