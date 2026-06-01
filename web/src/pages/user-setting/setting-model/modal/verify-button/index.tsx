@@ -13,6 +13,10 @@ interface IVerifyButton {
   isAbsolute?: boolean;
   params?: any;
   className?: string;
+  /** Override the success label shown next to the button. Defaults to t('keyValid'). */
+  validLabel?: string;
+  /** Override the failure label shown next to the button. Defaults to t('keyInvalid'). */
+  invalidLabel?: string;
 }
 
 const VerifyButton: React.FC<IVerifyButton> = ({
@@ -20,6 +24,8 @@ const VerifyButton: React.FC<IVerifyButton> = ({
   isAbsolute = true,
   params,
   className,
+  validLabel,
+  invalidLabel,
 }) => {
   const { t, i18n } = useTranslate('setting');
   const isArabic = (i18n.resolvedLanguage || i18n.language || '')
@@ -108,7 +114,9 @@ const VerifyButton: React.FC<IVerifyButton> = ({
             }`}
           >
             <span>
-              {verifyResult.isValid ? t('keyValid') : t('keyInvalid')}
+              {verifyResult.isValid
+                ? (validLabel ?? t('keyValid'))
+                : (invalidLabel ?? t('keyInvalid'))}
             </span>
           </div>
         )}
