@@ -101,6 +101,14 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 // @Router /api/v1/auth/oauth/{channel}/callback [get]
 func (h *UserHandler) OAuthCallback(c *gin.Context) {
 	channel := c.Param("channel")
+	// An empty channel segment (/auth/oauth//callback) is a malformed path,
+	// not a real channel. Python's router never matches it and returns 404;
+	// match that here instead of flowing into the callback and emitting a
+	// bogus "Invalid channel name:" redirect.
+	if channel == "" {
+		HandleNoRoute(c)
+		return
+	}
 	queryCode := c.Query("code")
 	queryState := c.Query("state")
 	cookieState := readOAuthStateCookie(c)
