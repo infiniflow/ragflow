@@ -19,7 +19,7 @@ import re
 from typing import Any, List
 
 import json_repair
-
+from copy import deepcopy
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -45,7 +45,7 @@ class RAGTools:
                  user_defined_prompts: dict | None = None,
                  ):
         self.tenant_ids = tenant_ids
-        self.chat_mdl = chat_mdl
+        self.chat_mdl = deepcopy(chat_mdl)
         self.embed_mdl = embed_mdl
         self.field_map = {}
         self.sql_kbs = []
