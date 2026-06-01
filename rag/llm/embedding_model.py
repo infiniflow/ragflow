@@ -181,7 +181,10 @@ class OpenAIEmbed(Base):
         ress = []
         total_tokens = 0
         for i in range(0, len(texts), batch_size):
-            res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+            try:
+                res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+            except Exception as _e:
+                raise ModelException(f"Error: {_e}")
             try:
                 ress.extend([d.embedding for d in res.data])
                 total_tokens += total_token_count_from_response(res)
@@ -191,7 +194,10 @@ class OpenAIEmbed(Base):
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
-        res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        try:
+            res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
+        except Exception as _e:
+            raise ModelException(f"Error: {_e}")
         try:
             return np.array(res.data[0].embedding), total_token_count_from_response(res)
         except Exception as _e:
