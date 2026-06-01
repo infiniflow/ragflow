@@ -8,7 +8,7 @@ sidebar_custom_props: {
 
 # Add RSS
 
-Integrate RSS feeds as a data source.
+Integrate an RSS feed as a data source.
 
 ---
 
