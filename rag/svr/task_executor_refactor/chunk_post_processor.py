@@ -250,7 +250,7 @@ async def apply_tags(docs: List[Dict], ctx: TaskContext) -> None:
     else:
         all_tags = json.loads(all_tags)
     chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, ctx.llm_id)
-
+    with LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language) as chat_model:
         docs_to_tag = []
         for doc in docs:
             if ctx.has_canceled_func(ctx.id):

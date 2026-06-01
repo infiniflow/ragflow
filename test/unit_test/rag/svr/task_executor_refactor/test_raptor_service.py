@@ -30,7 +30,7 @@ Design principles:
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from rag.svr.task_executor_refactor.raptor_service import RaptorService
 from test.unit_test.rag.svr.task_executor_refactor.conftest import make_task_context

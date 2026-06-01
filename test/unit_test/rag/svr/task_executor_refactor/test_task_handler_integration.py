@@ -37,7 +37,6 @@ from test.unit_test.rag.svr.task_executor_refactor.conftest import (
     create_mock_settings,
     create_mock_chunk_service,
     make_task_dict,
-    patch_pipeline_mocks,
     patch_get_storage_binary,
     patch_task_handler_settings,
     mock_thread_return_binary,
@@ -818,7 +817,7 @@ class TestGraphragPipelineIntegration:
              patch("rag.svr.task_executor_refactor.task_handler.thread_pool_exec") as mock_thread_exec, \
              patch("rag.svr.task_executor_refactor.task_handler.KnowledgebaseService") as mock_kb_service, \
              patch("rag.svr.task_executor_refactor.task_handler.run_graphrag_for_kb") as mock_run_graphrag, \
-             patch("rag.svr.task_executor_refactor.task_handler.DocumentService") as mock_doc_service:
+             patch("rag.svr.task_executor_refactor.task_handler.DocumentService"):
 
             mock_get_config.return_value = MagicMock()
             mock_get_default.return_value = MagicMock()

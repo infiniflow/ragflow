@@ -24,7 +24,7 @@ it requires NLTK data in the test environment.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from rag.svr.task_executor_refactor.chunk_post_processor import (
     extract_keywords,
     generate_questions,

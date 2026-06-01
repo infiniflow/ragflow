@@ -26,14 +26,12 @@ Stable pure helpers (_build_toc) are tested directly.
 """
 
 import pytest
-import numpy as np
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from rag.svr.task_executor_refactor.task_handler import TaskHandler
 
 # Reuse shared helpers from conftest
 from test.unit_test.rag.svr.task_executor_refactor.conftest import (
-    AsyncMockLimiter,
     patch_embedding_binding,
     create_mock_settings,
     make_task_context,

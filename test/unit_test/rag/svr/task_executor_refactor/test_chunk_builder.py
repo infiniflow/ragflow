@@ -18,7 +18,7 @@ Unit tests for ChunkBuilder module.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from rag.svr.task_executor_refactor.chunk_builder import (
     get_parser,
     run_chunking,
