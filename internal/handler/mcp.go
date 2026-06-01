@@ -17,8 +17,11 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -104,14 +107,40 @@ func mcpErrorResponse(c *gin.Context, err error) bool {
 }
 
 func mcpErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	// service wraps its sentinels as "<sentinel>: <detail>" via
+	// fmt.Errorf("%w: ...", err). Surface the detail when present so the
+	// SSRF guard's per-failure message (e.g. "URL resolves to a non-public
+	// address (...).") reaches the caller verbatim, matching what Python's
+	// _assert_mcp_url_is_safe returns.
 	switch {
+	case errors.Is(err, service.ErrMCPInvalidURL):
+		if detail := unwrapDetail(err, service.ErrMCPInvalidURL); detail != "" {
+			return detail
+		}
+		return "Invalid url."
 	case errors.Is(err, service.ErrMCPInvalidType):
 		return "Unsupported MCP server type."
-	case errors.Is(err, service.ErrMCPInvalidURL):
-		return "Invalid url."
 	default:
 		return err.Error()
 	}
+}
+
+// unwrapDetail pulls the "<sentinel>: <detail>" suffix off a wrapped error
+// and returns the detail. Returns "" when the error is the bare sentinel
+// (no wrapped message) so the caller can fall back to a default.
+func unwrapDetail(err, sentinel error) string {
+	if err == nil || sentinel == nil {
+		return ""
+	}
+	prefix := sentinel.Error() + ": "
+	msg := err.Error()
+	if !strings.HasPrefix(msg, prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(msg, prefix)
 }
 
 // ImportMCPRequest is the body for the bulk-import endpoint.
@@ -122,7 +151,9 @@ type ImportMCPRequest struct {
 
 // ImportMCPServers bulk-imports MCP servers from a JSON config, fetching the
 // remote tool list for each entry and persisting it under variables.tools.
-// Mirrors Python's import_multiple.
+// Mirrors Python's import_multiple, including the same distinction between
+// "mcpServers key missing" (101 ARGUMENT_ERROR) and "mcpServers key
+// present but empty" (102 DATA_ERROR).
 //
 // @Summary Import MCP Servers
 // @Tags mcp
@@ -137,17 +168,54 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		return
 	}
 
-	var req ImportMCPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// Read the raw body so we can distinguish "key absent" from "key
+	// present but empty" — the Python @validate_request("mcpServers")
+	// decorator returns RetCode.ARGUMENT_ERROR for the former, while the
+	// handler body returns RetCode.DATA_ERROR for the latter.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
 		return
 	}
-	if len(req.MCPServers) == 0 {
+	var raw map[string]json.RawMessage
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &raw); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
+			return
+		}
+	}
+
+	rawServers, hasServers := raw["mcpServers"]
+	if !hasServers {
+		// Match Python validate_request: code 101, message includes the
+		// trailing "; " separator the Python decorator emits.
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "required argument are missing: mcpServers; ",
+		})
+		return
+	}
+
+	var servers map[string]map[string]interface{}
+	if err := json.Unmarshal(rawServers, &servers); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeBadRequest, "data": nil, "message": "Invalid request body: " + err.Error()})
+		return
+	}
+	if len(servers) == 0 {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "No MCP servers provided."})
 		return
 	}
 
-	results, err := h.mcpService.ImportServers(user.ID, req.MCPServers, req.Timeout)
+	var timeout float64
+	if rawTimeout, ok := raw["timeout"]; ok {
+		// Ignore parse errors for timeout to match Python's get_float
+		// default-on-failure behavior; the service applies its own
+		// 10 s fallback when timeout <= 0.
+		_ = json.Unmarshal(rawTimeout, &timeout)
+	}
+
+	results, err := h.mcpService.ImportServers(user.ID, servers, timeout)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
 		return
