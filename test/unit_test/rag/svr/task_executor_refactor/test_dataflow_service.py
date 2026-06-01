@@ -24,6 +24,7 @@ reaches directly into those internals.
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+from common import settings
 
 from rag.svr.task_executor_refactor.dataflow_service import DataflowService
 
@@ -61,15 +62,16 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value={})
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, '_record_pipeline_log'):
+        with patch.object(settings, 'docStoreConn'):
             service = DataflowService(ctx=task_context)
             await service.run_dataflow()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("output_key", ["chunks", "json"])
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
     @patch("rag.svr.task_executor_refactor.dataflow_service.UserCanvasService")
-    async def test_run_dataflow_with_chunks_output(self, mock_canvas, mock_pipeline_class, task_context):
-        """Test run_dataflow processes 'chunks' output type end-to-end."""
+    async def test_run_dataflow_with_output_type(self, mock_canvas, mock_pipeline_class, task_context, output_key):
+        """Test run_dataflow processes output end-to-end (chunks / json)."""
         task_context._task["task_type"] = "dataflow"
         task_context._task["dataflow_id"] = "dataflow_test"
         task_context._task["tenant_id"] = "tenant_test"
@@ -79,59 +81,28 @@ class TestDataflowServiceRunDataflow:
         task_context._write_interceptor = None
 
         mock_canvas.get_by_id.return_value = (True, MagicMock(dsl='{"id": "test"}'))
-        chunks = {
-            "chunks": [
-                {"text": "Hello world", "content_with_weight": "Hello world"},
-            ],
-            "embedding_token_consumption": 5,
-        }
+        data = {output_key: [{"text": "content", "content_with_weight": "content"}]}
+        data["embedding_token_consumption"] = 5
         mock_pipeline = MagicMock()
-        mock_pipeline.run = AsyncMock(return_value=chunks)
+        mock_pipeline.run = AsyncMock(return_value=data)
         mock_pipeline_class.return_value = mock_pipeline
 
-        # Patch internal heavy dependencies so run_dataflow completes
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(chunks["chunks"], 5)):
-            with patch.object(DataflowService, '_insert_chunks', new_callable=AsyncMock, return_value=True):
-                with patch.object(DataflowService, '_update_document_metadata'):
-                    with patch.object(DataflowService, '_record_pipeline_log'):
-                        with patch("api.db.services.document_service.DocumentService.increment_chunk_num"):
-                            service = DataflowService(ctx=task_context)
-                            await service.run_dataflow()
+        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock,
+                          return_value=(data[output_key], 5)), \
+             patch.object(settings, 'docStoreConn') as mock_doc_store, \
+             patch("rag.svr.task_executor_refactor.dataflow_service.DocMetadataService") as mock_doc_meta, \
+             patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService") as mock_pl_log, \
+             patch("rag.svr.task_executor_refactor.dataflow_service.DocumentService") as mock_doc_svc:
 
-                            # Verify chunks were inserted
-                            DataflowService._insert_chunks.assert_called_once()
+            mock_doc_store.insert = MagicMock(return_value=None)
+            mock_doc_meta.get_document_metadata.return_value = {}
+            mock_doc_meta.update_document_metadata = MagicMock()
 
-    @pytest.mark.asyncio
-    @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
-    @patch("rag.svr.task_executor_refactor.dataflow_service.UserCanvasService")
-    async def test_run_dataflow_with_json_output(self, mock_canvas, mock_pipeline_class, task_context):
-        """Test run_dataflow processes 'json' output type."""
-        task_context._task["task_type"] = "dataflow"
-        task_context._task["dataflow_id"] = "dataflow_test"
-        task_context._task["tenant_id"] = "tenant_test"
-        task_context._task["kb_id"] = "kb_test"
-        task_context._task["doc_id"] = "doc_test"
-        task_context._task["name"] = "test.pdf"
-        task_context._write_interceptor = None
-
-        mock_canvas.get_by_id.return_value = (True, MagicMock(dsl='{"id": "test"}'))
-        chunks = {
-            "json": [
-                {"text": "JSON content"},
-            ],
-            "embedding_token_consumption": 2,
-        }
-        mock_pipeline = MagicMock()
-        mock_pipeline.run = AsyncMock(return_value=chunks)
-        mock_pipeline_class.return_value = mock_pipeline
-
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(chunks["json"], 2)):
-            with patch.object(DataflowService, '_insert_chunks', new_callable=AsyncMock, return_value=True):
-                with patch.object(DataflowService, '_update_document_metadata'):
-                    with patch.object(DataflowService, '_record_pipeline_log'):
-                        with patch("api.db.services.document_service.DocumentService.increment_chunk_num"):
-                            service = DataflowService(ctx=task_context)
-                            await service.run_dataflow()
+            service = DataflowService(ctx=task_context)
+            await service.run_dataflow()
+            # _insert_chunks ran real code; verify it reached doc store
+            mock_doc_store.insert.assert_called()
+            mock_doc_svc.increment_chunk_num.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
@@ -154,13 +125,11 @@ class TestDataflowServiceRunDataflow:
         mock_pipeline.run = AsyncMock(return_value=chunks)
         mock_pipeline_class.return_value = mock_pipeline
 
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(None, 0)):
-            with patch.object(DataflowService, '_record_pipeline_log'):
-                service = DataflowService(ctx=task_context)
-                await service.run_dataflow()
-
-                # Should not insert chunks when embedding fails
-                service._record_pipeline_log.assert_called()
+        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(None, 0)), \
+             patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService") as mock_pl_log:
+            service = DataflowService(ctx=task_context)
+            await service.run_dataflow()
+            mock_pl_log.create.assert_called()
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
@@ -190,16 +159,21 @@ class TestDataflowServiceRunDataflow:
         billing_hook.on_pipeline_success = AsyncMock()
         billing_hook.on_pipeline_error = AsyncMock()
 
-        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(chunks["chunks"], 1)):
-            with patch.object(DataflowService, '_insert_chunks', new_callable=AsyncMock, return_value=True):
-                with patch.object(DataflowService, '_update_document_metadata'):
-                    with patch.object(DataflowService, '_record_pipeline_log'):
-                        with patch("api.db.services.document_service.DocumentService.increment_chunk_num"):
-                            service = DataflowService(ctx=task_context, billing_hook=billing_hook)
-                            await service.run_dataflow()
+        with patch.object(DataflowService, '_embed_chunks', new_callable=AsyncMock, return_value=(chunks["chunks"], 1)), \
+             patch.object(settings, 'docStoreConn') as mock_doc_store, \
+             patch("rag.svr.task_executor_refactor.dataflow_service.DocMetadataService") as mock_doc_meta, \
+             patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService") as mock_pl_log, \
+             patch("rag.svr.task_executor_refactor.dataflow_service.DocumentService") as mock_doc_svc:
 
-                            billing_hook.on_pipeline_success.assert_called_once()
-                            billing_hook.on_pipeline_error.assert_not_called()
+            mock_doc_store.insert = MagicMock(return_value=None)
+            mock_doc_meta.get_document_metadata.return_value = {}
+            mock_doc_meta.update_document_metadata = MagicMock()
+
+            service = DataflowService(ctx=task_context, billing_hook=billing_hook)
+            await service.run_dataflow()
+            billing_hook.on_pipeline_success.assert_called_once()
+            billing_hook.on_pipeline_error.assert_not_called()
+            mock_doc_svc.increment_chunk_num.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
@@ -379,3 +353,45 @@ class TestDataflowServiceInit:
         service = DataflowService(ctx=ctx, billing_hook=hook)
         assert service._task_context is ctx
         assert service._billing_hook is hook
+
+
+class TestDataflowServiceLoadDsl:
+    """Tests for _load_dsl with dataflow_id correction."""
+
+    @pytest.mark.asyncio
+    async def test_load_dsl_for_dataflow_task_type_returns_unchanged_id(self):
+        """When task_type == 'dataflow', dataflow_id is returned unchanged."""
+        ctx = MagicMock()
+        ctx.task_type = "dataflow"
+        dataflow_id = "original_dataflow_id"
+
+        with patch("rag.svr.task_executor_refactor.dataflow_service.UserCanvasService") as mock_canvas:
+            mock_canvas.get_by_id.return_value = (True, MagicMock(dsl='{"id": "test"}'))
+            service = DataflowService(ctx=ctx)
+
+            dsl, corrected_id = await service._load_dsl(dataflow_id)
+
+            assert dsl == '{"id": "test"}'
+            assert corrected_id == "original_dataflow_id"
+            mock_canvas.get_by_id.assert_called_once_with(dataflow_id)
+
+    @pytest.mark.asyncio
+    async def test_load_dsl_for_pipeline_log_task_type_returns_corrected_id(self):
+        """When task_type != 'dataflow', dataflow_id comes from pipeline_log.pipeline_id."""
+        ctx = MagicMock()
+        ctx.task_type = "raptor"
+        dataflow_id = "pipeline_log_id"
+
+        with patch("rag.svr.task_executor_refactor.dataflow_service.PipelineOperationLogService") as mock_log:
+            mock_log_instance = MagicMock()
+            mock_log_instance.dsl = '{"id": "test_pipeline"}'
+            mock_log_instance.pipeline_id = "corrected_pipeline_id"
+            mock_log.get_by_id.return_value = (True, mock_log_instance)
+
+            service = DataflowService(ctx=ctx)
+
+            dsl, corrected_id = await service._load_dsl(dataflow_id)
+
+            assert dsl == '{"id": "test_pipeline"}'
+            assert corrected_id == "corrected_pipeline_id"
+            mock_log.get_by_id.assert_called_once_with(dataflow_id)
