@@ -35,8 +35,6 @@ import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
-import pytest
-
 
 class _PassthroughManager:
     def route(self, *_args, **_kwargs):
