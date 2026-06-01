@@ -185,7 +185,11 @@ class MessageService:
     @staticmethod
     def calculate_message_size(message: dict):
         content_embed = message.get("content_embed")
-        embed_size = sys.getsizeof(content_embed[0]) * len(content_embed) if content_embed else 0
+        embed_size = (
+            sys.getsizeof(content_embed[0]) * len(content_embed)
+            if content_embed is not None and len(content_embed) > 0
+            else 0
+        )
         return sys.getsizeof(message.get("content", "")) + embed_size
 
     @classmethod
