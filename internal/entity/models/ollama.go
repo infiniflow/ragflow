@@ -282,6 +282,7 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 

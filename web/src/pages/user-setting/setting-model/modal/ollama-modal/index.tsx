@@ -9,8 +9,12 @@ import { LLMFactory } from '@/constants/llm';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
+import {
+  useFetchInstanceNameSet,
+  useHideWhenInstanceExists,
+  VerifyResult,
+} from '@/pages/user-setting/setting-model/hooks';
 import { memo, useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
@@ -38,6 +42,19 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 
+function buildModelTypesWithVision(
+  modelType: string[] | string,
+  vision = false,
+): string[] {
+  const modelTypeArray = Array.isArray(modelType) ? modelType : [modelType];
+
+  if (modelTypeArray.includes('chat') && vision) {
+    return [...modelTypeArray, 'image2text'];
+  }
+
+  return modelTypeArray;
+}
+
 const OllamaModal = ({
   visible,
   hideModal,
@@ -47,7 +64,9 @@ const OllamaModal = ({
   llmFactory,
   editMode = false,
   initialValues,
-}: IModalProps<Partial<IAddLlmRequestBody> & { provider_order?: string }> & {
+}: IModalProps<
+  Partial<IAddProviderInstanceRequestBody> & { provider_order?: string }
+> & {
   llmFactory: string;
   editMode?: boolean;
   onVerify?: (
@@ -58,6 +77,9 @@ const OllamaModal = ({
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const formRef = useRef<DynamicFormRef>(null);
+  const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
+
+  const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
 
   const optionsMap: Partial<
     Record<LLMFactory, { label: string; value: string }[]>
@@ -119,14 +141,22 @@ const OllamaModal = ({
 
     const baseFields: FormFieldConfig[] = [
       {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: {
+          message: t('instanceNameMessage'),
+        },
+      },
+      {
         name: 'model_type',
         label: t('modelType'),
-        type: FormFieldType.Select,
+        type: FormFieldType.MultiSelect,
         required: true,
         options: getOptions(llmFactory),
-        validation: {
-          message: t('modelTypeMessage'),
-        },
       },
       {
         name: 'llm_name',
@@ -147,6 +177,7 @@ const OllamaModal = ({
         validation: {
           message: t('baseUrlNameMessage'),
         },
+        shouldRender: hideWhenInstanceExists,
       },
       {
         name: 'api_key',
@@ -154,6 +185,7 @@ const OllamaModal = ({
         type: FormFieldType.Text,
         required: false,
         placeholder: t('apiKeyMessage'),
+        shouldRender: hideWhenInstanceExists,
       },
       {
         name: 'max_tokens',
@@ -186,6 +218,9 @@ const OllamaModal = ({
       dependencies: ['model_type'],
       shouldRender: (formValues: any) => {
         const modelType = formValues?.model_type;
+        if (Array.isArray(modelType)) {
+          return modelType.includes('chat') || modelType.includes('image2text');
+        }
         return modelType === 'chat' || modelType === 'image2text';
       },
       tooltip: t('enableToolCallTip'),
@@ -212,18 +247,25 @@ const OllamaModal = ({
       required: false,
       dependencies: ['model_type'],
       shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'chat';
+        const modelType = formValues?.model_type;
+        if (Array.isArray(modelType)) {
+          return modelType.includes('chat');
+        }
+        return modelType === 'chat';
       },
     });
 
     return baseFields;
-  }, [llmFactory, t]);
+  }, [llmFactory, t, hideWhenInstanceExists, initialValues?.is_tools]);
 
   const defaultValues: FieldValues = useMemo(() => {
     if (editMode && initialValues) {
       return {
+        instance_name: initialValues.instance_name || '',
         llm_name: initialValues.llm_name || '',
-        model_type: initialValues.model_type || 'chat',
+        model_type: initialValues.model_type
+          ? initialValues.model_type
+          : ['chat'],
         api_base: initialValues.api_base || '',
         max_tokens: initialValues.max_tokens || 8192,
         api_key: '',
@@ -233,34 +275,39 @@ const OllamaModal = ({
       };
     }
     return {
-      model_type:
+      instance_name: '',
+      model_type: [
         llmFactory === LLMFactory.Ollama || llmFactory === LLMFactory.VLLM
           ? 'chat'
           : llmFactory in optionsMap
             ? optionsMap[llmFactory as LLMFactory]?.at(0)?.value
             : 'embedding',
+      ],
       vision: false,
       is_tools: false,
+      max_tokens: 8192,
     };
   }, [editMode, initialValues, llmFactory]);
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
-    const supportsToolCall = modelType === 'chat' || modelType === 'image2text';
+    const modelTypeArray: string[] = Array.isArray(values.model_type)
+      ? values.model_type
+      : [values.model_type];
+    const supportsToolCall =
+      modelTypeArray.includes('chat') || modelTypeArray.includes('image2text');
 
-    const data: IAddLlmRequestBody & { provider_order?: string } = {
-      llm_factory: llmFactory,
-      llm_name: values.llm_name as string,
-      model_type: modelType,
-      api_base: values.api_base as string,
-      api_key: values.api_key as string,
-      max_tokens: values.max_tokens as number,
-    };
+    const data: IAddProviderInstanceRequestBody & { provider_order?: string } =
+      {
+        instance_name: values.instance_name as string,
+        llm_factory: llmFactory,
+        llm_name: values.llm_name as string,
+        model_type: buildModelTypesWithVision(values.model_type, values.vision),
+        api_base: values.api_base as string,
+        api_key: values.api_key as string,
+        max_tokens: values.max_tokens as number,
+      };
     if (supportsToolCall) {
       data.is_tools = Boolean(values.is_tools);
     }
@@ -275,13 +322,9 @@ const OllamaModal = ({
 
   const verifyParamsFunc = useCallback(() => {
     const values = formRef.current?.getValues();
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
     return {
       llm_factory: llmFactory,
-      model_type: modelType,
+      model_type: buildModelTypesWithVision(values.model_type, values.vision),
     };
   }, [llmFactory]);
 

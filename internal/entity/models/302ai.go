@@ -338,6 +338,7 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 

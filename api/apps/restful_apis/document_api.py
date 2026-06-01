@@ -1641,6 +1641,32 @@ async def stop_parse_documents(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+def _detect_image_content_type_from_bytes(data):
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:2] == b"BM":
+        return "image/bmp"
+    return None
+
+
+def _content_type_for_document_image(object_name, data):
+    ext_match = re.search(r"\.([^.]+)$", object_name.lower())
+    if ext_match:
+        content_type = CONTENT_TYPE_MAP.get(ext_match.group(1))
+        if content_type and content_type.startswith("image/"):
+            return content_type
+    detected = _detect_image_content_type_from_bytes(data)
+    if detected:
+        return detected
+    return "application/octet-stream"
+
+
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
 async def get_document_image(image_id):
     """
@@ -1670,8 +1696,11 @@ async def get_document_image(image_id):
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
+        if not data:
+            return get_data_error_result(message="Image not found.")
+        content_type = _content_type_for_document_image(nm, data)
         response = await make_response(data)
-        response.headers.set("Content-Type", "image/JPEG")
+        response.headers.set("Content-Type", content_type)
         return response
     except Exception as e:
         return server_error_response(e)

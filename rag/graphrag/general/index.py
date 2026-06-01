@@ -331,12 +331,13 @@ async def run_graphrag_for_kb(
 
         callback(msg=f"[GraphRAG] chunk_list returned {len(raw_chunks)} raw chunks for doc:{doc_id}")
 
+        contents = [content for chunk in raw_chunks if (content := chunk.get("content_with_weight", ""))
+]
         # For NER-based extractionm, no need to batch extract entity and relation
         if _select_extractor_type(graphrag_config) == "ner":
-            return raw_chunks
+            return contents
 
-        for d in raw_chunks:
-            content = d["content_with_weight"]
+        for content in contents:
             if num_tokens_from_string(current_chunk + content) < batch_chunk_token_size:
                 current_chunk += content
             else:
