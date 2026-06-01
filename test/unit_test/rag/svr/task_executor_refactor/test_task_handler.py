@@ -247,7 +247,7 @@ class TestTaskHandlerBuildToc:
             coro.close()
             return []
 
-        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_cfg:
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             with patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle:
                 mock_msg = MagicMock()
@@ -271,7 +271,7 @@ class TestTaskHandlerBuildToc:
             coro.close()
             return toc_result
 
-        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_cfg:
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_cfg:
             mock_cfg.return_value = MagicMock()
             with patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle:
                 mock_msg = MagicMock()

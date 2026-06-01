@@ -459,7 +459,7 @@ def test_dataset_update_embedding_model_with_existing_chunks_contract(rest_clien
     assert dataset_payload["code"] == 0, dataset_payload
     current_embedding = dataset_payload["data"]["embedding_model"]
 
-    candidates = ["embedding-3@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Builtin"]
+    candidates = ["embedding-3@CI@ZHIPU-AI", "BAAI/bge-small-en-v1.5@Local@Builtin"]
     last_payload = None
     for candidate in candidates:
         if candidate == current_embedding:
@@ -810,10 +810,10 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     dataset_id = create_payload["data"]["id"]
 
     invalid_cases = [
-        ("unknown@ZHIPU-AI", "Unsupported model: <unknown@ZHIPU-AI>"),
-        ("embedding-3@unknown", "Unsupported model: <embedding-3@unknown>"),
-        ("text-embedding-v3@Tongyi-Qianwen", "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>"),
-        ("text-embedding-3-small@OpenAI", "Unauthorized model: <text-embedding-3-small@OpenAI>"),
+        ("unknown@ZHIPU-AI", "Instance default not found for model unknown@ZHIPU-AI."),
+        ("embedding-3@unknown", "Provider unknown not found for model embedding-3@unknown."),
+        ("text-embedding-v3@Tongyi-Qianwen", "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen."),
+        ("text-embedding-3-small@OpenAI", "Provider OpenAI not found for model text-embedding-3-small@OpenAI."),
     ]
     for embedding_model, expected_message in invalid_cases:
         res = rest_client.put(
@@ -834,7 +834,7 @@ def test_dataset_update_embedding_model_invalid_and_none_contract(rest_client, c
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
-    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Builtin", list_payload
+    assert list_payload["data"][0]["embedding_model"] == "BAAI/bge-small-en-v1.5@Local@Builtin", list_payload
 
 
 @pytest.mark.p2
@@ -1164,21 +1164,21 @@ def test_dataset_create_permission_contract(rest_client, clear_datasets, name, p
 @pytest.mark.parametrize(
     "name, embedding_model, expected_code, expected_embedding_model, expected_message, unauthorized_is_xfail",
     [
-        ("builtin_baai", "BAAI/bge-small-en-v1.5@Builtin", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("tenant_zhipu", "embedding-3@ZHIPU-AI", 0, "embedding-3@ZHIPU-AI", None, True),
-        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Builtin", None, False),
-        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Unsupported model: <unknown@ZHIPU-AI>", False),
-        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Unsupported model: <embedding-3@unknown>", False),
+        ("builtin_baai", "BAAI/bge-small-en-v1.5@Local@Builtin", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("tenant_zhipu", "embedding-3@CI@ZHIPU-AI", 0, "embedding-3@CI@ZHIPU-AI", None, True),
+        ("embedding_model_unset", "__UNSET__", 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("embedding_model_none", None, 0, "BAAI/bge-small-en-v1.5@Local@Builtin", None, False),
+        ("unknown_llm_name", "unknown@ZHIPU-AI", 102, None, "Instance default not found for model unknown@ZHIPU-AI.", False),
+        ("unknown_llm_factory", "embedding-3@unknown", 102, None, "Provider unknown not found for model embedding-3@unknown.", False),
         (
             "tenant_no_auth_default_tenant_llm",
             "text-embedding-v3@Tongyi-Qianwen",
             102,
             None,
-            "Unauthorized model: <text-embedding-v3@Tongyi-Qianwen>",
+            "Provider Tongyi-Qianwen not found for model text-embedding-v3@Tongyi-Qianwen.",
             False,
         ),
-        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Unauthorized model: <text-embedding-3-small@OpenAI>", False),
+        ("tenant_no_auth", "text-embedding-3-small@OpenAI", 102, None, "Provider OpenAI not found for model text-embedding-3-small@OpenAI.", False),
     ],
     ids=[
         "builtin_baai",
@@ -2211,6 +2211,83 @@ def test_dataset_get_contract(rest_client, create_dataset):
 
 
 @pytest.mark.p2
+def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dataset):
+    dataset_id = create_dataset("dataset_metadata_config_contract")
+
+    success_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
+    assert success_res.status_code == 200
+    success_payload = success_res.json()
+    assert success_payload["code"] == 0, success_payload
+    assert success_payload["data"] == {"metadata": [], "built_in_metadata": []}, success_payload
+
+    for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
+        get_res = client.get(f"/datasets/{dataset_id}/metadata/config")
+        assert get_res.status_code == 401, (scenario_name, get_res.text)
+        get_payload = get_res.json()
+        assert get_payload["code"] == 401, (scenario_name, get_payload)
+        assert get_payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, get_payload)
+
+        put_res = client.put(
+            f"/datasets/{dataset_id}/metadata/config",
+            json={"metadata": [], "built_in_metadata": []},
+        )
+        assert put_res.status_code == 401, (scenario_name, put_res.text)
+        put_payload = put_res.json()
+        assert put_payload["code"] == 401, (scenario_name, put_payload)
+        assert put_payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, put_payload)
+
+    invalid_dataset_res = rest_client.get("/datasets/invalid_dataset_id/metadata/config")
+    assert invalid_dataset_res.status_code == 200
+    invalid_dataset_payload = invalid_dataset_res.json()
+    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_dataset_payload["message"], invalid_dataset_payload
+
+    update_payload = {
+        "metadata": [
+            {"key": "author", "type": "string", "description": "Author name"},
+            {"key": "tags", "type": "list", "description": "Tag list", "enum": ["foo", "bar"]},
+        ],
+        "built_in_metadata": [
+            {"key": "size", "type": "number", "description": "File size"},
+        ],
+    }
+    normalized_update_payload = {
+        "metadata": [
+            {"key": "author", "type": "string", "description": "Author name", "enum": None},
+            {"key": "tags", "type": "list", "description": "Tag list", "enum": ["foo", "bar"]},
+        ],
+        "built_in_metadata": [
+            {"key": "size", "type": "number", "description": "File size", "enum": None},
+        ],
+    }
+    update_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json=update_payload)
+    assert update_res.status_code == 200
+    update_body = update_res.json()
+    assert update_body["code"] == 0, update_body
+    assert update_body["data"] == normalized_update_payload, update_body
+
+    refetch_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
+    assert refetch_res.status_code == 200
+    refetch_payload = refetch_res.json()
+    assert refetch_payload["code"] == 0, refetch_payload
+    assert refetch_payload["data"] == normalized_update_payload, refetch_payload
+
+    missing_payload_res = rest_client.put(f"/datasets/{dataset_id}/metadata/config", json={})
+    assert missing_payload_res.status_code == 200
+    missing_payload = missing_payload_res.json()
+    assert missing_payload["code"] == 0, missing_payload
+    assert missing_payload["data"] == {"metadata": [], "built_in_metadata": []}, missing_payload
+
+    invalid_update_dataset_res = rest_client.put(
+        "/datasets/invalid_dataset_id/metadata/config",
+        json={"metadata": [], "built_in_metadata": []},
+    )
+    assert invalid_update_dataset_res.status_code == 200
+    invalid_update_dataset_payload = invalid_update_dataset_res.json()
+    assert invalid_update_dataset_payload["code"] == 102, invalid_update_dataset_payload
+    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_update_dataset_payload["message"], invalid_update_dataset_payload
+
+
 def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path):
     dataset_id = create_dataset("dataset_metadata_summary")
     document_ids = []
