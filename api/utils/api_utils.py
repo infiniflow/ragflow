@@ -144,6 +144,9 @@ def server_error_response(e):
     except Exception as ex:
         logging.warning(f"error checking authorization: {ex}")
 
+    if "not_found" in str(e):
+        return get_error_data_result(message="No chunk found! Check the chunk status please!")
+
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 

@@ -27,6 +27,7 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
+from common.exceptions import ModelException
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
@@ -294,20 +295,23 @@ class QWenEmbed(Base):
         token_count = 0
         texts = [truncate(t, 2048) for t in texts]
         for i in range(0, len(texts), batch_size):
-            retry_max = 5
-            with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
-                resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-            while (resp["output"] is None or resp["output"].get("embeddings") is None) and retry_max > 0:
-                time.sleep(10)
+
+            retry_max, retry_wait_secs = 5, 10
+            for retry in range(retry_max):
                 with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
                     resp = dashscope.TextEmbedding.call(model=self.model_name, input=texts[i : i + batch_size], api_key=self.key, text_type="document")
-                retry_max -= 1
-            if retry_max == 0 and (resp["output"] is None or resp["output"].get("embeddings") is None):
-                if resp.get("message"):
-                    log_exception(ValueError(f"Retry_max reached, calling embedding model failed: {resp['message']}"))
+                status_code = resp.status_code
+                if status_code >= 400 and status_code < 500 and status_code not in [408, 429]:
+                    raise ModelException(f"Error, status: {status_code}, response: {resp}")
+                    # No need to retry for 4XX error
+                if status_code == 200:
+                    break
+                if retry < retry_max:
+                    logging.warning(f"Got error response from DashScope API (status: {status_code}, response: {resp}). Wait {retry_wait_secs} seconds. Retrying...")
+                    time.sleep(retry_wait_secs)
                 else:
-                    log_exception(ValueError("Retry_max reached, calling embedding model failed"))
-                raise
+                    raise ModelException(f"Error after {retry_max} retries., status: {status_code}, response: {resp}")
+
             try:
                 embds = [[] for _ in range(len(resp["output"]["embeddings"]))]
                 for e in resp["output"]["embeddings"]:
@@ -316,17 +320,21 @@ class QWenEmbed(Base):
                 token_count += total_token_count_from_response(resp)
             except Exception as _e:
                 log_exception(_e, resp)
-                raise
+                raise ModelException(f"Error: {status_code}: {resp}")
         return np.array(res), token_count
 
     def encode_queries(self, text):
         with _dashscope_native_api_url_scope(self._dashscope_http_api_url):
             resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
+        status_code = resp.status_code
+        if status_code != 200:
+            raise ModelException(f"Error: status: {status_code}: code: {resp.get('code')}, message: {resp.get('message')}")
+            # No need to retry for 4XX error
         try:
             return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:
             log_exception(_e, resp)
-            raise Exception(f"Error: {resp}")
+            raise ModelException(f"Error: {status_code}: {resp}")
 
 
 class ZhipuEmbed(Base):
