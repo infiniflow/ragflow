@@ -535,9 +535,15 @@ export const DataSourceFormFields = {
     {
       label: 'Objects',
       name: 'config.objects',
-      type: FormFieldType.Text,
+      type: FormFieldType.MultiSelect,
       required: false,
-      placeholder: 'contacts,companies,deals,tickets',
+      options: [
+        { label: 'Contacts', value: 'contacts' },
+        { label: 'Companies', value: 'companies' },
+        { label: 'Deals', value: 'deals' },
+        { label: 'Tickets', value: 'tickets' },
+      ],
+      placeholder: 'contacts, companies, deals, tickets',
       tooltip: t('setting.hubspotObjectsTip'),
     },
     {

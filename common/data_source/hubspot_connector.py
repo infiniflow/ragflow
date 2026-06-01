@@ -297,15 +297,19 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
 
     def _json(self, resp: requests.Response, *, context: str) -> dict:
         if not resp.ok:
-            body_snippet = resp.text[:200] if resp.text else ""
+            # Never log or surface the response body: HubSpot CRM/KB
+            # payloads can carry customer PII. The correlation id is the
+            # safe handle to give HubSpot support for diagnosing a 4xx/5xx.
+            correlation_id = resp.headers.get("x-hubspot-correlation-id", "")
             logger.error(
-                "HubSpot request failed (%s): HTTP %s body=%s",
+                "HubSpot request failed (%s): HTTP %s correlation_id=%s",
                 context,
                 resp.status_code,
-                body_snippet,
+                correlation_id,
             )
             raise UnexpectedValidationError(
-                f"HubSpot request failed ({context}): HTTP {resp.status_code} {body_snippet}"
+                f"HubSpot request failed ({context}): HTTP {resp.status_code} "
+                f"(correlation_id={correlation_id})"
             )
         try:
             return resp.json()
@@ -333,6 +337,13 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         """
         url = f"{_API_BASE}/crm/v3/objects/{obj}/search"
         current_since = since_ms
+        # IDs already emitted at exactly ``current_since``. Re-windowing
+        # uses a ``GTE`` (not ``GT``) floor so records sharing the
+        # boundary millisecond are never skipped; this set lets us drop
+        # the ones we already yielded so the overlap doesn't double-emit.
+        # A strict ``GT`` would silently lose every record tied on the
+        # boundary timestamp when a window hits the 10k Search API cap.
+        boundary_seen_ids: set[str] = set()
         # Outer loop advances the timestamp window when one query
         # exhausts its 10k-result allotment. The inner loop pages
         # through ``after`` cursors inside a single window.
@@ -340,14 +351,15 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
             after: str | None = None
             page_count = 0
             latest_in_window: int | None = None
-            window_yielded = False
+            ids_at_latest: set[str] = set()
+            new_yielded = 0
 
             while True:
                 filters = []
                 if current_since:
                     filters.append({
                         "propertyName": "hs_lastmodifieddate",
-                        "operator": "GT",
+                        "operator": "GTE",
                         "value": str(current_since),
                     })
 
@@ -366,10 +378,25 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                 results = page.get("results", []) or []
                 for record in results:
                     last_modified = _record_lastmodified_ms(record)
+                    rec_id = str(record.get("id") or "")
+                    # Skip boundary records already emitted by the prior
+                    # window's GTE overlap.
+                    if (
+                        last_modified is not None
+                        and current_since is not None
+                        and last_modified == current_since
+                        and rec_id in boundary_seen_ids
+                    ):
+                        continue
+
                     if last_modified is not None:
-                        latest_in_window = last_modified
+                        if latest_in_window is None or last_modified > latest_in_window:
+                            latest_in_window = last_modified
+                            ids_at_latest = {rec_id}
+                        elif last_modified == latest_in_window:
+                            ids_at_latest.add(rec_id)
                     yield record
-                    window_yielded = True
+                    new_yielded += 1
 
                 page_count += 1
                 paging = page.get("paging", {}).get("next") or {}
@@ -381,13 +408,23 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                 if page_count >= 100:
                     break
 
-            if not window_yielded:
+            # No new records past the overlap dedup — the stream is
+            # exhausted (also guards the pathological >10k-records-sharing-
+            # one-timestamp case from looping forever).
+            if new_yielded == 0:
                 return
             if latest_in_window is None:
                 # No usable timestamps — can't safely re-window.
                 return
-            # Advance the floor to the latest record we just saw so the
-            # next query returns strictly newer records.
+            if latest_in_window == current_since:
+                # Window never advanced past the floor (every record
+                # shared the boundary ms); accumulate seen ids so the
+                # next overlap query can make progress.
+                boundary_seen_ids |= ids_at_latest
+            else:
+                boundary_seen_ids = ids_at_latest
+            # Advance the floor to the latest record we just saw; GTE
+            # keeps boundary-tied records in range, dedup drops repeats.
             current_since = latest_in_window
 
     def _iter_kb_articles(
