@@ -2568,14 +2568,22 @@ func (c *RAGFlowClient) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("region not provided")
 	}
 	apiKey, ok := cmd.Params["api_key"].(string)
-	if !ok || apiKey == "" {
+	if !ok {
 		return nil, fmt.Errorf("api_key not provided")
 	}
+
+	var apiKeyValue interface{}
+	if apiKey != "" {
+		apiKeyValue = apiKey
+	} else {
+		apiKeyValue = nil
+	}
+
 	url := fmt.Sprintf("/providers/%s/connection", providerName)
 
 	payload := map[string]interface{}{
 		"region":  region,
-		"api_key": apiKey,
+		"api_key": apiKeyValue,
 	}
 
 	resp, err := c.HTTPClient.Request("GET", url, "api", nil, payload)
