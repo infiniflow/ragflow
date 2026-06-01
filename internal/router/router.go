@@ -202,6 +202,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/search", r.chunkHandler.RetrievalTest)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
+				// Dataset ingestion logs
+				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
+				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
+
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 
