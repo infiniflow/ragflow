@@ -47,7 +47,10 @@ class VariableAssigner(ComponentBase,ABC):
             return
         else:
             for item in self._param.variables:
-                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
+                if not item.get("variable") or not item.get("operator"):
+                    raise ValueError("Variable is not complete.")
+                # parameter can be 0 or empty string, so check explicitly for None
+                if item.get("parameter") is None and item.get("operator") not in ["clear", "remove_first", "remove_last"]:
                     raise ValueError("Variable is not complete.")
                 variable=item["variable"]
                 operator=item["operator"]
