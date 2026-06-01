@@ -202,13 +202,9 @@ func setOAuthAuthCookie(c *gin.Context, token string) {
 }
 
 // frontendRedirectBase returns the URL prefix the OAuth callback should
-// redirect back to. We reuse the SMTP MailFrontendURL (already used by the
-// password-reset email links) when set; otherwise fall back to "/" so the
-// browser stays on the same origin.
+// redirect back to. Mirrors Python's oauth_callback, which always issues
+// relative "/?auth=..." / "/?error=..." redirects so the browser stays on
+// the same origin that served the SPA.
 func frontendRedirectBase() string {
-	cfg := server.GetConfig()
-	if cfg != nil && cfg.Mail.MailFrontendURL != "" {
-		return cfg.Mail.MailFrontendURL
-	}
 	return "/"
 }
