@@ -45,6 +45,7 @@ export enum DataSourceKey {
   RSS = 'rss',
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
+  AZURE_BLOB = 'azure_blob',
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
@@ -135,6 +136,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.OUTLOOK]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.AZURE_BLOB]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.TEAMS]: {
@@ -335,6 +339,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
     },
+    [DataSourceKey.AZURE_BLOB]: {
+      name: 'Azure Blob Storage',
+      description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
+      icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
+    },
   };
 };
 
@@ -503,6 +512,83 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'support@example.com, sales@example.com',
       tooltip: t('setting.outlookUserIdsTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
+  [DataSourceKey.AZURE_BLOB]: [
+    {
+      label: 'Auth Mode',
+      name: 'config.auth_mode',
+      type: FormFieldType.Select,
+      required: true,
+      options: [
+        { label: 'Account Key', value: 'account_key' },
+        { label: 'Connection String', value: 'connection_string' },
+        { label: 'SAS Token', value: 'sas_token' },
+      ],
+      tooltip: t('setting.azureBlobAuthModeTip'),
+    },
+    {
+      label: 'Account Name',
+      name: 'config.credentials.account_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'mystorageaccount',
+      tooltip: t('setting.azureBlobAccountNameTip'),
+    },
+    {
+      label: 'Account Key',
+      name: 'config.credentials.account_key',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobAccountKeyTip'),
+    },
+    {
+      label: 'Connection String',
+      name: 'config.credentials.connection_string',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobConnectionStringTip'),
+    },
+    {
+      label: 'Container URL',
+      name: 'config.credentials.container_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://account.blob.core.windows.net/container',
+      tooltip: t('setting.azureBlobContainerUrlTip'),
+    },
+    {
+      label: 'SAS Token',
+      name: 'config.credentials.sas_token',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.azureBlobSasTokenTip'),
+    },
+    {
+      label: 'Container Name',
+      name: 'config.credentials.container_name',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'my-container',
+      tooltip: t('setting.azureBlobContainerNameTip'),
+    },
+    {
+      label: 'Prefix (optional)',
+      name: 'config.prefix',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'documents/reports/',
+      tooltip: t('setting.azureBlobPrefixTip'),
     },
     {
       label: 'Batch Size',
@@ -1979,6 +2065,23 @@ export const DataSourceFormDefaultValues = {
         tenant_id: '',
         client_id: '',
         client_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.AZURE_BLOB]: {
+    name: '',
+    source: DataSourceKey.AZURE_BLOB,
+    config: {
+      auth_mode: 'account_key',
+      prefix: '',
+      batch_size: 2,
+      credentials: {
+        account_name: '',
+        account_key: '',
+        connection_string: '',
+        container_url: '',
+        sas_token: '',
+        container_name: '',
       },
     },
   },
