@@ -672,7 +672,7 @@ class RAGTools:
             return []
         kb_id, tenant_id = resolved
 
-        cks = [""]
+        cks = []
         tokens = 0
         for offset in range(0, 10000, 128):
             chunks = await thread_pool_exec(
@@ -687,11 +687,11 @@ class RAGTools:
                 retrieve_all=False,
             )
             for ck in chunks:
-                num = num_tokens_from_string(str(ck))
+                num = num_tokens_from_string(str(ck["content_with_weight"]))
                 if tokens + num > self.chat_mdl.max_length:
                     break
                 tokens += num
-                cks[-1] += str(ck)
+                cks.append(ck)
 
         if not cks:
             return []
