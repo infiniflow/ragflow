@@ -387,7 +387,7 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 	})
 }
 
-func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
+func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
