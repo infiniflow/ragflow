@@ -123,7 +123,8 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                 self._container_client = svc.get_container_client(container_name)
             elif container_url and sas_token:
                 # Mode 3: SAS token — mirrors RAGFlowAzureSasBlob
-                full_url = f"{container_url}?{sas_token}"
+                normalized_sas = str(sas_token).lstrip("?")
+                full_url = f"{container_url}?{normalized_sas}"
                 self._container_client = ContainerClient.from_container_url(full_url)
             else:
                 raise ConnectorMissingCredentialError(
@@ -263,68 +264,71 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         batch: list[Document] = []
 
         try:
-            blobs = list(self._container_client.list_blobs(name_starts_with=self.prefix or None))
+            for blob_props in self._container_client.list_blobs(
+                name_starts_with=self.prefix or None
+            ):
+                name: str = blob_props.name
+
+                if not _has_supported_extension(name, self.allow_images):
+                    continue
+
+                # ETag fingerprint check — skip blobs whose content hasn't
+                # changed.  Use the raw ETag (always present) as the hash;
+                # Azure updates it on every write so it's a reliable change
+                # signal without downloading.
+                current_etag = (blob_props.etag or "").strip('"')
+                if current_etag and etags.get(name) == current_etag:
+                    continue
+
+                # Time-window filter — for poll_source callers.
+                last_modified: datetime | None = blob_props.last_modified
+                if since_epoch and last_modified:
+                    if last_modified.timestamp() < since_epoch:
+                        continue
+
+                # Download blob content
+                try:
+                    blob_client = self._container_client.get_blob_client(name)
+                    data = blob_client.download_blob().readall()
+                except Exception as exc:
+                    logger.warning("Azure Blob: failed to download %s: %s", name, exc)
+                    continue
+
+                doc_updated_at = (
+                    last_modified.astimezone(timezone.utc)
+                    if last_modified
+                    else datetime.now(timezone.utc)
+                )
+
+                ext = _extension(name)
+                doc = Document(
+                    id=name,
+                    source="azure_blob",
+                    semantic_identifier=name,
+                    extension=ext,
+                    blob=data,
+                    doc_updated_at=doc_updated_at,
+                    size_bytes=len(data),
+                    fingerprint=current_etag or None,
+                    metadata={
+                        "container": _container_name(self._container_client),
+                        "etag": current_etag,
+                        "prefix": self.prefix,
+                    },
+                )
+                batch.append(doc)
+                if current_etag:
+                    etags[name] = current_etag
+
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
+        except UnexpectedValidationError:
+            raise
         except Exception as exc:
             raise UnexpectedValidationError(
                 f"Azure Blob listing failed: {exc}"
             ) from exc
-
-        for blob_props in blobs:
-            name: str = blob_props.name
-
-            if not _has_supported_extension(name, self.allow_images):
-                continue
-
-            # ETag fingerprint check — skip blobs whose content hasn't
-            # changed.  Use the raw ETag (always present) as the hash;
-            # Azure updates it on every write so it's a reliable change
-            # signal without downloading.
-            current_etag = (blob_props.etag or "").strip('"')
-            if current_etag and etags.get(name) == current_etag:
-                continue
-
-            # Time-window filter — for poll_source callers.
-            last_modified: datetime | None = blob_props.last_modified
-            if since_epoch and last_modified:
-                if last_modified.timestamp() < since_epoch:
-                    continue
-
-            # Download blob content
-            try:
-                blob_client = self._container_client.get_blob_client(name)
-                data = blob_client.download_blob().readall()
-            except Exception as exc:
-                logger.warning("Azure Blob: failed to download %s: %s", name, exc)
-                continue
-
-            doc_updated_at = (
-                last_modified.astimezone(timezone.utc)
-                if last_modified
-                else datetime.now(timezone.utc)
-            )
-
-            ext = _extension(name)
-            doc = Document(
-                id=name,
-                source="azure_blob",
-                semantic_identifier=name,
-                extension=ext,
-                blob=data,
-                doc_updated_at=doc_updated_at,
-                size_bytes=len(data),
-                metadata={
-                    "container": _container_name(self._container_client),
-                    "etag": current_etag,
-                    "prefix": self.prefix,
-                },
-            )
-            batch.append(doc)
-            if current_etag:
-                etags[name] = current_etag
-
-            if len(batch) >= self.batch_size:
-                yield batch
-                batch = []
 
         if batch:
             yield batch

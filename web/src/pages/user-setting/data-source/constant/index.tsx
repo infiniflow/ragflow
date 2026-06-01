@@ -544,6 +544,12 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'mystorageaccount',
       tooltip: t('setting.azureBlobAccountNameTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'account_key' && !(val ?? '').trim()
+          ? 'Account name is required for account key auth'
+          : true,
     },
     {
       label: 'Account Key',
@@ -551,6 +557,12 @@ export const DataSourceFormFields = {
       type: FormFieldType.Password,
       required: false,
       tooltip: t('setting.azureBlobAccountKeyTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'account_key' && !val
+          ? 'Account key is required for account key auth'
+          : true,
     },
     {
       label: 'Connection String',
@@ -558,6 +570,12 @@ export const DataSourceFormFields = {
       type: FormFieldType.Password,
       required: false,
       tooltip: t('setting.azureBlobConnectionStringTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'connection_string',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'connection_string' && !val
+          ? 'Connection string is required for connection string auth'
+          : true,
     },
     {
       label: 'Container URL',
@@ -566,6 +584,11 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'https://account.blob.core.windows.net/container',
       tooltip: t('setting.azureBlobContainerUrlTip'),
+      shouldRender: (values: any) => values?.config?.auth_mode === 'sas_token',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'sas_token' && !(val ?? '').trim()
+          ? 'Container URL is required for SAS token auth'
+          : true,
     },
     {
       label: 'SAS Token',
@@ -573,6 +596,11 @@ export const DataSourceFormFields = {
       type: FormFieldType.Password,
       required: false,
       tooltip: t('setting.azureBlobSasTokenTip'),
+      shouldRender: (values: any) => values?.config?.auth_mode === 'sas_token',
+      customValidate: (val: string, values: any) =>
+        values?.config?.auth_mode === 'sas_token' && !val
+          ? 'SAS token is required for SAS token auth'
+          : true,
     },
     {
       label: 'Container Name',
@@ -581,6 +609,19 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'my-container',
       tooltip: t('setting.azureBlobContainerNameTip'),
+      shouldRender: (values: any) =>
+        values?.config?.auth_mode === 'account_key' ||
+        values?.config?.auth_mode === 'connection_string',
+      customValidate: (val: string, values: any) => {
+        const mode = values?.config?.auth_mode;
+        if (
+          (mode === 'account_key' || mode === 'connection_string') &&
+          !(val ?? '').trim()
+        ) {
+          return 'Container name is required for this auth mode';
+        }
+        return true;
+      },
     },
     {
       label: 'Prefix (optional)',
