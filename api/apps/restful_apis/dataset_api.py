@@ -149,6 +149,8 @@ async def create(tenant_id: str = None):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
+    except LookupError as e:
+        return get_error_argument_result(str(e))
     except ValueError as e:
         return get_error_argument_result(str(e))
     except Exception as e:
@@ -495,17 +497,11 @@ async def search_datasets(tenant_id):
     req, err = await validate_and_parse_json_request(request, SearchDatasetsReq)
     if err is not None:
         return get_error_argument_result(err)
-    try:
-        success, result = await dataset_api_service.search_datasets(tenant_id, req)
-        if success:
-            return get_result(data=result)
-        else:
-            return get_error_data_result(message=result)
-    except Exception as e:
-        logging.exception(e)
-        if "not_found" in str(e):
-            return get_error_data_result(message="No chunk found! Check the chunk status please!")
-        return get_error_data_result(message="Internal server error")
+    success, result = await dataset_api_service.search_datasets(tenant_id, req)
+    if success:
+        return get_result(data=result)
+    else:
+        return get_error_data_result(message=result)
 
 
 @manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821

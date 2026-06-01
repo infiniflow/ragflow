@@ -364,5 +364,8 @@ func (s *ConnectorService) ListLog(connectorID, userID string, page, pageSize in
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
 	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
 	return logs, total, common.CodeSuccess, nil
 }
