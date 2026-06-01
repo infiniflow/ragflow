@@ -31,6 +31,7 @@ from rag.llm.tool_decorator import tool
 from rag.prompts.generator import citation_prompt, gen_meta_filter, kb_prompt
 from api.db.db_models import Document, Knowledgebase
 from rag.utils.tavily_conn import Tavily
+from common.token_utils import num_tokens_from_string
 
 
 class RAGTools:
@@ -85,6 +86,8 @@ class RAGTools:
             tools.append(self.filter_docs_by_metadata)
         if self.sql_kbs:
             tools.append(self.search_structured_data)
+        if self.kb_ids:
+            tools.append(self.summarize_document)
         chat_mdl.bind_tools(None, tools)
 
     def sys_prompt(self) -> str:
@@ -101,6 +104,7 @@ class RAGTools:
         has_web = self.tav is not None
         has_unstructured = bool(self.kb_ids)
         has_embedding = self.embed_mdl is not None
+        has_summarize = has_unstructured  # tool gated on kb_ids in __init__
 
         # Step 2 — document-scope narrowing bullets
         narrow_bullets = [
@@ -115,6 +119,19 @@ class RAGTools:
             )
 
         # Step 3 — retrieval paragraph, depending on which KB shapes are bound
+        summarize_special_case = (
+            " SPECIAL CASE — summarisation: if the user EXPLICITLY asked you "
+            "to summarise a specific document (phrasings like 'summarise the "
+            "security audit', 'give me a summary of doc X', 'tldr the "
+            "onboarding guide'), call `summarize_document` with the doc ID "
+            "obtained in step 2 INSTEAD OF `search_knowledge_bases`. Use this "
+            "tool ONLY for explicit summarisation requests — not for general "
+            "Q&A about a document's contents, which still goes through "
+            "`search_knowledge_bases`."
+            if has_summarize
+            else ""
+        )
+
         embedding_retry = (
             " Inspect the chunks `search_knowledge_bases` returns. If they are "
             "not fully relevant — they only hit on incidental keyword overlap, "
@@ -137,7 +154,7 @@ class RAGTools:
                 "`search_knowledge_bases` with the formalized question AND a short "
                 "keyword string (3-8 keywords plus 1-2 close synonyms for ambiguous "
                 "terms, in the same language as the question). Pass any doc IDs "
-                "collected in step 2 as `docid_scope`." + embedding_retry
+                "collected in step 2 as `docid_scope`." + embedding_retry + summarize_special_case
             )
         elif has_sql and not has_unstructured:
             retrieval_para = (
@@ -587,6 +604,100 @@ class RAGTools:
             self.kbinfos["chunks"].extend(kbinfos.get("chunks", []))
             self.kbinfos["doc_aggs"].extend(kbinfos.get("doc_aggs", []))
         return kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+
+    def _resolve_doc_tenant(self, doc_id: str) -> tuple[str, str] | None:
+        """Return ``(kb_id, tenant_id)`` for ``doc_id`` if and only if the
+        document belongs to one of the agent's bound unstructured KBs.
+
+        Returns ``None`` otherwise — used by ``summarize_document`` both as
+        a hallucination guard against fabricated 32-char hex IDs and as the
+        tenant-resolution step needed to query the doc store.
+
+        Sync DB call — wrap in ``thread_pool_exec`` at the call site.
+        """
+        rows = list(
+            Document.select(Document.kb_id).where(
+                (Document.id == doc_id) & (Document.kb_id.in_(self.kb_ids))
+            )
+        )
+        if not rows:
+            return None
+        kb_id = rows[0].kb_id
+        for kb in self.kbs:
+            if kb.id == kb_id:
+                return kb_id, kb.tenant_id
+        return None
+
+    @tool
+    async def summarize_document(self, doc_id: str) -> list[str]:
+        """Return a single document's content, position-ordered, ready to be summarised.
+
+        Call this tool ONLY when the user EXPLICITLY asks for a summary of a
+        specific document — phrasings like "summarize the security audit",
+        "give me a summary of doc X", "tldr the onboarding guide". Do NOT
+        call it for general Q&A: use ``search_knowledge_bases`` for that.
+
+        The tool fetches every chunk of the named document from the doc
+        store, sorted by page / position so reading order is preserved, and
+        formats them with ``kb_prompt`` so the result already respects the
+        chat model's context-length budget (chunks past the budget are
+        dropped with a warning). The output is the full chunk-formatted
+        text that you, the calling LLM, should then turn into a natural-
+        language summary in the user's language — applying
+        ``get_citation_guidelines`` to attribute claims to chunk IDs.
+
+        :param doc_id: a 32-character lowercase hex string (e.g.
+            ``41a5271858ca11f1bbb9047c16ec874f``). You DO NOT know any doc
+            IDs on your own and you MUST NOT invent one. Acceptable sources
+            are doc IDs returned VERBATIM from a previous
+            ``select_documents`` or ``filter_docs_by_metadata`` call in
+            this same turn — typically you will call ``select_documents``
+            first to map the user's spoken document title to an ID.
+
+        :returns: a list of formatted chunk blocks (one per chunk, in
+            document order, each carrying its ID / title / content) that
+            collectively fit within the chat model's context budget. An
+            empty list is returned when the doc ID is unknown to the bound
+            KBs or the document has no chunks indexed.
+        """
+        if not self.kb_ids:
+            return []
+
+        resolved = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
+        if resolved is None:
+            logging.warning(
+                f"summarize_document: doc_id {doc_id!r} is not in any bound "
+                "knowledge base — refusing to fetch (likely an LLM hallucination)"
+            )
+            return []
+        kb_id, tenant_id = resolved
+
+        cks = [""]
+        tokens = 0
+        for offset in range(0, 10000, 128):
+            chunks = await thread_pool_exec(
+                settings.retriever.chunk_list,
+                doc_id,
+                tenant_id,
+                [kb_id],
+                max_count=offset+128,
+                offset=offset,
+                fields=["content_with_weight"],
+                sort_by_position=True,
+                retrieve_all=False,
+            )
+            for ck in chunks:
+                num = num_tokens_from_string(str(ck))
+                if tokens + num > self.chat_mdl.max_length:
+                    break
+                tokens += num
+                cks[-1] += str(ck)
+
+        if not cks:
+            return []
+
+        kbinfos = {"chunks": cks, "doc_aggs": []}
+        return kb_prompt(kbinfos, self.chat_mdl.max_length)
 
     @tool
     async def search_structured_data(self, question: str) -> str:
