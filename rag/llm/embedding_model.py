@@ -320,7 +320,7 @@ class QWenEmbed(Base):
                     # No need to retry for 4XX error
                 if status_code == 200:
                     break
-                if retry < retry_max:
+                if retry < retry_max - 1:
                     logging.warning(f"Got error response from DashScope API (status: {status_code}, response: {resp}). Wait {retry_wait_secs} seconds. Retrying...")
                     time.sleep(retry_wait_secs)
                 else:
