@@ -56,8 +56,17 @@ def test_apply_enable_thinking_policy_qwen3_thinking_skip_disable():
 
 def test_apply_enable_thinking_policy_kimi():
     conf, kwargs = apply_enable_thinking_policy("kimi-k2.5", "Moonshot", {"reasoning": False})
-    assert conf == {}
-    assert kwargs["extra_body"]["thinking"] == {"type": "disabled"}
+    assert kwargs == {}
+    assert conf["thinking"] == {"type": "disabled"}
+    assert conf["temperature"] == 0.6
+    assert conf["top_p"] == 0.95
+
+
+def test_apply_enable_thinking_policy_kimi_default_enabled():
+    conf, kwargs = apply_enable_thinking_policy("kimi-k2.6", "Moonshot", {})
+    assert kwargs == {}
+    assert conf["thinking"] == {"type": "enabled"}
+    assert conf["temperature"] == 1.0
 
 
 def test_apply_enable_thinking_policy_deepseek():
