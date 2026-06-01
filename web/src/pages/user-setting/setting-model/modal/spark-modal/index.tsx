@@ -8,10 +8,13 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
-import omit from 'lodash/omit';
-import { memo, useCallback, useRef } from 'react';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
+import {
+  useFetchInstanceNameSet,
+  useHideWhenInstanceExists,
+  VerifyResult,
+} from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -23,7 +26,7 @@ const SparkModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -33,120 +36,140 @@ const SparkModal = ({
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
   const formRef = useRef<DynamicFormRef>(null);
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'tts']),
-      defaultValue: 'chat',
-      validation: {
-        message: t('modelTypeMessage'),
+  const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
+
+  const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+
+  const fields: FormFieldConfig[] = useMemo(
+    () => [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: { message: t('instanceNameMessage') },
       },
-    },
-    {
-      name: 'llm_name',
-      label: t('modelName'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('modelNameMessage'),
-      validation: {
-        message: t('SparkModelNameMessage'),
+      {
+        name: 'model_type',
+        label: t('modelType'),
+        type: FormFieldType.MultiSelect,
+        required: true,
+        options: buildModelTypeOptions(['chat', 'tts']),
+        defaultValue: ['chat'],
       },
-    },
-    {
-      name: 'spark_api_password',
-      label: t('addSparkAPIPassword'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPIPasswordMessage'),
-      validation: {
-        message: t('SparkAPIPasswordMessage'),
+      {
+        name: 'llm_name',
+        label: t('modelName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('modelNameMessage'),
+        validation: {
+          message: t('SparkModelNameMessage'),
+        },
       },
-    },
-    {
-      name: 'spark_app_id',
-      label: t('addSparkAPPID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPPIDMessage'),
-      validation: {
-        message: t('SparkAPPIDMessage'),
+      {
+        name: 'spark_api_password',
+        label: t('addSparkAPIPassword'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('SparkAPIPasswordMessage'),
+        validation: {
+          message: t('SparkAPIPasswordMessage'),
+        },
+        shouldRender: hideWhenInstanceExists,
       },
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'tts';
+      {
+        name: 'spark_app_id',
+        label: t('addSparkAPPID'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('SparkAPPIDMessage'),
+        validation: {
+          message: t('SparkAPPIDMessage'),
+        },
+        dependencies: ['model_type', 'instance_name'],
+        shouldRender: (formValues: any) => {
+          if (!hideWhenInstanceExists(formValues)) return false;
+          const modelType = formValues?.model_type;
+          if (Array.isArray(modelType)) {
+            return modelType.includes('tts');
+          }
+          return modelType === 'tts';
+        },
       },
-    },
-    {
-      name: 'spark_api_secret',
-      label: t('addSparkAPISecret'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPISecretMessage'),
-      validation: {
-        message: t('SparkAPISecretMessage'),
+      {
+        name: 'spark_api_secret',
+        label: t('addSparkAPISecret'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('SparkAPISecretMessage'),
+        validation: {
+          message: t('SparkAPISecretMessage'),
+        },
+        dependencies: ['model_type', 'instance_name'],
+        shouldRender: (formValues: any) => {
+          if (!hideWhenInstanceExists(formValues)) return false;
+          const modelType = formValues?.model_type;
+          if (Array.isArray(modelType)) {
+            return modelType.includes('tts');
+          }
+          return modelType === 'tts';
+        },
       },
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'tts';
+      {
+        name: 'spark_api_key',
+        label: t('addSparkAPIKey'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('SparkAPIKeyMessage'),
+        validation: {
+          message: t('SparkAPIKeyMessage'),
+        },
+        dependencies: ['model_type', 'instance_name'],
+        shouldRender: (formValues: any) => {
+          if (!hideWhenInstanceExists(formValues)) return false;
+          const modelType = formValues?.model_type;
+          if (Array.isArray(modelType)) {
+            return modelType.includes('tts');
+          }
+          return modelType === 'tts';
+        },
       },
-    },
-    {
-      name: 'spark_api_key',
-      label: t('addSparkAPIKey'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('SparkAPIKeyMessage'),
-      validation: {
-        message: t('SparkAPIKeyMessage'),
+      {
+        name: 'max_tokens',
+        label: t('maxTokens'),
+        type: FormFieldType.Number,
+        required: true,
+        placeholder: t('maxTokensTip'),
+        validation: {
+          min: 0,
+          message: t('maxTokensInvalidMessage'),
+        },
       },
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'tts';
-      },
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensInvalidMessage'),
-      },
-    },
-  ];
+    ],
+    [t, buildModelTypeOptions, hideWhenInstanceExists],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
-
     const data = {
-      ...omit(values, ['vision']),
-      model_type: modelType,
+      instance_name: values.instance_name as string,
+      model_type: values.model_type,
       llm_factory: llmFactory,
       max_tokens: values.max_tokens,
     };
 
-    await onOk?.(data as IAddLlmRequestBody);
+    await onOk?.(data as IAddProviderInstanceRequestBody);
   };
 
   const verifyParamsFunc = useCallback(() => {
     const values = formRef.current?.getValues();
-    const modelType =
-      values.model_type === 'chat' && values.vision
-        ? 'image2text'
-        : values.model_type;
     return {
       llm_factory: llmFactory,
-      model_type: modelType,
+      model_type: values.model_type,
     };
   }, [llmFactory]);
 
@@ -175,8 +198,9 @@ const SparkModal = ({
         ref={formRef}
         defaultValues={
           {
-            model_type: 'chat',
-            vision: false,
+            instance_name: '',
+            model_type: ['chat'],
+            max_tokens: 8192,
           } as FieldValues
         }
         labelClassName="font-normal"
