@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import json
 import logging
+import asyncio
 
 from common.constants import LLMType, ActiveStatusEnum
 from common.misc_utils import get_uuid
@@ -23,6 +25,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_from_pro
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
+from rag.llm import EmbeddingModel, ChatModel, RerankModel
 
 
 def list_providers(tenant_id: str, all_available: bool = False):
@@ -117,7 +120,7 @@ def delete_provider(tenant_id: str, provider_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         return False, f"Provider {provider_name} not found"
-    instance_objs = TenantModelInstanceService.get_by_provider_id(provider_obj.id)
+    instance_objs = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
     if not instance_objs:
         return False, f"No instances found for provider {provider_name}"
     instance_ids = [instance_obj.id for instance_obj in instance_objs]
@@ -202,7 +205,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
+async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str, verify: bool):
     """
     Create a provider instance.
 
@@ -215,6 +218,7 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
     :param api_key: API key
     :param base_url: base url
     :param region: region
+    :param verify: verify
     :return: (success, result_or_error_message)
     """
     if not provider_name:
@@ -236,6 +240,10 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
         same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
         if same_key_instance:
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
+        if verify:
+            success, msg = await verify_api_key(provider_name, api_key, base_url)
+            if not success:
+                return False, msg
 
     import json
     extra_fields = {}
@@ -277,6 +285,87 @@ def list_provider_instances(tenant_id: str, provider_name: str):
         })
 
     return True, instances
+
+
+async def verify_api_key(provider_name: str, api_key: str, base_url: str=None):
+    """
+    Verify API key for a provider.
+
+    :param provider_name: provider/factory name
+    :param api_key: API key
+    :param base_url: base url
+    :return: (success, result_or_error_message)
+    """
+    if not provider_name:
+        return False, "Provider name is required"
+
+    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+    if not factory_info:
+        return False, f"Provider '{provider_name}' not found"
+
+    factory_llms = factory_info[0]["llm"]
+    if not factory_llms:
+        return False, f"No models found for provider '{provider_name}'"
+
+    # test if api key works
+    chat_passed, embd_passed, rerank_passed = False, False, False
+    timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
+    extra = {"provider": provider_name}
+    msg = ""
+    for llm in factory_llms:
+        if not embd_passed and llm["model_type"] == LLMType.EMBEDDING.value:
+            assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
+            mdl = EmbeddingModel[provider_name](api_key, llm["llm_name"], base_url=base_url)
+            try:
+                arr, tc = asyncio.wait_for(
+                    asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
+                    timeout=timeout_seconds,
+                )
+                if len(arr[0]) == 0:
+                    raise Exception("Fail")
+                embd_passed = True
+            except Exception as e:
+                msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
+        elif not chat_passed and llm["model_type"] == LLMType.CHAT.value:
+            assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
+            mdl = ChatModel[provider_name](api_key, llm["llm_name"], base_url=base_url, **extra)
+            try:
+                async def check_streamly():
+                    async for chunk in mdl.async_chat_streamly(
+                            None,
+                            [{"role": "user", "content": "Hi"}],
+                            {"temperature": 0.9},
+                    ):
+                        if chunk and isinstance(chunk, str) and chunk.find("**ERROR**") < 0:
+                            return True
+                    return False
+
+                result = await asyncio.wait_for(check_streamly(), timeout=timeout_seconds)
+                if result:
+                    chat_passed = True
+                else:
+                    raise Exception("No valid response received")
+            except Exception as e:
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(e)
+        elif not rerank_passed and llm["model_type"] == LLMType.RERANK.value:
+            assert provider_name in RerankModel, f"Rerank model from {provider_name} is not supported yet."
+            mdl = RerankModel[provider_name](api_key, llm["llm_name"], base_url=base_url)
+            try:
+                arr, tc = await asyncio.wait_for(
+                    asyncio.to_thread(mdl.similarity, "What's the weather?", ["Is it sunny today?"]),
+                    timeout=timeout_seconds,
+                )
+                if len(arr) == 0 or tc == 0:
+                    raise Exception("Fail")
+                rerank_passed = True
+                logging.debug(f"passed model rerank {llm.llm_name}")
+            except Exception as e:
+                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(e)
+        if any([embd_passed, chat_passed, rerank_passed]):
+            msg = ""
+            break
+
+    return any([embd_passed, chat_passed, rerank_passed]), msg or "success"
 
 
 def show_provider_instance(tenant_id: str, provider_name: str, instance_name: str):
