@@ -532,6 +532,11 @@ export const DataSourceFormFields = {
       required: true,
       placeholder: 'https://your-domain.my.salesforce.com',
       tooltip: t('setting.salesforceInstanceUrlTip'),
+      validation: {
+        pattern: /^https:\/\/[a-zA-Z0-9.-]+\.salesforce\.com$/,
+        message:
+          'Must be a valid Salesforce domain (https://...salesforce.com)',
+      },
     },
     {
       label: 'Client ID',
@@ -562,6 +567,10 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'v59.0',
       tooltip: t('setting.salesforceApiVersionTip'),
+      validation: {
+        pattern: /^v\d+\.\d+$/,
+        message: 'API version must match format like v59.0',
+      },
     },
     {
       label: 'Batch Size',

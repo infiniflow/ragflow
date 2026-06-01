@@ -195,7 +195,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> Any:
-        return self._iter_documents(since_epoch=start)
+        return self._iter_documents(since_epoch=start, until_epoch=end if end else None)
 
     def load_from_checkpoint(
         self,
@@ -206,7 +206,8 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         if not isinstance(checkpoint, SalesforceCheckpoint):
             checkpoint = self.build_dummy_checkpoint()
         since = start if start else None
-        return self._iter_documents(checkpoint=checkpoint, since_epoch=since)
+        until = end if end else None
+        return self._iter_documents(checkpoint=checkpoint, since_epoch=since, until_epoch=until)
 
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -316,6 +317,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         obj: str,
         fields: list[str],
         since_epoch: float | None,
+        until_epoch: float | None = None,
     ) -> Generator[dict, None, None]:
         """Yield raw record dicts for *obj*, page by page, oldest first.
 
@@ -325,12 +327,18 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         returns records strictly newer than that.
         """
         field_list = ",".join(fields)
-        where = ""
+        filters = []
         if since_epoch:
-            iso = datetime.fromtimestamp(since_epoch, tz=timezone.utc).strftime(
+            since_iso = datetime.fromtimestamp(since_epoch, tz=timezone.utc).strftime(
                 "%Y-%m-%dT%H:%M:%SZ"
             )
-            where = f" WHERE SystemModstamp > {iso}"
+            filters.append(f"SystemModstamp > {since_iso}")
+        if until_epoch:
+            until_iso = datetime.fromtimestamp(until_epoch, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            filters.append(f"SystemModstamp <= {until_iso}")
+        where = f" WHERE {' AND '.join(filters)}" if filters else ""
         soql = f"SELECT {field_list} FROM {obj}{where} ORDER BY SystemModstamp ASC"
 
         url: str | None = f"{self._base()}/query?q={requests.utils.quote(soql)}"
@@ -370,6 +378,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         self,
         checkpoint: SalesforceCheckpoint | None = None,
         since_epoch: float | None = None,
+        until_epoch: float | None = None,
     ):
         from common.data_source.models import Document
 
@@ -405,7 +414,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
 
             latest_iso: str | None = cursor_iso
             try:
-                for record in self._query_records(obj, fields, obj_since):
+                for record in self._query_records(obj, fields, obj_since, until_epoch):
                     rec_id = record.get("Id")
                     if not rec_id:
                         continue
@@ -457,13 +466,11 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                         yield batch
                         batch = []
             except UnexpectedValidationError as exc:
-                # Mid-stream failure: surface it but keep prior cursor
-                # so the next run does not silently skip records we
-                # never persisted.
+                # Do not continue: advancing to the next object would let
+                # the task finish as DONE and move the global poll window
+                # past the failed object's missing records permanently.
                 logger.warning("Salesforce %s query failed: %s", obj, exc)
-                if latest_iso:
-                    cursors[obj] = latest_iso
-                continue
+                raise
 
             if latest_iso:
                 cursors[obj] = latest_iso
