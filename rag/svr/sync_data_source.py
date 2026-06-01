@@ -63,6 +63,7 @@ from common.data_source import (
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
+    HubSpotConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -1128,6 +1129,60 @@ class Outlook(SyncBase):
         return wrapper()
 
 
+class HubSpot(SyncBase):
+    SOURCE_NAME: str = FileSource.HUBSPOT
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_objects = self.conf.get("objects")
+        if isinstance(raw_objects, str):
+            objects = [o.strip() for o in raw_objects.split(",") if o.strip()]
+        elif isinstance(raw_objects, list):
+            objects = [str(o).strip() for o in raw_objects if str(o).strip()]
+        else:
+            objects = None
+
+        self.connector = HubSpotConnector(
+            batch_size=batch_size,
+            objects=objects,
+            include_knowledge_base=bool(self.conf.get("include_knowledge_base", True)),
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Always route through load_from_checkpoint so the per-object
+        # lastmodified cursor owns incrementality; poll_source would
+        # re-query every object from the caller's window each run and
+        # ignore the persisted per-object cursors entirely.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        self.log_connection(
+            "HubSpot",
+            f"objects({','.join(self.connector.objects)}) kb={self.connector.include_knowledge_base}",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
 class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
@@ -1990,6 +2045,7 @@ func_factory = {
     FileSource.SHAREPOINT: SharePoint,
     FileSource.ONEDRIVE: OneDrive,
     FileSource.OUTLOOK: Outlook,
+    FileSource.HUBSPOT: HubSpot,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,

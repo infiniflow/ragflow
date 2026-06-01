@@ -36,6 +36,7 @@ from .jira.connector import JiraConnector
 from .sharepoint_connector import SharePointConnector
 from .onedrive_connector import OneDriveConnector
 from .outlook_connector import OutlookConnector
+from .hubspot_connector import HubSpotConnector
 from .teams_connector import TeamsConnector
 from .moodle_connector import MoodleConnector
 from .airtable_connector import AirtableConnector
@@ -71,6 +72,7 @@ __all__ = [
     "SharePointConnector",
     "OneDriveConnector",
     "OutlookConnector",
+    "HubSpotConnector",
     "TeamsConnector",
     "MoodleConnector",
     "BlobType",

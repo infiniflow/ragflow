@@ -1101,8 +1101,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
       onedriveDescription:
         '连接 OneDrive 或 OneDrive for Business，通过 Microsoft Graph delta 查询索引文件和文件夹。',
-      onedriveTenantIdTip: 'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
-      onedriveClientIdTip: '拥有 Files.Read.All 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      onedriveTenantIdTip:
+        'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      onedriveClientIdTip:
+        '拥有 Files.Read.All 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
       onedriveClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
       onedriveFolderPathTip:
         '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
@@ -1117,6 +1119,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip:
         '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      hubspotDescription:
+        '连接 HubSpot，通过 CRM v3 API 增量同步并索引 CRM 记录（联系人、公司、交易、工单）以及知识库文章。',
+      hubspotAccessTokenTip:
+        'HubSpot 私有应用访问令牌或 OAuth 2.0 访问令牌，需具备 crm.objects.*.read 以及（用于知识库）content 权限范围。',
+      hubspotObjectsTip:
+        '要索引的 CRM 对象列表（逗号分隔）。默认值：contacts, companies, deals, tickets。',
+      hubspotKnowledgeBaseTip:
+        '同时索引已发布的 HubSpot 知识库文章。若您的门户未启用知识库附加功能，请关闭此选项。',
       teamsDescription:
         '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
       teamsTenantIdTip:
