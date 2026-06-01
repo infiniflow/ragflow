@@ -42,6 +42,19 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 
+function buildModelTypesWithVision(
+  modelType: string[] | string,
+  vision = false,
+): string[] {
+  const modelTypeArray = Array.isArray(modelType) ? modelType : [modelType];
+
+  if (modelTypeArray.includes('chat') && vision) {
+    return [...modelTypeArray, 'image2text'];
+  }
+
+  return modelTypeArray;
+}
+
 const OllamaModal = ({
   visible,
   hideModal,
@@ -251,7 +264,7 @@ const OllamaModal = ({
         instance_name: initialValues.instance_name || '',
         llm_name: initialValues.llm_name || '',
         model_type: initialValues.model_type
-          ? initialValues.model_type.split(',').filter(Boolean)
+          ? initialValues.model_type
           : ['chat'],
         api_base: initialValues.api_base || '',
         max_tokens: initialValues.max_tokens || 8192,
@@ -279,9 +292,6 @@ const OllamaModal = ({
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
-    const modelType = values.model_type.map((t: string) =>
-      t === 'chat' && values.vision ? 'image2text' : t,
-    );
     const modelTypeArray: string[] = Array.isArray(values.model_type)
       ? values.model_type
       : [values.model_type];
@@ -293,7 +303,7 @@ const OllamaModal = ({
         instance_name: values.instance_name as string,
         llm_factory: llmFactory,
         llm_name: values.llm_name as string,
-        model_type: modelType,
+        model_type: buildModelTypesWithVision(values.model_type, values.vision),
         api_base: values.api_base as string,
         api_key: values.api_key as string,
         max_tokens: values.max_tokens as number,
@@ -314,9 +324,7 @@ const OllamaModal = ({
     const values = formRef.current?.getValues();
     return {
       llm_factory: llmFactory,
-      model_type: values.model_type.map((t: string) =>
-        t === 'chat' && values.vision ? 'image2text' : t,
-      ),
+      model_type: buildModelTypesWithVision(values.model_type, values.vision),
     };
   }, [llmFactory]);
 
