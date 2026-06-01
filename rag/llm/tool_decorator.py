@@ -225,19 +225,58 @@ def _build_openai_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     }
 
 
-def tool(fn: Callable[..., Any]) -> Callable[..., Any]:
+# Sentinel separating "caller did not pass a timeout" from "caller passed None
+# (= run forever)". Plain ``None`` is a legal value for the kwarg.
+_TIMEOUT_UNSET: Any = object()
+
+
+def tool(
+    fn: Callable[..., Any] | None = None,
+    *,
+    timeout: float | int | None = _TIMEOUT_UNSET,
+) -> Callable[..., Any]:
     """Mark ``fn`` as an LLM tool and attach an OpenAI-format schema to it.
 
-    The wrapped callable is the same callable — we only set two attributes:
+    Usable in two styles:
+
+    * Bare:        ``@tool``               — no per-tool timeout; the session
+                                              falls back to its caller-supplied
+                                              ``request_timeout`` (default 10s).
+    * Parameterised: ``@tool(timeout=60)``  — 60s timeout, overrides the
+                                              session's default for this tool.
+                                              Pass ``timeout=None`` to disable
+                                              the timeout entirely (the tool
+                                              runs until it completes).
+
+    The wrapped callable is the same callable — we only set attributes on it:
 
     * ``fn._is_tool = True`` — sentinel so :meth:`Base.bind_tools` can tell a
       ``@tool`` callable apart from a raw schema dict.
     * ``fn.openai_schema`` — the schema dict passed verbatim to the LLM
       provider in the ``tools=[...]`` request field.
+    * ``fn._tool_timeout`` (only when ``timeout=`` was passed) — read by
+      :class:`FunctionToolSession` to override its default timeout for this
+      tool. May be ``None`` to mean "no timeout".
     """
-    fn.openai_schema = _build_openai_schema(fn)  # type: ignore[attr-defined]
-    fn._is_tool = True  # type: ignore[attr-defined]
-    return fn
+
+    def decorate(f: Callable[..., Any]) -> Callable[..., Any]:
+        f.openai_schema = _build_openai_schema(f)  # type: ignore[attr-defined]
+        f._is_tool = True  # type: ignore[attr-defined]
+        if timeout is not _TIMEOUT_UNSET:
+            f._tool_timeout = timeout  # type: ignore[attr-defined]
+        return f
+
+    # ``@tool`` (no parens) — ``fn`` is the function being decorated.
+    if fn is not None:
+        if not callable(fn):
+            raise TypeError(
+                "@tool used incorrectly. Use `@tool` or `@tool(timeout=N)`; "
+                f"got first positional argument of type {type(fn).__name__}."
+            )
+        return decorate(fn)
+
+    # ``@tool(timeout=N)`` — return the decorator that will receive the function.
+    return decorate
 
 
 def is_tool(obj: Any) -> bool:
@@ -290,4 +329,9 @@ class FunctionToolSession:
             # background until it returns. Callers should treat sync tools
             # that block on I/O accordingly.
             coro = thread_pool_exec(fn, **arguments)
-        return await asyncio.wait_for(coro, timeout=request_timeout)
+        # Per-tool timeout set via ``@tool(timeout=N)`` overrides the
+        # session-default. ``None`` is a legal explicit choice meaning
+        # "wait forever" — ``asyncio.wait_for(..., timeout=None)`` handles it.
+        configured = getattr(fn, "_tool_timeout", _TIMEOUT_UNSET)
+        effective_timeout = request_timeout if configured is _TIMEOUT_UNSET else configured
+        return await asyncio.wait_for(coro, timeout=effective_timeout)

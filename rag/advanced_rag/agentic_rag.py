@@ -73,6 +73,9 @@ class RAGTools:
         # populated by ``search_knowledge_bases`` and ``search_structured_data``
         # so the final answer can cite everything retrieved so far.
         self.kbinfos: dict[str, list] = {"chunks": [], "doc_aggs": []}
+        # Set to True after the first retrieval tool has stamped the citation
+        # rules onto its output, so subsequent retrieval calls don't repeat.
+        self._citations_injected: bool = False
 
         tools = [
             self.formalize_question,
@@ -199,16 +202,15 @@ class RAGTools:
                 "KB-grounded answers."
             )
         steps.append(
-            "**Compose the final answer with citations.** Apply the citation "
-            "rules in the '# Citation rules' section below VERBATIM to every "
-            "claim drawn from retrieved evidence. Do NOT invent your own "
+            "**Compose the final answer with citations.** Citation rules will "
+            "be delivered to you inline with the FIRST retrieval result of "
+            "this turn (look for a `# Citation rules` block at the top of the "
+            "tool output). Apply those rules VERBATIM. Do NOT invent your own "
             "citation style, and NEVER cite a source you did not actually "
             "retrieve in this turn."
         )
 
         numbered = "\n\n".join(f"{i}. {step}" for i, step in enumerate(steps, 1))
-
-        citation_guidelines = citation_prompt(self.user_defined_prompts).strip()
 
         return (
             "You are a Retrieval-Augmented-Generation (RAG) agent. Answer the "
@@ -219,12 +221,6 @@ class RAGTools:
             "Work through the following steps in order. Skip a step when it "
             "is obviously inapplicable.\n\n"
             f"{numbered}\n\n"
-            "# Citation rules\n\n"
-            "Apply the following rules VERBATIM to your final answer. They "
-            "are not optional, they are not negotiable, and there is no "
-            "tool to fetch them — they are stated here in full and you must "
-            "follow them every time you produce a final answer.\n\n"
-            f"{citation_guidelines}\n\n"
             "# Hard rules\n\n"
             "- DO NOT make anything up. If the retrieved evidence does not "
             "answer the question, reply with an explicit \"I don't have "
@@ -309,7 +305,7 @@ class RAGTools:
         )
         return self._metas_cache or {}
 
-    @tool
+    @tool(timeout=60)
     async def filter_docs_by_metadata(self, question: str) -> List[str]:
         """Narrow the search to a smaller document set using structured metadata.
 
@@ -382,6 +378,35 @@ class RAGTools:
                     return None
         return result
 
+    def _with_citation_guidelines(self, output: Any) -> Any:
+        """Stamp the citation rules onto the FIRST retrieval-tool output of the
+        turn, then short-circuit on subsequent calls.
+
+        The citation policy is static and applies to every final answer, but
+        the model only needs to see it once — and only when retrieval has
+        actually happened (otherwise there's nothing to cite). Injecting
+        inline with the tool result keeps the system prompt small and avoids
+        a separate tool round-trip that the model would routinely skip.
+
+        Accepts either ``str`` or ``list[str]`` (the two shapes the retrieval
+        tools currently return) and prepends a ``# Citation rules`` block.
+        """
+        if self._citations_injected:
+            return output
+        self._citations_injected = True
+        rules = citation_prompt(self.user_defined_prompts).strip()
+        header = (
+            "# Citation rules\n"
+            "Apply the following rules VERBATIM to your final answer. "
+            "They are stated here in full and apply for the rest of this "
+            "turn.\n\n"
+            f"{rules}\n\n"
+            "----\n\n"
+        )
+        if isinstance(output, list):
+            return [header] + output
+        return header + str(output)
+
     def _filter_known_doc_ids(self, candidate_ids: list[str]) -> set[str]:
         """Return the subset of ``candidate_ids`` that actually belong to a
         bound unstructured KB.
@@ -403,7 +428,7 @@ class RAGTools:
         )
         return {row.id for row in rows}
 
-    @tool
+    @tool(timeout=60)
     async def select_documents(self, question: str, max_docs:int=512) -> List[str]:
         """Ask an LLM to pick the document IDs whose titles look relevant to the question.
 
@@ -607,7 +632,9 @@ class RAGTools:
         if kbinfos:
             self.kbinfos["chunks"].extend(kbinfos.get("chunks", []))
             self.kbinfos["doc_aggs"].extend(kbinfos.get("doc_aggs", []))
-        return kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        return self._with_citation_guidelines(
+            kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        )
 
     def _resolve_doc_tenant(self, doc_id: str) -> tuple[str, str] | None:
         """Return ``(kb_id, tenant_id)`` for ``doc_id`` if and only if the
@@ -717,9 +744,11 @@ class RAGTools:
         if kbinfos:
             self.kbinfos["chunks"].extend(kbinfos.get("chunks", []))
             self.kbinfos["doc_aggs"].extend(kbinfos.get("doc_aggs", []))
-        return kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        return self._with_citation_guidelines(
+            kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        )
 
-    @tool
+    @tool(timeout=60)
     async def search_structured_data(self, question: str) -> str:
         """Query the structured (tabular) knowledge bases by translating the
         question into SQL and executing it.
@@ -781,7 +810,7 @@ class RAGTools:
         if new_doc_aggs:
             self.kbinfos["doc_aggs"].extend(new_doc_aggs)
 
-        return ans.get("answer", "") or ""
+        return self._with_citation_guidelines(ans.get("answer", "") or "")
 
     @tool
     async def web_search(self, query: str) -> List[dict[str, Any]]:
@@ -804,7 +833,9 @@ class RAGTools:
         start_idx = len(self.kbinfos.get("chunks", []))
         self.kbinfos["chunks"].extend(tav_res["chunks"])
         self.kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
-        return kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        return self._with_citation_guidelines(
+            kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
+        )
 
     def get_citation_guidelines(self) -> str:
         """Return the citation guidelines this agent uses.
