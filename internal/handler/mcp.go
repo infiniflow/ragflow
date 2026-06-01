@@ -98,7 +98,8 @@ func mcpErrorResponse(c *gin.Context, err error) bool {
 	switch {
 	case errors.Is(err, service.ErrMCPInvalidType),
 		errors.Is(err, service.ErrMCPInvalidName),
-		errors.Is(err, service.ErrMCPInvalidURL):
+		errors.Is(err, service.ErrMCPInvalidURL),
+		errors.Is(err, service.ErrMCPTestFailed):
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": mcpErrorMessage(err)})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": err.Error()})
@@ -123,6 +124,11 @@ func mcpErrorMessage(err error) string {
 		return "Invalid url."
 	case errors.Is(err, service.ErrMCPInvalidType):
 		return "Unsupported MCP server type."
+	case errors.Is(err, service.ErrMCPTestFailed):
+		if detail := unwrapDetail(err, service.ErrMCPTestFailed); detail != "" {
+			return detail
+		}
+		return "Test MCP error."
 	default:
 		return err.Error()
 	}

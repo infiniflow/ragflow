@@ -194,6 +194,10 @@ var (
 	ErrMCPInvalidName = errors.New("invalid MCP name")
 	// ErrMCPInvalidURL mirrors Python's "Invalid url.".
 	ErrMCPInvalidURL = errors.New("invalid url")
+	// ErrMCPTestFailed is returned by TestServer when the live connection or
+	// tool-list fetch fails. The handler maps this to code 102 (DATA_ERROR),
+	// matching Python's test_mcp which never returns HTTP 500 for fetch errors.
+	ErrMCPTestFailed = errors.New("MCP test failed")
 )
 
 // ImportResult is a single per-server outcome in the bulk import response,
@@ -398,7 +402,7 @@ func (s *MCPService) TestServer(mcpID string, req *TestServerRequest) ([]map[str
 		Timeout:    timeout,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Test MCP error (id=%s): %v", mcpID, err)
+		return nil, fmt.Errorf("%w: Test MCP error (id=%s): %v", ErrMCPTestFailed, mcpID, err)
 	}
 
 	out := make([]map[string]interface{}, 0, len(tools))
