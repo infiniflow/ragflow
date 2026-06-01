@@ -1395,6 +1395,7 @@ class LiteLLMBase(ABC):
         )
 
         gen_conf.pop("max_tokens", None)
+        gen_conf.pop("model_type", None)  # RAGFlow-internal field, not a valid LiteLLM/API param
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
