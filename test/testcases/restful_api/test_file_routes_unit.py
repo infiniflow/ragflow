@@ -16,12 +16,16 @@
 
 import asyncio
 import importlib.util
+import logging
 import sys
 from enum import Enum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class _DummyManager:
@@ -636,11 +640,13 @@ def test_convert_branch_matrix_unit(monkeypatch):
 
 
 def _load_file_api_service(monkeypatch):
+    LOGGER.debug("_load_file_api_service: entry")
     repo_root = Path(__file__).resolve().parents[3]
 
     api_pkg = ModuleType("api")
     api_pkg.__path__ = [str(repo_root / "api")]
     monkeypatch.setitem(sys.modules, "api", api_pkg)
+    LOGGER.debug("_load_file_api_service: mocked api package")
 
     common_pkg = ModuleType("api.common")
     common_pkg.__path__ = []
@@ -708,6 +714,7 @@ def _load_file_api_service(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "api.db.services.file_service", file_service_mod)
     services_pkg.file_service = file_service_mod
+    LOGGER.debug("_load_file_api_service: mocked api.db.services.file_service")
 
     file_utils_mod = ModuleType("api.utils.file_utils")
     file_utils_mod.filename_type = lambda _filename: _ServiceFileType.DOC.value
@@ -746,7 +753,14 @@ def _load_file_api_service(monkeypatch):
     spec = importlib.util.spec_from_file_location("api.apps.services.file_api_service", module_path)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "api.apps.services.file_api_service", module)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        LOGGER.exception(
+            "_load_file_api_service: spec.loader.exec_module(module) failed"
+        )
+        raise
+    LOGGER.debug("_load_file_api_service: spec.loader.exec_module(module) completed")
     return module
 
 
