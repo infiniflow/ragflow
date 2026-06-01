@@ -3118,6 +3118,17 @@ func (p *Parser) parseModelParseCommand() (*Command, error) {
 func (p *Parser) parseCheckCommand() (*Command, error) {
 	p.nextToken() // consume CHECK
 
+	switch p.curToken.Type {
+	case TokenInstance:
+		return p.parseCheckInstanceCommand()
+	case TokenProvider:
+		return p.parseCheckProviderByKeyCommand()
+	default:
+		return nil, fmt.Errorf("expected INSTANCE or PROVIDER after CHECK")
+	}
+}
+
+func (p *Parser) parseCheckInstanceCommand() (*Command, error) {
 	if p.curToken.Type != TokenInstance {
 		return nil, fmt.Errorf("expected INSTANCE after CHECK")
 	}
@@ -3148,6 +3159,55 @@ func (p *Parser) parseCheckCommand() (*Command, error) {
 	cmd := NewCommand("check_provider_connection")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
+	return cmd, nil
+}
+
+func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after CHECK")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name after PROVIDER")
+	}
+	providerName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type != TokenRegion {
+		return nil, fmt.Errorf("expected REGION after provider name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected region name after REGION")
+	}
+	regionName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type != TokenKey {
+		return nil, fmt.Errorf("expected KEY after region name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected API key after KEY")
+	}
+	apiKey := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("unexpected token: %s", p.curToken.Value)
+	}
+
+	cmd := NewCommand("check_provider_with_key")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["region"] = regionName
+	cmd.Params["api_key"] = apiKey
+
 	return cmd, nil
 }
 
