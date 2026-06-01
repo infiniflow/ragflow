@@ -168,13 +168,9 @@ RAGFlow(user)> list supported models from 'minimax' 'test';
 +------------------------+
 | model_name             |
 +------------------------+
+| MiniMax-M3             |
 | MiniMax-M2.7           |
 | MiniMax-M2.7-highspeed |
-| MiniMax-M2.5           |
-| MiniMax-M2.5-highspeed |
-| MiniMax-M2.1           |
-| MiniMax-M2.1-highspeed |
-| MiniMax-M2             |
 +------------------------+
 ```
 
@@ -185,14 +181,10 @@ RAGFlow(user)> list models from 'minimax';
 +------------+-------------+------------------------+
 | max_tokens | model_types | name                   |
 +------------+-------------+------------------------+
+| 204800     | [chat]      | minimax-m3             |
 | 204800     | [chat]      | minimax-m2.7           |
 | 204800     | [chat]      | minimax-m2.7-highspeed |
-| 204800     | [chat]      | minimax-m2.5           |
-| 204800     | [chat]      | minimax-m2.5-highspeed |
-| 204800     | [chat]      | minimax-m2.1           |
-| 204800     | [chat]      | minimax-m2.1-highspeed |
-| 204800     | [chat]      | minimax-m2             |
-| 65536      | [chat]      | minimax-m2-her         |
+| 8192       | [tts]       | speech-2.8-hd          |
 +------------+-------------+------------------------+
 ```
 
@@ -224,14 +216,10 @@ RAGFlow(user)> list models from 'minimax' 'test';
 +------------+-------------+------------------------+--------+
 | max_tokens | model_types | name                   | status |
 +------------+-------------+------------------------+--------+
+| 204800     | [chat]      | minimax-m3             | active |
 | 204800     | [chat]      | minimax-m2.7           | active |
 | 204800     | [chat]      | minimax-m2.7-highspeed | active |
-| 204800     | [chat]      | minimax-m2.5           | active |
-| 204800     | [chat]      | minimax-m2.5-highspeed | active |
-| 204800     | [chat]      | minimax-m2.1           | active |
-| 204800     | [chat]      | minimax-m2.1-highspeed | active |
-| 204800     | [chat]      | minimax-m2             | active |
-| 65536      | [chat]      | minimax-m2-her         | active |
+| 8192       | [tts]       | speech-2.8-hd          | active |
 +------------+-------------+------------------------+--------+
 ```
 
@@ -242,7 +230,7 @@ RAGFlow(user)> list providers;
 | base_url                                                                 | name        | total_models |
 +--------------------------------------------------------------------------+-------------+--------------+
 | map[default:https://ark.cn-beijing.volces.com/api/v3]                    | VolcEngine  | 2            |
-| map[default:https://api.minimaxi.com/ global:https://api.minimax.io/]    | MiniMax     | 8            |
+| map[default:https://api.minimaxi.com/ global:https://api.minimax.io/]    | MiniMax     | 4            |
 | map[default:https://api.moark.com/v1]                                    | Gitee       | 5            |
 +--------------------------------------------------------------------------+-------------+--------------+
 ```
