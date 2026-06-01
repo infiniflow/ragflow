@@ -231,10 +231,9 @@ def test_transfer_to_sections_naive_image_carries_caption_and_tag(monkeypatch):
     assert "@@" in text and "##" in text, "position tag must be embedded in text"
 
 
-def test_transfer_to_sections_pipeline_image_has_empty_text_and_typed_position(monkeypatch):
-    """On the pipeline path the image block carries an empty text field and a
-    real (separate) line_tag — the rag/flow consumer sets layout_type from
-    the second slot and calls crop(poss) using the third slot."""
+def test_transfer_to_sections_pipeline_image_keeps_caption_and_typed_position(monkeypatch):
+    """On the pipeline path the image block keeps its caption text for semantic
+    retrieval and a real (separate) line_tag for crop(poss)."""
     m = _load_somark_parser(monkeypatch)
     p = _make_parser(m)
 
@@ -243,7 +242,7 @@ def test_transfer_to_sections_pipeline_image_has_empty_text_and_typed_position(m
 
     assert len(image_secs) == 1
     text, layout, line_tag = image_secs[0]
-    assert text == ""
+    assert text == "Figure caption from understanding"
     assert layout == "image"
     assert line_tag.startswith("@@") and line_tag.endswith("##")
 

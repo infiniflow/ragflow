@@ -33,7 +33,7 @@ import time
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import numpy as np
 import pdfplumber
@@ -690,10 +690,14 @@ class SoMarkParser(RAGFlowPdfParser):
                     if not bbox or len(bbox) != 4:
                         continue  # no geometry -> nothing to crop
                     line_tag = self._line_tag(tag_input)
+                    image_seq += 1
+                    caption = (block.get("content") or "").strip()
+                    label = caption or f"{btype} {image_seq}"
                     if typed:
                         # 3-tuple: layout_type + a real (separate) position field;
-                        # the image carries no text. crop() uses line_tag downstream.
-                        sections.append(("", internal, line_tag))
+                        # keep the caption in text so figure understanding can be
+                        # embedded and retrieved while crop() still uses line_tag.
+                        sections.append((label, internal, line_tag))
                     else:
                         # 2-tuple (naive.py): the chunk id is hash(content + doc_id),
                         # so an empty-text image chunk would collide across every
@@ -703,9 +707,6 @@ class SoMarkParser(RAGFlowPdfParser):
                         # id. The tag is appended so tokenize_chunks() -> crop() can
                         # still recover the figure; remove_tag() then strips it, leaving
                         # the caption as the chunk text.
-                        image_seq += 1
-                        caption = (block.get("content") or "").strip()
-                        label = caption or f"{btype} {image_seq}"
                         sections.append((f"{label}{line_tag}", ""))
                     continue
                 text = self._block_text(block, internal)
@@ -743,7 +744,7 @@ class SoMarkParser(RAGFlowPdfParser):
             file_name = Path(filepath).stem.replace(" ", "") + ".pdf"
             temp_pdf = tmp_dir / file_name
             with open(temp_pdf, "wb") as f:
-                f.write(binary)
+                f.write(binary.getvalue() if isinstance(binary, BytesIO) else binary)
             pdf_path = temp_pdf
         else:
             pdf_path = Path(filepath)

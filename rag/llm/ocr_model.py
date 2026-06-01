@@ -227,8 +227,23 @@ class SoMarkOcrModel(Base, SoMarkParser):
         if not isinstance(config, dict):
             config = {}
 
+        key_as_secret = (
+            key
+            if isinstance(key, str) and key and not key.lstrip().startswith("{")
+            else ""
+        )
+
         def _resolve(ui_key: str, env_key: str, default=""):
-            return config.get(ui_key, config.get(env_key, os.environ.get(env_key, default)))
+            return config.get(
+                ui_key,
+                config.get(
+                    env_key,
+                    kwargs.get(
+                        ui_key,
+                        kwargs.get(env_key, os.environ.get(env_key, default)),
+                    ),
+                ),
+            )
 
         def _resolve_bool(ui_key: str, env_key: str, default: bool) -> bool:
             raw = _resolve(ui_key, env_key, int(default))
@@ -245,8 +260,12 @@ class SoMarkOcrModel(Base, SoMarkParser):
             except (TypeError, ValueError):
                 return default
 
-        base_url = _resolve("somark_base_url", "SOMARK_BASE_URL", "https://somark.tech/api/v1")
-        api_key = _resolve("somark_api_key", "SOMARK_API_KEY", "")
+        base_url = _resolve(
+            "somark_base_url",
+            "SOMARK_BASE_URL",
+            kwargs.get("base_url", "https://somark.tech/api/v1"),
+        )
+        api_key = _resolve("somark_api_key", "SOMARK_API_KEY", key_as_secret)
         image_format = _resolve("somark_image_format", "SOMARK_IMAGE_FORMAT", "url")
         formula_format = _resolve("somark_formula_format", "SOMARK_FORMULA_FORMAT", "latex")
         table_format = _resolve("somark_table_format", "SOMARK_TABLE_FORMAT", "html")

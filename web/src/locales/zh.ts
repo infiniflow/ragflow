@@ -1459,7 +1459,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         formulaFormat: '公式格式',
         tableFormat: '表格格式',
         csFormat: '化学结构式格式',
-        sectionFeatureConfig: ' 特色功能配置',
+        sectionFeatureConfig: '特色功能配置',
         enableInlineImage: '返回文中图',
         enableTableImage: '返回表中图',
         enableImageUnderstanding: '图片理解',

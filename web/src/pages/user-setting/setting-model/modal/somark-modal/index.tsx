@@ -38,6 +38,7 @@ const FORMAT_LABELS = {
 } as const;
 
 export type SoMarkFormValues = {
+  instance_name: string;
   llm_name: string;
   somark_base_url: string;
   somark_api_key?: string;
@@ -86,6 +87,9 @@ const SoMarkModal = ({
   const FormSchema = useMemo(
     () =>
       z.object({
+        instance_name: z.string().min(1, {
+          message: t('setting.instanceNameMessage'),
+        }),
         llm_name: z.string().min(1, {
           message: t('setting.somark.modelNameMessage'),
         }),
@@ -125,6 +129,7 @@ const SoMarkModal = ({
   const form = useForm<SoMarkFormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
+      instance_name: '',
       llm_name: '',
       somark_base_url: '',
       somark_api_key: '',
@@ -163,6 +168,14 @@ const SoMarkModal = ({
             className="space-y-5"
             id="somark-form"
           >
+            <RAGFlowFormItem
+              name="instance_name"
+              label={t('setting.instanceName')}
+              tooltip={t('setting.instanceNameTip')}
+              required
+            >
+              <Input placeholder={t('setting.instanceNameMessage')} />
+            </RAGFlowFormItem>
             <RAGFlowFormItem
               name="llm_name"
               label={t('setting.modelName')}

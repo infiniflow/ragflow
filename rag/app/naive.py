@@ -345,7 +345,14 @@ def by_somark(
 
         if somark_llm_name:
             try:
-                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, somark_llm_name)
+                try:
+                    ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, somark_llm_name)
+                except Exception:
+                    if "@" in somark_llm_name:
+                        raise
+                    from api.db.services.tenant_llm_service import TenantLLMService
+
+                    ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, somark_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -358,8 +365,9 @@ def by_somark(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle SoMark ({somark_llm_name}): {e}")
-
-        return None, None, None
+                if callback:
+                    callback(-1, f"Failed to parse pdf via SoMark ({somark_llm_name}): {e}")
+                return None, None, None
 
     if callback:
         callback(-1, "SoMark not found.")

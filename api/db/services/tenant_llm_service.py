@@ -229,11 +229,18 @@ class TenantLLMService(CommonService):
             if model_config["llm_factory"] not in OcrModel:
                 logging.error(f"Factory {model_config['llm_factory']} not in ocr model. Supported factories: {OcrModel.keys()}")
                 return None
+            model_extra = model_config.get("extra") or {}
+            if isinstance(model_extra, str):
+                try:
+                    model_extra = json.loads(model_extra)
+                except Exception:
+                    model_extra = {}
+            ocr_kwargs = {**model_extra, **kwargs}
             return OcrModel[model_config["llm_factory"]](
                 key=api_key,
                 model_name=model_config["llm_name"],
                 base_url=model_config.get("api_base", ""),
-                **kwargs,
+                **ocr_kwargs,
             )
 
         return None
@@ -478,14 +485,18 @@ class TenantLLMService(CommonService):
 
     @classmethod
     def _collect_somark_env_config(cls) -> dict | None:
+        # SoMark requires an API key; refuse to auto-provision a tenant
+        # OCR model from env unless real credentials are supplied, otherwise
+        # the model is registered but fails at request time.
+        api_key = os.environ.get("SOMARK_API_KEY")
+        if not api_key:
+            return None
         cfg = dict(SOMARK_DEFAULT_CONFIG)
-        found = False
         for key in SOMARK_ENV_KEYS:
             val = os.environ.get(key)
             if val:
-                found = True
                 cfg[key] = val
-        return cfg if found else None
+        return cfg
 
     @classmethod
     @DB.connection_context()
@@ -498,19 +509,24 @@ class TenantLLMService(CommonService):
         if not cfg:
             return None
 
-        saved_models = cls.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
-
         def _parse_api_key(raw: str) -> dict:
             try:
                 return json.loads(raw or "{}")
             except Exception:
                 return {}
 
-        for item in saved_models:
-            api_cfg = _parse_api_key(item.api_key)
-            normalized = {k: api_cfg.get(k, SOMARK_DEFAULT_CONFIG.get(k)) for k in SOMARK_ENV_KEYS}
-            if normalized == cfg:
-                return item.llm_name
+        def _find_matching(models) -> str | None:
+            for item in models:
+                api_cfg = _parse_api_key(item.api_key)
+                normalized = {k: api_cfg.get(k, SOMARK_DEFAULT_CONFIG.get(k)) for k in SOMARK_ENV_KEYS}
+                if normalized == cfg:
+                    return item.llm_name
+            return None
+
+        saved_models = cls.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
+        matched = _find_matching(saved_models)
+        if matched:
+            return matched
 
         used_names = {item.llm_name for item in saved_models}
         idx = 1
@@ -532,8 +548,14 @@ class TenantLLMService(CommonService):
                 )
                 return candidate
             except IntegrityError:
-                logging.warning("SoMark env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
-                used_names.add(candidate)
+                logging.warning("SoMark env model %s already exists for tenant %s, re-checking for a matching row", candidate, tenant_id)
+                # A concurrent worker may have just inserted an identical row;
+                # reuse it instead of creating a duplicate under the next name.
+                refreshed = cls.query(tenant_id=tenant_id, llm_factory="SoMark", model_type=LLMType.OCR.value)
+                matched = _find_matching(refreshed)
+                if matched:
+                    return matched
+                used_names = {item.llm_name for item in refreshed}
                 idx += 1
                 continue
 

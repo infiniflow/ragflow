@@ -342,7 +342,11 @@ class Parser(ProcessBase):
                 parser_model_name = raw_parse_method.rsplit("@", 1)[0]
                 parse_method = "PaddleOCR"
             elif lowered.endswith("@somark"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                # Keep the full 3-segment ``<llm_name>@<instance_name>@<provider>``
+                # form produced by the new Tenant LLM Provider UI (#14595);
+                # ``get_model_config_from_provider_instance`` -> ``split_model_name``
+                # downstream requires all three segments.
+                parser_model_name = raw_parse_method
                 parse_method = "SoMark"
 
         # DeepDOC returns structured page boxes directly.
@@ -525,7 +529,14 @@ class Parser(ProcessBase):
                 raise RuntimeError("SoMark model not configured. Please add SoMark in Model Providers or set SOMARK_* env.")
 
             tenant_id = self._canvas._tenant_id
-            ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            try:
+                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, parser_model_name)
+            except Exception:
+                if "@" in parser_model_name:
+                    raise
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                ocr_model_config = TenantLLMService.get_model_config(tenant_id, LLMType.OCR.value, parser_model_name)
             ocr_model = LLMBundle(tenant_id, ocr_model_config)
             pdf_parser = ocr_model.mdl
 
@@ -701,7 +712,10 @@ class Parser(ProcessBase):
                 b["doc_type_kwd"] = "text"
             elif layout == "table":
                 b["doc_type_kwd"] = "table"
-            elif layout == "figure":
+            elif layout in {"figure", "image"}:
+                # Markdown writer below only renders layout_type == "figure";
+                # normalize "image" so SoMark/PaddleOCR media render inline.
+                b["layout_type"] = "figure"
                 b["doc_type_kwd"] = "image"
             elif not has_layout and b.get("image") is not None:
                 b["doc_type_kwd"] = "image"
