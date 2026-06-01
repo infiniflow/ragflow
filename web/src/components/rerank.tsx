@@ -1,9 +1,7 @@
-import { LlmModelType } from '@/constants/knowledge';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { SelectWithSearch } from './originui/select-with-search';
 import { SliderInputFormField } from './slider-input-form-field';
 import {
   FormControl,
@@ -26,8 +24,6 @@ const RerankId = 'rerank_id';
 function RerankFormField() {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
-  const allOptions = useSelectLlmOptionsByModelType();
-  const options = allOptions[LlmModelType.Rerank];
 
   return (
     <FormField
@@ -37,12 +33,12 @@ function RerankFormField() {
         <FormItem>
           <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
           <FormControl>
-            <SelectWithSearch
+            <ModelTreeSelect
+              modelTypes={['rerank']}
               allowClear
               placeholder={t('rerankPlaceholder')}
               {...field}
-              options={options}
-            ></SelectWithSearch>
+            />
           </FormControl>
           <FormMessage />
         </FormItem>

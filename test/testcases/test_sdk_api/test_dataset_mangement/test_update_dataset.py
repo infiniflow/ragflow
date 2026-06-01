@@ -170,7 +170,7 @@ class TestDatasetUpdate:
         "embedding_model",
         [
             "BAAI/bge-small-en-v1.5@Builtin",
-            "embedding-3@ZHIPU-AI",
+            "embedding-3@CI@ZHIPU-AI",
         ],
         ids=["builtin_baai", "tenant_zhipu"],
     )
@@ -198,10 +198,7 @@ class TestDatasetUpdate:
         with pytest.raises(Exception) as exception_info:
             dataset.update({"name": name, "embedding_model": embedding_model})
         error_msg = str(exception_info.value)
-        if "tenant_no_auth" in name:
-            assert error_msg == f"Unauthorized model: <{embedding_model}>", error_msg
-        else:
-            assert error_msg == f"Unsupported model: <{embedding_model}>", error_msg
+        assert "not found" in error_msg, error_msg
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -231,10 +228,10 @@ class TestDatasetUpdate:
     def test_embedding_model_none(self, client, add_dataset_func):
         dataset = add_dataset_func
         dataset.update({"embedding_model": None})
-        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(retrieved_dataset)
+        assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

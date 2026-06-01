@@ -575,6 +575,7 @@ class Dealer:
             rerank_mdl=None,
             highlight=False,
             rank_feature: dict | None = {PAGERANK_FLD: 10},
+            trace_id=None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -614,12 +615,24 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
+        term_similarity_weight = 1 - vector_similarity_weight
+        logging.debug(
+            "[Search] retrieval weights: trace_id=%s kb_count=%s similarity_threshold=%s "
+            "vector_similarity_weight=%s full_text_weight=%s rerank_enabled=%s",
+            trace_id,
+            len(kb_ids),
+            similarity_threshold,
+            vector_similarity_weight,
+            term_similarity_weight,
+            bool(rerank_mdl),
+        )
+
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
                 rerank_mdl,
                 sres,
                 question,
-                1 - vector_similarity_weight,
+                term_similarity_weight,
                 vector_similarity_weight,
                 rank_feature=rank_feature,
             )
@@ -636,7 +649,7 @@ class Dealer:
                 sim, tsim, vsim = self.rerank(
                     sres,
                     question,
-                    1 - vector_similarity_weight,
+                    term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
@@ -650,7 +663,7 @@ class Dealer:
                     sres,
                     question,
                     knn_scores,
-                    1 - vector_similarity_weight,
+                    term_similarity_weight,
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )

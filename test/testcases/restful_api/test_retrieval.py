@@ -84,7 +84,7 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
 @pytest.mark.p2
 def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
-    # /api/v1/retrieval is SDK compatibility endpoint from api/apps/sdk/doc.py.
+    # /api/v1/retrieval is SDK compatibility endpoint registered from chunk_api.py.
     res = rest_client.post(
         "/retrieval",
         json={"dataset_ids": [dataset_id], "question": "test TXT file", "top_k": 5},
@@ -273,6 +273,45 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
         assert body["code"] == expected_code, (scenario_name, body)
         if expected_code != 0:
             assert expected_message in body["message"], (scenario_name, body)
+
+
+@pytest.mark.p2
+def test_retrieval_document_ids_and_metadata_condition_contract(rest_client, ensure_parsed_document):
+    dataset_id, document_id = ensure_parsed_document()
+
+    invalid_doc_ids_res = rest_client.post(
+        "/retrieval",
+        json={"question": "chunk", "dataset_ids": [dataset_id], "document_ids": "bad"},
+    )
+    assert invalid_doc_ids_res.status_code == 200
+    invalid_doc_ids_payload = invalid_doc_ids_res.json()
+    assert invalid_doc_ids_payload["code"] == 102, invalid_doc_ids_payload
+    assert invalid_doc_ids_payload["message"] == "`documents` should be a list", invalid_doc_ids_payload
+
+    not_owned_doc_res = rest_client.post(
+        "/retrieval",
+        json={"question": "chunk", "dataset_ids": [dataset_id], "document_ids": ["not-owned"]},
+    )
+    assert not_owned_doc_res.status_code == 200
+    not_owned_doc_payload = not_owned_doc_res.json()
+    assert not_owned_doc_payload["code"] == 102, not_owned_doc_payload
+    assert not_owned_doc_payload["message"] == "The datasets don't own the document not-owned", not_owned_doc_payload
+
+    metadata_condition_res = rest_client.post(
+        "/retrieval",
+        json={
+            "question": "chunk",
+            "dataset_ids": [dataset_id],
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [{"name": "author", "comparison_operator": "is", "value": "missing"}],
+            },
+        },
+    )
+    assert metadata_condition_res.status_code == 200
+    metadata_condition_payload = metadata_condition_res.json()
+    assert metadata_condition_payload["code"] == 0, metadata_condition_payload
+    assert metadata_condition_payload["data"]["chunks"] == [], metadata_condition_payload
 
 
 @pytest.mark.p2

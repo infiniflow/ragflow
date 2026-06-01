@@ -1,16 +1,16 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import request from '@/utils/request';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import Markdown from 'react-markdown';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { visitParents } from 'unist-util-visit-parents';
 
 import { useTranslation } from 'react-i18next';
@@ -178,7 +178,11 @@ function MarkdownContent({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
+    return pipe(
+      replaceThinkToSection,
+      replaceRetrievingToSection,
+      preprocessLaTeX,
+    )(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -355,6 +359,15 @@ function MarkdownContent({
       <Markdown
         rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
         remarkPlugins={MarkdownRemarkPlugins}
+        urlTransform={(url, key) => {
+          if (
+            key === 'src' &&
+            /^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/.test(url)
+          ) {
+            return url;
+          }
+          return defaultUrlTransform(url);
+        }}
         components={
           {
             p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
