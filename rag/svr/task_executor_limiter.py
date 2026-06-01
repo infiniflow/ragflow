@@ -21,6 +21,18 @@ MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get("MAX_CONCURRENT_CHUNK_BUILDERS", "1"))
 MAX_CONCURRENT_MINIO = int(os.environ.get("MAX_CONCURRENT_MINIO", "10"))
 
+# Validate semaphore limits are positive to prevent indefinite blocking
+for var_name, value in [
+    ("MAX_CONCURRENT_TASKS", MAX_CONCURRENT_TASKS),
+    ("MAX_CONCURRENT_CHUNK_BUILDERS", MAX_CONCURRENT_CHUNK_BUILDERS),
+    ("MAX_CONCURRENT_MINIO", MAX_CONCURRENT_MINIO),
+]:
+    if value <= 0:
+        raise ValueError(
+            f"{var_name} must be a positive integer, got {value}. "
+            f"Check your environment configuration."
+        )
+
 task_limiter = LoopLocalSemaphore(MAX_CONCURRENT_TASKS)
 chunk_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
 embed_limiter = LoopLocalSemaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
