@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	defaultMCPServerPage     = 1
-	defaultMCPServerPageSize = 30
+	defaultMCPServerPage     = 0
+	defaultMCPServerPageSize = 0
 	maxMCPServerPageSize     = 100
 )
 
@@ -97,13 +97,17 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	keywords := c.Query("keywords")
 	mcpIDs := getMCPIDsFromQuery(c)
 
-	result, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
+	result, code, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    common.CodeServerError,
-			"message": err.Error(),
-			"data":    nil,
-		})
+		if code == common.CodeServerError {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    code,
+				"message": err.Error(),
+				"data":    nil,
+			})
+			return
+		}
+		jsonError(c, code, err.Error())
 		return
 	}
 
@@ -143,9 +147,6 @@ func parseMCPServerPage(value string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("page must be an integer")
 	}
-	if page <= 0 {
-		return defaultMCPServerPage, nil
-	}
 	return page, nil
 }
 
@@ -157,11 +158,8 @@ func parseMCPServerPageSize(value string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("page_size must be an integer")
 	}
-	if pageSize <= 0 {
-		return defaultMCPServerPageSize, nil
-	}
 	if pageSize > maxMCPServerPageSize {
-		return maxMCPServerPageSize, nil
+		return 0, fmt.Errorf("page_size must be less than or equal to %d", maxMCPServerPageSize)
 	}
 	return pageSize, nil
 }

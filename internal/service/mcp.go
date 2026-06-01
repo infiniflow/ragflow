@@ -148,14 +148,19 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 }
 
 // ListMCPServers lists MCP servers owned by a tenant.
-func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, error) {
-	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, page, pageSize, orderby, desc)
+func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, orderby, desc)
 	if err != nil {
-		return nil, err
+		var orderbyErr *dao.InvalidMCPServerOrderByError
+		if errors.As(err, &orderbyErr) {
+			return nil, common.CodeExceptionError, err
+		}
+		return nil, common.CodeServerError, err
 	}
 	if servers == nil {
 		servers = []*entity.MCPServer{}
 	}
+	servers = paginateMCPServers(servers, page, pageSize)
 
 	items := make([]*MCPServerListItem, 0, len(servers))
 	for _, server := range servers {
@@ -178,7 +183,7 @@ func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords stri
 	return &ListMCPServersResponse{
 		MCPServers: items,
 		Total:      total,
-	}, nil
+	}, common.CodeSuccess, nil
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.
@@ -238,4 +243,37 @@ func formatMCPServerDate(date *time.Time) *string {
 	}
 	formatted := date.Format(mcpServerDateFormat)
 	return &formatted
+}
+
+func paginateMCPServers(servers []*entity.MCPServer, page, pageSize int) []*entity.MCPServer {
+	if page == 0 || pageSize == 0 {
+		return servers
+	}
+
+	start := (page - 1) * pageSize
+	stop := page * pageSize
+	return sliceMCPServers(servers, start, stop)
+}
+
+func sliceMCPServers(servers []*entity.MCPServer, start, stop int) []*entity.MCPServer {
+	length := len(servers)
+	start = normalizeMCPServerSliceIndex(start, length)
+	stop = normalizeMCPServerSliceIndex(stop, length)
+	if stop < start {
+		return []*entity.MCPServer{}
+	}
+	return servers[start:stop]
+}
+
+func normalizeMCPServerSliceIndex(index, length int) int {
+	if index < 0 {
+		index += length
+	}
+	if index < 0 {
+		return 0
+	}
+	if index > length {
+		return length
+	}
+	return index
 }
