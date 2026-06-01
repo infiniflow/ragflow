@@ -88,6 +88,13 @@ type ModelProviderService struct {
 	userTenantDAO        *dao.UserTenantDAO
 }
 
+// CheckConnectionRequest carries the credentials and optional instance selector
+// for checking provider connectivity without creating a new model instance.
+type CheckConnectionRequest struct {
+	APIKey string `json:"api_key"`
+	Region string `json:"region"`
+}
+
 func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
 
 	_, err := dao.GetModelProviderManager().GetProviderByName(providerName)
@@ -423,7 +430,92 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CheckProviderConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CheckProviderConnection(providerName string, req CheckConnectionRequest, userID string) (common.ErrorCode, error) {
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	if strings.EqualFold(providerInfo.Class, "local") {
+		return m.checkLocalProviderConnection(providerName, req, userID)
+	}
+
+	apiKey := strings.TrimSpace(req.APIKey)
+	region := strings.TrimSpace(req.Region)
+	if region == "" {
+		region = "default"
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: &apiKey,
+		Region: &region,
+	}
+
+	err := providerInfo.ModelDriver.CheckConnection(apiConfig)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) checkLocalProviderConnection(providerName string, req CheckConnectionRequest, userID string) (common.ErrorCode, error) {
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	if len(tenants) == 0 {
+		return common.CodeNotFound, errors.New("user has no tenants")
+	}
+
+	tenantID := tenants[0].TenantID
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	instance, err := m.modelInstanceDAO.GetInstanceByApiKey(req.APIKey, provider.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	region := extra["region"]
+	apiConfig.Region = &region
+	apiConfig.ApiKey = &instance.APIKey
+
+	driver := providerInfo.ModelDriver
+	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+	}
+
+	err = driver.CheckConnection(apiConfig)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
