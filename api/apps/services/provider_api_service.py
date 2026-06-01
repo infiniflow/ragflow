@@ -324,7 +324,7 @@ async def verify_api_key(provider_name: str, api_key: str, base_url: str=None):
                     raise Exception("Fail")
                 embd_passed = True
             except Exception as e:
-                msg += f"\nFail to access embedding model({llm.llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
         elif not chat_passed and llm["model_type"] == LLMType.CHAT.value:
             assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
             mdl = ChatModel[provider_name](api_key, llm["llm_name"], base_url=base_url, **extra)
@@ -345,7 +345,7 @@ async def verify_api_key(provider_name: str, api_key: str, base_url: str=None):
                 else:
                     raise Exception("No valid response received")
             except Exception as e:
-                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not rerank_passed and llm["model_type"] == LLMType.RERANK.value:
             assert provider_name in RerankModel, f"Rerank model from {provider_name} is not supported yet."
             mdl = RerankModel[provider_name](api_key, llm["llm_name"], base_url=base_url)
@@ -357,9 +357,9 @@ async def verify_api_key(provider_name: str, api_key: str, base_url: str=None):
                 if len(arr) == 0 or tc == 0:
                     raise Exception("Fail")
                 rerank_passed = True
-                logging.debug(f"passed model rerank {llm.llm_name}")
+                logging.debug(f"passed model rerank {llm['llm_name']}")
             except Exception as e:
-                msg += f"\nFail to access model({llm.fid}/{llm.llm_name}) using this api key." + str(e)
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         if any([embd_passed, chat_passed, rerank_passed]):
             msg = ""
             break
