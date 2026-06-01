@@ -499,6 +499,10 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     normalized_answer = normalize_arabic_digits(answer) or ""
 
     def safe_add(i):
+        try:
+            i = int(i)
+        except:
+            return True
         if 0 <= i < max_index:
             idx.add(i)
             return True
@@ -1739,33 +1743,18 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
 
     async def decorate_answer(answer):
         nonlocal rag_tools, messages
-
-        refs = []
         ans = answer.split("</think>")
         think = ""
         if len(ans) == 2:
             think = ans[0] + "</think>"
             answer = ans[1]
 
-        idx = set([])
-        normalized_answer = normalize_arabic_digits(answer) or ""
-        for match in CITATION_MARKER_PATTERN.finditer(normalized_answer):
-            i = int(match.group(1))
-            if i < len(rag_tools.kbinfos["chunks"]):
-                idx.add(i)
+        answer, _ = repair_bad_citation_formats(answer, rag_tools.kbinfos, set([]))
 
-            answer, idx = repair_bad_citation_formats(answer, rag_tools.kbinfos, idx)
-
-            idx = set([rag_tools.kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
-            recall_docs = [d for d in rag_tools.kbinfos["doc_aggs"] if d["doc_id"] in idx]
-            if not recall_docs:
-                recall_docs = rag_tools.kbinfos["doc_aggs"]
-            rag_tools.kbinfos["doc_aggs"] = recall_docs
-
-            refs = deepcopy(rag_tools.kbinfos)
-            for c in refs["chunks"]:
-                if c.get("vector"):
-                    del c["vector"]
+        refs = deepcopy(rag_tools.kbinfos)
+        for c in refs["chunks"]:
+            if c.get("vector"):
+                del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"

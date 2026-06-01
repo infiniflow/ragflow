@@ -78,7 +78,6 @@ class RAGTools:
             self.formalize_question,
             self.select_documents,
             self.search_knowledge_bases,
-            self.get_citation_guidelines,
         ]
         if self.tav:
             tools.append(self.web_search)
@@ -200,15 +199,16 @@ class RAGTools:
                 "KB-grounded answers."
             )
         steps.append(
-            "**Compose the final answer with citations.** Before writing the "
-            "final natural-language answer, call `get_citation_guidelines` "
-            "exactly ONCE to fetch the required citation marker format, then "
-            "apply those rules verbatim. Cite every claim that comes from "
-            "retrieved evidence — and NEVER cite a source you did not "
-            "actually retrieve in this turn."
+            "**Compose the final answer with citations.** Apply the citation "
+            "rules in the '# Citation rules' section below VERBATIM to every "
+            "claim drawn from retrieved evidence. Do NOT invent your own "
+            "citation style, and NEVER cite a source you did not actually "
+            "retrieve in this turn."
         )
 
         numbered = "\n\n".join(f"{i}. {step}" for i, step in enumerate(steps, 1))
+
+        citation_guidelines = citation_prompt(self.user_defined_prompts).strip()
 
         return (
             "You are a Retrieval-Augmented-Generation (RAG) agent. Answer the "
@@ -219,6 +219,12 @@ class RAGTools:
             "Work through the following steps in order. Skip a step when it "
             "is obviously inapplicable.\n\n"
             f"{numbered}\n\n"
+            "# Citation rules\n\n"
+            "Apply the following rules VERBATIM to your final answer. They "
+            "are not optional, they are not negotiable, and there is no "
+            "tool to fetch them — they are stated here in full and you must "
+            "follow them every time you produce a final answer.\n\n"
+            f"{citation_guidelines}\n\n"
             "# Hard rules\n\n"
             "- DO NOT make anything up. If the retrieved evidence does not "
             "answer the question, reply with an explicit \"I don't have "
@@ -230,8 +236,6 @@ class RAGTools:
             "MUST be a value some other tool returned earlier IN THIS SAME "
             "TURN. If you have no IDs from a prior tool, pass `null` — never "
             "a fabricated 32-character string.\n"
-            "- Call `get_citation_guidelines` at most once per turn — the "
-            "guidelines do not change between calls.\n"
             "- **Answer in the user's language.** The prose of the final "
             "answer MUST be in the SAME language as the user's question. If "
             "the user wrote in Chinese, you answer in Chinese; if Japanese, "
@@ -643,8 +647,8 @@ class RAGTools:
         chat model's context-length budget (chunks past the budget are
         dropped with a warning). The output is the full chunk-formatted
         text that you, the calling LLM, should then turn into a natural-
-        language summary in the user's language — applying
-        ``get_citation_guidelines`` to attribute claims to chunk IDs.
+        language summary in the user's language — applying the citation
+        rules from the system prompt to attribute claims to chunk IDs.
 
         :param doc_id: a 32-character lowercase hex string (e.g.
             ``41a5271858ca11f1bbb9047c16ec874f``). You DO NOT know any doc
@@ -682,7 +686,7 @@ class RAGTools:
                 [kb_id],
                 max_count=offset+128,
                 offset=offset,
-                fields=["content_with_weight"],
+                fields=["content_with_weight", "docnm_kwd", "doc_id"],
                 sort_by_position=True,
                 retrieve_all=False,
             )
@@ -695,9 +699,25 @@ class RAGTools:
 
         if not cks:
             return []
-
-        kbinfos = {"chunks": cks, "doc_aggs": []}
-        return kb_prompt(kbinfos, self.chat_mdl.max_length)
+        doc_name = next(
+            (c.get("docnm_kwd") or "" for c in cks if c.get("docnm_kwd")),
+            "",
+        )
+        kbinfos = {
+            "chunks": cks,
+            "doc_aggs": [
+                {
+                    "doc_name": doc_name,
+                    "doc_id": doc_id,
+                    "count": len(cks),
+                }
+            ],
+        }
+        start_idx = len(self.kbinfos.get("chunks", []))
+        if kbinfos:
+            self.kbinfos["chunks"].extend(kbinfos.get("chunks", []))
+            self.kbinfos["doc_aggs"].extend(kbinfos.get("doc_aggs", []))
+        return kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
 
     @tool
     async def search_structured_data(self, question: str) -> str:
@@ -724,8 +744,8 @@ class RAGTools:
             follow-up that depends on earlier turns).
 
         :returns: the natural-language answer produced from the SQL result,
-            already including the citation markers required by
-            ``get_citation_guidelines``. An empty string is returned when no
+            already including the citation markers required by the citation
+            rules in the system prompt. An empty string is returned when no
             structured KB is bound or SQL generation/execution fails.
         """
         if not self.sql_kbs or not self.field_map:
@@ -786,22 +806,14 @@ class RAGTools:
         self.kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
         return kb_prompt(self.kbinfos, self.chat_mdl.max_length, start_idx)
 
-    @tool
-    async def get_citation_guidelines(self) -> str:
-        """Fetch the citation guidelines you MUST follow in your final answer.
+    def get_citation_guidelines(self) -> str:
+        """Return the citation guidelines this agent uses.
 
-        Call this tool exactly ONCE, after you have gathered the chunks /
-        web results you intend to cite and BEFORE you write your final
-        natural-language answer to the user. The returned string explains
-        the required citation marker format (e.g. ``[ID:n]``) and the rules
-        for when to attach a citation to a claim. Apply those rules verbatim
-        when composing the final answer — do not invent your own citation
-        style.
-
-        Do not call this tool again within the same conversation turn — the
-        guidelines do not change between calls.
-
-        :returns: a plain-text string containing the citation guideline
-            template, rendered with any project-level overrides.
+        Plain method (NOT registered as a tool): the guidelines are static
+        and are embedded directly in ``sys_prompt()`` so the chat model sees
+        them from token zero. Letting the model decide whether to fetch them
+        via a tool call was unreliable — the call was routinely skipped.
+        Kept as a public helper so callers can introspect / override the
+        text from outside the class.
         """
         return citation_prompt(self.user_defined_prompts)
