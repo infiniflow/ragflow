@@ -311,16 +311,20 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                 # unchanged blobs across runs.
                 current_etag = (blob_props.etag or "").strip('"')
 
-                # Time-window filter. ``since_epoch`` is the lower bound;
-                # ``until_epoch`` is the upper bound of the current snapshot.
-                # Enforcing the upper bound keeps blobs modified mid-run from
-                # leaking into this window — they'll be picked up by the next
-                # run (whose lower bound is this run's upper bound), so an
-                # update can never fall into a gap between windows.
+                # Time-window filter: strict lower bound, inclusive upper
+                # bound (``since_epoch`` < last-modified <= ``until_epoch``).
+                # Excluding last-modified == since_epoch (the prior run's
+                # watermark, which that run already yielded) avoids stable
+                # duplicate re-fetches on the boundary — matching the
+                # Salesforce connector's ``> since``. Enforcing the upper
+                # bound keeps blobs modified mid-run from leaking into this
+                # window; they're picked up by the next run (whose lower bound
+                # is this run's upper bound), so an update can never fall into
+                # a gap between windows.
                 last_modified: datetime | None = blob_props.last_modified
                 if last_modified:
                     ts = last_modified.timestamp()
-                    if since_epoch and ts < since_epoch:
+                    if since_epoch and ts <= since_epoch:
                         continue
                     if until_epoch and ts > until_epoch:
                         continue
