@@ -430,18 +430,18 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CheckProviderConnection(providerName string, req CheckConnectionRequest, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CheckConnection(providerName, apiKey, region string, userID string) (common.ErrorCode, error) {
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
 		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
 	if strings.EqualFold(providerInfo.Class, "local") {
-		return m.checkLocalProviderConnection(providerName, req, userID)
+		return m.checkLocalProviderConnection(providerName, apiKey, region, userID)
 	}
 
-	apiKey := strings.TrimSpace(req.APIKey)
-	region := strings.TrimSpace(req.Region)
+	apiKey = strings.TrimSpace(apiKey)
+	region = strings.TrimSpace(region)
 	if region == "" {
 		region = "default"
 	}
@@ -459,7 +459,7 @@ func (m *ModelProviderService) CheckProviderConnection(providerName string, req 
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) checkLocalProviderConnection(providerName string, req CheckConnectionRequest, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) checkLocalProviderConnection(providerName, apiKey, region string, userID string) (common.ErrorCode, error) {
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
@@ -475,7 +475,7 @@ func (m *ModelProviderService) checkLocalProviderConnection(providerName string,
 		return common.CodeServerError, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetInstanceByApiKey(req.APIKey, provider.ID)
+	instance, err := m.modelInstanceDAO.GetInstanceByApiKey(apiKey, provider.ID)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -496,7 +496,7 @@ func (m *ModelProviderService) checkLocalProviderConnection(providerName string,
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region = extra["region"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
@@ -540,39 +540,14 @@ func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceNam
 		return common.CodeServerError, err
 	}
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
-	}
-
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	apiConfig := &modelModule.APIConfig{
-		ApiKey: nil,
-		Region: nil,
-	}
-
-	region := extra["region"]
-	apiConfig.Region = &region
-	apiConfig.ApiKey = &instance.APIKey
-
-	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
-		if err != nil {
+	extra := map[string]string{}
+	if strings.TrimSpace(instance.Extra) != "" {
+		if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
 			return common.CodeServerError, err
 		}
 	}
 
-	err = driver.CheckConnection(apiConfig)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	return common.CodeSuccess, nil
+	return m.CheckConnection(providerName, instance.APIKey, extra["region"], userID)
 }
 
 func (m *ModelProviderService) ListTasks(providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {

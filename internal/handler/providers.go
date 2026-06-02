@@ -387,7 +387,7 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 	})
 }
 
-func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
+func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -407,8 +407,7 @@ func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	errCode, err := h.modelProviderService.CheckProviderConnection(providerName, req, userID)
+	errCode, err := h.modelProviderService.CheckConnection(providerName, req.APIKey, req.Region, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errCode,
