@@ -1,4 +1,4 @@
-#
+﻿#
 #  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Regression tests for retrieval in api/apps/sdk/dify_retrieval.py.
+"""Regression tests for retrieval in api/apps/restful_apis/dify_retrieval_api.py.
 
 Issue #15027: cross-tenant knowledge-base access via POST /api/v1/dify/retrieval.
 The handler authenticated the caller via @apikey_required (resolving
@@ -84,7 +84,7 @@ class _FakeKGRetriever:
 
 
 def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=None):
-    """Load dify_retrieval.py with minimum stubs to exercise the retrieval handler."""
+    """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
     _stub(
         monkeypatch,
         "api.utils.api_utils",
@@ -97,7 +97,10 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
     _stub(
         monkeypatch,
         "api.db.services.document_service",
-        DocumentService=SimpleNamespace(get_by_id=lambda _id: (True, SimpleNamespace(meta_fields={}))),
+        DocumentService=SimpleNamespace(
+            get_by_id=lambda _id: (True, SimpleNamespace(id=_id, meta_fields={})),
+            get_by_ids=lambda ids, cols=None: [SimpleNamespace(id=doc_id, meta_fields={}) for doc_id in ids],
+        ),
     )
     _stub(
         monkeypatch,
@@ -117,9 +120,8 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
-        get_model_config_by_id=lambda *_a, **_k: {},
-        get_model_config_by_type_and_name=lambda *_a, **_k: {},
         get_tenant_default_model_by_type=lambda *_a, **_k: {},
+        get_model_config_from_provider_instance=lambda *_a, **_k: {},
     )
 
     _stub(
@@ -145,7 +147,7 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, chunks=No
     monkeypatch.setitem(sys.modules, "quart", quart_stub)
 
     repo_root = Path(__file__).resolve().parents[5]
-    module_path = repo_root / "api" / "apps" / "sdk" / "dify_retrieval.py"
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "dify_retrieval_api.py"
     spec = importlib.util.spec_from_file_location("test_dify_retrieval_module", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _PassthroughManager()

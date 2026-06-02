@@ -18,8 +18,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strconv"
@@ -30,6 +33,8 @@ import (
 
 	"ragflow/internal/service"
 )
+
+var IMG_BASE64_PREFIX = "data:image/png;base64,"
 
 // DocumentHandler document handler
 type DocumentHandler struct {
@@ -118,6 +123,58 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": document,
 	})
+}
+
+// GetThumbnail Get thumbnails for documents.
+func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	id := c.Query("doc_ids")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": errors.New("invalid document id"),
+		})
+		return
+	}
+
+	result, err := h.documentService.GetThumbnail(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Errorf("thumbnail not found"),
+		})
+		return
+	}
+
+	if result.Thumbnail != nil && *result.Thumbnail != "" {
+		newThumbURL := fmt.Sprintf("/api/v1/documents/images/%s-%s", result.KbID, *result.Thumbnail)
+		result.Thumbnail = &newThumbURL
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    map[string]interface{}{result.ID: result.Thumbnail},
+		"message": "success",
+	})
+}
+
+// GetDocumentImage returns a document image from object storage.
+func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
+	imageID := c.Param("image_id")
+	data, err := h.documentService.GetDocumentImage(imageID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, "Image not found.")
+		return
+	}
+
+	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(imageID)))
+	if contentType == "" {
+		contentType = "image/JPEG"
+	}
+	c.Data(http.StatusOK, contentType, data)
 }
 
 // UpdateDocument update document
@@ -565,12 +622,131 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 	})
 }
 
+// DeleteMetaRequest represents the request for deleting document metadata
+type DeleteMetaRequest struct {
+	DocID string `json:"doc_id" binding:"required"`
+	Keys  string `json:"keys"` // optional - if provided, deletes specific keys; otherwise deletes entire document metadata
+}
+
+// DeleteMeta handles the delete metadata request for a document
+// If Keys is provided, deletes specific metadata keys; otherwise deletes entire document metadata
+// @Summary Delete Document Metadata
+// @Description Delete metadata keys or entire document metadata for a specific document
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body DeleteMetaRequest true "metadata keys to delete or empty to delete all"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/document/delete_meta [post]
+func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req DeleteMetaRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if req.DocID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "doc_id is required",
+		})
+		return
+	}
+
+	// Authorization: user must be able to access the document's dataset.
+	doc, err := h.documentService.GetDocumentByID(req.DocID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    1,
+			"message": "document not found",
+		})
+		return
+	}
+	if !h.datasetService.Accessible(doc.KbID, user.ID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	// If Keys is provided, parse and delete specific keys; otherwise delete entire document metadata
+	if req.Keys != "" {
+		// Parse keys JSON string - expected to be a list of key names to delete
+		var keys []string
+		if err := json.Unmarshal([]byte(req.Keys), &keys); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": "Json syntax error: " + err.Error(),
+			})
+			return
+		}
+
+		if keys == nil || len(keys) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    1,
+				"message": "keys list is required",
+			})
+			return
+		}
+
+		err := h.documentService.DeleteDocumentMetadata(req.DocID, keys)
+		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    1,
+					"message": errMsg,
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    1,
+					"message": "Failed to delete metadata: " + errMsg,
+				})
+			}
+			return
+		}
+	} else {
+		// Delete entire document metadata
+		err := h.documentService.DeleteDocumentAllMetadata(req.DocID)
+		if err != nil {
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    1,
+					"message": errMsg,
+				})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    1,
+					"message": "Failed to delete metadata: " + errMsg,
+				})
+			}
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    true,
+	})
+}
+
 type ParseDocumentRequest struct {
 	Documents []string `json:"documents" binding:"required"`
-	DatasetID string   `json:"dataset_id" binding:"required"`
 }
 
 func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+
 	var req ParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -582,12 +758,12 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	if !h.datasetService.Accessible(req.DatasetID, userID) {
+	if !h.datasetService.Accessible(datasetID, userID) {
 		jsonError(c, common.CodeAuthenticationError, "No authorization to access the dataset.")
 		return
 	}
 
-	err := h.documentService.ParseDocuments(req.DatasetID, userID, req.Documents)
+	parseResult, err := h.documentService.ParseDocuments(datasetID, userID, req.Documents)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return
@@ -595,5 +771,6 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
+		"data":    parseResult,
 	})
 }

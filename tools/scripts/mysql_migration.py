@@ -323,23 +323,30 @@ class TenantModelProviderStage(MigrationStage):
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             return len(records), self.target_tables
         
-        # Insert records in batches
+        # Insert records in batches with parameterized SQL to avoid quote breakage/injection
         batch_size = 100
         for i in range(0, len(records), batch_size):
             batch = records[i:i + batch_size]
-            values = []
+            placeholders = []
+            params = []
             for tenant_id, llm_factory in batch:
                 record_id = self.generate_uuid()
-                values.append(f"('{record_id}', '{llm_factory}', '{tenant_id}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
-            
+                placeholders.append("(%s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))")
+                params.extend([
+                    record_id,
+                    llm_factory,
+                    tenant_id,
+                    current_ts * 1000,
+                    current_ts,
+                    current_ts * 1000,
+                    current_ts,
+                ])
             insert_sql = f"""
                 INSERT INTO tenant_model_provider 
                 (id, provider_name, tenant_id, create_time, create_date, update_time, update_date)
-                VALUES {', '.join(values)}
+                VALUES {', '.join(placeholders)}
             """
-            self.db.execute_sql(insert_sql)
+            self.db.execute_sql(insert_sql, params)
             rows_inserted += len(batch)
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
         
@@ -478,7 +485,7 @@ class TenantModelInstanceStage(MigrationStage):
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             for tenant_id, llm_factory, api_key, status, provider_id in records[:5]:
-                logger.info(f"  instance_name={llm_factory}, provider_id={provider_id}, api_key=***")
+                logger.info(f"  instance_name=default, provider_id={provider_id}, api_key=***")
             if len(records) > 5:
                 logger.info(f"  ... and {len(records) - 5} more records")
             return len(records), self.target_tables
@@ -490,13 +497,13 @@ class TenantModelInstanceStage(MigrationStage):
             values = []
             for tenant_id, llm_factory, api_key, status, provider_id in batch:
                 record_id = self.generate_uuid()
-                instance_name = llm_factory.replace("'", "''") if llm_factory else ""
+                instance_name = "default"
                 api_key_escaped = api_key.replace("'", "''") if api_key else ""
-                status_val = status if status else "active"
+                status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(f"('{record_id}', '{instance_name}', '{provider_id}', "
                             f"'{api_key_escaped}', '{status_val}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model_instance 
@@ -518,6 +525,7 @@ class TenantModelInstanceStage(MigrationStage):
             provider_id VARCHAR(32) NOT NULL,
             api_key VARCHAR(512) NOT NULL,
             status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(512) DEFAULT '{}',
             create_time BIGINT,
             create_date DATETIME,
             update_time BIGINT,
@@ -676,11 +684,11 @@ class TenantModelStage(MigrationStage):
                 record_id = self.generate_uuid()
                 model_name_escaped = llm_name.replace("'", "''") if llm_name else ""
                 model_type_escaped = model_type.replace("'", "''") if model_type else ""
-                status_val = status if status else "active"
+                status_val = "active" if status in ["1", "active", "enable"] else "inactive"
                 values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                             f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts}, FROM_UNIXTIME({current_ts}))")
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
+                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model 
@@ -704,6 +712,7 @@ class TenantModelStage(MigrationStage):
             instance_id VARCHAR(32) NOT NULL,
             model_type VARCHAR(32) NOT NULL,
             status VARCHAR(32) DEFAULT 'active',
+            extra VARCHAR(1024) DEFAULT '{}',
             create_time BIGINT,
             create_date DATETIME,
             update_time BIGINT,

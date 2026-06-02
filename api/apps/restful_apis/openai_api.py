@@ -22,7 +22,7 @@ from quart import Response, jsonify
 from api.apps import current_user, login_required
 from api.db.services.dialog_service import DialogService, async_chat
 from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance, get_api_key
 from api.utils.api_utils import get_error_data_result, get_request_json, validate_request
 from common.constants import RetCode, StatusEnum
 from common.metadata_utils import convert_conditions, meta_filter
@@ -33,17 +33,18 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
     model_type = (llm_setting or {}).get("model_type")
     if model_type not in {"chat", "image2text"}:
         model_type = "chat"
 
-    if not TenantLLMService.query(
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        get_model_config_from_provider_instance(
+            tenant_id=tenant_id,
+            model_name=llm_id,
+            model_type=model_type,
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {llm_id}: {e}")
         return f"`llm_id` {llm_id} doesn't exist"
     return None
 
@@ -90,6 +91,43 @@ def _build_sse_response(body):
     return resp
 
 
+def _normalize_message_content(content):
+    """Convert OpenAI message content to a string for the dialog layer.
+
+    Supports string content and array parts with ``type: text``. Other part types
+    (e.g. image_url) are ignored until vision is wired through this route.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text", "")
+                if text is not None:
+                    parts.append(str(text))
+        return "\n".join(parts)
+    return None
+
+
+def _normalize_openai_messages(messages):
+    """Return (normalized_messages, error_message). error_message is set on failure."""
+    if not isinstance(messages, list):
+        return None, "messages must be an array."
+
+    normalized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            return None, "Each message must be an object."
+        content = _normalize_message_content(message.get("content"))
+        if content is None:
+            return None, "messages[].content must be a string or an array of content parts."
+        normalized.append({**message, "content": content})
+    return normalized, None
+
+
 @manager.route("/openai/<chat_id>/chat/completions", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("model", "messages")
@@ -112,6 +150,9 @@ async def openai_chat_completions(chat_id):
     messages = req.get("messages", [])
     if len(messages) < 1:
         return get_error_data_result("You have to provide messages.")
+    messages, normalize_error = _normalize_openai_messages(messages)
+    if normalize_error:
+        return get_error_data_result(normalize_error)
     if messages[-1]["role"] != "user":
         return get_error_data_result("The last content of this conversation is not from user.")
 
@@ -133,7 +174,7 @@ async def openai_chat_completions(chat_id):
         if llm_id_error:
             return get_error_data_result(message=llm_id_error, code=RetCode.ARGUMENT_ERROR)
         dia.llm_id = requested_model
-        if not TenantLLMService.get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
+        if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
 
     metadata_condition = extra_body.get("metadata_condition") or {}
@@ -162,7 +203,7 @@ async def openai_chat_completions(chat_id):
 
     tools = None
     toolcall_session = None
-    stream_mode = req.get("stream", True)
+    stream_mode = bool(req.get("stream", False))
 
     if stream_mode:
         async def streamed_response_generator():
