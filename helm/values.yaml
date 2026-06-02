@@ -74,6 +74,10 @@ env:
   # The number of text chunks processed in a single batch during embedding vectorization.
   EMBEDDING_BATCH_SIZE: 16
 
+  # XMX and XMS should be lower that the limits (50-75%)
+  # Some data are stored outside of the heap.
+  ES_JAVA_OPTS: "-Xms12Gi -Xmx12Gi"
+
 ragflow:
   image:
     repository: infiniflow/ragflow
@@ -160,6 +164,10 @@ elasticsearch:
       requests:
         cpu: "4"
         memory: "16Gi"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
+
   service:
     type: ClusterIP
 
@@ -187,6 +195,9 @@ opensearch:
       requests:
         cpu: "4"
         memory: "16Gi"
+      limits:
+        cpu: "4"
+        memory: "16Gi"
   service:
     type: ClusterIP
 
@@ -203,6 +214,12 @@ minio:
   deployment:
     strategy:
     resources:
+      requests:
+        cpu: "1"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
   service:
     type: ClusterIP
 
@@ -219,6 +236,12 @@ mysql:
   deployment:
     strategy:
     resources:
+      requests:
+        cpu: "1"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
   service:
     type: ClusterIP
 
@@ -242,6 +265,11 @@ redis:
   deployment:
     strategy:
     resources:
+      requests:
+        cpu: "1"
+        memory: 32Mi
+      limits:
+        memory: 32Mi
   service:
     type: ClusterIP
 
