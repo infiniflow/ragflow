@@ -115,8 +115,17 @@ func (z *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 			reqBody["do_sample"] = *chatModelConfig.DoSample
 		}
 
-		if chatModelConfig.Thinking != nil {
-			reqBody["thinking"] = *chatModelConfig.Thinking
+		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "adaptive",
+				}
+				reqBody["reasoning_split"] = true
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
+			}
 		}
 	}
 
@@ -251,8 +260,17 @@ func (z *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		reqBody["stop"] = *modelConfig.Stop
 	}
 
-	if modelConfig.Thinking != nil {
-		reqBody["thinking"] = *modelConfig.Thinking
+	if modelConfig != nil && modelConfig.Thinking != nil {
+		if *modelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "adaptive",
+			}
+			reqBody["reasoning_split"] = true
+		} else {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
+			}
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)

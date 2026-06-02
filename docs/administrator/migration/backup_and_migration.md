@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-slug: /backup_and_migration
+slug: /migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
@@ -221,8 +221,26 @@ s3:
   endpoint_url: "https://s3.amazonaws.com"
   bucket: "my-ragflow-bucket"
   prefix_path: "production"
-  region: "us-east-1"
+  region_name: "us-east-1"
 ```
+
+#### Tigris configuration
+
+[Tigris](https://www.tigrisdata.com) is an S3-compatible object storage service that works with RAGFlow's `AWS_S3` backend. Set `STORAGE_IMPL=AWS_S3` in your `.env` file:
+
+```yaml
+s3:
+  access_key: "tid_YOUR_ACCESS_KEY"
+  secret_key: "tsec_YOUR_SECRET_KEY"
+  region_name: "auto"
+  endpoint_url: "https://t3.storage.dev"
+  bucket: "ragflow"
+  prefix_path: "ragflow"
+  signature_version: "v4"
+  addressing_style: "virtual"
+```
+
+See [S3 (Tigris)](/configurations#s3-tigris) for full setup instructions.
 
 ### IAM policy example
 
@@ -302,6 +320,7 @@ minio:
 
 - ✅ **MinIO** - Full support with single bucket mode
 - ✅ **AWS S3** - Full support with single bucket mode
+- ✅ **Tigris** - Full support with single bucket mode (uses `AWS_S3` backend)
 - ✅ **Alibaba OSS** - Full support with single bucket mode
 - ✅ **Azure Blob** - Uses container-based structure (different paradigm)
 - ⚠️ **OpenDAL** - Depends on underlying storage backend

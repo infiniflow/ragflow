@@ -24,6 +24,7 @@ This script provides a flexible MySQL data migration tool that supports:
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -164,6 +165,14 @@ class MigrationDatabase:
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = %s AND table_name = %s",
             (self.config.database, table_name)
+        )
+        return cursor.fetchone()[0] > 0
+
+    def column_exists(self, table_name: str, column_name: str) -> bool:
+        cursor = self.execute_sql(
+            "SELECT COUNT(*) FROM information_schema.columns "
+            "WHERE table_schema = %s AND table_name = %s AND column_name = %s",
+            (self.config.database, table_name, column_name)
         )
         return cursor.fetchone()[0] > 0
 
@@ -323,23 +332,30 @@ class TenantModelProviderStage(MigrationStage):
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
             return len(records), self.target_tables
         
-        # Insert records in batches
+        # Insert records in batches with parameterized SQL to avoid quote breakage/injection
         batch_size = 100
         for i in range(0, len(records), batch_size):
             batch = records[i:i + batch_size]
-            values = []
+            placeholders = []
+            params = []
             for tenant_id, llm_factory in batch:
                 record_id = self.generate_uuid()
-                values.append(f"('{record_id}', '{llm_factory}', '{tenant_id}', "
-                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
-                            f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
-            
+                placeholders.append("(%s, %s, %s, %s, FROM_UNIXTIME(%s), %s, FROM_UNIXTIME(%s))")
+                params.extend([
+                    record_id,
+                    llm_factory,
+                    tenant_id,
+                    current_ts * 1000,
+                    current_ts,
+                    current_ts * 1000,
+                    current_ts,
+                ])
             insert_sql = f"""
                 INSERT INTO tenant_model_provider 
                 (id, provider_name, tenant_id, create_time, create_date, update_time, update_date)
-                VALUES {', '.join(values)}
+                VALUES {', '.join(placeholders)}
             """
-            self.db.execute_sql(insert_sql)
+            self.db.execute_sql(insert_sql, params)
             rows_inserted += len(batch)
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
         
@@ -523,7 +539,6 @@ class TenantModelInstanceStage(MigrationStage):
             create_date DATETIME,
             update_time BIGINT,
             update_date DATETIME,
-            UNIQUE INDEX idx_api_key_provider_id (api_key, provider_id),
             INDEX idx_provider_id (provider_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
@@ -535,9 +550,33 @@ class TenantModelStage(MigrationStage):
     """Migrate tenant_llm to tenant_model"""
 
     name = "tenant_model"
-    description = "Migrate tenant_llm to tenant_model (only status='0' records)"
+    description = "Migrate tenant_llm to tenant_model (status='0' records, plus status='1' for empty-llm factories)"
     source_tables = ["tenant_llm", "tenant_model_provider", "tenant_model_instance"]
     target_tables = ["tenant_model"]
+
+    @staticmethod
+    def _get_empty_llm_factories() -> list[str]:
+        """Load factory names whose llm field is an empty list from conf/llm_factories.json"""
+        conf_path = os.path.join(PROJECT_BASE, "conf", "llm_factories.json")
+        with open(conf_path, "r") as f:
+            data = json.load(f)
+        factories = []
+        for key, items in data.items():
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        llm = item.get("llm")
+                        if isinstance(llm, list) and len(llm) == 0:
+                            factories.append(item["name"])
+        return factories
+
+    def _build_status_condition(self) -> str:
+        """Build SQL WHERE condition for status filtering"""
+        empty_factories = self._get_empty_llm_factories()
+        if empty_factories:
+            placeholders = ", ".join(f"'{f}'" for f in empty_factories)
+            return f"(tl.status = '0' OR (tl.status = '1' AND tl.llm_factory IN ({placeholders})))"
+        return "tl.status = '0'"
 
     def current_timestamp(self) -> int:
         return int(time.time())
@@ -582,24 +621,26 @@ class TenantModelStage(MigrationStage):
             logger.info("Target table 'tenant_model' does not exist, will create")
             return True
 
-        # Check if there's data to migrate (only status='0' records)
+        status_condition = self._build_status_condition()
+
+        # Check if there's data to migrate
         cursor = self.db.execute_sql(
-            "SELECT COUNT(*) FROM ("
-            "  SELECT tl.id "
-            "  FROM tenant_llm tl "
-            "  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
-            "  INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
-            "  WHERE tl.status = '0' "
-            "  AND NOT EXISTS ("
-            "    SELECT 1 FROM tenant_model tm "
-            "    WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
-            "  )"
-            ") AS distinct_records"
+            f"SELECT COUNT(*) FROM ("
+            f"  SELECT tl.id "
+            f"  FROM tenant_llm tl "
+            f"  INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"  INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
+            f"  WHERE {status_condition} "
+            f"  AND NOT EXISTS ("
+            f"    SELECT 1 FROM tenant_model tm "
+            f"    WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
+            f"  )"
+            f") AS distinct_records"
         )
         count = cursor.fetchone()[0]
 
         if count == 0:
-            logger.info("No new data to migrate from tenant_llm to tenant_model (status='0' only)")
+            logger.info("No new data to migrate from tenant_llm to tenant_model")
             return False
 
         logger.info(f"Found {count} rows to migrate from tenant_llm to tenant_model")
@@ -636,19 +677,21 @@ class TenantModelStage(MigrationStage):
             logger.info("[CREATE TABLE ONLY] Target table created/verified, skipping data migration")
             return 0, self.target_tables
 
+        status_condition = self._build_status_condition()
+
         # Get records from tenant_llm with provider_id and instance_id lookup
-        # Only migrate records where status='0'
+        # Migrate status='0' records, plus status='1' for empty-llm factories
         cursor = self.db.execute_sql(
-            "SELECT tl.id, tl.llm_name, tmp.id as provider_id, tmi.id as instance_id, "
-            "       tl.model_type, tl.status "
-            "FROM tenant_llm tl "
-            "INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
-            "INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
-            "WHERE tl.status = '0' "
-            "AND NOT EXISTS ("
-            "  SELECT 1 FROM tenant_model tm "
-            "  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
-            ")"
+            f"SELECT tl.id, tl.llm_name, tmp.id as provider_id, tmi.id as instance_id, "
+            f"       tl.model_type, tl.status "
+            f"FROM tenant_llm tl "
+            f"INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
+            f"INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
+            f"WHERE {status_condition} "
+            f"AND NOT EXISTS ("
+            f"  SELECT 1 FROM tenant_model tm "
+            f"  WHERE tm.provider_id = tmp.id AND tm.model_name = tl.llm_name AND tm.instance_id = tmi.id"
+            f")"
         )
 
         records = cursor.fetchall()
@@ -711,11 +754,251 @@ class TenantModelStage(MigrationStage):
             update_time BIGINT,
             update_date DATETIME,
             INDEX idx_instance_id (instance_id),
-            UNIQUE INDEX idx_provider_model_instance (provider_id, model_name, instance_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
         self.db.execute_sql(create_sql)
         logger.info("Created tenant_model table")
+
+
+class ModelIdConfigStage(MigrationStage):
+    """Normalize stored model IDs from model@provider to model@default@provider."""
+
+    name = "model_id_config"
+    description = "Normalize stored model IDs in config columns to model@default@provider"
+    source_tables = [
+        "tenant",
+        "knowledgebase",
+        "document",
+        "dialog",
+        "memory",
+        "search",
+        "user_canvas",
+        "canvas_template",
+        "user_canvas_version",
+        "api_4_conversation",
+        "pipeline_operation_log",
+        "connector",
+        "evaluation_runs",
+    ]
+    target_tables = source_tables
+
+    model_id_fields = {
+        "llm_id",
+        "embd_id",
+        "embedding_model",
+        "rerank_id",
+        "asr_id",
+        "img2txt_id",
+        "tts_id",
+        "ocr_id",
+    }
+    search_config_model_id_fields = {"chat_id"}
+    scan_batch_size = 500
+    string_columns = {
+        "tenant": ("llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id"),
+        "knowledgebase": ("embd_id",),
+        "dialog": ("llm_id", "rerank_id"),
+        "memory": ("embd_id", "llm_id"),
+    }
+    json_columns = {
+        "knowledgebase": ("parser_config",),
+        "document": ("parser_config",),
+        "search": ("search_config",),
+        "user_canvas": ("dsl",),
+        "canvas_template": ("dsl",),
+        "user_canvas_version": ("dsl",),
+        "api_4_conversation": ("dsl",),
+        "pipeline_operation_log": ("dsl",),
+        "connector": ("config",),
+        "evaluation_runs": ("config_snapshot",),
+    }
+
+    def normalize_model_id(self, value):
+        if not isinstance(value, str) or not value:
+            return value, False
+
+        parts = value.split("@")
+        if len(parts) != 2:
+            return value, False
+
+        model_name, provider_name = parts
+        if not model_name or not provider_name:
+            return value, False
+
+        return f"{model_name}@default@{provider_name}", True
+
+    def normalize_config(self, value, path=None):
+        path = path or ()
+
+        if isinstance(value, dict):
+            changed = False
+            normalized = {}
+            for key, item in value.items():
+                key_path = path + (str(key),)
+                should_normalize = key in self.model_id_fields or (
+                    key in self.search_config_model_id_fields and "search_config" in path
+                )
+                if should_normalize:
+                    normalized_item, item_changed = self.normalize_model_id(item)
+                else:
+                    normalized_item, item_changed = self.normalize_config(item, key_path)
+                normalized[key] = normalized_item
+                changed = changed or item_changed
+            return normalized, changed
+
+        if isinstance(value, list):
+            changed = False
+            normalized = []
+            for index, item in enumerate(value):
+                normalized_item, item_changed = self.normalize_config(item, path + (str(index),))
+                normalized.append(normalized_item)
+                changed = changed or item_changed
+            return normalized, changed
+
+        return value, False
+
+    def existing_columns(self, table_columns):
+        for table_name, columns in table_columns.items():
+            if not self.db.table_exists(table_name):
+                logger.info("Table '%s' does not exist, skipping", table_name)
+                continue
+            for column_name in columns:
+                if not self.db.column_exists(table_name, column_name):
+                    logger.info("Column '%s.%s' does not exist, skipping", table_name, column_name)
+                    continue
+                yield table_name, column_name
+
+    def load_json_value(self, raw_value, table_name, column_name, row_id):
+        if raw_value in (None, ""):
+            return None, False
+        if isinstance(raw_value, (dict, list)):
+            return raw_value, True
+        try:
+            return json.loads(raw_value), True
+        except (TypeError, json.JSONDecodeError):
+            logger.warning(
+                "Failed to parse JSON in %s.%s id=%s, skipping",
+                table_name,
+                column_name,
+                row_id,
+            )
+            return None, False
+
+    def iter_string_changes(self):
+        for table_name, column_name in self.existing_columns(self.string_columns):
+            cursor = self.db.execute_sql(
+                f"SELECT id, `{column_name}` FROM `{table_name}` "
+                f"WHERE `{column_name}` IS NOT NULL AND `{column_name}` != '' AND `{column_name}` LIKE %s",
+                ("%@%",),
+            )
+            while True:
+                rows = cursor.fetchmany(self.scan_batch_size)
+                if not rows:
+                    break
+                for row_id, value in rows:
+                    normalized, changed = self.normalize_model_id(value)
+                    if changed:
+                        yield table_name, column_name, row_id, normalized
+
+    def iter_json_changes(self):
+        for table_name, column_name in self.existing_columns(self.json_columns):
+            cursor = self.db.execute_sql(
+                f"SELECT id, `{column_name}` FROM `{table_name}` "
+                f"WHERE `{column_name}` IS NOT NULL AND `{column_name}` != '' AND `{column_name}` LIKE %s",
+                ("%@%",),
+            )
+            while True:
+                rows = cursor.fetchmany(self.scan_batch_size)
+                if not rows:
+                    break
+                for row_id, raw_value in rows:
+                    config, loaded = self.load_json_value(raw_value, table_name, column_name, row_id)
+                    if not loaded:
+                        continue
+                    normalized, changed = self.normalize_config(config, (column_name,))
+                    if changed:
+                        normalized_json = json.dumps(
+                            normalized,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        yield table_name, column_name, row_id, normalized_json
+
+    def count_changes(self) -> tuple[int, set]:
+        rows = 0
+        tables = set()
+        for table_name, _, _, _ in self.iter_string_changes():
+            rows += 1
+            tables.add(table_name)
+        for table_name, _, _, _ in self.iter_json_changes():
+            rows += 1
+            tables.add(table_name)
+        return rows, tables
+
+    def check(self) -> bool:
+        rows, tables = self.count_changes()
+        if rows == 0:
+            logger.info("No stored model IDs need normalization")
+            return False
+        logger.info(
+            "Found %s rows to normalize across tables: %s",
+            rows,
+            ", ".join(sorted(tables)),
+        )
+        return True
+
+    def execute(self) -> tuple[int, list]:
+        if self.create_table_only:
+            logger.info("[CREATE TABLE ONLY] No tables are created for this data migration")
+            return 0, []
+
+        rows_updated = 0
+        tables_operated = set()
+
+        for table_name, column_name, row_id, normalized in self.iter_string_changes():
+            tables_operated.add(table_name)
+            rows_updated += 1
+            if rows_updated <= 10:
+                logger.info(
+                    "%s %s.%s id=%s -> %s",
+                    "[DRY RUN] Would update" if self.dry_run else "Updating",
+                    table_name,
+                    column_name,
+                    row_id,
+                    normalized,
+                )
+            if not self.dry_run:
+                self.db.execute_sql(
+                    f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE id = %s",
+                    (normalized, row_id),
+                )
+
+        for table_name, column_name, row_id, normalized_json in self.iter_json_changes():
+            tables_operated.add(table_name)
+            rows_updated += 1
+            if rows_updated <= 10:
+                logger.info(
+                    "%s %s.%s id=%s",
+                    "[DRY RUN] Would update" if self.dry_run else "Updating",
+                    table_name,
+                    column_name,
+                    row_id,
+                )
+            if not self.dry_run:
+                self.db.execute_sql(
+                    f"UPDATE `{table_name}` SET `{column_name}` = %s WHERE id = %s",
+                    (normalized_json, row_id),
+                )
+
+        if rows_updated > 10:
+            logger.info("... and %s more row updates", rows_updated - 10)
+
+        if self.dry_run:
+            logger.info("[DRY RUN] Would update %s rows", rows_updated)
+        else:
+            logger.info("Updated %s rows", rows_updated)
+
+        return rows_updated, sorted(tables_operated)
 
 
 # Registry of available migration stages
@@ -723,6 +1006,7 @@ MIGRATION_STAGES = {
     'tenant_model_provider': TenantModelProviderStage,
     'tenant_model_instance': TenantModelInstanceStage,
     'tenant_model': TenantModelStage,
+    'model_id_config': ModelIdConfigStage,
 }
 
 
@@ -809,6 +1093,9 @@ Examples:
   # Execute full migration (create tables and migrate data)
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute
   
+  # Normalize legacy model IDs in stored configs
+  python mysql_migration.py --stages model_id_config --config /path/to/config.yaml --execute
+
   # Run multiple stages
   python mysql_migration.py --stages stage1,stage2,stage3 --config /path/to/config.yaml --execute
 """

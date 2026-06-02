@@ -1372,9 +1372,6 @@ class TenantModelInstance(DataBaseModel):
 
     class Meta:
         db_table = "tenant_model_instance"
-        indexes = (
-            (("api_key", "provider_id"), True),
-        )
 
 
 class TenantModel(DataBaseModel):
@@ -1731,6 +1728,17 @@ def migrate_db():
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
+    for table_name, index_name in [("tenant_model_instance", "idx_api_key_provider_id"), ("tenant_model", "idx_provider_model_instance")]:
+        try:
+            migrate(migrator.drop_index(table_name, index_name))
+        except (OperationalError, ProgrammingError) as ex:
+            msg = str(ex)
+            if "1091" in msg or "can't DROP" in msg.lower() or "does not exist" in msg.lower() or "already exists" in msg.lower():
+                pass
+            else:
+                logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
+        except Exception as ex:
+            logging.critical(f"Failed to drop index {index_name} on {table_name}: {ex}")
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
