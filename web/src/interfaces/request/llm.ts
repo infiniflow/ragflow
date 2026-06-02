@@ -23,6 +23,7 @@ export interface IAddProviderRequestBody {
 
 export type IAddProviderInstanceRequestBody = IAddLlmRequestBody & {
   instance_name: string;
+  region?: string;
 };
 
 export interface IDeleteProviderInstanceRequestBody {

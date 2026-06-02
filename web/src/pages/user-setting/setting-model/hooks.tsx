@@ -5,6 +5,7 @@ import {
   useAddProviderInstance,
   useFetchAddedProviders,
   useFetchProviderInstances,
+  useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
 import { getRealModelName } from '@/utils/llm-util';
@@ -87,12 +88,46 @@ export const useHideWhenInstanceExists = (instanceNameSet: Set<string>) => {
     [instanceNameSet],
   );
 };
+export const useVerifyConnection = () => {
+  const { verifyProviderConnection } = useVerifyProviderConnection();
+
+  return useCallback(
+    async (
+      providerName: string,
+      apiKey: string,
+      baseUrl?: string,
+      region?: string,
+    ) => {
+      const ret = await verifyProviderConnection({
+        provider_name: providerName,
+        api_key: apiKey,
+        base_url: baseUrl,
+        region: region,
+      });
+
+      if (ret.code === 0) {
+        return {
+          isValid: true,
+          logs: ret.message || 'success',
+        } as VerifyResult;
+      } else {
+        return {
+          isValid: false,
+          logs: ret.message || 'Verification failed',
+        } as VerifyResult;
+      }
+    },
+    [verifyProviderConnection],
+  );
+};
+
 export const useSubmitApiKey = () => {
   const [savingParams, setSavingParams] = useState<SavingParamsState>(
     {} as SavingParamsState,
   );
   const [editMode, setEditMode] = useState(false);
   const submitProviderInstance = useSubmitProviderInstance();
+  const { verifyProviderConnection } = useVerifyProviderConnection();
   const [saveLoading, setSaveLoading] = useState(false);
   const {
     visible: apiKeyVisible,
@@ -100,13 +135,42 @@ export const useSubmitApiKey = () => {
     showModal: showApiKeyModal,
   } = useSetModalState();
 
+  const verifyConnection = useCallback(
+    async (
+      providerName: string,
+      apiKey: string,
+      baseUrl?: string,
+      region?: string,
+    ) => {
+      const ret = await verifyProviderConnection({
+        provider_name: providerName,
+        api_key: apiKey,
+        base_url: baseUrl,
+        region: region,
+      });
+
+      if (ret.code === 0) {
+        return {
+          isValid: true,
+          logs: ret.message || 'success',
+        } as VerifyResult;
+      } else {
+        return {
+          isValid: false,
+          logs: ret.message || 'Verification failed',
+        } as VerifyResult;
+      }
+    },
+    [verifyProviderConnection],
+  );
+
   const onApiKeySavingOk = useCallback(
     async (postBody: ApiKeyPostBody, isVerify = false) => {
       if (!isVerify) {
         setSaveLoading(true);
       }
       let apiKey: string | Record<string, any> = postBody.api_key || '';
-
+      let region;
       if (savingParams.llm_factory === LLMFactory.SILICONFLOW) {
         let sourceFid: string = LLMFactory.SILICONFLOW;
         const baseUrl = postBody.base_url;
@@ -119,12 +183,24 @@ export const useSubmitApiKey = () => {
               host.endsWith('.api.siliconflow.com')
             ) {
               sourceFid = 'siliconflow_intl';
+              region = 'intl';
             }
           } catch {
             // ignore invalid URL and keep default sourceFid
           }
         }
         apiKey = { api_key: postBody.api_key, source_fid: sourceFid };
+      }
+
+      // Use dedicated verify API for verification
+      if (isVerify) {
+        const res = await verifyConnection(
+          savingParams.llm_factory,
+          postBody.api_key,
+          postBody.base_url,
+          region,
+        );
+        return res;
       }
 
       const req: IAddProviderInstanceRequestBody = {
@@ -136,6 +212,7 @@ export const useSubmitApiKey = () => {
         api_key: apiKey,
         api_base: postBody.base_url || '',
         max_tokens: 0,
+        region: region,
       };
 
       const ret = await submitProviderInstance(req, isVerify);
@@ -146,23 +223,8 @@ export const useSubmitApiKey = () => {
           setEditMode(false);
         }
       }
-      if (isVerify) {
-        let res = {} as VerifyResult;
-        if (ret.data?.success) {
-          res = {
-            isValid: true,
-            logs: ret.data?.message,
-          };
-        } else {
-          res = {
-            isValid: false,
-            logs: ret.data.message,
-          };
-        }
-        return res;
-      }
     },
-    [hideApiKeyModal, submitProviderInstance, savingParams],
+    [hideApiKeyModal, submitProviderInstance, savingParams, verifyConnection],
   );
 
   const onShowApiKeyModal = useCallback(
