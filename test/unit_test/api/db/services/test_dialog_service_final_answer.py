@@ -292,6 +292,53 @@ def test_async_ask_delta_events_carry_incremental_text_only(monkeypatch):
     )
 
 
+@pytest.mark.p2
+def test_async_ask_empty_kb_ids_yields_error_final_event(monkeypatch):
+    """
+    When kb_ids is empty or every ID is unknown/deleted, async_ask() must not
+    crash with IndexError on kbs[0]. Match gen_mindmap()'s guard in the same module.
+    """
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService, "get_by_ids", lambda _ids: []
+    )
+
+    events = _collect(
+        dialog_service.async_ask(
+            question="What is RAGFlow?",
+            kb_ids=[],
+            tenant_id="tenant-1",
+        )
+    )
+
+    assert len(events) == 1
+    final = events[0]
+    assert final.get("final") is True
+    assert "No KB selected" in final["answer"]
+    assert final["reference"] == {}
+
+
+@pytest.mark.p2
+def test_async_ask_stale_kb_ids_yields_error_final_event(monkeypatch):
+    """Deleted or invalid kb_ids resolve to an empty list from get_by_ids."""
+    monkeypatch.setattr(
+        dialog_service.KnowledgebaseService,
+        "get_by_ids",
+        lambda ids: [] if ids == ["deleted-kb"] else [_KB],
+    )
+
+    events = _collect(
+        dialog_service.async_ask(
+            question="What is RAGFlow?",
+            kb_ids=["deleted-kb"],
+            tenant_id="tenant-1",
+        )
+    )
+
+    assert len(events) == 1
+    assert events[0].get("final") is True
+    assert "No KB selected" in events[0]["answer"]
+
+
 # ---------------------------------------------------------------------------
 # Tests for async_chat  (production code path)
 # ---------------------------------------------------------------------------

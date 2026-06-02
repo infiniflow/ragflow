@@ -1533,6 +1533,10 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(search_config)
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
+    if not kbs:
+        yield {"answer": "**ERROR**: No KB selected", "reference": {}, "final": True}
+        return
+
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
