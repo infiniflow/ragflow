@@ -1,0 +1,156 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+"""Regression test for `/api/v1/agents/attachments/<attachment_id>/download` (#15502).
+
+Without the empty-blob guard, `make_response(None)` raises `TypeError`
+and the handler's blanket `except Exception` converts it to HTTP 500.
+Same bug class as #15365 on document preview. This test pins the
+missing-storage path to a structured 4xx response.
+"""
+
+import asyncio
+import importlib.util
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+
+import pytest
+
+
+class _PassthroughManager:
+    def route(self, *_args, **_kwargs):
+        return lambda func: func
+
+
+def _stub(monkeypatch, name, **attrs):
+    mod = ModuleType(name)
+    for key, value in attrs.items():
+        setattr(mod, key, value)
+    monkeypatch.setitem(sys.modules, name, mod)
+    return mod
+
+
+def _load_agent_api(monkeypatch, *, storage_get):
+    """Load agent_api.py with the minimum stubs to exercise download_attachment."""
+
+    async def _make_response(payload):
+        if payload is None:
+            raise TypeError("response value cannot be None")
+        return SimpleNamespace(payload=payload, headers={})
+
+    _stub(
+        monkeypatch, "api.apps",
+        current_user=SimpleNamespace(id="tenant-1"),
+        login_required=lambda func: func,
+    )
+    _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
+    _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
+    _stub(monkeypatch, "api.db.db_models", Task=SimpleNamespace())
+    _stub(
+        monkeypatch, "api.db.services.api_service",
+        API4ConversationService=SimpleNamespace(
+            get_by_id=lambda _id: (False, None),
+            save=lambda **_k: True,
+            delete_by_id=lambda *_a, **_k: True,
+            query=lambda **_k: [],
+        ),
+    )
+    _stub(
+        monkeypatch, "api.db.services.canvas_service",
+        CanvasTemplateService=SimpleNamespace(),
+        UserCanvasService=SimpleNamespace(accessible=lambda *_a, **_k: True, query=lambda **_k: []),
+        completion=lambda *_a, **_k: None,
+        completion_openai=lambda *_a, **_k: None,
+    )
+    _stub(monkeypatch, "api.db.services.document_service", DocumentService=SimpleNamespace())
+    _stub(monkeypatch, "api.db.services.file_service", FileService=SimpleNamespace())
+    _stub(monkeypatch, "api.db.services.knowledgebase_service", KnowledgebaseService=SimpleNamespace())
+    _stub(monkeypatch, "api.db.services.pipeline_operation_log_service", PipelineOperationLogService=SimpleNamespace())
+    _stub(
+        monkeypatch, "api.db.services.task_service",
+        CANVAS_DEBUG_DOC_ID="", TaskService=SimpleNamespace(), queue_dataflow=lambda *_a, **_k: None,
+    )
+    _stub(
+        monkeypatch, "api.db.services.user_service",
+        TenantService=SimpleNamespace(), UserService=SimpleNamespace(get_by_id=lambda *_a, **_k: (False, None)),
+    )
+    _stub(monkeypatch, "api.db.services.user_canvas_version", UserCanvasVersionService=SimpleNamespace())
+
+    _stub(
+        monkeypatch, "api.utils.api_utils",
+        construct_json_result=lambda **kw: {"kind": "json", **kw},
+        get_data_error_result=lambda message="", code=0, data=False: {"kind": "data_error", "message": message},
+        get_error_data_result=lambda *_a, **_k: {"kind": "error"},
+        get_result=lambda *_a, **_k: {"kind": "result"},
+        get_json_result=lambda *_a, **_k: {"kind": "json_result"},
+        server_error_response=lambda e: {"kind": "server_error", "error": str(e)},
+        add_tenant_id_to_kwargs=lambda func: func,
+        get_request_json=lambda: {},
+    )
+    _stub(monkeypatch, "common.settings", retriever=SimpleNamespace(), kg_retriever=SimpleNamespace())
+    _stub(monkeypatch, "common.ssrf_guard", assert_host_is_safe=lambda *_a, **_k: None)
+    _stub(
+        monkeypatch, "api.utils.web_utils",
+        CONTENT_TYPE_MAP={"markdown": "text/markdown"},
+        apply_safe_file_response_headers=lambda *_a, **_k: None,
+    )
+
+    quart_stub = ModuleType("quart")
+    quart_stub.request = SimpleNamespace(method="GET", args={"ext": "markdown"})
+    quart_stub.make_response = _make_response
+    quart_stub.send_file = lambda *_a, **_k: None
+    monkeypatch.setitem(sys.modules, "quart", quart_stub)
+
+    # parents[5] = repo root from test/unit_test/api/apps/restful_apis/<file>
+    repo_root = Path(__file__).resolve().parents[5]
+    module_path = repo_root / "api" / "apps" / "restful_apis" / "agent_api.py"
+    spec = importlib.util.spec_from_file_location("test_agent_api_module", module_path)
+    module = importlib.util.module_from_spec(spec)
+    module.manager = _PassthroughManager()
+    module.settings = SimpleNamespace(STORAGE_IMPL=SimpleNamespace(get=storage_get))
+    monkeypatch.setitem(sys.modules, "test_agent_api_module", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.p1
+class TestAttachmentDownloadMissingBlob:
+    """Regression for #15502: missing-blob → structured 4xx, not HTTP 500."""
+
+    def test_empty_blob_returns_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Storage returns None (orphaned metadata) → 'Document not found!' 4xx,
+        not a TypeError 500 from make_response(None)."""
+        module = _load_agent_api(monkeypatch, storage_get=lambda *_a, **_k: None)
+        result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="orphan"))
+        # 'data_error' is the get_data_error_result shape from our stub above.
+        # If the empty-blob guard is missing, make_response(None) raises and
+        # the result instead has `kind == "server_error"`.
+        assert isinstance(result, dict) and result.get("kind") == "data_error", result
+        assert "not found" in result["message"].lower()
+
+    def test_empty_bytes_returns_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Same path when storage returns b'' instead of None."""
+        module = _load_agent_api(monkeypatch, storage_get=lambda *_a, **_k: b"")
+        result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="empty"))
+        assert isinstance(result, dict) and result.get("kind") == "data_error"
+        assert "not found" in result["message"].lower()
+
+    def test_nonempty_blob_proceeds(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Happy path: real bytes flow through make_response untouched."""
+        module = _load_agent_api(monkeypatch, storage_get=lambda *_a, **_k: b"PDFDATA")
+        result = asyncio.run(module.download_attachment(tenant_id="t1", attachment_id="good"))
+        # SimpleNamespace from our _make_response stub
+        assert hasattr(result, "payload") and result.payload == b"PDFDATA"
