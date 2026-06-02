@@ -219,8 +219,6 @@ func (a *AvianModel) ChatWithMessages(modelName string, messages []Message, apiC
 	}, nil
 }
 
-const avianStreamTimeout = 10 * time.Minute
-
 func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
@@ -251,7 +249,7 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 	// ResponseHeaderTimeout caps the initial header wait. This context
 	// also caps the body-read phase so a stalled SSE stream cannot hold
 	// the caller's goroutine and connection indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), avianStreamTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))

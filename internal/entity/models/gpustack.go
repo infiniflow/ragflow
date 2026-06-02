@@ -36,9 +36,8 @@ import (
 // Chat is served at <base>/v1/chat/completions with the standard
 // OpenAI wire shape and Bearer auth (the GPUStack server always
 // requires an API key; see rag/llm/chat_model.py GPUStack route).
-// /v1 also aliases /v1-openai for chat and embeddings; this driver
-// uses /v1 to match the Python side and the closed bug report
-// #13236 ("v1 suffix required in base url").
+// Chat uses /v1 (see #13236). Embeddings use the v1-openai route per GPUStack
+// API docs and maintainer review (v1-openai/embeddings, not v1/embeddings).
 type GPUStackModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
@@ -421,8 +420,117 @@ func (g *GPUStackModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (g *GPUStackModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+// gpustackEmbeddingData is one element in a GPUStack embeddings response.
+type gpustackEmbeddingData struct {
+	Embedding []float64 `json:"embedding"`
+	Index     *int      `json:"index"`
+}
+
+// gpustackEmbeddingResponse is the JSON body returned by GPUStack embeddings API.
+type gpustackEmbeddingResponse struct {
+	Data []gpustackEmbeddingData `json:"data"`
+}
+
+// Embed requests embedding vectors via GPUStack's v1-openai/embeddings endpoint.
+func (g *GPUStackModel) Embed(
+	modelName *string,
+	texts []string,
+	apiConfig *APIConfig,
+	embeddingConfig *EmbeddingConfig,
+) ([]EmbeddingData, error) {
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	baseURL, err := g.baseURLForRegion(region)
+	if err != nil {
+		return nil, err
+	}
+	if g.URLSuffix.Embedding == "" {
+		return nil, fmt.Errorf("gpustack: embedding URL suffix is not configured")
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(g.URLSuffix.Embedding, "/"))
+
+	reqBody := map[string]interface{}{
+		"model": *modelName,
+		"input": texts,
+	}
+	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
+		reqBody["dimensions"] = embeddingConfig.Dimension
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := g.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gpustack embeddings API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed gpustackEmbeddingResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	embeddings := make([]EmbeddingData, len(texts))
+	filled := make([]bool, len(texts))
+	for _, item := range parsed.Data {
+		if item.Index == nil {
+			return nil, fmt.Errorf("gpustack: missing embedding index in response item")
+		}
+		idx := *item.Index
+		if idx < 0 || idx >= len(texts) {
+			return nil, fmt.Errorf("gpustack: embedding response index %d out of range for %d inputs", idx, len(texts))
+		}
+		if filled[idx] {
+			return nil, fmt.Errorf("gpustack: duplicate embedding index %d in response", idx)
+		}
+		if len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("gpustack: empty embedding vector for input index %d", idx)
+		}
+		embeddings[idx] = EmbeddingData{
+			Embedding: item.Embedding,
+			Index:     idx,
+		}
+		filled[idx] = true
+	}
+	for i, ok := range filled {
+		if !ok {
+			return nil, fmt.Errorf("gpustack: missing embedding for input index %d", i)
+		}
+	}
+	return embeddings, nil
 }
 
 func (g *GPUStackModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {

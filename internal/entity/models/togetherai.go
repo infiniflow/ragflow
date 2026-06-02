@@ -212,8 +212,6 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 	}, nil
 }
 
-const togetherAIStreamTimeout = 10 * time.Minute
-
 func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
@@ -244,7 +242,7 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	// ResponseHeaderTimeout caps the initial header wait. This context
 	// also caps the body-read phase so a stalled SSE stream cannot hold
 	// the caller's goroutine and connection indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), togetherAIStreamTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
