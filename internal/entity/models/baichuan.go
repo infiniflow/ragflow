@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +25,6 @@ func NewBaichuanModel(baseURL map[string]string, urlSuffix URLSuffix) *BaichuanM
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -40,7 +40,6 @@ func (b *BaichuanModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: b.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -110,7 +109,10 @@ func (b *BaichuanModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -224,7 +226,10 @@ func (b *BaichuanModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -328,7 +333,10 @@ func (b *BaichuanModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

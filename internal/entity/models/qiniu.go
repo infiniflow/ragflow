@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,7 +25,6 @@ func NewQiniuModel(baseURL map[string]string, urlSuffix URLSuffix) *QiniuModel {
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxConnsPerHost:     10,
 				MaxIdleConnsPerHost: 100,
@@ -186,7 +186,10 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -310,7 +313,10 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -441,7 +447,10 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, q.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

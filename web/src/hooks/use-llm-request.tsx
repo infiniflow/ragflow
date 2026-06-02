@@ -227,6 +227,9 @@ export const useAddProviderInstance = () => {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
         });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
       }
       return data;
     },
@@ -254,6 +257,9 @@ export const useAddInstanceModel = () => {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
         });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
       }
       return data;
     },
@@ -280,6 +286,9 @@ export const useDeleteProviderInstance = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.provider_name),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.defaultModels(),
