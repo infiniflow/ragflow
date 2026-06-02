@@ -450,9 +450,11 @@ class FunASRSeq2txt(GPTSeq2txt):
     a model_name (the default ``SenseVoiceSmall`` matches FunASR's
     out-of-the-box model alias).
 
-    The API key field is unused by upstream FunASR but the project's
-    LLM bundle plumbing requires a non-empty string; we accept the
-    user-supplied value verbatim and pass it through.
+    FunASR does not require authentication. The project's LLM bundle
+    plumbing nonetheless needs a non-empty key string for the
+    OpenAI-compatible client to construct, so ``__init__`` substitutes
+    the placeholder ``"funasr"`` when the supplied key is falsy; a
+    user-supplied key is forwarded unchanged.
 
     Closes #15449.
     """
