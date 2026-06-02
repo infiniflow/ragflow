@@ -21,11 +21,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -368,7 +369,7 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
 		CreatedBy: "user-1", Permission: string(entity.TenantPermissionTeam),
-		Status:    sptr(string(entity.StatusValid)),
+		Status: sptr(string(entity.StatusValid)),
 	})
 
 	return db
@@ -617,5 +618,31 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+func TestParseDocIDsQuery(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{name: "empty string returns nil so the summary covers every document", in: "", want: nil},
+		{name: "whitespace-only string returns nil", in: "   ", want: nil},
+		{name: "only commas and whitespace returns nil rather than empty strings", in: " , , ,", want: nil},
+		{name: "single id is returned as a one-element slice", in: "doc-1", want: []string{"doc-1"}},
+		{name: "comma-separated ids are split in order", in: "doc-1,doc-2,doc-3", want: []string{"doc-1", "doc-2", "doc-3"}},
+		{name: "surrounding whitespace on each id is trimmed", in: " doc-1 , doc-2 ,doc-3 ", want: []string{"doc-1", "doc-2", "doc-3"}},
+		{name: "empty segments between commas are dropped", in: "doc-1,,doc-2, ,doc-3", want: []string{"doc-1", "doc-2", "doc-3"}},
+		{name: "trailing comma does not produce an empty trailing id", in: "doc-1,doc-2,", want: []string{"doc-1", "doc-2"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseDocIDsQuery(tc.in)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("parseDocIDsQuery(%q) = %#v, want %#v", tc.in, got, tc.want)
+			}
+		})
 	}
 }
