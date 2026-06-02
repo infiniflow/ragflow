@@ -481,7 +481,7 @@ def _load_session_module(monkeypatch):
                 raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
         return _MockModelConfig2(mock_tenant_id, "model-1").to_dict()
 
-    def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
+    def _get_model_config_from_provider_instance(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
             raise Exception("Model Name is required")
         return _MockModelConfig2(tenant_id, model_name, model_type).to_dict()
@@ -525,7 +525,7 @@ def _load_session_module(monkeypatch):
         return _MockModelConfig2(tenant_id, model_name, model_type_val).to_dict()
     
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
-    tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
+    tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -1045,7 +1045,112 @@ def test_openai_nonstream_branch_unit(monkeypatch):
 
     res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
     assert res["choices"][0]["message"]["content"] == "world"
-    
+
+
+@pytest.mark.p2
+def test_openai_defaults_to_nonstream_when_stream_omitted_unit(monkeypatch):
+    """Omitted stream must default to false (OpenAI API compat), not SSE."""
+    module = _load_openai_api_module(monkeypatch)
+
+    monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=[], llm_id="chat-model", tenant_id="tenant-1")],
+    )
+
+    stream_flags = []
+
+    async def fake_async_chat(_dia, _msg, stream, **_kwargs):
+        stream_flags.append(stream)
+        yield {"answer": "hello", "reference": {}}
+
+    monkeypatch.setattr(module, "async_chat", fake_async_chat)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "model": "model",
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
+    assert stream_flags == [False]
+    assert isinstance(res, dict)
+    assert res["object"] == "chat.completion"
+    assert res["choices"][0]["message"]["content"] == "hello"
+
+
+@pytest.mark.p2
+def test_openai_array_text_content_normalized_unit(monkeypatch):
+    """OpenAI-style array content with text parts must not crash async_chat."""
+    module = _load_openai_api_module(monkeypatch)
+
+    monkeypatch.setattr(module, "num_tokens_from_string", lambda text: len(text or ""))
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=[], llm_id="chat-model", tenant_id="tenant-1")],
+    )
+
+    captured_msg = []
+
+    async def fake_async_chat(_dia, msg, _stream, **_kwargs):
+        captured_msg.append(msg)
+        yield {"answer": "ok", "reference": {}}
+
+    monkeypatch.setattr(module, "async_chat", fake_async_chat)
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "model": "model",
+                "stream": False,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Hello"},
+                            {"type": "text", "text": "World"},
+                        ],
+                    }
+                ],
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
+    assert captured_msg[0][0]["content"] == "Hello\nWorld"
+    assert res["choices"][0]["message"]["content"] == "ok"
+
+
+@pytest.mark.p2
+def test_openai_invalid_message_content_type_unit(monkeypatch):
+    module = _load_openai_api_module(monkeypatch)
+
+    monkeypatch.setattr(
+        module.DialogService,
+        "query",
+        lambda **_kwargs: [SimpleNamespace(kb_ids=[], llm_id="chat-model", tenant_id="tenant-1")],
+    )
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue(
+            {
+                "model": "model",
+                "messages": [{"role": "user", "content": 12345}],
+            }
+        ),
+    )
+
+    res = _run(inspect.unwrap(module.openai_chat_completions)("chat-1"))
+    assert "messages[].content must be a string or an array of content parts." in res["message"]
+
 
 @pytest.mark.p2
 def test_agents_openai_compatibility_unit(monkeypatch):
@@ -2095,7 +2200,6 @@ def _load_chat_api_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.joint_services", joint_pkg)
 
     tenant_model_svc = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_svc.get_model_config_by_type_and_name = lambda *_a, **_k: {}
     tenant_model_svc.get_tenant_default_model_by_type = lambda *_a, **_k: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_svc)
 
@@ -2184,10 +2288,6 @@ def _load_chat_api_module(monkeypatch):
     api_utils_mod.server_error_response = lambda e: {"code": _RetCode.SERVER_ERROR, "message": str(e)}
     api_utils_mod.validate_request = lambda *_a, **_k: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
-
-    tenant_utils_mod = ModuleType("api.utils.tenant_utils")
-    tenant_utils_mod.ensure_tenant_model_id_for_params = lambda _tenant_id, req: req
-    monkeypatch.setitem(sys.modules, "api.utils.tenant_utils", tenant_utils_mod)
 
     rag_gen_mod = ModuleType("rag.prompts.generator")
     rag_gen_mod.chunks_format = lambda chunks: chunks

@@ -16,6 +16,7 @@
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -26,8 +27,7 @@ from quart import Response, request
 
 from api.apps import current_user, login_required
 from api.db.joint_services.tenant_model_service import (
-    get_model_config_by_type_and_name,
-    get_tenant_default_model_by_type,
+    get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 )
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
@@ -35,7 +35,6 @@ from api.db.services.dialog_service import DialogService, async_chat, gen_mindma
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
-from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
     check_duplicate_ids,
@@ -45,12 +44,44 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.tenant_utils import ensure_tenant_model_id_for_params
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
+
+def _sanitize_json_floats(obj):
+    """Replace NaN/Infinity floats with None so the result is RFC 8259 JSON.
+
+    `json.dumps` emits the literal tokens `NaN`/`Infinity` by default
+    (allow_nan=True). Those tokens are valid Python JSON output but invalid
+    per the JSON spec, and downstream proxies / Go consumers reject the
+    response with `failed to encode response: json: unsupported value: NaN`
+    (fixes #15245). Retrieval scores (similarity, vector_similarity,
+    term_similarity) can become NaN when an aggregation runs over an empty
+    set or when a similarity denominator is zero, so the chat completions
+    stream is the realistic trigger.
+
+    `isinstance(obj, float)` alone catches Python float and numpy.float64
+    (a float subclass) but misses numpy.float32 / numpy.float16 and any
+    other duck-typed numeric. Probe via math.isnan/isinf in a try/except
+    so any object math can evaluate gets sanitized — without changing
+    upstream callers like chunks_format or rag/nlp/search.py.
+    """
+    try:
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    except TypeError:
+        pass
+    if isinstance(obj, dict):
+        return {k: _sanitize_json_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_json_floats(v) for v in obj)
+    return obj
+
 
 _DEFAULT_PROMPT_CONFIG = {
     "system": (
@@ -240,37 +271,44 @@ async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
     if not llm_id:
         return None
 
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(llm_id)
-    model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
+    conf_model_type = (llm_setting or {}).get("model_type")
+    if isinstance(conf_model_type, str):
+        model_type = conf_model_type if conf_model_type in {"chat", "image2text"} else "chat"
+    elif isinstance(conf_model_type, list):
+        model_type = "image2text" if "image2text" in conf_model_type else "chat"
+    else:
         model_type = "chat"
-
-    if not await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type=model_type,
-    ):
+    try:
+        await thread_pool_exec(
+            get_model_config_from_provider_instance,
+            tenant_id=tenant_id,
+            model_name=llm_id,
+            model_type=model_type,
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {llm_id}: {e}")
         return f"`llm_id` {llm_id} doesn't exist"
-    return None
 
+    return None
 
 async def _validate_rerank_id(rerank_id, tenant_id):
     if not rerank_id:
         return None
-    llm_name, llm_factory = TenantLLMService.split_model_name_and_factory(rerank_id)
+    parts = rerank_id.split('@')
+    llm_name = parts[0]
     if llm_name in _DEFAULT_RERANK_MODELS:
         return None
-    if await thread_pool_exec(
-        TenantLLMService.query,
-        tenant_id=tenant_id,
-        llm_name=llm_name,
-        llm_factory=llm_factory,
-        model_type="rerank",
-    ):
-        return None
-    return f"`rerank_id` {rerank_id} doesn't exist"
+    try:
+        await thread_pool_exec(
+            get_model_config_from_provider_instance,
+            tenant_id=tenant_id,
+            model_name=rerank_id,
+            model_type="rerank",
+        )
+    except Exception as e:
+        logging.error(f"Fail to get model config for {rerank_id}: {e}")
+        return f"`rerank_id` {rerank_id} doesn't exist"
+    return None
 
 
 # def _validate_prompt_config(prompt_config):
@@ -301,7 +339,7 @@ async def _validate_dataset_ids(dataset_ids, tenant_id):
             return f"The dataset {dataset_id} doesn't own parsed file"
         kbs.append(kb)
 
-    embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]
+    embd_ids = [split_model_name(kb.embd_id)[0] for kb in kbs]
     if len(set(embd_ids)) > 1:
         return f'Datasets use different embedding models: {[kb.embd_id for kb in kbs]}'
 
@@ -379,7 +417,6 @@ async def create():
         # if err:
         #     return get_data_error_result(message=err)
 
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -419,7 +456,7 @@ async def list_chats():
 
     try:
         page_number = int(request.args.get("page", 0))
-        items_per_page = int(request.args.get("page_size", 0))
+        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
         authorized_owner_ids = {member["tenant_id"] for member in tenants}
@@ -539,8 +576,6 @@ async def update_chat(chat_id):
         # kb_ids = req.get("kb_ids", current_chat.get("kb_ids", []))
         # if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #     return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
-
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -631,7 +666,6 @@ async def patch_chat(chat_id):
         #     if not kb_ids and not prompt_config.get("tavily_api_key") and _has_knowledge_placeholder(prompt_config):
         #         return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
-        req = ensure_tenant_model_id_for_params(current_user.id, req)
         req = {field: value for field, value in req.items() if field in _PERSISTED_FIELDS}
         for field in _READONLY_FIELDS:
             req.pop(field, None)
@@ -769,7 +803,7 @@ async def list_sessions(chat_id):
                 code=RetCode.AUTHENTICATION_ERROR,
             )
         page_number = int(request.args.get("page", 1))
-        items_per_page = int(request.args.get("page_size", 30))
+        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")
@@ -1100,7 +1134,7 @@ async def recommendation():
 
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(current_user.id, LLMType.CHAT, chat_id)
+        chat_model_config = get_model_config_from_provider_instance(current_user.id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)
@@ -1198,10 +1232,16 @@ async def session_completion(chat_id_in_arg=""):
             conv.reference.append({"chunks": [], "doc_aggs": []})
 
         if chat_model_id:
-            if not await thread_pool_exec(TenantLLMService.get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
+            if not await thread_pool_exec(get_api_key, tenant_id=dia.tenant_id, model_name=chat_model_id):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
+        elif not dia.llm_id:
+            logging.info("empty chat_model_id in req, use default chat model.")
+            _, tenant_info = TenantService.get_by_id(dia.tenant_id)
+            if not tenant_info or not tenant_info.llm_id:
+                raise LookupError("No default chat model for tenant.")
+            dia.llm_id = tenant_info.llm_id
 
         stream_mode = req.pop("stream", True)
 
@@ -1218,7 +1258,8 @@ async def session_completion(chat_id_in_arg=""):
             try:
                 async for ans in async_chat(dia, msg, True, **req):
                     ans = _format_answer(ans)
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                    payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
+                    yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 if conv is not None:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
@@ -1240,6 +1281,6 @@ async def session_completion(chat_id_in_arg=""):
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
-        return get_json_result(data=answer)
+        return get_json_result(data=_sanitize_json_floats(answer))
     except Exception as ex:
         return server_error_response(ex)

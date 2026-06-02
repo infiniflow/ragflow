@@ -52,6 +52,9 @@ class MinerUContentType(StrEnum):
     EQUATION = "equation"
     CODE = "code"
     LIST = "list"
+    HEADER = "header"
+    FOOTER = "footer"
+    PAGE_NUMBER = "page_number"
     DISCARDED = "discarded"
 
 
@@ -654,7 +657,7 @@ class MinerUParser(RAGFlowPdfParser):
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
         sections = []
         for output in outputs:
-            match output["type"]:
+            match output.get("type"):
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
@@ -677,8 +680,16 @@ class MinerUParser(RAGFlowPdfParser):
                     section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
-                case MinerUContentType.DISCARDED:
-                    continue  # Skip discarded blocks entirely
+                case (
+                    MinerUContentType.HEADER
+                    | MinerUContentType.FOOTER
+                    | MinerUContentType.PAGE_NUMBER
+                    | MinerUContentType.DISCARDED
+                ):
+                    continue
+                case _:
+                    self.logger.debug("[MinerU] Skip unsupported section type=%s", output.get("type"))
+                    continue
 
             section = self._sanitize_section_text(section)
             if not section:

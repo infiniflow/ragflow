@@ -1341,6 +1341,13 @@
             "url": "https://api.minimaxi.com/v1",
             "llm": [
                 {
+                    "llm_name": "MiniMax-M3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "MiniMax-M2.7",
                     "tags": "LLM,CHAT,200k",
                     "max_tokens": 204800,
@@ -2928,6 +2935,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-ai/DeepSeek-V3.1",
                     "tags": "LLM,CHAT,160",
                     "max_tokens": 160000,
@@ -3117,7 +3138,21 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "Pro/moonshotai/Kimi-K2.6",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "Pro/zai-org/GLM-4.7",
+                    "tags": "LLM,CHAT,205k",
+                    "max_tokens": 205000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "Pro/zai-org/GLM-5.1",
                     "tags": "LLM,CHAT,205k",
                     "max_tokens": 205000,
                     "model_type": "chat",
@@ -3905,6 +3940,27 @@
             "url": "https://api.anthropic.com/",
             "llm": [
                 {
+                    "llm_name": "claude-opus-4-8",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-opus-4-7",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-opus-4-6",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "claude-opus-4-5-20251101",
                     "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
@@ -3920,6 +3976,13 @@
                 },
                 {
                     "llm_name": "claude-opus-4-20250514",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-sonnet-4-6",
                     "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
                     "model_type": "chat",
@@ -3975,6 +4038,24 @@
             "tags": "TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",
             "llm": [
+                {
+                    "llm_name": "voyage-4-large",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-4",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "voyage-4-lite",
+                    "tags": "TEXT EMBEDDING,32000",
+                    "max_tokens": 32000,
+                    "model_type": "embedding"
+                },
                 {
                     "llm_name": "voyage-3-large",
                     "tags": "TEXT EMBEDDING,32000",
@@ -4069,6 +4150,18 @@
                     "llm_name": "rerank-lite-1",
                     "tags": "RE-RANK, 4000",
                     "max_tokens": 4000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-2.5",
+                    "tags": "RE-RANK, 32000",
+                    "max_tokens": 32000,
+                    "model_type": "rerank"
+                },
+                {
+                    "llm_name": "rerank-2.5-lite",
+                    "tags": "RE-RANK, 32000",
+                    "max_tokens": 32000,
                     "model_type": "rerank"
                 },
                 {
@@ -4376,21 +4469,21 @@
                     "llm_name": "Qwen3-Reranker-8B",
                     "tags": "TEXT RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
                     "llm_name": "Qwen3-Reranker-4B",
                     "tags": "TEXT RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
                     "llm_name": "Qwen3-Reranker-0.6B",
                     "tags": "TEXT RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -4432,7 +4525,7 @@
                     "llm_name": "jina-reranker-m0",
                     "tags": "TEXT RE-RANK,10K",
                     "max_tokens": 10240,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -4446,7 +4539,7 @@
                     "llm_name": "bce-reranker-base_v1",
                     "tags": "TEXT RE-RANK",
                     "max_tokens": 512,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -4460,7 +4553,7 @@
                     "llm_name": "bge-reranker-v2-m3",
                     "tags": "TEXT RE-RANK",
                     "max_tokens": 8192,
-                    "model_type": "reranker",
+                    "model_type": "rerank",
                     "is_tools": false
                 },
                 {
@@ -6158,13 +6251,13 @@
                     "llm_name": "baai/bge-reranker-v2-m3",
                     "tags": "RE-RANK,8K",
                     "max_tokens": 8000,
-                    "model_type": "reranker"
+                    "model_type": "rerank"
                 },
                 {
                     "llm_name": "qwen/qwen3-reranker-8b",
                     "tags": "RE-RANK,32K",
                     "max_tokens": 32768,
-                    "model_type": "reranker"
+                    "model_type": "rerank"
                 }
             ]
         },

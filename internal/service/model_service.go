@@ -53,9 +53,14 @@ func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, regi
 		return driver, nil
 	}
 
-	newDriver := driver.NewInstance(map[string]string{
+	baseURLByRegion := map[string]string{
 		region: baseURL,
-	})
+	}
+	if region == "" {
+		baseURLByRegion["default"] = baseURL
+	}
+
+	newDriver := driver.NewInstance(baseURLByRegion)
 	if newDriver == nil {
 		return nil, fmt.Errorf("provider %s does not support custom base_url", providerName)
 	}
@@ -81,6 +86,14 @@ type ModelProviderService struct {
 	modelGroupDAO        *dao.TenantModelGroupDAO
 	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
 	userTenantDAO        *dao.UserTenantDAO
+}
+
+// CheckConnectionRequest carries the credentials and optional instance selector
+// for checking provider connectivity without creating a new model instance.
+type CheckConnectionRequest struct {
+	APIKey  string `json:"api_key"`
+	Region  string `json:"region"`
+	BaseURL string `json:"base_url"`
 }
 
 func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
@@ -263,7 +276,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		InstanceName: instanceName,
 		ProviderID:   provider.ID,
 		APIKey:       apiKey,
-		Status:       "enable",
+		Status:       "active",
 		Extra:        extraStr,
 	}
 	err = m.modelInstanceDAO.Create(tenantModelProvider)
@@ -359,7 +372,9 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, 
 		"instanceName": instance.InstanceName,
 		"providerID":   instance.ProviderID,
 		"status":       instance.Status,
+		"apikey":       instance.APIKey,
 		"region":       extra["region"],
+		"base_url":     extra["base_url"],
 	}
 
 	return result, common.CodeSuccess, nil
@@ -418,7 +433,46 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CheckProviderConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CheckConnection(providerName, apiKey, region, baseURL string, userID string) (common.ErrorCode, error) {
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	apiKey = strings.TrimSpace(apiKey)
+	region = strings.TrimSpace(region)
+	baseURL = strings.TrimSpace(baseURL)
+	if region == "" {
+		region = "default"
+	}
+
+	driver := providerInfo.ModelDriver
+	if strings.EqualFold(providerInfo.Class, "local") {
+		if baseURL == "" {
+			return common.CodeDataError, fmt.Errorf("base_url is required for local provider %s", providerName)
+		}
+
+		var err error
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
+			return common.CodeServerError, err
+		}
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: &apiKey,
+		Region: &region,
+	}
+
+	err := driver.CheckConnection(apiConfig)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	return common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1915,6 +1969,13 @@ type AddCustomModelRequest struct {
 }
 
 func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, userID string) (common.ErrorCode, error) {
+	if request == nil {
+		return common.CodeBadRequest, errors.New("request is required")
+	}
+	if len(request.ModelTypes) == 0 {
+		return common.CodeBadRequest, errors.New("model type is required")
+	}
+
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
