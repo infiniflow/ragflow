@@ -30,9 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/service"
-
 	"github.com/gin-gonic/gin"
+	"ragflow/internal/service"
 )
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
