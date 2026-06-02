@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 
 from common.asyncio_utils import LoopLocalSemaphore
@@ -28,6 +29,11 @@ for var_name, value in [
     ("MAX_CONCURRENT_MINIO", MAX_CONCURRENT_MINIO),
 ]:
     if value <= 0:
+        logging.error(
+            "Invalid concurrency configuration: %s must be a positive integer, got %s.",
+            var_name,
+            value,
+        )
         raise ValueError(
             f"{var_name} must be a positive integer, got {value}. "
             f"Check your environment configuration."
