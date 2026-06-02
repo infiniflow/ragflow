@@ -194,9 +194,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
-				datasets.GET("/ingestions", r.documentHandler.ListIngestionTasks)
-				datasets.PUT("/ingestions", r.documentHandler.StopIngestionTasks)
-				datasets.DELETE("/ingestions", r.documentHandler.RemoveIngestionTasks)
+				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
+				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
+				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
 				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}

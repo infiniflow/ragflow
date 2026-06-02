@@ -3297,7 +3297,7 @@ func (c *RAGFlowClient) ListUserIngestionTasks(cmd *Command) (ResponseIf, error)
 		"dataset_id": datasetID,
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/datasets/ingestions", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("GET", "/datasets/ingestion/tasks", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ingestion tasks: %w", err)
 	}
@@ -3376,15 +3376,15 @@ func (c *RAGFlowClient) UserStopIngestionCommand(cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	taskID, ok := cmd.Params["task_id"].(string)
+	tasks, ok := cmd.Params["tasks"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("uri not provided")
 	}
 	payload := map[string]interface{}{
-		"tasks": []string{taskID},
+		"tasks": tasks,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", "/datasets/ingestions", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/datasets/ingestion/tasks", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
@@ -3415,16 +3415,16 @@ func (c *RAGFlowClient) UserRemoveTaskCommand(cmd *Command) (ResponseIf, error) 
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	taskIDs, ok := cmd.Params["task_ids"].([]string)
+	tasks, ok := cmd.Params["tasks"].([]string)
 	if !ok {
-		return nil, fmt.Errorf("task_ids not provided")
+		return nil, fmt.Errorf("tasks not provided")
 	}
 
 	payload := map[string]interface{}{
-		"task_ids": taskIDs,
+		"tasks": tasks,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/datasets/ingestions", "web", nil, payload)
+	resp, err := c.HTTPClient.Request("DELETE", "/datasets/ingestion/tasks", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove tasks: %w", err)
 	}

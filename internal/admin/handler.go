@@ -1365,27 +1365,50 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	success(c, result, "show message queue successfully")
 }
 
-type CancelIngestionTaskRequest struct {
-	TaskID     string `json:"task_id" binding:"required"`
-	From       string `json:"from" binding:"required"`
-	AssignedTo string `json:"assigned_to" binding:"required"`
+type RemoveIngestionTaskRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
 }
 
-func (h *Handler) CancelIngestionTask(c *gin.Context) {
-	var req CancelIngestionTaskRequest
+func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
+	var req RemoveIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errorResponse(c, "task id is required", 400)
+		return
+	}
+
+	tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
+
+	success(c, tasks, "Remove tasks successfully")
+}
+
+type StopIngestionTaskRequest struct {
+	Tasks []string `json:"tasks" binding:"required"`
+}
+
+func (h *Handler) StopIngestionTasks(c *gin.Context) {
+	var req StopIngestionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		errorResponse(c, "task id and from is required", 400)
 		return
 	}
 
-	//ingestionManager.SubmitTask(&common.TaskAssignment{
-	//	TaskId:     req.TaskID,
-	//	TaskType:   "CANCELLING",
-	//	ComeFrom:   req.From,
-	//	AssignedTo: req.AssignedTo,
-	//})
+	tasks, err := h.service.StopIngestionTasks(req.Tasks)
+	if err != nil {
+		errorResponse(c, err.Error(), 400)
+	}
 
-	success(c, gin.H{"task_id": req.TaskID}, "Cancel task successfully")
+	var result []map[string]string
+	for _, task := range tasks {
+		result = append(result, map[string]string{
+			"task_id": task.ID,
+			"status":  task.Status,
+		})
+	}
+
+	success(c, result, "Stop tasks successfully")
 }
 
 // ListIngestionTasks
@@ -1398,12 +1421,24 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 }
 
 func (h *Handler) ListIngestors(c *gin.Context) {
-	//ingestionMgr := GetIngestionManager()
-	//ingestors, err := ingestionMgr.ListIngestors()
-	//if err != nil {
-	//	errorResponse(c, err.Error(), 500)
-	//}
-	success(c, nil, "Get all tasks")
+	serverList := GlobalServerStore.ListInfos()
+	var ingestorResults []map[string]string
+	now := time.Now()
+	for _, ingestorServer := range serverList {
+		if ingestorServer.ServerType == common.ServerTypeIngestion {
+			ingestorResult := map[string]string{}
+			ingestorResult["name"] = ingestorServer.ServerName
+			ingestorResult["host"] = ingestorServer.Host
+			ingestorResult["status"] = ingestorServer.Version
+			if now.Sub(ingestorServer.Timestamp) < 30*time.Second {
+				ingestorResult["status"] = "alive"
+			} else {
+				ingestorResult["status"] = "timeout"
+			}
+			ingestorResults = append(ingestorResults, ingestorResult)
+		}
+	}
+	success(c, ingestorResults, "Get all tasks")
 }
 
 type ShutdownIngestorRequest struct {

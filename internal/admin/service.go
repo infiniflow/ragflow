@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
@@ -144,6 +145,44 @@ func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 		showTasks = append(showTasks, showTask)
 	}
 	return showTasks, nil
+}
+
+func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
+	var deletedTasks []map[string]string
+	for _, taskID := range tasks {
+		taskRecord := map[string]string{
+			"task_id": taskID,
+		}
+		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, nil)
+		if err != nil {
+			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
+		} else {
+			taskRecord["remove"] = "success"
+		}
+		deletedTasks = append(deletedTasks, taskRecord)
+	}
+	return deletedTasks, nil
+}
+
+func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
+	var taskResponses []*entity.IngestionTask
+	for _, taskID := range tasks {
+		task, err := s.ingestionTaskDAO.SetStoppingByAPIServer(taskID)
+		if err != nil {
+			return nil, err
+		}
+
+		if task.Status == common.STOPPING {
+			msgQueueEngine := engine.GetMessageQueueEngine()
+			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		taskResponses = append(taskResponses, task)
+	}
+	return taskResponses, nil
 }
 
 // GetUserByToken get user by access token

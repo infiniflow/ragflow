@@ -1087,7 +1087,7 @@ func (p *Parser) parseRemoveCommand() (*Command, error) {
 		return p.parseRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseRemoveChunk()
-	case TokenTask:
+	case TokenIngestion:
 		return p.parseUserRemoveTask()
 	default:
 		return nil, fmt.Errorf("unknown REMOVE target: %s", p.curToken.Value)
@@ -3858,13 +3858,20 @@ func (p *Parser) parseUserStopIngestion() (*Command, error) {
 	}
 	p.nextToken() // consume Ingestion
 
-	taskID, err := p.parseQuotedString()
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expect TASKS")
+	}
+	p.nextToken()
+
+	taskStr, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
+	tasks := strings.Split(taskStr, " ")
+
 	cmd := NewCommand("user_stop_ingestion_command")
-	cmd.Params["task_id"] = taskID
+	cmd.Params["tasks"] = tasks
 	p.nextToken()
 
 	// Semicolon is optional for UNSET TOKEN
@@ -3900,18 +3907,23 @@ func (p *Parser) parseUserListIngestionTasks() (*Command, error) {
 }
 
 func (p *Parser) parseUserRemoveTask() (*Command, error) {
-	p.nextToken() // consume TASK
+	p.nextToken() // consume Ingestion
 
-	taskIDStr, err := p.parseQuotedString()
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASKS
+
+	taskStr, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 
 	cmd := NewCommand("user_remove_task_command")
 
-	taskIDs := strings.Split(taskIDStr, " ")
+	tasks := strings.Split(taskStr, " ")
 
-	cmd.Params["task_ids"] = taskIDs
+	cmd.Params["tasks"] = tasks
 
 	// Semicolon is optional for UNSET TOKEN
 	if p.curToken.Type == TokenSemicolon {

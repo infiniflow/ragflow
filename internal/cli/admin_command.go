@@ -1340,16 +1340,15 @@ func (c *RAGFlowClient) AdminStopIngestionCommand(cmd *Command) (ResponseIf, err
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
-	taskID, ok := cmd.Params["task_id"].(string)
+	tasks, ok := cmd.Params["tasks"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("uri not provided")
 	}
 	payload := map[string]interface{}{
-		"task_id": taskID,
-		"from":    "CLI",
+		"tasks": tasks,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/admin/ingestion", "admin", nil, payload)
+	resp, err := c.HTTPClient.Request("PUT", "/admin/ingestion/tasks", "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest file: %w", err)
 	}
@@ -1358,7 +1357,42 @@ func (c *RAGFlowClient) AdminStopIngestionCommand(cmd *Command) (ResponseIf, err
 		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result CommonDataResponse
+	var result CommonResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *RAGFlowClient) AdminRemoveIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.ServerType != "admin" {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	}
+
+	tasks, ok := cmd.Params["tasks"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("uri not provided")
+	}
+	payload := map[string]interface{}{
+		"tasks": tasks,
+	}
+
+	resp, err := c.HTTPClient.Request("DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest file: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to ingest file: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("ingest file failed: invalid JSON (%w)", err)
 	}

@@ -785,7 +785,7 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 }
 
 type RemoveIngestionsRequest struct {
-	TaskIDs []string `json:"task_ids" binding:"required"`
+	Tasks []string `json:"tasks" binding:"required"`
 }
 
 func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
@@ -798,7 +798,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	if req.TaskIDs == nil || len(req.TaskIDs) == 0 {
+	if req.Tasks == nil || len(req.Tasks) == 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    1,
 			"message": "task_ids is required",
@@ -808,7 +808,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.TaskIDs, userID)
+	deletedTasks, err := h.documentService.RemoveIngestionTasks(req.Tasks, userID)
 	if err != nil {
 		jsonError(c, common.CodeExceptionError, err.Error())
 		return

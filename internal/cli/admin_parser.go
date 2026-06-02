@@ -16,7 +16,10 @@
 
 package cli
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Command parsers
 func (p *Parser) parseAdminLoginUser() (*Command, error) {
@@ -375,6 +378,65 @@ func (p *Parser) parseAdminListFiles() (*Command, error) {
 func (p *Parser) parseAdminListIngestors() (*Command, error) {
 	p.nextToken() // consume TASKS
 	cmd := NewCommand("admin_list_ingestors")
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
+	p.nextToken() // consume STOP
+
+	if p.curToken.Type != TokenIngestion {
+		return nil, fmt.Errorf("expected INGESTION")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASK
+
+	taskString, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := strings.Split(taskString, " ")
+	p.nextToken() // consume TASK
+
+	cmd := NewCommand("admin_stop_ingestion_tasks")
+	cmd.Params["tasks"] = tasks
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAdminRemoveIngestionTasks() (*Command, error) {
+	p.nextToken() // consume Ingestion
+
+	if p.curToken.Type != TokenTasks {
+		return nil, fmt.Errorf("expected TASKS")
+	}
+	p.nextToken() // consume TASKS
+
+	taskString, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	tasks := strings.Split(taskString, " ")
+	p.nextToken() // consume TASKS
+
+	cmd := NewCommand("admin_remove_ingestion_tasks")
+	cmd.Params["tasks"] = tasks
+
+	// Semicolon is optional for UNSET TOKEN
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -1730,7 +1792,8 @@ func (p *Parser) parseAdminRemoveCommand() (*Command, error) {
 		p.nextToken() // consume service number
 		cmd = NewCommand("admin_remove_service_command")
 		cmd.Params["service_number"] = serviceNum
-
+	case TokenIngestion:
+		return p.parseAdminRemoveIngestionTasks()
 	default:
 		return nil, fmt.Errorf("expected SERVICE")
 	}

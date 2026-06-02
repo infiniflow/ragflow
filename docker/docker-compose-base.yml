@@ -240,6 +240,19 @@ services:
       timeout: 10s
       retries: 120
 
+  nats:
+    image: nats:latest
+    ports:
+      - ${NATS_PORT}:4222
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "${NATS_PORT}"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
   tei-cpu:
     profiles:

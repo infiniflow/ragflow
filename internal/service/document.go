@@ -321,15 +321,6 @@ func (s *DocumentService) StopIngestionTasks(tasks []string, userID string) ([]*
 		if err != nil {
 			return nil, err
 		}
-
-		if task.Status == common.STOPPING {
-			msgQueueEngine := engine.GetMessageQueueEngine()
-			err = msgQueueEngine.PublishTask("tasks.RAGFLOW", []byte(task.ID))
-			if err != nil {
-				return nil, err
-			}
-		}
-
 		taskResponses = append(taskResponses, task)
 	}
 	return taskResponses, nil
@@ -342,11 +333,11 @@ func (s *DocumentService) RemoveIngestionTasks(tasks []string, userID string) ([
 		taskRecord := map[string]string{
 			"task_id": taskID,
 		}
-		_, err := s.ingestionTaskDAO.RemoveByAPIServer(taskID, userID)
+		_, err := s.ingestionTaskDAO.RemoveByAPIServerOrAdminServer(taskID, &userID)
 		if err != nil {
-			taskRecord["delete"] = fmt.Sprintf("fail: %s", err.Error())
+			taskRecord["remove"] = fmt.Sprintf("fail: %s", err.Error())
 		} else {
-			taskRecord["delete"] = "success"
+			taskRecord["remove"] = "success"
 		}
 		deletedTasks = append(deletedTasks, taskRecord)
 	}

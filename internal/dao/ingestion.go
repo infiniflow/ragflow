@@ -221,7 +221,7 @@ type TaskInfo struct {
 	Tasklets      []TaskletInfo `json:"tasklets"`
 }
 
-func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID, userID string) (*TaskInfo, error) {
+func (dao *IngestionTaskDAO) RemoveByAPIServerOrAdminServer(taskID string, userID *string) (*TaskInfo, error) {
 
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -254,8 +254,10 @@ func (dao *IngestionTaskDAO) RemoveByAPIServer(taskID, userID string) (*TaskInfo
 		return nil, fmt.Errorf("task %s has multiple records", taskID)
 	}
 
-	if tasks[0].UserID != userID {
-		return nil, errors.New("task does not belong to the user")
+	if userID != nil {
+		if tasks[0].UserID != *userID {
+			return nil, errors.New("task does not belong to the user")
+		}
 	}
 
 	taskStatus := tasks[0].Status
