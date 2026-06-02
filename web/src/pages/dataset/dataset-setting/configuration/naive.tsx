@@ -15,6 +15,7 @@ import {
   AutoMetadata,
   EnableTocToggle,
   ImageContextWindow,
+  MarkdownHeadingChunkToggle,
   OverlappedPercent,
 } from './common-item';
 
@@ -29,6 +30,7 @@ export function NaiveConfiguration() {
           numberInputTestId="ds-settings-parser-recommended-chunk-size-input"
         ></MaxTokenNumberFormField>
         <DelimiterFormField></DelimiterFormField>
+        <MarkdownHeadingChunkToggle />
         <ChildrenDelimiterForm />
         <EnableTocToggle />
         <ImageContextWindow />

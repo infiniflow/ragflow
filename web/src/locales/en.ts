@@ -643,6 +643,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
       overlappedPercent: 'Overlapped percent(%)',
+      markdownChunkByHeading: 'Chunk Markdown by headings',
+      markdownChunkByHeadingTip:
+        'For Markdown files in the General chunking method, group content under ATX headings (# through ######) into separate chunks without using an LLM. Oversized sections may still be split by the recommended chunk size.',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',

@@ -557,6 +557,9 @@ export default {
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
       overlappedPercentTip: '相邻两个块之间的重叠百分比',
+      markdownChunkByHeading: '按 Markdown 标题切片',
+      markdownChunkByHeadingTip:
+        '在 General 切片方法下处理 Markdown 文件时，按 ATX 标题（# 至 ######）将内容分组为独立切片，无需调用大语言模型。若单个标题下内容超过推荐切片大小，仍会按大小进一步拆分。',
       settings: '设置',
       autoMetadataTip:
         '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',

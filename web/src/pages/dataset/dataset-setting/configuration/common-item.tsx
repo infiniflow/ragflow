@@ -295,6 +295,43 @@ export function EnableAutoGenerateItem() {
   );
 }
 
+export function MarkdownHeadingChunkToggle() {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name={'parser_config.markdown_chunk_by_heading'}
+      render={({ field }) => (
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('markdownChunkByHeadingTip')}
+              className="text-sm  whitespace-wrap w-1/4"
+            >
+              {t('markdownChunkByHeading')}
+            </FormLabel>
+            <div className="text-muted-foreground w-3/4">
+              <FormControl>
+                <Switch
+                  checked={Boolean(field.value)}
+                  onCheckedChange={field.onChange}
+                  data-testid="ds-settings-parser-markdown-heading-switch"
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
+        </FormItem>
+      )}
+    />
+  );
+}
+
 export function EnableTocToggle() {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();

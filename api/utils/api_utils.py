@@ -420,6 +420,8 @@ def get_parser_config(chunk_method, parser_config):
             "layout_recognize": "DeepDOC",
             "chunk_token_num": 512,
             "delimiter": "\n",
+            "markdown_chunk_by_heading": False,
+            "markdown_heading_depth": 6,
             "auto_keywords": 0,
             "auto_questions": 0,
             "html4excel": False,
