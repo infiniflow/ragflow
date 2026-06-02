@@ -361,6 +361,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
 				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)

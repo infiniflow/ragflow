@@ -14,7 +14,7 @@ load_env_file() {
         echo "Loading environment variables from: $env_file"
         # Source the .env file
         set -a
-        source "$env_file" 
+        source "$env_file"
         set +a
     else
         echo "Warning: .env file not found at: $env_file"
