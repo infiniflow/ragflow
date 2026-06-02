@@ -45,6 +45,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
     if all_available:
         providers = []
         for factory_info in FACTORY_LLM_INFOS:
+            if factory_info["name"] in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"]:
+                continue
             model_types = sorted(set(
                 llm["model_type"]
                 for llm in factory_info.get("llm", [])
@@ -66,7 +68,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
     providers = []
     factory_info_mapping = {f["name"]: f for f in FACTORY_LLM_INFOS}
     for name in factory_names:
-        if factory_info_mapping.get(name):
+        if name not in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"] and factory_info_mapping.get(name):
             factory_info = factory_info_mapping[name]
             model_types = sorted(set(
                 llm["model_type"]
@@ -241,7 +243,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
         if same_key_instance:
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
-    success, msg = await verify_api_key(provider_name, api_key, base_url)
+    success, msg = await verify_api_key(provider_name, api_key, base_url, region)
     if not success:
         return False, msg
 
@@ -291,19 +293,25 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     return True, active_instances + inactive_instances
 
 
-async def verify_api_key(provider_name: str, api_key: str, base_url: str=None):
+async def verify_api_key(provider_name: str, api_key: str, base_url: str=None, region: str=None):
     """
     Verify API key for a provider.
 
     :param provider_name: provider/factory name
     :param api_key: API key
     :param base_url: base url
+    :param region: region
     :return: (success, result_or_error_message)
     """
     if not provider_name:
         return False, "Provider name is required"
 
-    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+    if region and region == "intl" and provider_name.lower() == "siliconflow":
+        target_factory_name = "siliconflow_intl"
+    else:
+        target_factory_name = provider_name
+
+    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
     if not factory_info:
         return False, f"Provider '{provider_name}' not found"
 

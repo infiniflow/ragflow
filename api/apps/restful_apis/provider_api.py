@@ -395,8 +395,10 @@ async def verify_provider_api_key(provider_name: str = None):
 
     base_url = data.get("base_url", "")
     api_key = data["api_key"]
+    region = data.get("region", "default")
+
     try:
-        success, msg = await provider_api_service.verify_api_key(provider_name, api_key, base_url)
+        success, msg = await provider_api_service.verify_api_key(provider_name, api_key, base_url, region)
         if success:
             return get_result(message=msg)
         else:
