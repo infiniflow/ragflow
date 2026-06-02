@@ -374,13 +374,17 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		}
 	}
 
+	if err = scanner.Err(); err != nil {
+		return err
+	}
+
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	if err = sender(&endOfStream, nil); err != nil {
 		return err
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 // Embed embeds a list of texts into embeddings

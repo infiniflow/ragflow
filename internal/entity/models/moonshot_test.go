@@ -190,6 +190,38 @@ func TestMoonshotStreamForcesStreaming(t *testing.T) {
 	}
 }
 
+func TestMoonshotStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
+	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if body["stream"] != true {
+			t.Errorf("stream=%v, want true", body["stream"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: "+strings.Repeat("x", 1024*1024+1)+"\n")
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	var sawDone bool
+	err := newMoonshotForTest(srv.URL).ChatStreamlyWithSender(
+		"kimi-k2.6",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		func(answer, _ *string) error {
+			if answer != nil && *answer == "[DONE]" {
+				sawDone = true
+			}
+			return nil
+		},
+	)
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+	if sawDone {
+		t.Fatal("sender received [DONE] after scanner error")
+	}
+}
+
 func TestMoonshotListModelsUsesBodylessGet(t *testing.T) {
 	srv := newMoonshotServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
