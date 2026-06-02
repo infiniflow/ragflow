@@ -137,7 +137,7 @@ func main() {
 	}
 
 	if err := engine.InitMessageQueueEngine(config.TaskExecutor.MessageQueueType); err != nil {
-		common.Fatal("Failed to initialize message queue engine", err)
+		common.Fatal(fmt.Sprintf("Failed to initialize message queue engine: %w", err))
 	}
 
 	// Initialize server variables (runtime variables from Redis)

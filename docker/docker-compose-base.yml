@@ -241,9 +241,15 @@ services:
       retries: 120
 
   nats:
-    image: nats:latest
+    profiles:
+      - ragflow-go
+    image: nats:2.14.1
     ports:
       - ${NATS_PORT}:4222
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    command: -js -sd /data
     env_file: .env
     networks:
       - ragflow
