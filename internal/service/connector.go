@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -286,6 +287,94 @@ func (s *ConnectorService) DeleteConnector(connectorID, userID string) (bool, co
 		return false, common.CodeServerError, err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+type UpdateConnectorRequest struct {
+	PruneFreq   *int64         `json:"prune_freq,omitempty"`
+	RefreshFreq *int64         `json:"refresh_freq,omitempty"`
+	Config      entity.JSONMap `json:"config,omitempty"`
+	TimeoutSecs *int64         `json:"timeout_secs,omitempty"`
+	Reschedule  bool           `json:"reschedule,omitempty"`
+	Status      string         `json:"status,omitempty"`
+}
+
+func (s *ConnectorService) UpdateConnector(connectorID, userID string, req *UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+	if connectorID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
+	}
+
+	connector, err := s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	if !s.canAccessConnector(connector, userID) {
+		return nil, common.CodeAuthenticationError, fmt.Errorf("No authorization.")
+	}
+
+	updates := map[string]interface{}{}
+	if req != nil {
+		if req.PruneFreq != nil {
+			updates["prune_freq"] = *req.PruneFreq
+		}
+		if req.RefreshFreq != nil {
+			updates["refresh_freq"] = *req.RefreshFreq
+		}
+		if req.Config != nil {
+			updates["config"] = req.Config
+		}
+		if req.TimeoutSecs != nil {
+			updates["timeout_secs"] = *req.TimeoutSecs
+		}
+	}
+
+	if len(updates) > 0 {
+		if err := s.connectorDAO.UpdateByID(connectorID, updates); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
+
+	if req != nil {
+		if req.Reschedule {
+			if err := s.cancelConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+			if err := s.connectorDAO.ScheduleConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		} else if isConnectorCancelStatus(req.Status) {
+			if err := s.cancelConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		} else if isConnectorScheduleStatus(req.Status) {
+			if err := s.connectorDAO.ScheduleConnectorTasks(connectorID); err != nil {
+				return nil, common.CodeServerError, err
+			}
+		}
+	}
+
+	connector, err = s.connectorDAO.GetByID(connectorID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, fmt.Errorf("Can't find this Connector!")
+		}
+		return nil, common.CodeServerError, err
+	}
+
+	return connector, common.CodeSuccess, nil
+}
+
+func isConnectorCancelStatus(status string) bool {
+	status = strings.TrimSpace(status)
+	return status == string(entity.TaskStatusCancel) || strings.EqualFold(status, "CANCEL")
+}
+
+func isConnectorScheduleStatus(status string) bool {
+	status = strings.TrimSpace(status)
+	return status == string(entity.TaskStatusSchedule) || strings.EqualFold(status, "SCHEDULE")
 }
 
 // RebuildConnector schedules a rebuild for an accessible connector and knowledge base.
