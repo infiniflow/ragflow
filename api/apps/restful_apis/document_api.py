@@ -24,7 +24,7 @@ from quart import request, make_response,send_file
 from peewee import OperationalError
 from pydantic import ValidationError
 
-from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, login_required
+from api.apps import AUTH_JWT, AUTH_API, AUTH_BETA, current_user, login_required
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
@@ -1922,6 +1922,18 @@ async def get(doc_id):
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
+            return get_data_error_result(message="Document not found!")
+        if not DocumentService.accessible(doc_id, current_user.id):
+            # Issue #15501: PR #15146 dropped this check, letting any
+            # authenticated caller download any tenant's document bytes by
+            # guessing/knowing the doc_id. Return the same "Document not
+            # found!" shape used for missing docs so the response is
+            # indistinguishable to a cross-tenant probe (avoids ID
+            # enumeration).
+            logging.warning(
+                "Rejected /documents/<doc_id>/preview cross-tenant access: "
+                "caller_user=%s doc_id=%s", current_user.id, doc_id,
+            )
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
