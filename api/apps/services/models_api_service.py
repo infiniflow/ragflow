@@ -357,4 +357,6 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 "instance_name": instance_info_map[instance_id].instance_name if instance_info_map.get(instance_id) else ""
             })
 
+    added_models.sort(key=lambda x: (x["provider_name"], x["instance_name"], x["name"]))
+
     return True, added_models
