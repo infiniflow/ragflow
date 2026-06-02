@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 )
 
 const (
@@ -795,10 +796,17 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	indexName := fmt.Sprintf("memory_%s", memory.TenantID)
 
 	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
+		if isMessageDocumentNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("failed to forget message '%d' in memory '%s': %w", messageID, memoryID, err)
 	}
 
 	return nil
+}
+
+func isMessageDocumentNotFound(err error) bool {
+	return errors.Is(err, enginetypes.ErrDocumentNotFound)
 }
 
 func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*entity.Memory, error) {

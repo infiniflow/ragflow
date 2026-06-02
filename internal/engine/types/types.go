@@ -16,6 +16,10 @@
 
 package types
 
+import "errors"
+
+var ErrDocumentNotFound = errors.New("document not found")
+
 // SearchRequest unified search request for all engines
 type SearchRequest struct {
 	// Search target
