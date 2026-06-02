@@ -245,8 +245,8 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
 
     # Only verify the API key when the provider has pre-configured models to test
-    # against.  Generic providers such as "OpenAI-API-Compatible" ship with an
-    # empty model list in llm_factories.json — users populate them later — so
+    # against. Generic providers such as "OpenAI-API-Compatible" ship with an
+    # empty model list in llm_factories.json; users populate them later, so
     # there is nothing to probe and verification must be skipped.
     factory_entry = next((f for f in FACTORY_LLM_INFOS if f["name"] == provider_name), None)
     if factory_entry and factory_entry.get("llm"):
