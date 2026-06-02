@@ -1375,10 +1375,20 @@ func (s *UserService) ForgotVerifyOTP(email, otp string) (common.ErrorCode, erro
 }
 
 // ForgotResetPasswordRequest carries the JSON body of /auth/password/reset.
+//
+// No `binding` tags on purpose: gin's validator fires inside
+// c.ShouldBindJSON and produces a verbose
+// `Key: 'ForgotResetPasswordRequest.Email' Error:Field validation ...`
+// message that diverges from the Python contract for this endpoint,
+// which returns the friendlier `"email and passwords are required"`
+// (api/apps/restful_apis/user_api.py:forget_reset_password). Letting
+// the binding succeed with zero values means the existing service
+// check below produces the matching message, and an entirely missing
+// JSON body now gets exactly Python's response.
 type ForgotResetPasswordRequest struct {
-	Email              string `json:"email" binding:"required,email"`
-	NewPassword        string `json:"new_password" binding:"required"`
-	ConfirmNewPassword string `json:"confirm_new_password" binding:"required"`
+	Email              string `json:"email"`
+	NewPassword        string `json:"new_password"`
+	ConfirmNewPassword string `json:"confirm_new_password"`
 }
 
 // ForgotResetPassword finalises the reset: only proceeds if the verified
