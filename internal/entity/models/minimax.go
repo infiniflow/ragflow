@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -61,9 +60,28 @@ func (m *MinimaxModel) Name() string {
 	return "minimax"
 }
 
+func validateMinimaxAPIKey(apiConfig *APIConfig) (string, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return "", fmt.Errorf("api key is required")
+	}
+	return strings.TrimSpace(*apiConfig.ApiKey), nil
+}
+
+func validateMinimaxModelName(modelName string) (string, error) {
+	if strings.TrimSpace(modelName) == "" {
+		return "", fmt.Errorf("model name is required")
+	}
+	return strings.TrimSpace(modelName), nil
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
 func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	apiKey, err := validateMinimaxAPIKey(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	modelName, err = validateMinimaxModelName(modelName)
+	if err != nil {
 		return nil, err
 	}
 	if len(messages) == 0 {
@@ -102,10 +120,6 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
 		}
 
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
 		if chatModelConfig.TopP != nil {
 			reqBody["top_p"] = *chatModelConfig.TopP
 		}
@@ -141,8 +155,8 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -166,7 +180,7 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	choices, ok := result["choices"].([]interface{})
-	if !ok {
+	if !ok || len(choices) == 0 {
 		return nil, fmt.Errorf("no choices in response")
 	}
 
@@ -206,12 +220,19 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	apiKey, err := validateMinimaxAPIKey(apiConfig)
+	if err != nil {
 		return err
 	}
-
+	modelName, err = validateMinimaxModelName(modelName)
+	if err != nil {
+		return err
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
+	}
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
@@ -237,39 +258,37 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		"temperature": 1,
 	}
 
-	if modelConfig.Stream != nil {
-		reqBody["stream"] = *modelConfig.Stream
-	}
+	if modelConfig != nil {
+		if modelConfig.MaxTokens != nil {
+			reqBody["max_tokens"] = *modelConfig.MaxTokens
+		}
 
-	if modelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *modelConfig.MaxTokens
-	}
+		if modelConfig.Temperature != nil {
+			reqBody["temperature"] = *modelConfig.Temperature
+		}
 
-	if modelConfig.Temperature != nil {
-		reqBody["temperature"] = *modelConfig.Temperature
-	}
+		if modelConfig.TopP != nil {
+			reqBody["top_p"] = *modelConfig.TopP
+		}
 
-	if modelConfig.TopP != nil {
-		reqBody["top_p"] = *modelConfig.TopP
-	}
+		if modelConfig.DoSample != nil {
+			reqBody["do_sample"] = *modelConfig.DoSample
+		}
 
-	if modelConfig.DoSample != nil {
-		reqBody["do_sample"] = *modelConfig.DoSample
-	}
+		if modelConfig.Stop != nil {
+			reqBody["stop"] = *modelConfig.Stop
+		}
 
-	if modelConfig.Stop != nil {
-		reqBody["stop"] = *modelConfig.Stop
-	}
-
-	if modelConfig != nil && modelConfig.Thinking != nil {
-		if *modelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "adaptive",
-			}
-			reqBody["reasoning_split"] = true
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+		if modelConfig.Thinking != nil {
+			if *modelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "adaptive",
+				}
+				reqBody["reasoning_split"] = true
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
 	}
@@ -288,7 +307,8 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -306,7 +326,6 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		common.Info(line)
 
 		// SSE data line start with data:
 		if !strings.HasPrefix(line, "data:") {
@@ -377,7 +396,8 @@ func (m *MinimaxModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	apiKey, err := validateMinimaxAPIKey(apiConfig)
+	if err != nil {
 		return nil, err
 	}
 
@@ -387,24 +407,16 @@ func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
-	// Build request body
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -418,21 +430,27 @@ func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API requestssss failed with status %d: %s : %s", resp.StatusCode, string(body), url)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("models response missing data")
+	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]string, 0)
-	for _, model := range result["data"].([]interface{}) {
-		modelMap := model.(map[string]interface{})
-		modelName := modelMap["id"].(string)
-		models = append(models, modelName)
+	models := make([]string, 0, len(result.Data))
+	for _, model := range result.Data {
+		if strings.TrimSpace(model.ID) == "" {
+			return nil, fmt.Errorf("models response contains empty id")
+		}
+		models = append(models, strings.TrimSpace(model.ID))
 	}
 
 	return models, nil
@@ -443,43 +461,8 @@ func (m *MinimaxModel) Balance(apiConfig *APIConfig) (map[string]interface{}, er
 }
 
 func (m *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
-
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return err
-	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Files)
-
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	_, err := m.ListModels(apiConfig)
+	return err
 }
 
 // Rerank calculates similarity scores between query and documents
