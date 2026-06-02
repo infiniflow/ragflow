@@ -46,6 +46,47 @@ _DEFAULT_API_VERSION = "v59.0"
 # enabled (the SObject describe returns 404).
 _DEFAULT_OBJECTS = ["Account", "Contact", "Opportunity", "Case", "Knowledge__kav"]
 
+# Optional default object: Knowledge articles only exist when the org has
+# Salesforce Knowledge enabled. It is the one object we skip silently when
+# absent — every other configured object is required, so its absence/failure
+# is treated as an error rather than quietly dropped.
+_OPTIONAL_OBJECTS = frozenset({"Knowledge__kav"})
+
+
+class SalesforceObjectUnavailable(UnexpectedValidationError):
+    """An SObject is genuinely absent or not queryable for this org/user.
+
+    Raised for HTTP 404 (describe of a non-existent object) and HTTP 400
+    ``INVALID_TYPE`` (SOQL against a non-existent object). It subclasses
+    ``UnexpectedValidationError`` so existing broad handlers still catch it,
+    while letting prune distinguish "object genuinely missing" (safe to
+    skip — it has no records to orphan) from a transient failure (5xx/429,
+    permission, partial page) that must abort rather than delete live docs.
+    """
+
+
+def _is_object_unavailable(resp: requests.Response) -> bool:
+    """True when *resp* indicates the SObject simply does not exist for this
+    org/user, as opposed to a transient/permission error.
+
+    Salesforce returns 404 for describe of an unknown object and 400 with
+    ``errorCode == "INVALID_TYPE"`` for SOQL against one. 403 (no access) and
+    5xx/429 (transient) are deliberately NOT treated as "unavailable" — those
+    must propagate so callers don't act on an incomplete picture.
+    """
+    if resp.status_code == 404:
+        return True
+    if resp.status_code == 400:
+        try:
+            payload = resp.json()
+        except ValueError:
+            return "INVALID_TYPE" in (resp.text or "")
+        entries = payload if isinstance(payload, list) else [payload]
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("errorCode") == "INVALID_TYPE":
+                return True
+    return False
+
 
 class SalesforceCheckpoint(ConnectorCheckpoint):
     """Per-object SystemModstamp cursor.
@@ -175,6 +216,43 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                 "Unexpected response format from Salesforce /sobjects."
             )
 
+        # Fail fast on typos / inaccessible objects instead of silently
+        # missing their data during sync. The global describe lists every
+        # object the user can see plus its queryable flag, so we can vet the
+        # configured objects without an extra call per object.
+        queryable = {
+            so["name"]: bool(so.get("queryable", False))
+            for so in payload.get("sobjects", [])
+            if isinstance(so, dict) and so.get("name")
+        }
+        unknown: list[str] = []
+        not_queryable: list[str] = []
+        for obj in self.objects:
+            if obj not in queryable:
+                # Knowledge__kav is an optional default — absent unless the
+                # org has Salesforce Knowledge. Don't fail validation for it.
+                if obj in _OPTIONAL_OBJECTS:
+                    logger.warning(
+                        "Salesforce: optional object %s not present in this org; it will be skipped.",
+                        obj,
+                    )
+                    continue
+                unknown.append(obj)
+            elif not queryable[obj]:
+                not_queryable.append(obj)
+
+        if unknown or not_queryable:
+            problems = []
+            if unknown:
+                problems.append(f"unknown object(s): {', '.join(sorted(unknown))}")
+            if not_queryable:
+                problems.append(f"non-queryable object(s): {', '.join(sorted(not_queryable))}")
+            raise ConnectorValidationError(
+                "Salesforce 'objects' configuration is invalid — "
+                + "; ".join(problems)
+                + ". Check for typos and that the execution user has read access to each object."
+            )
+
     # ------------------------------------------------------------------
     # Checkpoint helpers
     # ------------------------------------------------------------------
@@ -245,12 +323,16 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                     if len(batch) >= self.batch_size:
                         yield batch
                         batch = []
-            except UnexpectedValidationError:
-                # An object the org doesn't expose (e.g. Knowledge__kav
-                # without Salesforce Knowledge) should not abort prune
-                # for the surviving objects.
+            except SalesforceObjectUnavailable:
+                # Object genuinely absent (e.g. Knowledge__kav without
+                # Salesforce Knowledge). It has no records, so omitting it
+                # cannot orphan documents — safe to skip.
                 logger.warning("Salesforce prune skipping %s (object unavailable)", obj)
                 continue
+            # Any OTHER failure (transient 5xx/429, permission, a partial
+            # page mid-enumeration) propagates: prune must NOT run on an
+            # incomplete snapshot, or the collector would treat the missing
+            # IDs as stale and delete documents that still exist.
         if batch:
             yield batch
 
@@ -284,6 +366,10 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                 url,
                 body_snippet,
             )
+            if _is_object_unavailable(resp):
+                raise SalesforceObjectUnavailable(
+                    f"Salesforce object unavailable ({context}): HTTP {resp.status_code} {body_snippet}"
+                )
             raise UnexpectedValidationError(
                 f"Salesforce request failed ({context}): HTTP {resp.status_code} {body_snippet}"
             )
@@ -391,9 +477,13 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         for obj in self.objects:
             try:
                 fields = self._describe_fields(obj)
-            except UnexpectedValidationError:
+            except SalesforceObjectUnavailable:
+                # Object genuinely absent (e.g. Knowledge__kav without
+                # Salesforce Knowledge): skip it. Transient describe
+                # failures are NOT swallowed — they raise below so the run
+                # doesn't silently miss an object's data.
                 logger.warning(
-                    "Salesforce skipping %s (describe unavailable — object missing or no access)",
+                    "Salesforce skipping %s (object not present in this org)",
                     obj,
                 )
                 continue
