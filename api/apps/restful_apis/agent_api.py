@@ -34,7 +34,7 @@ from quart import Response, jsonify, request, make_response
 from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
 from api.db import CanvasCategory
-from api.db.db_models import Task
+from api.db.db_models import API4Conversation, DB, Task
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import (
     CanvasTemplateService,
@@ -2279,6 +2279,23 @@ async def webhook_trace(agent_id: str):
         }
     )
 
+@DB.connection_context()
+def _agent_attachment_in_user_conversation(attachment_id: str, user_id: str) -> bool:
+    """True when *attachment_id* appears in an agent session owned by *user_id*."""
+    return API4Conversation.select(API4Conversation.id).where(
+        ((API4Conversation.user_id == user_id) | (API4Conversation.exp_user_id == user_id)),
+        API4Conversation.message.contains(attachment_id),
+    ).exists()
+
+
+def _agent_attachment_accessible(attachment_id: str, user_id: str) -> bool:
+    if not attachment_id:
+        return False
+    if DocumentService.accessible(attachment_id, user_id):
+        return True
+    return _agent_attachment_in_user_conversation(attachment_id, user_id)
+
+
 @manager.route("/agents/attachments/<attachment_id>/download", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -2291,10 +2308,14 @@ async def download_attachment(tenant_id=None, attachment_id=None):
     enumerate doc ids across tenants.
     """
     try:
-        # Keep backward compatibility with older callers and unit tests that still
-        # pass `attachment_id` instead of the route parameter name.
+        doc_id = attachment_id
+        if not _agent_attachment_accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Document not found!")
+
         ext = request.args.get("ext", "markdown")
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, doc_id)
+        if not data:
+            return get_data_error_result(message="Document not found!")
         response = await make_response(data)
         content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
         apply_safe_file_response_headers(response, content_type, ext)
