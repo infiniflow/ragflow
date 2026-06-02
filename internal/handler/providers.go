@@ -407,7 +407,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(providerName, req.APIKey, req.Region, userID)
+	errCode, err := h.modelProviderService.CheckConnection(providerName, req.APIKey, req.Region, req.BaseURL, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errCode,
@@ -449,13 +449,15 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 			"code":    code,
 			"message": err.Error(),
 		})
+		return
 	}
 
-	apikey := instanceInfo["apikey"].(string)
-	region := instanceInfo["region"].(string)
+	apikey, _ := instanceInfo["apikey"].(string)
+	region, _ := instanceInfo["region"].(string)
+	baseURL, _ := instanceInfo["base_url"].(string)
 
 	// Get tenant ID from user
-	errorCode, err := h.modelProviderService.CheckConnection(providerName, apikey, region, userID)
+	errorCode, err := h.modelProviderService.CheckConnection(providerName, apikey, region, baseURL, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,
