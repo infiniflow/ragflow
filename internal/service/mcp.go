@@ -36,6 +36,7 @@ const (
 	mcpServerTypeStreamableHTTP = "streamable-http"
 	mcpServerNameLimit          = 255
 	defaultMCPFetchTimeoutSec   = 10
+	mcpServerDateFormat         = "2006-01-02T15:04:05"
 )
 
 // MCPService handles MCP server operations.
@@ -72,6 +73,24 @@ type CreateMCPServerResponse struct {
 	Description *string        `json:"description,omitempty"`
 	Variables   entity.JSONMap `json:"variables"`
 	Headers     entity.JSONMap `json:"headers"`
+}
+
+// MCPServerListItem is an MCP server item in the list response.
+type MCPServerListItem struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	ServerType  string         `json:"server_type"`
+	URL         string         `json:"url"`
+	Description *string        `json:"description"`
+	Variables   entity.JSONMap `json:"variables"`
+	CreateDate  *string        `json:"create_date"`
+	UpdateDate  *string        `json:"update_date"`
+}
+
+// ListMCPServersResponse is the response payload for listing MCP servers.
+type ListMCPServersResponse struct {
+	MCPServers []*MCPServerListItem `json:"mcp_servers"`
+	Total      int64                `json:"total"`
 }
 
 // CreateMCPServer creates an MCP server owned by a tenant.
@@ -129,6 +148,45 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 		Description: server.Description,
 		Variables:   server.Variables,
 		Headers:     server.Headers,
+	}, common.CodeSuccess, nil
+}
+
+// ListMCPServers lists MCP servers owned by a tenant.
+func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, orderby, desc)
+	if err != nil {
+		var orderbyErr *dao.InvalidMCPServerOrderByError
+		if errors.As(err, &orderbyErr) {
+			return nil, common.CodeExceptionError, err
+		}
+		return nil, common.CodeServerError, err
+	}
+	if servers == nil {
+		servers = []*entity.MCPServer{}
+	}
+	servers = paginateMCPServers(servers, page, pageSize)
+
+	items := make([]*MCPServerListItem, 0, len(servers))
+	for _, server := range servers {
+		variables := server.Variables
+		if variables == nil {
+			variables = entity.JSONMap{}
+		}
+		items = append(items, &MCPServerListItem{
+			ID:          server.ID,
+			Name:        server.Name,
+			ServerType:  server.ServerType,
+			URL:         server.URL,
+			Description: server.Description,
+			Variables:   variables,
+			CreateDate:  formatMCPServerDate(server.CreateDate),
+			UpdateDate:  formatMCPServerDate(server.UpdateDate),
+		})
+	}
+
+	return &ListMCPServersResponse{
+		MCPServers: items,
+		Total:      total,
 	}, common.CodeSuccess, nil
 }
 
@@ -442,4 +500,45 @@ func toolsAsMap(tools []mcpclient.Tool) map[string]interface{} {
 		m[t.Name] = entry
 	}
 	return m
+}
+
+func formatMCPServerDate(date *time.Time) *string {
+	if date == nil {
+		return nil
+	}
+	formatted := date.Format(mcpServerDateFormat)
+	return &formatted
+}
+
+func paginateMCPServers(servers []*entity.MCPServer, page, pageSize int) []*entity.MCPServer {
+	if page == 0 || pageSize == 0 {
+		return servers
+	}
+
+	start := (page - 1) * pageSize
+	stop := page * pageSize
+	return sliceMCPServers(servers, start, stop)
+}
+
+func sliceMCPServers(servers []*entity.MCPServer, start, stop int) []*entity.MCPServer {
+	length := len(servers)
+	start = normalizeMCPServerSliceIndex(start, length)
+	stop = normalizeMCPServerSliceIndex(stop, length)
+	if stop < start {
+		return []*entity.MCPServer{}
+	}
+	return servers[start:stop]
+}
+
+func normalizeMCPServerSliceIndex(index, length int) int {
+	if index < 0 {
+		index += length
+	}
+	if index < 0 {
+		return 0
+	}
+	if index > length {
+		return length
+	}
+	return index
 }
