@@ -46,11 +46,15 @@ def test_qwen3_can_enable_thinking_explicitly():
     assert kwargs["extra_body"] == {"seed": 1, "enable_thinking": True}
 
 
-def test_dashscope_litellm_qwen3_uses_provider_field():
+@pytest.mark.parametrize(
+    "provider",
+    [SupportedLiteLLMProvider.Tongyi_Qianwen, SupportedLiteLLMProvider.Dashscope],
+)
+def test_qwen3_litellm_provider_uses_provider_field(provider):
     gen_conf, kwargs = _apply_model_family_policies(
         "qwen3-max",
         backend="litellm",
-        provider=SupportedLiteLLMProvider.Tongyi_Qianwen,
+        provider=provider,
         gen_conf={"thinking": "disabled"},
         request_kwargs={},
     )
@@ -98,6 +102,10 @@ def test_kimi_keeps_provider_default_when_unspecified():
     assert kwargs == {}
     assert "thinking" not in gen_conf
     assert "temperature" not in gen_conf
+    assert gen_conf["top_p"] == 0.95
+    assert gen_conf["n"] == 1
+    assert gen_conf["presence_penalty"] == 0.0
+    assert gen_conf["frequency_penalty"] == 0.0
 
 
 def test_glm_keeps_provider_default_when_unspecified():
