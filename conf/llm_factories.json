@@ -1341,6 +1341,13 @@
             "url": "https://api.minimaxi.com/v1",
             "llm": [
                 {
+                    "llm_name": "MiniMax-M3",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "MiniMax-M2.7",
                     "tags": "LLM,CHAT,200k",
                     "max_tokens": 204800,
@@ -1353,32 +1360,6 @@
                     "max_tokens": 204800,
                     "model_type": "chat",
                     "is_tools": true
-                },
-                {
-                    "llm_name": "MiniMax-M2.5",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "MiniMax-M2.5-highspeed",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 204800,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "MiniMax-M2.1",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "MiniMax-M2",
-                    "tags": "LLM,CHAT,200k",
-                    "max_tokens": 200000,
-                    "model_type": "chat"
                 }
             ]
         },
