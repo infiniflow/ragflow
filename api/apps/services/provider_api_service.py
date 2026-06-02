@@ -13,8 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
 import json
 import logging
+import asyncio
 
 from common.constants import LLMType, ActiveStatusEnum
 from common.misc_utils import get_uuid
@@ -23,6 +25,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_from_pro
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
+from rag.llm import EmbeddingModel, ChatModel, RerankModel
 
 
 def list_providers(tenant_id: str, all_available: bool = False):
@@ -42,6 +45,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
     if all_available:
         providers = []
         for factory_info in FACTORY_LLM_INFOS:
+            if factory_info["name"] in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"]:
+                continue
             model_types = sorted(set(
                 llm["model_type"]
                 for llm in factory_info.get("llm", [])
@@ -54,6 +59,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
                     "default": factory_info.get("url", "")
                 }
             })
+        providers.sort(key=lambda x: x["name"])
         return True, providers
 
     # List tenant-configured providers
@@ -62,7 +68,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
     providers = []
     factory_info_mapping = {f["name"]: f for f in FACTORY_LLM_INFOS}
     for name in factory_names:
-        if factory_info_mapping.get(name):
+        if name not in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"] and factory_info_mapping.get(name):
             factory_info = factory_info_mapping[name]
             model_types = sorted(set(
                 llm["model_type"]
@@ -76,7 +82,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
                     "default": factory_info.get("url", "")
                 }
             })
-
+    providers.sort(key=lambda x: x["name"])
     return True, providers
 
 
@@ -117,7 +123,7 @@ def delete_provider(tenant_id: str, provider_name: str):
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         return False, f"Provider {provider_name} not found"
-    instance_objs = TenantModelInstanceService.get_by_provider_id(provider_obj.id)
+    instance_objs = TenantModelInstanceService.get_all_by_provider_id(provider_obj.id)
     if not instance_objs:
         return False, f"No instances found for provider {provider_name}"
     instance_ids = [instance_obj.id for instance_obj in instance_objs]
@@ -169,6 +175,7 @@ def list_provider_models(provider_name: str):
             "model_types": [llm["model_type"]],
             "features": None
         })
+    models.sort(key=lambda x: x["name"])
     return True, models
 
 
@@ -202,7 +209,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
+async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
     """
     Create a provider instance.
 
@@ -236,6 +243,9 @@ def create_provider_instance(tenant_id: str, provider_name: str, instance_name: 
         same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
         if same_key_instance:
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
+    success, msg = await verify_api_key(provider_name, api_key, base_url, region)
+    if not success:
+        return False, msg
 
     import json
     extra_fields = {}
@@ -268,7 +278,6 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     for instance_obj in instance_objs:
         extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
         instances.append({
-            "api_key": instance_obj.api_key,
             "id": instance_obj.id,
             "instance_name": instance_obj.instance_name,
             "provider_id": provider_id,
@@ -276,7 +285,99 @@ def list_provider_instances(tenant_id: str, provider_name: str):
             "status": instance_obj.status,
         })
 
-    return True, instances
+    active_instances = [instance for instance in instances if instance["status"] == ActiveStatusEnum.ACTIVE.value]
+    inactive_instances = [instance for instance in instances if instance["status"] == ActiveStatusEnum.INACTIVE.value]
+    active_instances.sort(key=lambda x: x["instance_name"])
+    inactive_instances.sort(key=lambda x: x["instance_name"])
+
+    return True, active_instances + inactive_instances
+
+
+async def verify_api_key(provider_name: str, api_key: str, base_url: str=None, region: str=None):
+    """
+    Verify API key for a provider.
+
+    :param provider_name: provider/factory name
+    :param api_key: API key
+    :param base_url: base url
+    :param region: region
+    :return: (success, result_or_error_message)
+    """
+    if not provider_name:
+        return False, "Provider name is required"
+
+    if region and region == "intl" and provider_name.lower() == "siliconflow":
+        target_factory_name = "siliconflow_intl"
+    else:
+        target_factory_name = provider_name
+
+    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
+    if not factory_info:
+        return False, f"Provider '{provider_name}' not found"
+
+    factory_llms = factory_info[0]["llm"]
+    if not factory_llms:
+        return False, f"No models found for provider '{provider_name}'"
+
+    # test if api key works
+    chat_passed, embd_passed, rerank_passed = False, False, False
+    timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
+    extra = {"provider": provider_name}
+    msg = ""
+    for llm in factory_llms:
+        if not embd_passed and llm["model_type"] == LLMType.EMBEDDING.value:
+            assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
+            mdl = EmbeddingModel[provider_name](api_key, llm["llm_name"], base_url=base_url)
+            try:
+                arr, tc = asyncio.wait_for(
+                    asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
+                    timeout=timeout_seconds,
+                )
+                if len(arr[0]) == 0:
+                    raise Exception("Fail")
+                embd_passed = True
+            except Exception as e:
+                msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
+        elif not chat_passed and llm["model_type"] == LLMType.CHAT.value:
+            assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
+            mdl = ChatModel[provider_name](api_key, llm["llm_name"], base_url=base_url, **extra)
+            try:
+                async def check_streamly():
+                    async for chunk in mdl.async_chat_streamly(
+                            None,
+                            [{"role": "user", "content": "Hi"}],
+                            {"temperature": 0.9},
+                    ):
+                        if chunk and isinstance(chunk, str) and chunk.find("**ERROR**") < 0:
+                            return True
+                    return False
+
+                result = await asyncio.wait_for(check_streamly(), timeout=timeout_seconds)
+                if result:
+                    chat_passed = True
+                else:
+                    raise Exception("No valid response received")
+            except Exception as e:
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
+        elif not rerank_passed and llm["model_type"] == LLMType.RERANK.value:
+            assert provider_name in RerankModel, f"Rerank model from {provider_name} is not supported yet."
+            mdl = RerankModel[provider_name](api_key, llm["llm_name"], base_url=base_url)
+            try:
+                arr, tc = await asyncio.wait_for(
+                    asyncio.to_thread(mdl.similarity, "What's the weather?", ["Is it sunny today?"]),
+                    timeout=timeout_seconds,
+                )
+                if len(arr) == 0 or tc == 0:
+                    raise Exception("Fail")
+                rerank_passed = True
+                logging.debug(f"passed model rerank {llm['llm_name']}")
+            except Exception as e:
+                msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
+        if any([embd_passed, chat_passed, rerank_passed]):
+            msg = ""
+            break
+
+    return any([embd_passed, chat_passed, rerank_passed]), msg or "success"
 
 
 def show_provider_instance(tenant_id: str, provider_name: str, instance_name: str):
@@ -362,6 +463,7 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
             return False, f"Provider '{provider_name}' not found"
         llms = factory_info[0].get("llm", [])
         models = [{"name": llm["llm_name"]} for llm in llms]
+        models.sort(key=lambda x: x["name"])
         return True, models
 
     # Get instance
@@ -407,8 +509,11 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
                 "max_tokens": extra_fields.get("max_tokens", 8192),
                 "status": model_info_dict["status"],
             })
-
-    return True, models
+    active_models = [model for model in models if model["status"] == ActiveStatusEnum.ACTIVE.value]
+    inactive_models = [model for model in models if model["status"] == ActiveStatusEnum.INACTIVE.value]
+    active_models.sort(key=lambda x: x["name"])
+    inactive_models.sort(key=lambda x: x["name"])
+    return True, active_models + inactive_models
 
 
 def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str, model_name: str, model_type: str|list[str], max_tokens: int, extra: dict):
@@ -434,7 +539,7 @@ def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str
         extra_fields = {"max_tokens": max_tokens}
         target_model = [llm for llm in llms if llm["model_type"] == _type and llm["llm_name"] == model_name]
         if target_model:
-            extra_fields.update({"is_tool": target_model[0].get("is_tool", False)})
+            extra_fields.update({"is_tools": target_model[0].get("is_tools", False)})
         extra_fields.update(extra)
         TenantModelService.insert(
             model_name=model_name,
@@ -506,6 +611,7 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
             provider_id=provider_obj.id,
             instance_id=instance_obj.id,
             status=status,
+            extra=json.dumps({"max_tokens": target_llm[0].get("max_tokens", 8192), "is_tools": target_llm[0].get("is_tools", False)})
         )
 
     return True, None

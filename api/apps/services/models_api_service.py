@@ -298,7 +298,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     target_type_records = [record for record in model_records if record.model_type == model_type_filter] if model_type_filter else model_records
     model_record_map = {}
     for model in target_type_records:
-        instance_model_key = f"{model.provider_id}_{model.instance_id}_{model.model_name}"
+        instance_model_key = f"{model.provider_id}@{model.instance_id}@{model.model_name}"
         if model_record_map.get(instance_model_key):
             model_record_map[instance_model_key].append(model)
         else:
@@ -318,7 +318,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 continue
 
             for factory_instance in factory_instances:
-                model_record_key = f"{factory_instance.provider_id}_{factory_instance.id}_{llm['llm_name']}"
+                model_record_key = f"{factory_instance.provider_id}@{factory_instance.id}@{llm['llm_name']}"
                 model_key_in_factory.append(model_record_key)
                 manual_modified_models = model_record_map.get(model_record_key, [])
                 active_model_types = [manual_model.model_type for manual_model in manual_modified_models if manual_model.status == ActiveStatusEnum.ACTIVE.value]
@@ -343,7 +343,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
             model_records = model_record_map.get(model_record_key, [])
             if not model_records:
                 continue
-            provider_id, instance_id, model_name = model_record_key.split("_")
+            provider_id, instance_id, model_name = model_record_key.split("@")
             model_types = [model.model_type for model in model_records if model.status == ActiveStatusEnum.ACTIVE.value]
             if not model_types:
                 continue
@@ -356,5 +356,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 "instance_id": instance_id,
                 "instance_name": instance_info_map[instance_id].instance_name if instance_info_map.get(instance_id) else ""
             })
+
+    added_models.sort(key=lambda x: (x["provider_name"], x["instance_name"], x["name"]))
 
     return True, added_models

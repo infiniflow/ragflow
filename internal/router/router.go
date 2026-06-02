@@ -214,6 +214,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
+				// Metadata Config
+				datasets.GET("/:dataset_id/metadata/config", r.datasetsHandler.GetMetadataConfig)
+				datasets.PUT("/:dataset_id/metadata/config", r.datasetsHandler.UpdateMetadataConfig)
+
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 
@@ -277,6 +281,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
 				mcp.GET("/servers/:mcp_id", r.mcpHandler.GetMCPServer)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 			}
 
