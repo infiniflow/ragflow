@@ -443,8 +443,19 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
+	instanceInfo, code, err := h.modelProviderService.ShowProviderInstance(providerName, instanceName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+	}
+
+	apikey := instanceInfo["apikey"].(string)
+	region := instanceInfo["region"].(string)
+
 	// Get tenant ID from user
-	errorCode, err := h.modelProviderService.CheckInstanceConnection(providerName, instanceName, userID)
+	errorCode, err := h.modelProviderService.CheckConnection(providerName, apikey, region, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,

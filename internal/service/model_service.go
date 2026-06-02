@@ -371,6 +371,7 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceName, 
 		"instanceName": instance.InstanceName,
 		"providerID":   instance.ProviderID,
 		"status":       instance.Status,
+		"apikey":       instance.APIKey,
 		"region":       extra["region"],
 	}
 
@@ -540,14 +541,39 @@ func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceNam
 		return common.CodeServerError, err
 	}
 
-	extra := map[string]string{}
-	if strings.TrimSpace(instance.Extra) != "" {
-		if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	if providerInfo == nil {
+		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+	}
+
+	var extra map[string]string
+	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: nil,
+		Region: nil,
+	}
+
+	region := extra["region"]
+	apiConfig.Region = &region
+	apiConfig.ApiKey = &instance.APIKey
+
+	driver := providerInfo.ModelDriver
+	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
+		if err != nil {
 			return common.CodeServerError, err
 		}
 	}
 
-	return m.CheckConnection(providerName, instance.APIKey, extra["region"], userID)
+	err = driver.CheckConnection(apiConfig)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func (m *ModelProviderService) ListTasks(providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {
