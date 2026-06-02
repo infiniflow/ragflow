@@ -18,7 +18,8 @@ callers) we fall back to field precedence:
   3. **SAS token** — ``container_url`` + ``sas_token``; the shape that
      ``RAGFlowAzureSasBlob`` already uses.
 
-Incremental runs are scoped by the poll time window (``since_epoch``).
+Incremental runs are scoped by the poll time window
+(``since_epoch`` < last-modified <= ``until_epoch``).
 Each blob's ETag is also emitted as the document fingerprint, which the
 indexing pipeline persists as ``content_hash`` so unchanged blobs are not
 re-embedded. The connector itself keeps no cross-run ETag state.
@@ -226,7 +227,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> Any:
-        return self._iter_documents(since_epoch=start)
+        return self._iter_documents(since_epoch=start, until_epoch=end)
 
     def load_from_checkpoint(
         self,
@@ -237,7 +238,10 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         if not isinstance(checkpoint, AzureBlobCheckpoint):
             checkpoint = self.build_dummy_checkpoint()
         since = start if start else None
-        return self._iter_documents(checkpoint=checkpoint, since_epoch=since)
+        until = end if end else None
+        return self._iter_documents(
+            checkpoint=checkpoint, since_epoch=since, until_epoch=until
+        )
 
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -283,6 +287,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         self,
         checkpoint: AzureBlobCheckpoint | None = None,
         since_epoch: float | None = None,
+        until_epoch: float | None = None,
     ):
         from common.data_source.models import Document
 
@@ -306,19 +311,40 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                 # unchanged blobs across runs.
                 current_etag = (blob_props.etag or "").strip('"')
 
-                # Time-window filter — for poll_source callers.
+                # Time-window filter. ``since_epoch`` is the lower bound;
+                # ``until_epoch`` is the upper bound of the current snapshot.
+                # Enforcing the upper bound keeps blobs modified mid-run from
+                # leaking into this window — they'll be picked up by the next
+                # run (whose lower bound is this run's upper bound), so an
+                # update can never fall into a gap between windows.
                 last_modified: datetime | None = blob_props.last_modified
-                if since_epoch and last_modified:
-                    if last_modified.timestamp() < since_epoch:
+                if last_modified:
+                    ts = last_modified.timestamp()
+                    if since_epoch and ts < since_epoch:
+                        continue
+                    if until_epoch and ts > until_epoch:
                         continue
 
-                # Download blob content
+                # Download blob content. A blob that was deleted between the
+                # listing and this fetch is genuinely gone — skip it. Any
+                # other failure (throttling, transient 5xx, network) must
+                # abort the run: the sync framework advances its watermark
+                # from successfully yielded docs, so silently skipping a
+                # transiently-failed blob while newer blobs succeed would
+                # move the watermark past it and drop it permanently.
                 try:
                     blob_client = self._container_client.get_blob_client(name)
                     data = blob_client.download_blob().readall()
                 except Exception as exc:
-                    logger.warning("Azure Blob: failed to download %s: %s", name, exc)
-                    continue
+                    if _is_blob_gone(exc):
+                        logger.warning(
+                            "Azure Blob: %s vanished between listing and fetch; skipping",
+                            name,
+                        )
+                        continue
+                    raise UnexpectedValidationError(
+                        f"Azure Blob: failed to download {name}: {exc}"
+                    ) from exc
 
                 doc_updated_at = (
                     last_modified.astimezone(timezone.utc)
@@ -378,6 +404,24 @@ def _has_supported_extension(name: str, allow_images: bool) -> bool:
     if allow_images and ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"}:
         return True
     return False
+
+
+def _is_blob_gone(exc: Exception) -> bool:
+    """True when a download failed because the blob no longer exists.
+
+    Azure raises ``ResourceNotFoundError`` (status 404, error code
+    ``BlobNotFound``) when a blob listed moments earlier has since been
+    deleted. That is not data loss — the blob is gone — so it is safe to
+    skip. Detected by attribute and string so we need not import the Azure
+    exception type at module load.
+    """
+    if getattr(exc, "status_code", None) == 404:
+        return True
+    code = getattr(exc, "error_code", "") or ""
+    if "BlobNotFound" in str(code):
+        return True
+    msg = str(exc)
+    return "BlobNotFound" in msg or "ResourceNotFound" in msg
 
 
 def _container_name(client: Any) -> str:
