@@ -85,6 +85,20 @@ func TestLongCatName(t *testing.T) {
 	}
 }
 
+func TestLongCatNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewLongCatModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewLongCatModel returned nil")
+	}
+}
+
 func TestLongCatChatHappyPath(t *testing.T) {
 	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "LongCat-Flash-Chat" {

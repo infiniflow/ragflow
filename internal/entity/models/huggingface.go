@@ -3,13 +3,13 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 // HuggingFaceModel implements ModelDriver for HuggingFace
@@ -22,20 +22,16 @@ type HuggingFaceModel struct {
 // NewHuggingFaceModel creates a new huggingFace model instance
 func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *HuggingFaceModel {
 	return &HuggingFaceModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		BaseURL:    baseURL,
+		URLSuffix:  urlSuffix,
+		httpClient: &http.Client{},
 	}
 }
 func (h *HuggingFaceModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &HuggingFaceModel{
-		BaseURL:   baseURL,
-		URLSuffix: h.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		BaseURL:    baseURL,
+		URLSuffix:  h.URLSuffix,
+		httpClient: &http.Client{},
 	}
 }
 
@@ -111,7 +107,10 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -251,7 +250,10 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -272,6 +274,7 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -368,7 +371,10 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 
 	url := fmt.Sprintf("%s/%s/%s", h.BaseURL[region], h.URLSuffix.Embedding, *modelName)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +461,10 @@ func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

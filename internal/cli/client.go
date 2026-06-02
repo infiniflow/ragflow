@@ -306,6 +306,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ParseFileUserCommand(cmd)
 	case "check_provider_connection":
 		return c.CheckProviderConnection(cmd)
+	case "check_provider_with_key":
+		return c.CheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":

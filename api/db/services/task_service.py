@@ -419,6 +419,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     else:
         parse_task_array.append(new_task())
 
+    # Determine suffix based on parser_id (consistent with SAAS version line 444)
+    suffix = "common" if doc["parser_id"] != "resume" else "resume"
+
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     for task in parse_task_array:
         hasher = xxhash.xxh64()
@@ -456,7 +459,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
         assert REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority), message=unfinished_task
+            settings.get_svr_queue_name(priority, suffix), message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
 
 
@@ -547,7 +550,7 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
     task["file"] = file
 
     if not REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority), message=task
+            settings.get_svr_queue_name(priority, "common"), message=task
     ):
         return False, "Can't access Redis. Please check the Redis' status."
 

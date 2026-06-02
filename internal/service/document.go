@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"ragflow/internal/dao"
@@ -98,6 +100,27 @@ type DocumentResponse struct {
 	Status          *string `json:"status,omitempty"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
+}
+
+type ThumbnailResponse struct {
+	ID        string  `json:"id"`
+	Thumbnail *string `json:"thumbnail,omitempty"`
+	KbID      string  `json:"kb_id"`
+}
+
+// GetDocumentImage retrieves an image object from storage.
+func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
+	parts := strings.Split(imageID, "-")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("Image not found.")
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	return storageImpl.Get(parts[0], parts[1])
 }
 
 // CreateDocument create document
@@ -178,6 +201,19 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	}
 
 	return responses, total, nil
+}
+
+func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error) {
+	document, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ThumbnailResponse
+	result.ID = document.ID
+	result.Thumbnail = document.Thumbnail
+	result.KbID = document.KbID
+	return &result, nil
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
