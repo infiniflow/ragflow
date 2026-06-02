@@ -207,7 +207,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str, verify: bool):
+async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
     """
     Create a provider instance.
 
@@ -220,7 +220,6 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     :param api_key: API key
     :param base_url: base url
     :param region: region
-    :param verify: verify
     :return: (success, result_or_error_message)
     """
     if not provider_name:
