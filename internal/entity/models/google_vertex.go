@@ -73,17 +73,7 @@ func (g *GoogleVertexModel) Name() string {
 	return "google vertex"
 }
 
-func (g *GoogleVertexModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if len(messages) == 0 {
-		return nil, fmt.Errorf("messages is empty")
-	}
-
-	ctx := context.Background()
-	client, err := g.newClient(ctx, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
+func buildVertexContents(messages []Message) []*genai.Content {
 	var contents []*genai.Content
 	for _, msg := range messages {
 		var role genai.Role
@@ -123,6 +113,32 @@ func (g *GoogleVertexModel) ChatWithMessages(modelName string, messages []Messag
 			}
 		}
 	}
+	return contents
+}
+
+func vertexThinkingText(response *genai.GenerateContentResponse) string {
+	if response == nil || len(response.Candidates) == 0 {
+		return ""
+	}
+	content := response.Candidates[0].Content
+	if content == nil || len(content.Parts) == 0 || content.Parts[0] == nil {
+		return ""
+	}
+	return content.Parts[0].Text
+}
+
+func (g *GoogleVertexModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages is empty")
+	}
+
+	ctx := context.Background()
+	client, err := g.newClient(ctx, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	contents := buildVertexContents(messages)
 
 	response, err := client.Models.GenerateContent(ctx, modelName, contents, nil)
 	if err != nil {
@@ -144,45 +160,7 @@ func (g *GoogleVertexModel) ChatStreamlyWithSender(modelName string, messages []
 		return err
 	}
 
-	var contents []*genai.Content
-	for _, msg := range messages {
-		var role genai.Role
-		switch msg.Role {
-		case "user":
-			role = genai.RoleUser
-		case "model", "assistant":
-			role = genai.RoleModel
-		default:
-			role = genai.RoleUser
-		}
-
-		switch c := msg.Content.(type) {
-		case string:
-			contents = append(contents, genai.NewContentFromText(c, role))
-		case []interface{}:
-			var parts []*genai.Part
-			for _, item := range c {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					contentType, _ := itemMap["type"].(string)
-					switch contentType {
-					case "text":
-						if text, ok := itemMap["text"].(string); ok {
-							parts = append(parts, genai.NewPartFromText(text))
-						}
-					case "image_url":
-						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
-							if url, ok := imgMap["url"].(string); ok {
-								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
-							}
-						}
-					}
-				}
-			}
-			if len(parts) > 0 {
-				contents = append(contents, genai.NewContentFromParts(parts, role))
-			}
-		}
-	}
+	contents := buildVertexContents(messages)
 
 	for response, err := range client.Models.GenerateContentStream(ctx, modelName, contents, nil) {
 		if err != nil {
@@ -192,7 +170,7 @@ func (g *GoogleVertexModel) ChatStreamlyWithSender(modelName string, messages []
 		content := response.Text()
 		var responseContent string
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-			responseContent = response.Candidates[0].Content.Parts[0].Text
+			responseContent = vertexThinkingText(response)
 		}
 
 		if responseContent != "" {
@@ -210,7 +188,7 @@ func (g *GoogleVertexModel) ChatStreamlyWithSender(modelName string, messages []
 		}
 	}
 
-	return err
+	return nil
 }
 
 func (g *GoogleVertexModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {

@@ -48,11 +48,8 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 	}
 }
 
-var googleListModels = func(ctx context.Context, apiKey string) ([]string, error) {
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  apiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
+var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]string, error) {
+	client, err := genai.NewClient(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -86,23 +83,40 @@ func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel
 }
 
 func (g *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &GoogleModel{
-		BaseURL:   baseURL,
-		URLSuffix: g.URLSuffix,
-	}
+	return NewGoogleModel(baseURL, g.URLSuffix)
 }
 
 func (g *GoogleModel) Name() string {
 	return "google"
 }
 
+func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.ClientConfig {
+	return &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI, HTTPOptions: genai.HTTPOptions{BaseURL: g.baseURL(apiConfig)}}
+}
+
+func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
+	if apiConfig != nil && apiConfig.Region != nil {
+		if baseURL := strings.TrimSpace(g.BaseURL[*apiConfig.Region]); baseURL != "" {
+			return baseURL
+		}
+	}
+	return strings.TrimSpace(g.BaseURL["default"])
+}
+
 func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return nil, fmt.Errorf("api key is nil or empty")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return nil, fmt.Errorf("model name is empty")
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
 	ctx := context.Background()
-	client, err := g.newClient(ctx, apiConfig)
+	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -167,9 +181,18 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return fmt.Errorf("api key is nil or empty")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return fmt.Errorf("model name is empty")
+	}
+	if sender == nil {
+		return fmt.Errorf("sender is nil")
+	}
 
 	ctx := context.Background()
-	client, err := g.newClient(ctx, apiConfig)
+	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 	if err != nil {
 		return err
 	}
@@ -255,6 +278,9 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 // Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
 func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -265,7 +291,7 @@ func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
-	client, err := g.newClient(ctx, apiConfig)
+	client, err := genai.NewClient(ctx, g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
@@ -310,7 +336,7 @@ func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("api key is required")
 	}
 
-	return googleListModels(context.Background(), *apiConfig.ApiKey)
+	return googleListModels(context.Background(), g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))
 }
 
 func (g *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -320,17 +346,6 @@ func (g *GoogleModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 func (g *GoogleModel) CheckConnection(apiConfig *APIConfig) error {
 	_, err := g.ListModels(apiConfig)
 	return err
-}
-
-func (g *GoogleModel) newClient(ctx context.Context, apiConfig *APIConfig) (*genai.Client, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is required")
-	}
-
-	return genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  strings.TrimSpace(*apiConfig.ApiKey),
-		Backend: genai.BackendGeminiAPI,
-	})
 }
 
 // Rerank calculates similarity scores between query and documents

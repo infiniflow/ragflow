@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"ragflow/internal/entity"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -59,21 +60,23 @@ var (
 
 // DatasetService implements the RESTful dataset APIs from dataset_api.py.
 type DatasetService struct {
-	kbDAO        *dao.KnowledgebaseDAO
-	documentDAO  *dao.DocumentDAO
-	connectorDAO *dao.ConnectorDAO
-	tenantDAO    *dao.TenantDAO
-	tenantLLMDAO *dao.TenantLLMDAO
+	kbDAO          *dao.KnowledgebaseDAO
+	documentDAO    *dao.DocumentDAO
+	connectorDAO   *dao.ConnectorDAO
+	tenantDAO      *dao.TenantDAO
+	tenantLLMDAO   *dao.TenantLLMDAO
+	pipelineLogDAO *dao.PipelineOperationLogDAO
 }
 
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
 	return &DatasetService{
-		kbDAO:        dao.NewKnowledgebaseDAO(),
-		documentDAO:  dao.NewDocumentDAO(),
-		connectorDAO: dao.NewConnectorDAO(),
-		tenantDAO:    dao.NewTenantDAO(),
-		tenantLLMDAO: dao.NewTenantLLMDAO(),
+		kbDAO:          dao.NewKnowledgebaseDAO(),
+		documentDAO:    dao.NewDocumentDAO(),
+		connectorDAO:   dao.NewConnectorDAO(),
+		tenantDAO:      dao.NewTenantDAO(),
+		tenantLLMDAO:   dao.NewTenantLLMDAO(),
+		pipelineLogDAO: dao.NewPipelineOperationLogDAO(),
 	}
 }
 
@@ -562,6 +565,186 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 // Accessible checks if a knowledge base is accessible by a user
 func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
+}
+
+// GetIngestionSummary returns dataset-level ingestion counters together with
+// the aggregated document parsing status, mirroring
+// dataset_api_service.get_ingestion_summary.
+func (s *DatasetService) GetIngestionSummary(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", userID, datasetID)
+	}
+
+	kb, err := s.kbDAO.GetByID(datasetID)
+	if err != nil || kb == nil {
+		return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+	}
+
+	status, err := s.documentDAO.GetParsingStatusByKBID(datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	return map[string]interface{}{
+		"doc_num":   kb.DocNum,
+		"chunk_num": kb.ChunkNum,
+		"token_num": kb.TokenNum,
+		"status":    status,
+	}, common.CodeSuccess, nil
+}
+
+// ListIngestionLogs lists ingestion logs for a dataset, mirroring
+// dataset_api_service.list_ingestion_logs. log_type selects between
+// dataset-level logs ("dataset") and per-file logs ("file").
+func (s *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New("Invalid \"log_type\", expected \"dataset\" or \"file\"")
+	}
+
+	var (
+		logs  []*entity.PipelineOperationLog
+		total int64
+		err   error
+	)
+	if logType == "file" {
+		logs, total, err = s.pipelineLogDAO.GetFileLogsByKBID(datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
+	} else {
+		logs, total, err = s.pipelineLogDAO.GetDatasetLogsByKBID(datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
+	}
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	items := make([]map[string]interface{}, 0, len(logs))
+	for _, log := range logs {
+		if log == nil {
+			continue
+		}
+		if logType == "file" {
+			items = append(items, fileIngestionLogToMap(log))
+		} else {
+			items = append(items, datasetIngestionLogToMap(log))
+		}
+	}
+
+	return map[string]interface{}{
+		"total": total,
+		"logs":  items,
+	}, common.CodeSuccess, nil
+}
+
+// GetIngestionLog returns a single dataset-level ingestion log, mirroring
+// dataset_api_service.get_ingestion_log.
+func (s *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
+	}
+
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("No authorization.")
+	}
+
+	log, err := s.pipelineLogDAO.GetByIDAndKBID(logID, datasetID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, common.CodeDataError, errors.New("Log not found")
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+
+	return datasetIngestionLogToMap(log), common.CodeSuccess, nil
+}
+
+func datasetIngestionLogToMap(log *entity.PipelineOperationLog) map[string]interface{} {
+	return map[string]interface{}{
+		"id":               log.ID,
+		"tenant_id":        log.TenantID,
+		"kb_id":            log.KbID,
+		"progress":         log.Progress,
+		"progress_msg":     stringPointerValue(log.ProgressMsg),
+		"process_begin_at": timePointerValue(log.ProcessBeginAt),
+		"process_duration": log.ProcessDuration,
+		"task_type":        log.TaskType,
+		"operation_status": log.OperationStatus,
+		"avatar":           stringPointerValue(log.Avatar),
+		"status":           stringPointerValue(log.Status),
+		"create_time":      int64PointerValue(log.CreateTime),
+		"create_date":      timePointerValue(log.CreateDate),
+		"update_time":      int64PointerValue(log.UpdateTime),
+		"update_date":      timePointerValue(log.UpdateDate),
+	}
+}
+
+func fileIngestionLogToMap(log *entity.PipelineOperationLog) map[string]interface{} {
+	return map[string]interface{}{
+		"id":               log.ID,
+		"document_id":      log.DocumentID,
+		"tenant_id":        log.TenantID,
+		"kb_id":            log.KbID,
+		"pipeline_id":      stringPointerValue(log.PipelineID),
+		"pipeline_title":   stringPointerValue(log.PipelineTitle),
+		"parser_id":        log.ParserID,
+		"document_name":    log.DocumentName,
+		"document_suffix":  log.DocumentSuffix,
+		"document_type":    log.DocumentType,
+		"source_from":      log.SourceFrom,
+		"progress":         log.Progress,
+		"progress_msg":     stringPointerValue(log.ProgressMsg),
+		"process_begin_at": timePointerValue(log.ProcessBeginAt),
+		"process_duration": log.ProcessDuration,
+		"dsl":              jsonMapValue(log.DSL),
+		"task_type":        log.TaskType,
+		"operation_status": log.OperationStatus,
+		"avatar":           stringPointerValue(log.Avatar),
+		"status":           stringPointerValue(log.Status),
+		"create_time":      int64PointerValue(log.CreateTime),
+		"create_date":      timePointerValue(log.CreateDate),
+		"update_time":      int64PointerValue(log.UpdateTime),
+		"update_date":      timePointerValue(log.UpdateDate),
+	}
+}
+
+func stringPointerValue(s *string) interface{} {
+	if s == nil {
+		return nil
+	}
+	return *s
+}
+
+func int64PointerValue(i *int64) interface{} {
+	if i == nil {
+		return nil
+	}
+	return *i
+}
+
+func timePointerValue(t *time.Time) interface{} {
+	if t == nil {
+		return nil
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
+func jsonMapValue(m entity.JSONMap) interface{} {
+	if m == nil {
+		return nil
+	}
+	return m
 }
 
 func (s *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase) error {
