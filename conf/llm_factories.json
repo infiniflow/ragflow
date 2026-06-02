@@ -1341,6 +1341,13 @@
             "url": "https://api.minimaxi.com/v1",
             "llm": [
                 {
+                    "llm_name": "MiniMax-M3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "MiniMax-M2.7",
                     "tags": "LLM,CHAT,200k",
                     "max_tokens": 204800,
