@@ -177,6 +177,38 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 	c.Data(http.StatusOK, contentType, data)
 }
 
+func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
+	filename := c.Param("filename")
+	artifact, err := h.documentService.GetDocumentArtifact(filename)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrArtifactInvalidFilename),
+			errors.Is(err, service.ErrArtifactInvalidFileType),
+			errors.Is(err, service.ErrArtifactNotFound):
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeDataError,
+				"message": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeExceptionError,
+				"data":    nil,
+				"message": err.Error(),
+			})
+		}
+		return
+	}
+
+	c.Header("Content-Type", artifact.ContentType)
+	if artifact.ForceAttachment {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	} else {
+		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, artifact.SafeFilename))
+	}
+	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
+}
+
 // UpdateDocument update document
 // @Summary Update Document
 // @Description Update document info
