@@ -15,9 +15,10 @@
 #
 from typing import List
 from common.constants import MemoryType
+from api.utils.model_id_utils import normalize_model_ids_for_response
 
 def format_ret_data_from_memory(memory):
-    return {
+    return normalize_model_ids_for_response({
         "id": memory.id,
         "name": memory.name,
         "avatar": memory.avatar,
@@ -38,7 +39,7 @@ def format_ret_data_from_memory(memory):
         "create_date": memory.create_date,
         "update_time": memory.update_time,
         "update_date": memory.update_date
-    }
+    })
 
 
 def get_memory_type_human(memory_type: int) -> List[str]:

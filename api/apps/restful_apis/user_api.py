@@ -43,6 +43,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user, login_user, logout_user
@@ -586,7 +587,7 @@ async def tenant_info():
         tenants = TenantService.get_info_by(current_user.id)
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
-        return get_json_result(data=tenants[0])
+        return get_json_result(data=normalize_model_ids_for_response(tenants[0]))
     except Exception as e:
         return server_error_response(e)
 
@@ -848,5 +849,4 @@ async def forget_reset_password():
 
     msg = "Password reset successful. Logged in."
     return await construct_response(data=user.to_safe_dict(for_self=True), auth=user.get_id(), message=msg)
-
 

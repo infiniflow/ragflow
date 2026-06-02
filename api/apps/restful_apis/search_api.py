@@ -30,6 +30,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from api.utils.pagination_utils import validate_rest_api_page_size
 
 
@@ -128,7 +129,7 @@ def detail(search_id):
         search = SearchService.get_detail(search_id)
         if not search:
             return get_data_error_result(message="Can't find this Search App!")
-        return get_json_result(data=search)
+        return get_json_result(data=normalize_model_ids_for_response(search))
     except Exception as e:
         return server_error_response(e)
 
@@ -188,7 +189,7 @@ async def update(search_id):
         if not e:
             return get_data_error_result(message="Failed to fetch updated search")
 
-        return get_json_result(data=updated_search.to_dict())
+        return get_json_result(data=normalize_model_ids_for_response(updated_search.to_dict()))
 
     except Exception as e:
         return server_error_response(e)

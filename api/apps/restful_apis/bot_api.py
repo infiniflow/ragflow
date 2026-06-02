@@ -39,6 +39,7 @@ from api.db.joint_services.tenant_model_service import get_tenant_default_model_
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
@@ -93,7 +94,7 @@ async def create_agent_session(tenant_id, agent_id):
     }
     await thread_pool_exec(API4ConversationService.save, **conv)
     conv["agent_id"] = conv.pop("dialog_id")
-    return get_result(data=conv)
+    return get_result(data=normalize_model_ids_for_response(conv))
 
 
 @manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
@@ -620,7 +621,7 @@ async def detail_share_embedded():
         search = await thread_pool_exec(SearchService.get_detail, search_id)
         if not search:
             return get_error_data_result(message="Can't find this Search App!")
-        return get_json_result(data=search)
+        return get_json_result(data=normalize_model_ids_for_response(search))
     except Exception as e:
         return server_error_response(e)
 

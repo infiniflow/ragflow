@@ -22,6 +22,7 @@ from api.utils import validation_utils
 from common import settings
 from common.constants import TaskStatus
 from api.utils.api_utils import get_error_data_result, server_error_response, get_parser_config
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from api.utils.validation_utils import UpdateDocumentReq
 from rag.nlp import rag_tokenizer, search
 
@@ -223,7 +224,7 @@ def map_doc_keys(doc):
     renamed_doc = _process_key_mappings(doc)
     if "run" in renamed_doc.keys():
         renamed_doc = _process_run_mapping(renamed_doc, renamed_doc["run"])
-    return renamed_doc
+    return normalize_model_ids_for_response(renamed_doc)
 
 
 def map_doc_keys_with_run_status(doc, run_status):
@@ -244,7 +245,7 @@ def map_doc_keys_with_run_status(doc, run_status):
     """
     renamed_doc = _process_key_mappings(doc)
     renamed_doc = _process_run_mapping(renamed_doc, run_status)
-    return renamed_doc
+    return normalize_model_ids_for_response(renamed_doc)
 
 
 def _process_key_mappings(doc):

@@ -21,6 +21,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default, queue_save_to_memory_task, query_message
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
 from memory.utils.prompt_util import PromptAssembler
@@ -192,7 +193,7 @@ async def update_memory(memory_id: str, new_memory_setting: dict):
             to_update[k] = v
 
     if not to_update:
-        return True, memory_dict
+        return True, normalize_model_ids_for_response(memory_dict)
     # check memory empty when update embd_id, memory_type
     memory_size = get_memory_size_cache(memory_id, current_memory.tenant_id)
     not_allowed_update = [f for f in ["embd_id", "memory_type"] if f in to_update and memory_size > 0]
@@ -242,7 +243,7 @@ async def list_memory(filter_params: dict, keywords: str, page: int=1, page_size
     memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
     [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
     return {
-        "memory_list": memory_list, "total_count": count
+        "memory_list": normalize_model_ids_for_response(memory_list), "total_count": count
     }
 
 

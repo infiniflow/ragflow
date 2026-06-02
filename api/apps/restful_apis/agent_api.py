@@ -58,6 +58,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
@@ -130,6 +131,8 @@ def _normalize_agent_reference_entry(reference):
 
 def _normalize_agent_session(conv):
     conv["message"] = conv.get("message", [])
+    if "dsl" in conv:
+        conv["dsl"] = normalize_model_ids_for_response(conv["dsl"])
     for info in conv["message"]:
         if "prompt" in info:
             info.pop("prompt")
@@ -430,7 +433,7 @@ def get_agent_session(agent_id, session_id, tenant_id):
     exists, conv = API4ConversationService.get_by_id(session_id)
     if not exists:
         return get_data_error_result(message="Session not found!")
-    return get_json_result(data=conv.to_dict())
+    return get_json_result(data=normalize_model_ids_for_response(conv.to_dict()))
 
 
 @manager.route("/agents/<agent_id>/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
@@ -484,7 +487,7 @@ async def _iter_session_completion_events(tenant_id, agent_id, req, return_trace
 @manager.route("/agents/templates", methods=["GET"])  # noqa: F821
 @login_required
 def list_agent_template():
-    return get_json_result(data=[item.to_dict() for item in CanvasTemplateService.get_all()])
+    return get_json_result(data=normalize_model_ids_for_response([item.to_dict() for item in CanvasTemplateService.get_all()]))
 
 
 @manager.route("/agents/prompts", methods=["GET"])  # noqa: F821
@@ -678,7 +681,7 @@ async def create_agent(tenant_id):
     exists, created_agent = UserCanvasService.get_by_canvas_id(req["id"])
     if not exists:
         return get_data_error_result(message="Fail to create agent.")
-    return get_json_result(data=created_agent)
+    return get_json_result(data=normalize_model_ids_for_response(created_agent))
 
 
 @manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
@@ -808,7 +811,7 @@ def get_agent(agent_id, tenant_id):
         datasets = list(KnowledgebaseService.query(pipeline_id=agent_id))
         canvas["datasets"] = [{"id": item.id, "name": item.name, "avatar": item.avatar} for item in datasets]
 
-    return get_json_result(data=canvas)
+    return get_json_result(data=normalize_model_ids_for_response(canvas))
 
 
 @manager.route("/agents/<agent_id>/versions", methods=["GET"])  # noqa: F821
@@ -821,7 +824,7 @@ def list_agent_versions(agent_id, tenant_id):
             [item.to_dict() for item in UserCanvasVersionService.list_by_canvas_id(agent_id)],
             key=lambda item: item["update_time"] * -1,
         )
-        return get_json_result(data=versions)
+        return get_json_result(data=normalize_model_ids_for_response(versions))
     except Exception as exc:
         return get_data_error_result(message=f"Error getting history files: {exc}")
 
@@ -835,7 +838,7 @@ def get_agent_version(agent_id, version_id, tenant_id):
         exists, version = UserCanvasVersionService.get_by_id(version_id)
         if not exists or not version or str(version.user_canvas_id) != str(agent_id):
             return get_data_error_result(message="Version not found.")
-        return get_json_result(data=version.to_dict())
+        return get_json_result(data=normalize_model_ids_for_response(version.to_dict()))
     except Exception as exc:
         return get_data_error_result(message=f"Error getting history file: {exc}")
 
@@ -946,7 +949,7 @@ async def reset_agent(agent_id, tenant_id):
         )
         if not replica_ok:
             return get_data_error_result(message="agent reset, but replica sync failed.")
-        return get_json_result(data=dsl)
+        return get_json_result(data=normalize_model_ids_for_response(dsl))
     except Exception as exc:
         return server_error_response(exc)
 

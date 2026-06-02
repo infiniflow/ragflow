@@ -43,6 +43,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
+from api.utils.model_id_utils import normalize_model_ids_for_response
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
@@ -87,7 +88,7 @@ def _build_chat_response(chat):
     data["dataset_ids"] = kb_ids
     data.pop("kb_ids", None)
     data["kb_names"] = kb_names
-    return data
+    return normalize_model_ids_for_response(data)
 
 
 def _resolve_kb_names(kb_ids):

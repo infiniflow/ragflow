@@ -32,6 +32,7 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
+from api.utils.model_id_utils import normalize_model_ids_for_response
 
 _VALID_INDEX_TYPES = {"graph", "raptor", "mindmap"}
 
@@ -106,7 +107,7 @@ async def create_dataset(tenant_id: str, req: dict):
     ok, k = KnowledgebaseService.get_by_id(create_dict["id"])
     if not ok:
         return False, "Dataset created failed"
-    response_data = remap_dictionary_keys(k.to_dict())
+    response_data = normalize_model_ids_for_response(remap_dictionary_keys(k.to_dict()))
     return True, response_data
 
 
@@ -195,7 +196,7 @@ def get_dataset(dataset_id: str, tenant_id: str):
     if not ok:
         return False, "Invalid Dataset ID"
 
-    response_data = remap_dictionary_keys(kb.to_dict())
+    response_data = normalize_model_ids_for_response(remap_dictionary_keys(kb.to_dict()))
     response_data["size"] = DocumentService.get_total_size_by_kb_id(dataset_id)
     response_data["connectors"] = list(Connector2KbService.list_connectors(dataset_id))
     return True, response_data
@@ -341,7 +342,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if errors:
         logging.error("Link KB errors: %s", errors)
 
-    response_data = remap_dictionary_keys(k.to_dict())
+    response_data = normalize_model_ids_for_response(remap_dictionary_keys(k.to_dict()))
     response_data["connectors"] = connectors
     return True, response_data
 
@@ -391,7 +392,7 @@ def list_datasets(tenant_id: str, args: dict):
     for kb in kbs:
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
-        response_data_list.append(remap_dictionary_keys(kb))
+        response_data_list.append(normalize_model_ids_for_response(remap_dictionary_keys(kb)))
     return True, {"data": response_data_list, "total": total}
 
 
@@ -751,7 +752,7 @@ def list_ingestion_logs(
         logs, total = PipelineOperationLogService.get_file_logs_by_kb_id(dataset_id, page, page_size, orderby, desc, keywords, operation_status or [], None, None, create_date_from, create_date_to)
     else:
         logs, total = PipelineOperationLogService.get_dataset_logs_by_kb_id(dataset_id, page, page_size, orderby, desc, operation_status or [], create_date_from, create_date_to, keywords)
-    return True, {"total": total, "logs": logs}
+    return True, normalize_model_ids_for_response({"total": total, "logs": logs})
 
 
 def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
@@ -776,7 +777,7 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
     if not log:
         return False, "Log not found"
 
-    return True, log.to_dict()
+    return True, normalize_model_ids_for_response(log.to_dict())
 
 
 def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = True):
