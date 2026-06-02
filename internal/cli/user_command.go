@@ -2571,6 +2571,7 @@ func (c *RAGFlowClient) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 	if !ok {
 		return nil, fmt.Errorf("api_key not provided")
 	}
+	baseURL, _ := cmd.Params["base_url"].(string)
 
 	var apiKeyValue interface{}
 	if apiKey != "" {
@@ -2584,6 +2585,9 @@ func (c *RAGFlowClient) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 	payload := map[string]interface{}{
 		"region":  region,
 		"api_key": apiKeyValue,
+	}
+	if baseURL != "" {
+		payload["base_url"] = baseURL
 	}
 
 	resp, err := c.HTTPClient.Request("GET", url, "api", nil, payload)

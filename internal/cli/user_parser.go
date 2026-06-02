@@ -3196,6 +3196,16 @@ func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
 	apiKey := p.curToken.Value
 	p.nextToken()
 
+	baseURL := ""
+	if p.curToken.Type == TokenURL {
+		p.nextToken()
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected base URL after URL")
+		}
+		baseURL = p.curToken.Value
+		p.nextToken()
+	}
+
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -3207,6 +3217,9 @@ func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["region"] = regionName
 	cmd.Params["api_key"] = apiKey
+	if baseURL != "" {
+		cmd.Params["base_url"] = baseURL
+	}
 
 	return cmd, nil
 }
