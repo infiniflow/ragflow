@@ -1145,13 +1145,14 @@ class AzureBlob(SyncBase):
             batch_size=batch_size,
             prefix=self.conf.get("prefix") or None,
             allow_images=bool(self.conf.get("allow_images", False)),
+            auth_mode=self.conf.get("auth_mode"),
         )
         credentials = self.conf.get("credentials") or {}
         self.connector.load_credentials(credentials)
 
-        # Route through load_from_checkpoint so the ETag fingerprint
-        # map in AzureBlobCheckpoint owns change-detection; poll_source
-        # would re-list and re-download everything each run.
+        # Route through load_from_checkpoint so incremental runs are scoped
+        # by the poll time window; per-blob ETags ride along as document
+        # fingerprints (content_hash) so unchanged blobs aren't re-embedded.
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_ts = 0.0
         else:

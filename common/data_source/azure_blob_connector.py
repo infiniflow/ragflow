@@ -5,8 +5,11 @@ base.  This is distinct from RAGFlow's own Azure storage *backend*
 (``rag/utils/azure_sas_conn.py``, ``rag/utils/azure_spn_conn.py``),
 which stores RAGFlow's own files.
 
-Auth supports three mutually exclusive modes, tried in order of
-precedence:
+Auth supports three mutually exclusive modes, selected explicitly by the
+caller-supplied ``auth_mode`` (the UI hides the other modes' fields but
+does not clear them, so we must not guess from whichever field happens to
+be populated). When ``auth_mode`` is absent (older configs / direct API
+callers) we fall back to field precedence:
 
   1. **Connection string** — ``connection_string`` credential; one line,
      everything embedded.  Good for dev / testing.
@@ -15,9 +18,10 @@ precedence:
   3. **SAS token** — ``container_url`` + ``sas_token``; the shape that
      ``RAGFlowAzureSasBlob`` already uses.
 
-Change detection uses blob ETag (an opaque content hash that Azure
-updates on every write) stored per blob-name as the fingerprint, so
-unchanged blobs are skipped without a download on incremental syncs.
+Incremental runs are scoped by the poll time window (``since_epoch``).
+Each blob's ETag is also emitted as the document fingerprint, which the
+indexing pipeline persists as ``content_hash`` so unchanged blobs are not
+re-embedded. The connector itself keeps no cross-run ETag state.
 """
 
 from __future__ import annotations
@@ -54,23 +58,24 @@ _AZURE_ENDPOINT_SUFFIX = "blob.core.windows.net"
 
 
 class AzureBlobCheckpoint(ConnectorCheckpoint):
-    """Per-blob ETag fingerprints.
+    """Checkpoint marker for the Azure Blob connector.
 
-    Stored as ``{blob_name: etag}`` so a re-sync can skip every blob
-    whose ETag hasn't changed without downloading it first.  On a full
-    reindex (``has_more=True, etags={}``) every blob is fetched fresh.
+    The connector keeps no cross-run state of its own: a single
+    ``load_from_checkpoint`` pass lists the container once and sets
+    ``has_more=False``. Incremental scoping comes from the poll time
+    window, and per-blob change detection from the document fingerprint
+    (ETag) the pipeline persists as ``content_hash``.
     """
-
-    etags: dict[str, str] | None = None
 
 
 class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync):
     """Azure Blob Storage data-source connector.
 
     Authenticates with one of three credential modes (connection string,
-    account key, or SAS token) and enumerates blobs in the configured
-    container under an optional prefix.  ETag fingerprints skip
-    unchanged blobs so incremental re-syncs are cheap.
+    account key, or SAS token), chosen by ``auth_mode``, and enumerates
+    blobs in the configured container under an optional prefix. Each blob's
+    ETag is surfaced as the document fingerprint so the pipeline can skip
+    re-embedding unchanged blobs across runs.
     """
 
     def __init__(
@@ -78,10 +83,14 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         batch_size: int = INDEX_BATCH_SIZE,
         prefix: str | None = None,
         allow_images: bool = False,
+        auth_mode: str | None = None,
     ) -> None:
         self.batch_size = batch_size
         self.prefix = (prefix or "").lstrip("/")
         self.allow_images = allow_images
+        # Explicitly selected credential mode: "connection_string",
+        # "account_key", or "sas_token". Empty falls back to precedence.
+        self.auth_mode = (auth_mode or "").strip().lower()
         self._container_client = None
 
     # ------------------------------------------------------------------
@@ -98,19 +107,37 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         sas_token = credentials.get("sas_token")
         container_name = credentials.get("container_name") or ""
 
-        try:
+        # Honor the explicitly selected auth mode. The UI hides inactive
+        # credential fields but does not clear them, so a user who fills one
+        # mode and then switches can leave stale values behind; selecting by
+        # field precedence would then authenticate with the wrong mode.
+        # Fall back to precedence only when no auth_mode was supplied.
+        mode = self.auth_mode
+        if not mode:
             if conn_str:
-                # Mode 1: connection string — most permissive; has
-                # container name embedded if it follows the standard
-                # format, but we still require it separately for safety.
+                mode = "connection_string"
+            elif account_name and account_key:
+                mode = "account_key"
+            elif container_url and sas_token:
+                mode = "sas_token"
+
+        try:
+            if mode == "connection_string":
+                if not conn_str:
+                    raise ConnectorMissingCredentialError(
+                        "Azure Blob: connection_string is required for the connection_string auth mode"
+                    )
                 if not container_name:
                     raise ConnectorMissingCredentialError(
                         "Azure Blob: container_name is required together with connection_string"
                     )
                 svc = BlobServiceClient.from_connection_string(conn_str)
                 self._container_client = svc.get_container_client(container_name)
-            elif account_name and account_key:
-                # Mode 2: account key
+            elif mode == "account_key":
+                if not (account_name and account_key):
+                    raise ConnectorMissingCredentialError(
+                        "Azure Blob: account_name and account_key are required for the account_key auth mode"
+                    )
                 if not container_name:
                     raise ConnectorMissingCredentialError(
                         "Azure Blob: container_name is required together with account_name + account_key"
@@ -121,8 +148,13 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                     credential=account_key,
                 )
                 self._container_client = svc.get_container_client(container_name)
-            elif container_url and sas_token:
-                # Mode 3: SAS token — mirrors RAGFlowAzureSasBlob
+            elif mode == "sas_token":
+                if not (container_url and sas_token):
+                    raise ConnectorMissingCredentialError(
+                        "Azure Blob: container_url and sas_token are required for the sas_token auth mode"
+                    )
+                # mirrors RAGFlowAzureSasBlob; strip a leading "?" so we
+                # never produce a double-"?" that breaks SAS auth.
                 normalized_sas = str(sas_token).lstrip("?")
                 full_url = f"{container_url}?{normalized_sas}"
                 self._container_client = ContainerClient.from_container_url(full_url)
@@ -179,7 +211,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
     # ------------------------------------------------------------------
 
     def build_dummy_checkpoint(self) -> AzureBlobCheckpoint:
-        return AzureBlobCheckpoint(has_more=True, etags={})
+        return AzureBlobCheckpoint(has_more=True)
 
     def validate_checkpoint_json(self, checkpoint_json: str) -> AzureBlobCheckpoint:
         try:
@@ -257,10 +289,6 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         if self._container_client is None:
             raise ConnectorMissingCredentialError("Azure Blob")
 
-        etags: dict[str, str] = {}
-        if checkpoint and checkpoint.etags:
-            etags = dict(checkpoint.etags)
-
         batch: list[Document] = []
 
         try:
@@ -272,13 +300,11 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                 if not _has_supported_extension(name, self.allow_images):
                     continue
 
-                # ETag fingerprint check — skip blobs whose content hasn't
-                # changed.  Use the raw ETag (always present) as the hash;
-                # Azure updates it on every write so it's a reliable change
-                # signal without downloading.
+                # Raw ETag (always present); Azure updates it on every
+                # write. Emitted below as the document fingerprint so the
+                # pipeline persists it as content_hash and skips re-embedding
+                # unchanged blobs across runs.
                 current_etag = (blob_props.etag or "").strip('"')
-                if current_etag and etags.get(name) == current_etag:
-                    continue
 
                 # Time-window filter — for poll_source callers.
                 last_modified: datetime | None = blob_props.last_modified
@@ -317,8 +343,6 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                     },
                 )
                 batch.append(doc)
-                if current_etag:
-                    etags[name] = current_etag
 
                 if len(batch) >= self.batch_size:
                     yield batch
@@ -334,7 +358,6 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
             yield batch
 
         if checkpoint is not None:
-            checkpoint.etags = etags
             checkpoint.has_more = False
 
 
