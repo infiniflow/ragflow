@@ -22,15 +22,18 @@ import pytest
 from rag.graphrag import checkpoints
 
 
+@pytest.mark.p1
 def test_checkpoint_keys_are_stable():
     first = checkpoints.community_checkpoint_key("1", "2", ["B", "A"])
     second = checkpoints.community_checkpoint_key("1", "2", ["A", "B"])
     assert first == second
 
     pairs = [("alpha", "alfa"), ("beta", "bata")]
-    assert checkpoints.resolution_checkpoint_key("entity", pairs) == checkpoints.resolution_checkpoint_key("entity", pairs)
+    reversed_pairs = list(reversed(pairs))
+    assert checkpoints.resolution_checkpoint_key("entity", pairs) == checkpoints.resolution_checkpoint_key("entity", reversed_pairs)
 
 
+@pytest.mark.p1
 @pytest.mark.asyncio
 async def test_load_checkpoints_paginates(monkeypatch):
     pages = {
@@ -59,6 +62,7 @@ async def test_load_checkpoints_paginates(monkeypatch):
     assert loaded == {"k1": {"value": 1}, "k2": {"value": 2}, "k3": {"value": 3}}
 
 
+@pytest.mark.p2
 @pytest.mark.asyncio
 async def test_save_checkpoint_degrades_on_insert_failure(monkeypatch):
     store = MagicMock()
@@ -71,6 +75,7 @@ async def test_save_checkpoint_degrades_on_insert_failure(monkeypatch):
     store.insert.assert_called_once()
 
 
+@pytest.mark.p2
 @pytest.mark.asyncio
 async def test_cleanup_checkpoints_deletes_stage_rows(monkeypatch):
     store = MagicMock()
