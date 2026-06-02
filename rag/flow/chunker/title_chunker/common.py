@@ -120,13 +120,9 @@ class BaseTitleChunker(ABC):
                 }
                 for line in clean_lines
             ]
-        # Return empty array directly for null payload to block invalid branch fallthrough
-        return []
-
         items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
         return [
             {
-                # Serialization fix: avoid None value being converted into literal "None" string
                 "text": item.get("text") or "",
                 "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
                 "img_id": item.get("img_id"),
@@ -281,25 +277,25 @@ class BaseTitleChunker(ABC):
                 for records in record_groups
                 if records
             ]
-
-        chunks = [
-            (
-                {
-                    "text": RAGFlowPdfParser.remove_tag("".join(record["text"] + "\n" for record in records)),
-                    "doc_type_kwd": "text",
-                    PDF_POSITIONS_KEY: merge_pdf_positions(records),
-                }
-                if records[0]["doc_type_kwd"] == "text"
-                else {
-                    "text": records[0]["text"],
-                    "doc_type_kwd": records[0]["doc_type_kwd"],
-                    "img_id": records[0]["img_id"],
-                    PDF_POSITIONS_KEY: records[0][PDF_POSITIONS_KEY],
-                }
-            )
-            for records in record_groups
-            if records
-        ]
+        else:
+            chunks = [
+                (
+                    {
+                        "text": RAGFlowPdfParser.remove_tag("".join(record["text"] + "\n" for record in records)),
+                        "doc_type_kwd": "text",
+                        PDF_POSITIONS_KEY: merge_pdf_positions(records),
+                    }
+                    if records[0]["doc_type_kwd"] == "text"
+                    else {
+                        "text": records[0]["text"],
+                        "doc_type_kwd": records[0]["doc_type_kwd"],
+                        "img_id": records[0]["img_id"],
+                        PDF_POSITIONS_KEY: records[0][PDF_POSITIONS_KEY],
+                    }
+                )
+                for records in record_groups
+                if records
+            ]
         
         if self.param.root_chunk_as_heading and len(chunks) > 1:
             root_chunk = chunks[0]
