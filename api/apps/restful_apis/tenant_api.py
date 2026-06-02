@@ -18,7 +18,8 @@ import logging
 from typing import Set
 
 from api.apps import current_user, login_required
-from api.db import UserTenantRole
+from api.common.permission import require_admin_account
+from api.db import AccountRole, UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserService, UserTenantService
 from api.utils.api_utils import (
@@ -59,6 +60,7 @@ def user_list(tenant_id):
 
 @manager.route("/tenants/<tenant_id>/users", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @validate_request("email")
 async def create(tenant_id):
     if current_user.id != tenant_id:
@@ -136,6 +138,7 @@ async def create(tenant_id):
 
 @manager.route("/tenants/<tenant_id>/users", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 @validate_request("user_id")
 async def rm(tenant_id):
     req = await get_request_json()
@@ -149,6 +152,56 @@ async def rm(tenant_id):
 
     try:
         UserTenantService.filter_delete([UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id])
+        return get_json_result(data=True)
+    except Exception as exc:
+        return server_error_response(exc)
+
+
+@manager.route("/tenants/<tenant_id>/users/<user_id>/account-role", methods=["PUT"])  # noqa: F821
+@login_required
+@require_admin_account
+@validate_request("account_role")
+async def set_account_role(tenant_id, user_id):
+    """Set a team member's global account role (issue #5965).
+
+    Only the team owner (an admin account) may call this. The global
+    ``account_role`` decides whether the target account can modify resources.
+    """
+    if current_user.id != tenant_id:
+        return get_json_result(
+            data=False,
+            message="No authorization.",
+            code=RetCode.AUTHENTICATION_ERROR,
+        )
+
+    req = await get_request_json()
+    account_role = req["account_role"]
+    if account_role not in (AccountRole.ADMIN, AccountRole.USER):
+        return get_data_error_result(message=f"Invalid account_role: {account_role}")
+    if user_id == current_user.id:
+        return get_data_error_result(message="You cannot change your own account role.")
+
+    members = UserTenantService.query(user_id=user_id, tenant_id=tenant_id)
+    if not members:
+        return get_data_error_result(message="User is not a member of this team.")
+    if members[0].role == UserTenantRole.INVITE:
+        return get_data_error_result(message="User has not accepted the team invitation yet.")
+
+    ok, target = UserService.get_by_id(user_id)
+    if not ok or not target:
+        return get_data_error_result(message="User not found.")
+    if target.is_superuser:
+        return get_data_error_result(message="Cannot change the role of the super user.")
+
+    try:
+        UserService.update_user(user_id, {"account_role": account_role})
+        logging.info(
+            "Account role changed: user_id=%s new_role=%s changed_by=%s tenant_id=%s",
+            user_id,
+            account_role,
+            current_user.id,
+            tenant_id,
+        )
         return get_json_result(data=True)
     except Exception as exc:
         return server_error_response(exc)

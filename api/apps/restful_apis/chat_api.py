@@ -26,6 +26,7 @@ from types import SimpleNamespace
 from quart import Response, request
 
 from api.apps import current_user, login_required
+from api.common.permission import require_admin_account
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 )
@@ -359,6 +360,7 @@ def _apply_prompt_defaults(req):
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 async def create():
     try:
         req = await get_request_json()
@@ -520,6 +522,7 @@ async def get_chat(chat_id):
 
 @manager.route("/chats/<chat_id>", methods=["PUT"])  # noqa: F821
 @login_required
+@require_admin_account
 async def update_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(
@@ -604,6 +607,7 @@ async def update_chat(chat_id):
 
 @manager.route("/chats/<chat_id>", methods=["PATCH"])  # noqa: F821
 @login_required
+@require_admin_account
 async def patch_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(
@@ -694,6 +698,7 @@ async def patch_chat(chat_id):
 
 @manager.route("/chats/<chat_id>", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 async def delete_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(
@@ -710,6 +715,7 @@ async def delete_chat(chat_id):
 
 @manager.route("/chats", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 async def bulk_delete_chats():
     req = await get_request_json()
     if not req:

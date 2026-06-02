@@ -33,6 +33,7 @@ from quart import Response, jsonify, request, make_response
 
 from api.apps import current_user, login_required
 from api.apps.services.canvas_replica_service import CanvasReplicaService
+from api.common.permission import require_admin_account
 from api.db import CanvasCategory
 from api.db.db_models import Task
 from api.db.services.api_service import API4ConversationService
@@ -573,6 +574,7 @@ def list_agent_tags(tenant_id):
 
 @manager.route("/agents/<canvas_id>/tags", methods=["PUT"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def update_agent_tags(tenant_id, canvas_id):
     if not UserCanvasService.accessible(canvas_id, tenant_id):
@@ -614,6 +616,7 @@ async def update_agent_tags(tenant_id, canvas_id):
 
 @manager.route("/agents", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def create_agent(tenant_id):
     req = {k: v for k, v in (await get_request_json()).items() if v is not None}
@@ -683,6 +686,7 @@ async def create_agent(tenant_id):
 
 @manager.route("/agents/<agent_id>/upload", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
 async def upload_agent_file(agent_id, tenant_id):
@@ -861,6 +865,7 @@ async def get_agent_logs(agent_id, message_id, tenant_id):
 
 @manager.route("/agents/<agent_id>", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 @_require_canvas_owner_sync
 def delete_agent(agent_id, tenant_id):
@@ -870,6 +875,7 @@ def delete_agent(agent_id, tenant_id):
 
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
 async def update_agent(agent_id, tenant_id):
@@ -922,6 +928,7 @@ async def update_agent(agent_id, tenant_id):
 
 @manager.route("/agents/<agent_id>/reset", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 @_require_canvas_access_async
 async def reset_agent(agent_id, tenant_id):
@@ -954,6 +961,7 @@ async def reset_agent(agent_id, tenant_id):
 @manager.route("/agents/rerun", methods=["POST"])  # noqa: F821
 @validate_request("id", "dsl", "component_id")
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def rerun_agent(tenant_id):
     from rag.nlp import search

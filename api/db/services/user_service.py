@@ -278,7 +278,8 @@ class UserTenantService(CommonService):
             User.is_anonymous,
             User.status,
             User.update_date,
-            User.is_superuser]
+            User.is_superuser,
+            User.account_role]
         return list(cls.model.select(*fields)
                     .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value) & (cls.model.role != UserTenantRole.OWNER)))
                     .where(cls.model.tenant_id == tenant_id)

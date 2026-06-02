@@ -25,6 +25,7 @@ from peewee import OperationalError
 from pydantic import ValidationError
 
 from api.apps import login_required
+from api.common.permission import require_admin_account
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.apps.services.document_api_service import validate_document_update_fields, map_doc_keys, \
     map_doc_keys_with_run_status, update_document_name_only, update_chunk_method, update_document_status_only, \
@@ -58,6 +59,7 @@ from rag.nlp import search
 
 @manager.route("/documents/upload", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def upload_info(tenant_id: str):
     """
@@ -121,6 +123,7 @@ async def upload_info(tenant_id: str):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PATCH"]) # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def update_document(tenant_id, dataset_id, document_id):
     """
@@ -284,6 +287,7 @@ async def metadata_summary(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def metadata_batch_update(dataset_id, tenant_id):
     """
@@ -366,6 +370,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def upload_document(dataset_id, tenant_id):
     """
@@ -1026,6 +1031,7 @@ def _parse_doc_id_filter_with_metadata(req, kb_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def delete_documents(tenant_id, dataset_id):
     """
@@ -1117,6 +1123,7 @@ async def delete_documents(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/metadata/config", methods=["PUT"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
@@ -1230,6 +1237,7 @@ def list_thumbnails():
 
 @manager.route("/datasets/<dataset_id>/documents/metadatas", methods=["PATCH"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def update_metadata(tenant_id, dataset_id):
     """
@@ -1358,6 +1366,7 @@ async def update_metadata(tenant_id, dataset_id):
 
 @manager.route("/documents/ingest", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def ingest(tenant_id):
     req = await get_request_json()
@@ -1429,6 +1438,7 @@ def _run_sync(user_id:str, req):
 
 @manager.route("/datasets/<dataset_id>/documents/parse", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def parse_documents(tenant_id, dataset_id):
     """
@@ -1541,6 +1551,7 @@ async def parse_documents(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/documents/stop", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def stop_parse_documents(tenant_id, dataset_id):
     """
@@ -1789,6 +1800,7 @@ async def get_artifact(filename):
 
 @manager.route("/datasets/<dataset_id>/documents/batch-update-status", methods=["POST"])  # noqa: F821
 @login_required
+@require_admin_account
 @add_tenant_id_to_kwargs
 async def batch_update_document_status(tenant_id, dataset_id):
     """
