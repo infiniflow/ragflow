@@ -14,11 +14,15 @@
 #  limitations under the License.
 #
 
+import pytest
+
 from rag.llm import SupportedLiteLLMProvider
 from rag.llm.chat_model import _apply_model_family_policies, _move_litellm_provider_body_fields
 
+pytestmark = pytest.mark.p1
 
-def test_qwen3_uses_existing_disabled_default():
+
+def test_qwen3_uses_system_disabled_default():
     gen_conf, kwargs = _apply_model_family_policies(
         "qwen3-plus",
         backend="base",
@@ -82,18 +86,31 @@ def test_moonshot_explicit_thinking_does_not_require_exact_kimi_model_name():
     assert gen_conf["thinking"] == {"type": "disabled"}
 
 
-def test_kimi_keeps_existing_enabled_default():
+def test_kimi_keeps_provider_default_when_unspecified():
     gen_conf, kwargs = _apply_model_family_policies(
         "kimi-k2.5-preview",
         backend="litellm",
         provider=SupportedLiteLLMProvider.Moonshot,
+        gen_conf={"temperature": 0.6},
+        request_kwargs={},
+    )
+
+    assert kwargs == {}
+    assert "thinking" not in gen_conf
+    assert "temperature" not in gen_conf
+
+
+def test_glm_keeps_provider_default_when_unspecified():
+    gen_conf, kwargs = _apply_model_family_policies(
+        "glm-4.7",
+        backend="litellm",
+        provider=SupportedLiteLLMProvider.ZHIPU_AI,
         gen_conf={},
         request_kwargs={},
     )
 
     assert kwargs == {}
-    assert gen_conf["thinking"] == {"type": "enabled"}
-    assert "temperature" not in gen_conf
+    assert gen_conf == {}
 
 
 def test_glm_thinking_maps_to_zhipu_payload():
