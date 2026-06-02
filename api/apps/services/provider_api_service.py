@@ -243,9 +243,16 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
         if same_key_instance:
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
-    success, msg = await verify_api_key(provider_name, api_key, base_url, region)
-    if not success:
-        return False, msg
+
+    # Only verify the API key when the provider has pre-configured models to test
+    # against.  Generic providers such as "OpenAI-API-Compatible" ship with an
+    # empty model list in llm_factories.json — users populate them later — so
+    # there is nothing to probe and verification must be skipped.
+    factory_entry = next((f for f in FACTORY_LLM_INFOS if f["name"] == provider_name), None)
+    if factory_entry and factory_entry.get("llm"):
+        success, msg = await verify_api_key(provider_name, api_key, base_url, region)
+        if not success:
+            return False, msg
 
     import json
     extra_fields = {}
@@ -329,7 +336,7 @@ async def verify_api_key(provider_name: str, api_key: str, base_url: str=None, r
             assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
             mdl = EmbeddingModel[provider_name](api_key, llm["llm_name"], base_url=base_url)
             try:
-                arr, tc = asyncio.wait_for(
+                arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
                     timeout=timeout_seconds,
                 )
