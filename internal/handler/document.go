@@ -220,7 +220,10 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 
 	preview, err := h.documentService.GetDocumentPreview(docID)
 	if err != nil {
-		jsonError(c, common.CodeDataError, "Document not found!")
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Document not found!",
+		})
 		return
 	}
 
