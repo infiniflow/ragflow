@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { getAuthorization } from '@/utils/authorization-util';
 import api from '@/utils/api';
+import { getAuthorization } from '@/utils/authorization-util';
 import DOMPurify from 'dompurify';
 import {
   BookOpen,
@@ -11,13 +11,7 @@ import {
   Send,
   X,
 } from 'lucide-react';
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 
 interface DocMessage {
@@ -43,6 +37,7 @@ const SUGGESTED_QUESTIONS = [
 
 function DocAssistantWidget() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [messages, setMessages] = useState<DocMessage[]>([
     {
       id: 'welcome',
@@ -56,6 +51,28 @@ function DocAssistantWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(api.docAssistantStatus, {
+          headers: { Authorization: getAuthorization() },
+        });
+        const json = await res.json();
+        if (!cancelled && json.code === 0 && json.data?.enabled) {
+          setIsReady(true);
+        }
+      } catch {
+        // assistant unavailable — keep hidden
+      }
+    };
+    checkStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -91,7 +108,20 @@ function DocAssistantWidget() {
         .filter((m) => m.id !== 'welcome')
         .map((m) => ({ role: m.role, content: m.content }));
 
+      const assistantMsgId = `assistant-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantMsgId,
+          role: 'assistant',
+          content: '',
+          references: [],
+          timestamp: Date.now(),
+        },
+      ]);
+
       try {
+        abortRef.current = new AbortController();
         const response = await fetch(api.docAssistantAsk, {
           method: 'POST',
           headers: {
@@ -101,40 +131,87 @@ function DocAssistantWidget() {
           body: JSON.stringify({
             question: question.trim(),
             history,
-            stream: false,
+            stream: true,
           }),
+          signal: abortRef.current.signal,
         });
 
-        const result = await response.json();
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullAnswer = '';
+        let references: DocReference[] = [];
 
-        if (result.code === 0 && result.data) {
-          const assistantMsg: DocMessage = {
-            id: `assistant-${Date.now()}`,
-            role: 'assistant',
-            content: result.data.answer || 'Sorry, I could not find an answer.',
-            references: result.data.references || [],
-            timestamp: Date.now(),
-          };
-          setMessages((prev) => [...prev, assistantMsg]);
-        } else {
-          const errorMsg: DocMessage = {
-            id: `error-${Date.now()}`,
-            role: 'assistant',
-            content: result.message || 'An error occurred. Please try again.',
-            timestamp: Date.now(),
-          };
-          setMessages((prev) => [...prev, errorMsg]);
+        if (reader) {
+          let buffer = '';
+          let reading = true;
+          while (reading) {
+            const { done, value } = await reader.read();
+            if (done) {
+              reading = false;
+              continue;
+            }
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const jsonStr = trimmed.slice(5);
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.data === true) continue;
+                if (parsed.code !== 0) {
+                  fullAnswer += parsed.data?.answer || parsed.message || '';
+                  continue;
+                }
+                const chunk = parsed.data;
+                if (chunk?.answer) {
+                  fullAnswer = chunk.answer;
+                }
+                if (chunk?.references?.length) {
+                  references = chunk.references;
+                }
+              } catch {
+                // skip malformed SSE lines
+              }
+            }
+
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, content: fullAnswer, references }
+                  : m,
+              ),
+            );
+          }
         }
-      } catch {
-        const errorMsg: DocMessage = {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content:
-            'Failed to connect to the documentation assistant. Please check your network and try again.',
-          timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, errorMsg]);
+
+        if (!fullAnswer) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? { ...m, content: 'Sorry, I could not find an answer.' }
+                : m,
+            ),
+          );
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  content:
+                    'Failed to connect to the documentation assistant. Please check your network and try again.',
+                }
+              : m,
+          ),
+        );
       } finally {
+        abortRef.current = null;
         setIsLoading(false);
       }
     },
@@ -157,6 +234,8 @@ function DocAssistantWidget() {
     },
     [sendMessage],
   );
+
+  if (!isReady) return null;
 
   return (
     <>
@@ -183,8 +262,8 @@ function DocAssistantWidget() {
       {isOpen && (
         <div
           className={cn(
-            'fixed bottom-20 right-6 z-50',
-            'w-[400px] h-[560px] max-h-[80vh]',
+            'fixed bottom-20 right-4 sm:right-6 z-50',
+            'w-[calc(100vw-2rem)] sm:w-[400px] h-[560px] max-h-[80vh]',
             'rounded-2xl shadow-2xl border border-border-default',
             'bg-bg-body flex flex-col overflow-hidden',
             'animate-in slide-in-from-bottom-4 fade-in duration-300',
@@ -315,9 +394,7 @@ function DocAssistantWidget() {
             {/* Suggested questions (only show initially) */}
             {messages.length === 1 && !isLoading && (
               <div className="space-y-2">
-                <p className="text-xs text-text-sub-title">
-                  Try asking:
-                </p>
+                <p className="text-xs text-text-sub-title">Try asking:</p>
                 {SUGGESTED_QUESTIONS.map((q) => (
                   <button
                     key={q}

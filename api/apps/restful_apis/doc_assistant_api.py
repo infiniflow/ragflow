@@ -273,10 +273,11 @@ async def doc_assistant_ask():
 async def doc_assistant_status():
     try:
         chunks = _load_docs()
+        doc_count = len(chunks)
         return get_json_result(
             data={
-                "enabled": True,
-                "doc_count": len(chunks),
+                "enabled": doc_count > 0,
+                "doc_count": doc_count,
                 "docs_dir": str(DOCS_DIR),
             }
         )
