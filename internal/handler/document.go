@@ -324,6 +324,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // ListDocuments document list
 
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
+
 	datasetID := c.Param("dataset_id")
 	pageStr := c.Query("page")
 	pageSizeStr := c.Query("page_size")
