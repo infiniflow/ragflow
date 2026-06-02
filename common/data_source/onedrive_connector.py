@@ -42,10 +42,9 @@ def _normalize_folder_path(folder_path: str | None) -> str | None:
     segments = [segment for segment in path.split("/") if segment]
     if ".." in segments:
         raise ConnectorValidationError("folder_path must not contain '..' segments.")
-    if not path.startswith("/"):
-        path = f"/{path}"
-    normalized = path.rstrip("/")
-    return normalized or "/"
+    if not segments:
+        return None
+    return "/" + "/".join(segments)
 
 
 class OneDriveCheckpoint(ConnectorCheckpoint):
