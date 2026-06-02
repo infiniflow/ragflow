@@ -310,6 +310,50 @@ func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (strin
 	return doc.KbID, *doc.Location, nil
 }
 
+type DownloadDocumentResp struct {
+	Data        []byte
+	FileName    string
+	ContentType string
+}
+
+func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDocumentResp, error) {
+	if docID == "" {
+		return nil, fmt.Errorf("Specify document_id please.")
+	}
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil || doc.KbID != datasetID {
+		return nil, fmt.Errorf("The dataset not own the document %s.", docID)
+	}
+	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	data, err := storageImpl.Get(bucket, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("This file is empty.")
+	}
+
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	return &DownloadDocumentResp{
+		Data:        data,
+		FileName:    fileName,
+		ContentType: "application/octet-stream",
+	}, nil
+}
+
 // CreateDocument create document
 func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Document, error) {
 	document := &entity.Document{

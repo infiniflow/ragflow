@@ -211,6 +211,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)

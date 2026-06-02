@@ -324,7 +324,6 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // ListDocuments document list
 
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
-
 	datasetID := c.Param("dataset_id")
 	pageStr := c.Query("page")
 	pageSizeStr := c.Query("page_size")
@@ -374,6 +373,40 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			"docs":  docs,
 		},
 	})
+}
+
+func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+	docID := c.Param("document_id")
+
+	if docID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Specify document_id please.",
+		})
+		return
+	}
+	if datasetID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": fmt.Sprintf("The dataset not own the document %s.", docID),
+		})
+		return
+	}
+
+	res, err := h.documentService.DownloadDocument(datasetID, docID)
+
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.Header("Content-Type", res.ContentType)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, res.FileName))
+	c.Data(http.StatusOK, res.ContentType, res.Data)
 }
 
 func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]interface{}) map[string]interface{} {
