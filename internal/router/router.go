@@ -268,6 +268,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			mcp := v1.Group("/mcp")
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 			}
 
