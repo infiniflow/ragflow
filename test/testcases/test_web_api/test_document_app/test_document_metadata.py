@@ -563,6 +563,50 @@ class TestDocumentMetadataUnit:
         assert res["code"] == 500
         assert "image boom" in res["message"]
 
+    def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
+        """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        storage_calls = []
+
+        def _storage_get(bkt, nm):
+            storage_calls.append((bkt, nm))
+            return b"png-bytes"
+
+        async def fake_thread_pool_exec(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(
+            module.settings,
+            "STORAGE_IMPL",
+            SimpleNamespace(get=_storage_get),
+        )
+
+        image_id = "kb12345678901234567890123456789012-page-1.png"
+        res = _run(module.get_document_image(image_id))
+        assert isinstance(res, _ImageResponse)
+        assert storage_calls == [("kb12345678901234567890123456789012", "page-1.png")]
+        assert res.headers["Content-Type"] == "image/png"
+
+        res = _run(module.get_document_image("only-one-part"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Image not found" in res["message"]
+
+
 class TestDocumentBatchChangeStatus:
     @pytest.mark.p2
     def test_change_status_partial_failure_matrix(self, WebApiAuth, add_dataset, ragflow_tmp_dir):
