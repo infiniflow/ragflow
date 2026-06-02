@@ -228,8 +228,8 @@ func TestGoogleVertexProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.Class != "gemini" {
 		t.Errorf("provider.Class=%q, want gemini", provider.Class)
 	}
-	if _, ok := provider.ModelDriver.(*modeldrivers.GoogleModel); !ok {
-		t.Fatalf("ModelDriver=%T, want *models.GoogleModel", provider.ModelDriver)
+	if _, ok := provider.ModelDriver.(*modeldrivers.GoogleVertexModel); !ok {
+		t.Fatalf("ModelDriver=%T, want *models.GoogleVertexModel", provider.ModelDriver)
 	}
 	if provider.ModelDriver.Name() != "google vertex" {
 		t.Errorf("ModelDriver.Name()=%q, want google vertex", provider.ModelDriver.Name())

@@ -266,12 +266,9 @@ func TestGoogleVertexFactoryRoutesAliases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateModelDriver: %v", err)
 			}
-			model, ok := driver.(*GoogleModel)
+			model, ok := driver.(*GoogleVertexModel)
 			if !ok {
-				t.Fatalf("driver=%T, want *GoogleModel", driver)
-			}
-			if model.Backend != genai.BackendVertexAI {
-				t.Fatalf("Backend=%v, want %v", model.Backend, genai.BackendVertexAI)
+				t.Fatalf("driver=%T, want *GoogleVertexModel", driver)
 			}
 			if model.Name() != "google vertex" {
 				t.Fatalf("Name()=%q, want google vertex", model.Name())
