@@ -533,7 +533,7 @@ def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str
         extra_fields = {"max_tokens": max_tokens}
         target_model = [llm for llm in llms if llm["model_type"] == _type and llm["llm_name"] == model_name]
         if target_model:
-            extra_fields.update({"is_tool": target_model[0].get("is_tool", False)})
+            extra_fields.update({"is_tools": target_model[0].get("is_tools", False)})
         extra_fields.update(extra)
         TenantModelService.insert(
             model_name=model_name,
@@ -605,6 +605,7 @@ def update_model_status(tenant_id: str, provider_name: str, instance_name: str, 
             provider_id=provider_obj.id,
             instance_id=instance_obj.id,
             status=status,
+            extra=json.dumps({"max_tokens": target_llm[0].get("max_tokens", 8192), "is_tools": target_llm[0].get("is_tools", False)})
         )
 
     return True, None
