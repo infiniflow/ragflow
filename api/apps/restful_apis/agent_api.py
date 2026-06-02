@@ -2309,7 +2309,7 @@ async def download_attachment(tenant_id=None, attachment_id=None):
     """
     try:
         doc_id = attachment_id
-        if not _agent_attachment_accessible(doc_id, current_user.id):
+        if not await thread_pool_exec(_agent_attachment_accessible, doc_id, current_user.id):
             return get_data_error_result(message="Document not found!")
 
         ext = request.args.get("ext", "markdown")
