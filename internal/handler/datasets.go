@@ -34,8 +34,8 @@ import (
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService  *service.DatasetService
-	metadataService  *service.MetadataService
+	datasetsService *service.DatasetService
+	metadataService *service.MetadataService
 }
 
 type listDatasetsExt struct {
@@ -47,8 +47,8 @@ type listDatasetsExt struct {
 // NewDatasetsHandler creates a new datasets handler.
 func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	return &DatasetsHandler{
-		datasetsService:  datasetsService,
-		metadataService:  metadataService,
+		datasetsService: datasetsService,
+		metadataService: metadataService,
 	}
 }
 
@@ -160,6 +160,52 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	result, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
+func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	result, code, err := h.datasetsService.GetMetadataConfig(datasetID, user.ID)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": result,
+	})
+}
+
+func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	var req service.MetadataConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	result, code, err := h.datasetsService.UpdateMetadataConfig(datasetID, user.ID, &req)
 	if err != nil {
 		jsonError(c, code, err.Error())
 		return

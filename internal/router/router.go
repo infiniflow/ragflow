@@ -207,6 +207,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
+				// Metadata Config
+				datasets.GET("/:dataset_id/metadata/config", r.datasetsHandler.GetMetadataConfig)
+				datasets.PUT("/:dataset_id/metadata/config", r.datasetsHandler.UpdateMetadataConfig)
+
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 
