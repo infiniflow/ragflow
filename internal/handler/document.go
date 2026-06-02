@@ -25,13 +25,14 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
 	"ragflow/internal/service"
+
+	"github.com/gin-gonic/gin"
 )
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
@@ -207,6 +208,33 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 		c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, artifact.SafeFilename))
 	}
 	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
+}
+
+func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
+	docID := c.Param("id")
+
+	if docID == "" {
+		jsonError(c, common.CodeParamError, "id is required")
+		return
+	}
+
+	preview, err := h.documentService.GetDocumentPreview(docID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, "Document not found!")
+		return
+	}
+
+	ext := utility.GetFileExtension(preview.FileName)
+	if preview.ContentType != "" {
+		c.Header("Content-Type", preview.ContentType)
+	}
+
+	if utility.ShouldForceAttachment(ext, preview.ContentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Disposition", "attachment")
+	}
+
+	c.Data(http.StatusOK, preview.ContentType, preview.Data)
 }
 
 // UpdateDocument update document

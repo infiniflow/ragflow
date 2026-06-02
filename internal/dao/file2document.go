@@ -70,3 +70,10 @@ func (dao *File2DocumentDAO) GetByFileID(fileID string) ([]*entity.File2Document
 func (dao *File2DocumentDAO) DeleteByFileID(fileID string) error {
 	return DB.Unscoped().Where("file_id = ?", fileID).Delete(&entity.File2Document{}).Error
 }
+
+// GetByDocumentID gets file2document mappings by document ID
+func (dao *File2DocumentDAO) GetByDocumentID(documentID string) ([]*entity.File2Document, error) {
+	var mappings []*entity.File2Document
+	err := DB.Where("document_id = ?", documentID).Find(&mappings).Error
+	return mappings, err
+}

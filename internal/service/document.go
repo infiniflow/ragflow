@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"regexp"
 	"sort"
 	"strings"
@@ -229,6 +230,84 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	}
 	_, ok := artifactForceAttachmentContentTypes[strings.ToLower(contentType)]
 	return ok
+}
+
+type DocumentPreview struct {
+	Data        []byte
+	ContentType string
+	FileName    string
+}
+
+func (s *DocumentService) GetDocumentPreview(docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	data, err := storageImpl.Get(bucket, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, ErrArtifactNotFound
+	}
+
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	ext := utility.GetFileExtension(fileName)
+	contentType := utility.GetContentType(ext, doc.Type)
+
+	return &DocumentPreview{
+		Data:        data,
+		ContentType: contentType,
+		FileName:    fileName,
+	}, nil
+}
+
+func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (string, string, error) {
+	if doc == nil {
+		return "", "", fmt.Errorf("document is nil")
+	}
+
+	file2DocumentDAO := dao.NewFile2DocumentDAO()
+	fileDAO := dao.NewFileDAO()
+
+	mappings, err := file2DocumentDAO.GetByDocumentID(doc.ID)
+	if err != nil {
+		return "", "", err
+	}
+
+	if len(mappings) > 0 && mappings[0].FileID != nil {
+		file, err := fileDAO.GetByID(*mappings[0].FileID)
+		if err != nil {
+			return "", "", err
+		}
+
+		if file.SourceType == "" || entity.FileSource(file.SourceType) == entity.FileSourceLocal {
+			if file.Location == nil || *file.Location == "" {
+				return "", "", fmt.Errorf("file location is empty")
+			}
+			return file.ParentID, *file.Location, nil
+		}
+	}
+
+	if doc.Location == nil || *doc.Location == "" {
+		return "", "", fmt.Errorf("document location is empty")
+	}
+	return doc.KbID, *doc.Location, nil
 }
 
 // CreateDocument create document
