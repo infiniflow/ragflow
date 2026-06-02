@@ -533,6 +533,7 @@ class TestDocumentMetadataUnit:
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return None
 
+        monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
         monkeypatch.setattr(
             module.DocumentService,
             "get_by_id",
