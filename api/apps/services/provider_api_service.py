@@ -57,6 +57,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
                     "default": factory_info.get("url", "")
                 }
             })
+        providers.sort(key=lambda x: x["name"])
         return True, providers
 
     # List tenant-configured providers
@@ -79,7 +80,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
                     "default": factory_info.get("url", "")
                 }
             })
-
+    providers.sort(key=lambda x: x["name"])
     return True, providers
 
 
@@ -172,6 +173,7 @@ def list_provider_models(provider_name: str):
             "model_types": [llm["model_type"]],
             "features": None
         })
+    models.sort(key=lambda x: x["name"])
     return True, models
 
 
@@ -455,6 +457,7 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
             return False, f"Provider '{provider_name}' not found"
         llms = factory_info[0].get("llm", [])
         models = [{"name": llm["llm_name"]} for llm in llms]
+        models.sort(key=lambda x: x["name"])
         return True, models
 
     # Get instance
@@ -500,8 +503,11 @@ def list_instance_models(tenant_id: str, provider_name: str, instance_name: str,
                 "max_tokens": extra_fields.get("max_tokens", 8192),
                 "status": model_info_dict["status"],
             })
-
-    return True, models
+    active_models = [model for model in models if model["status"] == ActiveStatusEnum.ACTIVE.value]
+    inactive_models = [model for model in models if model["status"] == ActiveStatusEnum.INACTIVE.value]
+    active_models.sort(key=lambda x: x["name"])
+    inactive_models.sort(key=lambda x: x["name"])
+    return True, active_models + inactive_models
 
 
 def add_model_to_instance(tenant_id: str, provider_name: str, instance_name: str, model_name: str, model_type: str|list[str], max_tokens: int, extra: dict):
