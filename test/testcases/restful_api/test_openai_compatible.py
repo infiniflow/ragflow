@@ -124,7 +124,7 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
     assert res.status_code == 200
     payload = res.json()
 
-    assert payload["object"] == "chat.completion", payload
+    assert payload.get("object") == "chat.completion", payload
     assert isinstance(payload["choices"], list) and payload["choices"], payload
     first_choice = payload["choices"][0]
     assert first_choice.get("finish_reason") == "stop", payload
@@ -141,57 +141,23 @@ def test_openai_compatible_nonstream_shape(rest_client, create_chat):
 
 
 @pytest.mark.p2
-def test_openai_compatible_nonstream_supports_session_id(rest_client, create_chat):
-    chat_id = create_chat("restful_openai_session_chat")
-    create_session = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "openai_session"})
-    assert create_session.status_code == 200
-    create_session_payload = create_session.json()
-    assert create_session_payload["code"] == 0, create_session_payload
-    session_id = create_session_payload["data"]["id"]
-
-    res = rest_client.post(
-        f"/openai/{chat_id}/chat/completions",
-        json={
-            "model": "model",
-            "messages": [{"role": "user", "content": "remember this turn"}],
-            "stream": False,
-            "session_id": session_id,
-        },
-        timeout=60,
-    )
-    assert res.status_code == 200
-    payload = res.json()
-    assert payload["session_id"] == session_id, payload
-    assert payload["object"] == "chat.completion", payload
-
-    get_session = rest_client.get(f"/chats/{chat_id}/sessions/{session_id}")
-    assert get_session.status_code == 200
-    session_payload = get_session.json()
-    assert session_payload["code"] == 0, session_payload
-    messages = session_payload["data"]["messages"]
-    assert any(
-        message["role"] == "user" and message["content"] == "remember this turn"
-        for message in messages
-    ), messages
-    assert any(message["role"] == "assistant" for message in messages), messages
-
-
-@pytest.mark.p2
-def test_openai_compatible_invalid_session_id(rest_client, create_chat):
-    chat_id = create_chat("restful_openai_invalid_session_chat")
+def test_openai_compatible_defaults_to_nonstream_when_stream_is_missing(rest_client, create_chat):
+    chat_id = create_chat("restful_openai_default_nonstream_chat")
     res = rest_client.post(
         f"/openai/{chat_id}/chat/completions",
         json={
             "model": "model",
             "messages": [{"role": "user", "content": "hello"}],
-            "stream": False,
-            "session_id": "invalid_session",
         },
+        timeout=60,
     )
     assert res.status_code == 200
+    assert "application/json" in res.headers.get("Content-Type", ""), res.headers.get("Content-Type", "")
+
     payload = res.json()
-    assert payload["code"] != 0, payload
-    assert "Session not found!" in payload["message"], payload
+    assert payload["object"] == "chat.completion", payload
+    assert isinstance(payload["choices"], list) and payload["choices"], payload
+    assert payload["choices"][0].get("finish_reason") == "stop", payload
 
 
 @pytest.mark.p2

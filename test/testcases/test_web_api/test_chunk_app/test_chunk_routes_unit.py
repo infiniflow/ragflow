@@ -309,7 +309,7 @@ def _load_chunk_module(monkeypatch):
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_by_id = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
-    tenant_model_service_mod.get_model_config_by_type_and_name = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
+    tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {"llm_name": "embed", "model_type": "embedding"}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {"llm_name": "chat", "model_type": "chat"}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -652,4 +652,80 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
     monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"chunk_ids": ["chunk-1"]}))
     res = _run(_route_core(module.switch_chunks)("tenant-1", "kb-1", "doc-1"))
     assert res["message"] == "`available_int` or `available` is required.", res
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_invalid_image_base64_does_not_index_chunk(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "chunk with bad image", "image_base64": "not-valid-base64!!!"}),
+    )
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "Invalid `image_base64`", res
+    assert module.settings.docStoreConn.inserted == [], res
+    assert module.DocumentService.increment_calls == [], res
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_empty_image_base64_does_not_index_chunk(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "chunk with empty image", "image_base64": ""}),
+    )
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "`image_base64` must be a non-empty string", res
+    assert module.settings.docStoreConn.inserted == [], res
+    assert module.DocumentService.increment_calls == [], res
+
+
+@pytest.mark.p2
+def test_restful_update_chunk_invalid_image_base64_does_not_update_chunk(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.updated.clear()
+
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "updated chunk", "image_base64": "not-valid-base64!!!"}),
+    )
+    res = _run(_route_core(module.update_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
+    assert res["code"] == module.RetCode.DATA_ERROR, res
+    assert res["message"] == "Invalid `image_base64`", res
+    assert module.settings.docStoreConn.updated == [], res
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    store_calls = []
+    monkeypatch.setattr(module, "store_chunk_image", lambda bucket, name, binary: store_calls.append((bucket, name, binary)))
+
+    valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    monkeypatch.setattr(
+        module,
+        "get_request_json",
+        lambda: _AwaitableValue({"content": "chunk with image", "image_base64": valid_b64}),
+    )
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert store_calls, "store_chunk_image should run before doc-store insert"
+    assert module.settings.docStoreConn.inserted, "chunk should be indexed after image stored"
+    inserted = module.settings.docStoreConn.inserted[-1]
+    assert inserted.get("img_id"), inserted
+    assert inserted.get("doc_type_kwd") == "image", inserted
 
