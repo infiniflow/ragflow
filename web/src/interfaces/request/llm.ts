@@ -6,6 +6,7 @@ export interface IAddLlmRequestBody {
   api_key?: string | Record<string, any>;
   max_tokens: number;
   is_tools?: boolean;
+  region?: string;
 }
 
 export interface IDeleteLlmRequestBody {

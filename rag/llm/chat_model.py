@@ -127,6 +127,10 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
+            for key in ("temperature", "top_p", "top_k"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
 
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
