@@ -1641,6 +1641,25 @@ async def stop_parse_documents(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
+    """Split a composite document image ID into storage bucket and object key.
+
+    Thumbnail URLs use ``{dataset_id}-{thumbnail}``. Only the first hyphen
+    separates the dataset/kb id (bucket) from the object key, which may
+    contain additional hyphens (e.g. ``page-1.png``).
+
+    Args:
+        image_id: Path segment from ``GET /documents/images/<image_id>``.
+
+    Returns:
+        ``(bucket, object_key)`` when valid, otherwise ``None``.
+    """
+    parts = image_id.split("-", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return parts[0], parts[1]
+
+
 def _detect_image_content_type_from_bytes(data):
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -1680,7 +1699,7 @@ async def get_document_image(image_id):
         required: true
         schema:
           type: string
-        description: The image ID (format: bucket-name-image-name)
+        description: Composite ID ``{dataset_id}-{thumbnail_object_key}`` (split on first hyphen only)
     responses:
       200:
         description: Image file
@@ -1691,10 +1710,10 @@ async def get_document_image(image_id):
               format: binary
     """
     try:
-        arr = image_id.split("-")
-        if len(arr) != 2:
+        parsed = _parse_document_image_id(image_id)
+        if not parsed:
             return get_data_error_result(message="Image not found.")
-        bkt, nm = image_id.split("-")
+        bkt, nm = parsed
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
         if not data:
             return get_data_error_result(message="Image not found.")
