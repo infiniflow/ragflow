@@ -144,12 +144,13 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
                 errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
                 continue
             f2d = File2DocumentService.get_by_document_id(doc.id)
-            FileService.filter_delete(
-                [
-                    File.source_type == FileSource.KNOWLEDGEBASE,
-                    File.id == f2d[0].file_id,
-                ]
-            )
+            if f2d:
+                FileService.filter_delete(
+                    [
+                        File.source_type == FileSource.KNOWLEDGEBASE,
+                        File.id == f2d[0].file_id,
+                    ]
+                )
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
 
