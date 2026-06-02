@@ -152,12 +152,12 @@ export const useSubmitApiKey = () => {
       if (ret.code === 0) {
         return {
           isValid: true,
-          logs: ret.message || 'success',
+          logs: ret.message,
         } as VerifyResult;
       } else {
         return {
           isValid: false,
-          logs: ret.message || 'Verification failed',
+          logs: ret.message,
         } as VerifyResult;
       }
     },
