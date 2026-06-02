@@ -10,6 +10,30 @@
   "class": "anthropic",
   "models": [
     {
+      "name": "claude-opus-4-8",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-opus-4-7",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-opus-4-6",
+      "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
       "name": "claude-opus-4-5-20251101",
       "max_tokens": 128000,
       "model_types": [
@@ -28,6 +52,14 @@
     {
       "name": "claude-opus-4-20250514",
       "max_tokens": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "max_tokens": 64000,
       "model_types": [
         "chat",
         "vision"

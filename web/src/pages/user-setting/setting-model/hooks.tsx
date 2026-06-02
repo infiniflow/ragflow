@@ -169,10 +169,10 @@ export const useSubmitApiKey = () => {
       if (!isVerify) {
         setSaveLoading(true);
       }
-      let apiKey: string | Record<string, any> = postBody.api_key || '';
-      let region;
+      const apiKey: string = postBody.api_key || '';
+
+      let region: string | undefined;
       if (savingParams.llm_factory === LLMFactory.SILICONFLOW) {
-        let sourceFid: string = LLMFactory.SILICONFLOW;
         const baseUrl = postBody.base_url;
         if (baseUrl) {
           try {
@@ -182,14 +182,12 @@ export const useSubmitApiKey = () => {
               host === 'api.siliconflow.com' ||
               host.endsWith('.api.siliconflow.com')
             ) {
-              sourceFid = 'siliconflow_intl';
               region = 'intl';
             }
           } catch {
-            // ignore invalid URL and keep default sourceFid
+            // ignore invalid URL
           }
         }
-        apiKey = { api_key: postBody.api_key, source_fid: sourceFid };
       }
 
       // Use dedicated verify API for verification
@@ -212,7 +210,7 @@ export const useSubmitApiKey = () => {
         api_key: apiKey,
         api_base: postBody.base_url || '',
         max_tokens: 0,
-        region: region,
+        ...(region ? { region } : {}),
       };
 
       const ret = await submitProviderInstance(req, isVerify);

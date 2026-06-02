@@ -110,9 +110,29 @@ func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords 
 	return servers, total, nil
 }
 
+// GetByIDAndTenant returns an MCP server owned by a tenant.
+func (dao *MCPServerDAO) GetByIDAndTenant(id, tenantID string) (*entity.MCPServer, error) {
+	var server entity.MCPServer
+	if err := DB.Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error; err != nil {
+		return nil, err
+	}
+	return &server, nil
+}
+
 // DeleteMCPServer deletes an MCP server owned by a tenant.
 func (dao *MCPServerDAO) DeleteMCPServer(id, tenantID string) (bool, error) {
 	result := DB.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&entity.MCPServer{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// UpdateMCPServer updates an MCP server owned by a tenant.
+func (dao *MCPServerDAO) UpdateMCPServer(id, tenantID string, updates map[string]interface{}) (bool, error) {
+	result := DB.Model(&entity.MCPServer{}).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Updates(updates)
 	if result.Error != nil {
 		return false, result.Error
 	}
