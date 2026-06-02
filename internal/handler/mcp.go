@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +26,12 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+)
+
+const (
+	defaultMCPServerPage     = 0
+	defaultMCPServerPageSize = 0
+	maxMCPServerPageSize     = 100
 )
 
 // MCPHandler handles MCP server requests.
@@ -74,16 +81,33 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 		return
 	}
 
-	page := parseMCPPositiveInt(c.Query("page"))
-	pageSize := parseMCPPositiveInt(c.Query("page_size"))
+	page, err := parseMCPServerPage(c.Query("page"))
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+	pageSize, err := parseMCPServerPageSize(c.Query("page_size"))
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
 	keywords := c.Query("keywords")
 	mcpIDs := getMCPIDsFromQuery(c)
 
-	result, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
+	result, code, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		if code == common.CodeServerError {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    code,
+				"message": err.Error(),
+				"data":    nil,
+			})
+			return
+		}
+		jsonError(c, code, err.Error())
 		return
 	}
 
@@ -168,15 +192,29 @@ func mcpNotFound(c *gin.Context, mcpID, tenantID string) {
 	jsonError(c, common.CodeDataError, "Cannot find MCP server "+mcpID+" for user "+tenantID)
 }
 
-func parseMCPPositiveInt(value string) int {
+func parseMCPServerPage(value string) (int, error) {
 	if value == "" {
-		return 0
+		return defaultMCPServerPage, nil
 	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		return 0
+	page, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("page must be an integer")
 	}
-	return parsed
+	return page, nil
+}
+
+func parseMCPServerPageSize(value string) (int, error) {
+	if value == "" {
+		return defaultMCPServerPageSize, nil
+	}
+	pageSize, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("page_size must be an integer")
+	}
+	if pageSize > maxMCPServerPageSize {
+		return 0, fmt.Errorf("page_size must be less than or equal to %d", maxMCPServerPageSize)
+	}
+	return pageSize, nil
 }
 
 func getMCPIDsFromQuery(c *gin.Context) []string {

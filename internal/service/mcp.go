@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"time"
 
-	"gorm.io/gorm"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -73,12 +71,6 @@ type CreateMCPServerResponse struct {
 	Headers     entity.JSONMap `json:"headers"`
 }
 
-// ListMCPServersResponse is the response payload for listing MCP servers.
-type ListMCPServersResponse struct {
-	MCPServers []*MCPServerListItem `json:"mcp_servers"`
-	Total      int64                `json:"total"`
-}
-
 // MCPServerListItem is the list projection returned by Python MCPServerService.get_servers.
 type MCPServerListItem struct {
 	ID          string         `json:"id"`
@@ -89,6 +81,12 @@ type MCPServerListItem struct {
 	Variables   entity.JSONMap `json:"variables"`
 	CreateDate  *string        `json:"create_date"`
 	UpdateDate  *string        `json:"update_date"`
+}
+
+// ListMCPServersResponse is the response payload for listing MCP servers.
+type ListMCPServersResponse struct {
+	MCPServers []*MCPServerListItem `json:"mcp_servers"`
+	Total      int64                `json:"total"`
 }
 
 // MCPServerDetail is the detail payload returned by Python MCPServer.to_dict.
@@ -180,29 +178,34 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 }
 
 // ListMCPServers lists MCP servers owned by a tenant.
-func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, error) {
-	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, page, pageSize, orderby, desc)
+func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, orderby, desc)
 	if err != nil {
-		return nil, err
+		var orderbyErr *dao.InvalidMCPServerOrderByError
+		if errors.As(err, &orderbyErr) {
+			return nil, common.CodeExceptionError, err
+		}
+		return nil, common.CodeServerError, err
 	}
 	if servers == nil {
 		servers = []*entity.MCPServer{}
 	}
+	servers = paginateMCPServers(servers, page, pageSize)
 
 	return &ListMCPServersResponse{
 		MCPServers: buildMCPServerListItems(servers),
 		Total:      total,
-	}, nil
+	}, common.CodeSuccess, nil
 }
 
 // GetMCPServer returns one MCP server owned by a tenant.
 func (s *MCPService) GetMCPServer(tenantID, mcpID string) (*MCPServerDetail, bool, error) {
 	server, err := s.mcpServerDAO.GetMCPServerByIDAndTenantID(mcpID, tenantID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, false, nil
-		}
 		return nil, false, err
+	}
+	if server == nil {
+		return nil, false, nil
 	}
 	return buildMCPServerDetail(server), true, nil
 }
@@ -211,17 +214,12 @@ func (s *MCPService) GetMCPServer(tenantID, mcpID string) (*MCPServerDetail, boo
 func (s *MCPService) ExportMCPServer(tenantID, mcpID string) (*ExportedMCPServers, bool, error) {
 	server, err := s.mcpServerDAO.GetMCPServerByIDAndTenantID(mcpID, tenantID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, false, nil
-		}
 		return nil, false, err
 	}
-	normalizeMCPServer(server)
-	exported, found := buildExportedMCPServer(server)
-	if !found {
+	if server == nil {
 		return nil, false, nil
 	}
-	return exported, true, nil
+	return buildExportedMCPServer(server), true, nil
 }
 
 func buildMCPServerListItems(servers []*entity.MCPServer) []*MCPServerListItem {
@@ -260,10 +258,7 @@ func buildMCPServerDetail(server *entity.MCPServer) *MCPServerDetail {
 	}
 }
 
-func buildExportedMCPServer(server *entity.MCPServer) (*ExportedMCPServers, bool) {
-	if server == nil {
-		return nil, false
-	}
+func buildExportedMCPServer(server *entity.MCPServer) *ExportedMCPServers {
 	normalizeMCPServer(server)
 	authorizationToken, _ := server.Variables["authorization_token"].(string)
 	tools, ok := server.Variables["tools"]
@@ -281,7 +276,7 @@ func buildExportedMCPServer(server *entity.MCPServer) (*ExportedMCPServers, bool
 				Tools:              tools,
 			},
 		},
-	}, true
+	}
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.
@@ -353,4 +348,37 @@ func formatMCPServerDate(date *time.Time) *string {
 	}
 	formatted := date.Format(mcpServerDateFormat)
 	return &formatted
+}
+
+func paginateMCPServers(servers []*entity.MCPServer, page, pageSize int) []*entity.MCPServer {
+	if page == 0 || pageSize == 0 {
+		return servers
+	}
+
+	start := (page - 1) * pageSize
+	stop := page * pageSize
+	return sliceMCPServers(servers, start, stop)
+}
+
+func sliceMCPServers(servers []*entity.MCPServer, start, stop int) []*entity.MCPServer {
+	length := len(servers)
+	start = normalizeMCPServerSliceIndex(start, length)
+	stop = normalizeMCPServerSliceIndex(stop, length)
+	if stop < start {
+		return []*entity.MCPServer{}
+	}
+	return servers[start:stop]
+}
+
+func normalizeMCPServerSliceIndex(index, length int) int {
+	if index < 0 {
+		index += length
+	}
+	if index < 0 {
+		return 0
+	}
+	if index > length {
+		return length
+	}
+	return index
 }

@@ -18,6 +18,7 @@ package dao
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"ragflow/internal/entity"
@@ -27,6 +28,16 @@ import (
 
 // MCPServerDAO MCP server data access object.
 type MCPServerDAO struct{}
+
+// InvalidMCPServerOrderByError matches the Python list endpoint's error shape
+// for unknown MCPServer ordering fields.
+type InvalidMCPServerOrderByError struct {
+	Field string
+}
+
+func (e *InvalidMCPServerOrderByError) Error() string {
+	return fmt.Sprintf("AttributeError(%q)", fmt.Sprintf("type object 'MCPServer' has no attribute '%s'", e.Field))
+}
 
 // NewMCPServerDAO creates an MCP server DAO.
 func NewMCPServerDAO() *MCPServerDAO {
@@ -62,7 +73,7 @@ func (dao *MCPServerDAO) CreateMCPServer(server *entity.MCPServer) error {
 }
 
 // ListMCPServers returns MCP servers for a tenant with optional filtering.
-func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
 	var servers []*entity.MCPServer
 	var total int64
 
@@ -80,16 +91,15 @@ func (dao *MCPServerDAO) ListMCPServers(tenantID string, ids []string, keywords 
 		return nil, 0, err
 	}
 
-	orderColumn := mcpServerOrderColumn(orderby)
+	orderColumn, err := mcpServerOrderColumn(orderby)
+	if err != nil {
+		return nil, 0, err
+	}
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
 	}
 	query = query.Order(orderColumn + " " + orderDirection)
-
-	if page > 0 && pageSize > 0 {
-		query = query.Offset((page - 1) * pageSize).Limit(pageSize)
-	}
 
 	if err := query.
 		Select("id", "name", "server_type", "url", "description", "variables", "create_date", "update_date").
@@ -122,23 +132,21 @@ func (dao *MCPServerDAO) DeleteMCPServer(id, tenantID string) (bool, error) {
 	return result.RowsAffected > 0, nil
 }
 
-func mcpServerOrderColumn(orderby string) string {
+func mcpServerOrderColumn(orderby string) (string, error) {
 	switch orderby {
 	case "id":
-		return "id"
+		return "id", nil
 	case "name":
-		return "name"
+		return "name", nil
 	case "server_type":
-		return "server_type"
+		return "server_type", nil
 	case "url":
-		return "url"
-	case "update_time":
-		return "update_time"
-	case "update_date":
-		return "update_date"
-	case "create_date":
-		return "create_date"
+		return "url", nil
+	case "update_time", "update_date":
+		return "update_date", nil
+	case "create_time", "create_date":
+		return "create_date", nil
 	default:
-		return "create_time"
+		return "", &InvalidMCPServerOrderByError{Field: orderby}
 	}
 }

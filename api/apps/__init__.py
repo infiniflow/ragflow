@@ -34,6 +34,7 @@ from quart_schema import QuartSchema
 from common import settings
 from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
+from common.exceptions import ModelException
 from common.misc_utils import get_uuid
 
 settings.init_settings()
@@ -359,6 +360,12 @@ async def unauthorized_quart_auth(error):
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
     return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
+
+
+@app.errorhandler(ModelException)
+async def handle_model_exception(error):
+    logging.warning("Forbidden request")
+    return get_json_result(code=RetCode.BAD_REQUEST, message=repr(error)), 200
 
 
 @app.teardown_request
