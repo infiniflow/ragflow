@@ -501,7 +501,7 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     def safe_add(i):
         try:
             i = int(i)
-        except:
+        except Exception:
             return True
         if 0 <= i < max_index:
             idx.add(i)
