@@ -116,7 +116,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "llm_name": model_obj.model_name,
             "api_base": extra_fields.get("base_url", ""),
             "model_type": model_obj.model_type,
-            "is_tool": extra_fields.get("is_tool", is_tool)
+            "is_tools": extra_fields.get("is_tools", is_tool)
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
@@ -136,7 +136,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             "llm_name": llm_info["llm_name"],
             "api_base": extra_fields.get("base_url", ""),
             "model_type": llm_info["model_type"],
-            "is_tool": llm_info.get("is_tool", is_tool)
+            "is_tools": llm_info.get("is_tools", is_tool)
         }
         if api_key_payload is not None:
             model_config["api_key_payload"] = api_key_payload
