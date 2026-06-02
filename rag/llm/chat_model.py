@@ -141,7 +141,7 @@ def _apply_model_family_policies(
 
     thinking_type = _thinking_type()
 
-    # Qwen3 keeps the existing default of disabling thinking unless explicitly overridden.
+    # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         enable_thinking = thinking_type == "enabled" if thinking_type else False
         if backend == "litellm" and provider in {
@@ -168,17 +168,16 @@ def _apply_model_family_policies(
         if provider == SupportedLiteLLMProvider.HunYuan:
             for key in ("presence_penalty", "frequency_penalty"):
                 sanitized_gen_conf.pop(key, None)
-        elif provider == SupportedLiteLLMProvider.Moonshot and (
-            thinking_type or "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower
-        ):
-            effective_thinking = thinking_type or "enabled"
-            sanitized_gen_conf["thinking"] = {"type": effective_thinking}
+        elif provider == SupportedLiteLLMProvider.Moonshot:
+            if thinking_type:
+                sanitized_gen_conf["thinking"] = {"type": thinking_type}
 
-            sanitized_gen_conf.pop("temperature", None)
-            sanitized_gen_conf["top_p"] = 0.95
-            sanitized_gen_conf["n"] = 1
-            sanitized_gen_conf["presence_penalty"] = 0.0
-            sanitized_gen_conf["frequency_penalty"] = 0.0
+            if thinking_type or "kimi-k2.5" in model_name_lower or "kimi-k2.6" in model_name_lower:
+                sanitized_gen_conf.pop("temperature", None)
+                sanitized_gen_conf["top_p"] = 0.95
+                sanitized_gen_conf["n"] = 1
+                sanitized_gen_conf["presence_penalty"] = 0.0
+                sanitized_gen_conf["frequency_penalty"] = 0.0
         elif (
             provider == SupportedLiteLLMProvider.ZHIPU_AI
             and "glm" in model_name_lower
@@ -639,7 +638,15 @@ class Base(ABC):
                 logging.warning(f"Exceed max rounds: {self.max_rounds}")
                 history.append({"role": "user", "content": f"Exceed max rounds: {self.max_rounds}"})
 
-                response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf)
+                response = await self.async_client.chat.completions.create(
+                    model=self.model_name,
+                    messages=history,
+                    stream=True,
+                    tools=tools,
+                    tool_choice="auto",
+                    **gen_conf,
+                    **extra_request_kwargs,
+                )
 
                 async for resp in response:
                     if not hasattr(resp, "choices") or not resp.choices:

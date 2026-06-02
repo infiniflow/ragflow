@@ -62,7 +62,7 @@ export const LlmSettingFieldSchema = {
   frequency_penalty: z.coerce.number().optional(),
   max_tokens: z.number().optional(),
   parameter: z.string().optional(),
-  thinking: z.string().optional(),
+  thinking: z.enum(['default', 'enabled', 'disabled']).optional(),
 };
 
 export const LlmSettingSchema = {
