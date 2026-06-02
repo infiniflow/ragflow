@@ -1155,6 +1155,12 @@ class Salesforce(SyncBase):
             api_version=self.conf.get("api_version") or "v59.0",
         )
         self.connector.load_credentials(self.conf["credentials"])
+        # Fail fast on invalid/inaccessible objects (typos, missing object
+        # permissions) before iterating, so a bad `objects` config surfaces
+        # as a clear error instead of silently skipping data at sync time.
+        # This guards configs that reach runtime without going through the
+        # UI (direct API callers, scripts, previously-persisted configs).
+        self.connector.validate_connector_settings()
 
         # Always route through load_from_checkpoint so the per-object
         # SystemModstamp cursor owns incrementality; poll_source would
