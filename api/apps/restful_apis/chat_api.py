@@ -16,6 +16,7 @@
 
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -49,6 +50,38 @@ from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
 from rag.prompts.generator import chunks_format
 from rag.prompts.template import load_prompt
+
+def _sanitize_json_floats(obj):
+    """Replace NaN/Infinity floats with None so the result is RFC 8259 JSON.
+
+    `json.dumps` emits the literal tokens `NaN`/`Infinity` by default
+    (allow_nan=True). Those tokens are valid Python JSON output but invalid
+    per the JSON spec, and downstream proxies / Go consumers reject the
+    response with `failed to encode response: json: unsupported value: NaN`
+    (fixes #15245). Retrieval scores (similarity, vector_similarity,
+    term_similarity) can become NaN when an aggregation runs over an empty
+    set or when a similarity denominator is zero, so the chat completions
+    stream is the realistic trigger.
+
+    `isinstance(obj, float)` alone catches Python float and numpy.float64
+    (a float subclass) but misses numpy.float32 / numpy.float16 and any
+    other duck-typed numeric. Probe via math.isnan/isinf in a try/except
+    so any object math can evaluate gets sanitized — without changing
+    upstream callers like chunks_format or rag/nlp/search.py.
+    """
+    try:
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+    except TypeError:
+        pass
+    if isinstance(obj, dict):
+        return {k: _sanitize_json_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_json_floats(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_sanitize_json_floats(v) for v in obj)
+    return obj
+
 
 _DEFAULT_PROMPT_CONFIG = {
     "system": (
@@ -1203,7 +1236,7 @@ async def session_completion(chat_id_in_arg=""):
                 return get_data_error_result(message=f"Cannot use specified model {chat_model_id}.")
             dia.llm_id = chat_model_id
             dia.llm_setting = chat_model_config
-        else:
+        elif not dia.llm_id:
             logging.info("empty chat_model_id in req, use default chat model.")
             _, tenant_info = TenantService.get_by_id(dia.tenant_id)
             if not tenant_info or not tenant_info.llm_id:
@@ -1225,7 +1258,8 @@ async def session_completion(chat_id_in_arg=""):
             try:
                 async for ans in async_chat(dia, msg, True, **req):
                     ans = _format_answer(ans)
-                    yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
+                    payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
+                    yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 if conv is not None:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
@@ -1247,6 +1281,6 @@ async def session_completion(chat_id_in_arg=""):
             if conv is not None:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
-        return get_json_result(data=answer)
+        return get_json_result(data=_sanitize_json_floats(answer))
     except Exception as ex:
         return server_error_response(ex)
