@@ -9,6 +9,42 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.26.0
+
+Released on June 4, 2026.
+
+### New features
+
+- Model Providers: Support for adding multiple API Keys for the same model provider. [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+- Data Source Connectors: New connectors for Outlook, OneDrive, Microsoft Teams, Slack, and SharePoint [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)
+- Mark mysql migrations as applied. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
+
+
+### Model Support
+
+- Four new SiliconFlow models [#15383](https://github.com/infiniflow/ragflow/pull/15383)
+- MiniMax-M3 model [#15513](https://github.com/infiniflow/ragflow/pull/15513)
+- Latest Anthropic models [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+- Voyage 4 model family [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+
+### Bug fixes
+
+- Chat/LLM: Fixed Minimax thinking mode toggle. [#15496](https://github.com/infiniflow/ragflow/pull/15496)
+- Fixed potential Qwen3.5/Qwen3.6 thinking mode loop. [#15101](https://github.com/infiniflow/ragflow/pull/15101)
+- Fixed duplicate answers in OpenAI-compatible chat completion streaming. [#15286](https://github.com/infiniflow/ragflow/issues/15286)[#15443](https://github.com/infiniflow/ragflow/pull/15443)
+- Fixed NaN/Inf score serialization in chat completions. [#15245](https://github.com/infiniflow/ragflow/issues/15245)[#15266](https://github.com/infiniflow/ragflow/pull/15266)
+- Fixed LiteLLM provider extra field interference. [#15427](https://github.com/infiniflow/ragflow/issues/15427)[#15432](https://github.com/infiniflow/ragflow/pull/15432)
+- Fixed default non-streaming mode for default OpenAI chat completions. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
+- Fixed empty AND results being dropped in metadata filtering. [#15477](https://github.com/infiniflow/ragflow/pull/15477)
+- Document Processing: Fixed duplicate MinerU page chrome blocks. [#15335](https://github.com/infiniflow/ragflow/issues/15335)[#15387](https://github.com/infiniflow/ragflow/pull/15387)
+- Fixed missing English chart titles in DeepDoc. [#15481](https://github.com/infiniflow/ragflow/pull/15481)
+- Restored TitleChunker JSON/chunks upstream format output. [#14247](https://github.com/infiniflow/ragflow/pull/14247)[#15396](https://github.com/infiniflow/ragflow/pull/15396)
+- Fixed missing error prompt for TSV file upload. [#15284](https://github.com/infiniflow/ragflow/pull/15284)
+- Fixed API token beta value backfill. [#15405](https://github.com/infiniflow/ragflow/pull/15405)
+- Capped page_size max to 100. [#15292](https://github.com/infiniflow/ragflow/pull/15292)
+- Auto-inferred Content-Type for document image endpoints. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
+- Return 4xx errors for missing file downloads. [#15369](https://github.com/infiniflow/ragflow/issues/15369)[#15371](https://github.com/infiniflow/ragflow/pull/15371)
+
 ## v0.25.6
 
 Released on May 26, 2026.
