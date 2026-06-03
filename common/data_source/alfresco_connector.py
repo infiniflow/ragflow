@@ -32,6 +32,7 @@ itself keeps no cross-run state.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Generator, Iterable
 
@@ -76,6 +77,13 @@ _LISTING_INCLUDE = "properties,path"
 
 # HTTP timeout (connect, read) seconds.
 _HTTP_TIMEOUT = (10, 60)
+
+# Well-known node aliases that always resolve, so they need no existence
+# check during validation.
+_NODE_ALIASES = {"-root-", "-my-", "-shared-"}
+
+# Cap on version-history entries fetched per node (newest first).
+_VERSION_HISTORY_LIMIT = 100
 
 
 class AlfrescoCheckpoint(ConnectorCheckpoint):
@@ -210,6 +218,16 @@ class AlfrescoConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         # clear validation error rather than a silently empty crawl.
         for site_id in self.site_ids:
             self._resolve_site_library(site_id, validating=True)
+
+        # Validate explicit root node IDs the same way. Without this a
+        # typo'd node ID would 404 during listing (treated as an empty
+        # folder) and silently ingest nothing — which looks like a
+        # successful sync and can also cause prune to delete documents
+        # ingested by earlier runs. Well-known aliases always resolve.
+        for node_id in self.root_node_ids:
+            if node_id in _NODE_ALIASES:
+                continue
+            self._validate_node_exists(node_id)
 
     # ------------------------------------------------------------------
     # Checkpoint helpers
@@ -348,6 +366,15 @@ class AlfrescoConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
             if version_label:
                 metadata["version"] = version_label
 
+            # When version history is requested, retrieve the node's full
+            # version list and surface it as metadata so the toggle has an
+            # observable effect.
+            if self.include_version_history:
+                history = self._get_version_history(node_id)
+                if history:
+                    metadata["version_history"] = ", ".join(history)
+                    metadata["version_count"] = str(len(history))
+
             doc = Document(
                 id=node_id,
                 source="alfresco",
@@ -379,11 +406,11 @@ class AlfrescoConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
         protects against pathologically large or cyclic structures.
         """
         seen: set[str] = set()
-        queue: list[str] = list(self._start_node_ids())
+        queue: deque[str] = deque(self._start_node_ids())
         scanned = 0
 
         while queue:
-            parent_id = queue.pop(0)
+            parent_id = queue.popleft()
             if parent_id in seen:
                 continue
             seen.add(parent_id)
@@ -451,6 +478,80 @@ class AlfrescoConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPerm
             raise UnexpectedValidationError(
                 f"Alfresco: unexpected site-container response for '{site_id}': {exc}"
             ) from exc
+
+    def _validate_node_exists(self, node_id: str) -> None:
+        """Confirm a configured root node ID exists.
+
+        Raises a clear ``ConnectorValidationError`` on 404 so a typo'd node
+        ID is reported at validation time instead of producing a silently
+        empty crawl.
+        """
+        assert self._session is not None
+        url = f"{self.api_base}/nodes/{node_id}"
+        try:
+            resp = self._session.get(url, timeout=_HTTP_TIMEOUT)
+        except requests.RequestException as exc:
+            raise UnexpectedValidationError(
+                f"Alfresco: failed to resolve node '{node_id}': {exc}"
+            ) from exc
+        if resp.status_code == 404:
+            raise ConnectorValidationError(
+                f"Alfresco: root node '{node_id}' was not found."
+            )
+        if resp.status_code in (401, 403):
+            raise InsufficientPermissionsError(
+                f"Alfresco: insufficient permissions for node '{node_id}' "
+                f"(HTTP {resp.status_code})"
+            )
+        if resp.status_code >= 400:
+            raise UnexpectedValidationError(
+                f"Alfresco: failed to resolve node '{node_id}' "
+                f"(HTTP {resp.status_code}): {resp.text[:300]}"
+            )
+
+    def _get_version_history(self, node_id: str) -> list[str]:
+        """Return a node's version labels (newest first), empty when it is
+        not versioned.
+
+        Used only when ``include_version_history`` is enabled. A 404 means
+        the node has no version history (versioning off) and is not an
+        error; transient/other failures propagate to abort the run.
+        """
+        assert self._session is not None
+        url = f"{self.api_base}/nodes/{node_id}/versions"
+        try:
+            resp = self._session.get(
+                url, params={"maxItems": _VERSION_HISTORY_LIMIT}, timeout=_HTTP_TIMEOUT
+            )
+        except requests.RequestException as exc:
+            raise UnexpectedValidationError(
+                f"Alfresco: failed to fetch versions for {node_id}: {exc}"
+            ) from exc
+        if resp.status_code == 404:
+            return []
+        if resp.status_code in (401, 403):
+            raise InsufficientPermissionsError(
+                f"Alfresco: insufficient permissions reading versions of {node_id} "
+                f"(HTTP {resp.status_code})"
+            )
+        if resp.status_code >= 400:
+            raise UnexpectedValidationError(
+                f"Alfresco: failed to fetch versions for {node_id} "
+                f"(HTTP {resp.status_code}): {resp.text[:300]}"
+            )
+        try:
+            entries = resp.json()["list"]["entries"]
+        except (ValueError, KeyError, TypeError):
+            return []
+        labels: list[str] = []
+        for item in entries:
+            entry = item.get("entry") if isinstance(item, dict) else None
+            if not isinstance(entry, dict):
+                continue
+            label = entry.get("id") or entry.get("versionLabel")
+            if label:
+                labels.append(str(label))
+        return labels
 
     def _list_children(self, parent_id: str) -> Generator[dict[str, Any], None, None]:
         """Yield child node entries of ``parent_id``, following pagination."""
