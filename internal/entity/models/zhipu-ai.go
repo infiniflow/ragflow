@@ -526,9 +526,6 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	models := make([]string, 0, len(modelList.Models))
 	for _, model := range modelList.Models {
 		modelName := model.ID
-		if model.OwnedBy != "" {
-			modelName = model.ID + "@" + model.OwnedBy
-		}
 		models = append(models, modelName)
 	}
 
