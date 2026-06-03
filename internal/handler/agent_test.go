@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -198,3 +198,117 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 // sptr returns a pointer to the given string.
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
+
+func TestAgentPrompts_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Stub out the prompt loader so tests are independent of rag/prompts/
+	// being discoverable from the test working directory.
+	orig := loadPromptFunc
+	defer func() { loadPromptFunc = orig }()
+	loadPromptFunc = func(name string) (string, error) {
+		return "PROMPT[" + name + "]", nil
+	}
+
+	r := gin.New()
+	h := NewAgentHandler(nil, nil) // service.AgentService unused by Prompts
+	r.GET("/api/v1/agents/prompts", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-abc"})
+		h.Prompts(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents/prompts", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, w.Body.String())
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Errorf("code=%v want %d", body["code"], common.CodeSuccess)
+	}
+	data, ok := body["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data is not an object: %v", body["data"])
+	}
+	if data["task_analysis"] != "PROMPT[analyze_task_system]\n\nPROMPT[analyze_task_user]" {
+		t.Errorf("task_analysis=%q want concat of system+\\n\\n+user", data["task_analysis"])
+	}
+	if data["plan_generation"] != "PROMPT[next_step]" {
+		t.Errorf("plan_generation=%q want PROMPT[next_step]", data["plan_generation"])
+	}
+	if data["reflection"] != "PROMPT[reflect]" {
+		t.Errorf("reflection=%q want PROMPT[reflect]", data["reflection"])
+	}
+	if data["citation_guidelines"] != "PROMPT[citation_prompt]" {
+		t.Errorf("citation_guidelines=%q want PROMPT[citation_prompt]", data["citation_guidelines"])
+	}
+	for _, k := range []string{"task_analysis", "plan_generation", "reflection", "citation_guidelines"} {
+		if _, ok := data[k]; !ok {
+			t.Errorf("missing key %q in response data; keys=%v", k, data)
+		}
+	}
+}
+
+func TestAgentPrompts_RequiresAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	orig := loadPromptFunc
+	defer func() { loadPromptFunc = orig }()
+	loadPromptFunc = func(name string) (string, error) {
+		t.Errorf("loadPromptFunc must not be called when unauthenticated, was called with %q", name)
+		return "", nil
+	}
+
+	r := gin.New()
+	r.GET("/api/v1/agents/prompts", NewAgentHandler(nil, nil).Prompts)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents/prompts", nil)
+	r.ServeHTTP(w, req)
+
+	var body map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if code, _ := body["code"].(float64); int(code) == int(common.CodeSuccess) {
+		t.Errorf("expected non-success code for unauthenticated request, body=%v", body)
+	}
+}
+
+func TestAgentPrompts_PropagatesLoaderError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	orig := loadPromptFunc
+	defer func() { loadPromptFunc = orig }()
+	loadPromptFunc = func(name string) (string, error) {
+		if name == "next_step" {
+			return "", errPromptMissing
+		}
+		return "ok", nil
+	}
+
+	r := gin.New()
+	r.GET("/api/v1/agents/prompts", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-abc"})
+		NewAgentHandler(nil, nil).Prompts(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents/prompts", nil)
+	r.ServeHTTP(w, req)
+
+	var body map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if code, _ := body["code"].(float64); int(code) == int(common.CodeSuccess) {
+		t.Errorf("missing prompt should not return success, body=%v", body)
+	}
+}
+
+var errPromptMissing = pErr("prompt file 'next_step.md' not found")
+
+type pErr string
+
+func (e pErr) Error() string { return string(e) }
