@@ -303,6 +303,34 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 	}
 }
 
+func TestOpenAIAudioSpeechBoundsErrorResponseBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, strings.Repeat("x", int(maxModelErrorBodyBytes)+1))
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "tts-1"
+	input := "hello"
+
+	_, err := newOpenAIForTest(srv.URL).AudioSpeech(
+		&model,
+		&input,
+		&APIConfig{ApiKey: &apiKey},
+		&TTSConfig{Params: map[string]interface{}{"voice": "alloy"}},
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to read error response body") {
+		t.Fatalf("err=%v, want failed to read error response body", err)
+	}
+	if !strings.Contains(err.Error(), "response body exceeds") {
+		t.Fatalf("err=%v, want response body exceeds", err)
+	}
+}
+
 func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
