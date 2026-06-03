@@ -1270,6 +1270,14 @@ Example: Virtual Hosted Style`,
         'Connect to Dingtalk AI Table and synchronize records from a specified table.',
       gitlabDescription:
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
+      trelloDescription:
+        'Connect Trello to sync boards, lists, cards, comments, and attachment metadata.',
+      trelloApiKeyTip:
+        'Generate an API key from the Trello developer portal or a Trello Power-Up.',
+      trelloApiTokenTip:
+        'Generate a Trello API token for the account that can access the boards to sync.',
+      trelloBoardIdsTip:
+        'Optional: Trello board IDs to sync. Leave empty to sync all open boards visible to the token.',
       asanaDescription:
         'Connect to Asana and synchronize files from a specified workspace.',
       imapDescription:

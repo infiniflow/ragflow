@@ -63,6 +63,7 @@ from common.data_source import (
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
+    TrelloConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -1128,6 +1129,41 @@ class Outlook(SyncBase):
         return wrapper()
 
 
+class Trello(SyncBase):
+    SOURCE_NAME: str = FileSource.TRELLO
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = TrelloConnector(
+            board_ids=self.conf.get("board_ids"),
+            include_comments=bool(self.conf.get("include_comments", True)),
+            include_attachments=bool(self.conf.get("include_attachments", True)),
+            batch_size=batch_size,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        self.connector.validate_connector_settings()
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or not poll_start:
+            document_generator = self.connector.load_from_state()
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+
+        board_ids = self.conf.get("board_ids") or "<all-accessible-boards>"
+        self.log_connection("Trello", f"board_ids({board_ids})", task)
+        return document_generator
+
+
 class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
@@ -1990,6 +2026,7 @@ func_factory = {
     FileSource.SHAREPOINT: SharePoint,
     FileSource.ONEDRIVE: OneDrive,
     FileSource.OUTLOOK: Outlook,
+    FileSource.TRELLO: Trello,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,

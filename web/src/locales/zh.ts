@@ -1148,6 +1148,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
+      trelloDescription:
+        '连接 Trello，同步看板、列表、卡片、评论和附件元数据。',
+      trelloApiKeyTip:
+        '请从 Trello 开发者门户或 Trello Power-Up 生成 API Key。',
+      trelloApiTokenTip:
+        '请生成可访问目标看板的 Trello API Token。',
+      trelloBoardIdsTip:
+        '可选：要同步的 Trello Board ID。留空则同步该 Token 可见的所有打开看板。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
       imapDescription:
         '连接你的 IMAP 邮箱，同步指定mailboxes中的邮件，用于知识检索与分析',

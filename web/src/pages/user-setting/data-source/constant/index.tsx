@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { Kanban, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -48,6 +48,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  TRELLO = 'trello',
 }
 
 type DataSourceFeatureVisibility = {
@@ -144,6 +145,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.SHAREPOINT]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.TRELLO]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MYSQL]: {
@@ -335,6 +339,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
     },
+    [DataSourceKey.TRELLO]: {
+      name: 'Trello',
+      description: t(`setting.${DataSourceKey.TRELLO}Description`),
+      icon: <Kanban className="text-text-primary" size={22} />,
+    },
   };
 };
 
@@ -503,6 +512,53 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'support@example.com, sales@example.com',
       tooltip: t('setting.outlookUserIdsTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
+  [DataSourceKey.TRELLO]: [
+    {
+      label: 'Trello API Key',
+      name: 'config.credentials.trello_api_key',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.trelloApiKeyTip'),
+    },
+    {
+      label: 'Trello API Token',
+      name: 'config.credentials.trello_api_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.trelloApiTokenTip'),
+    },
+    {
+      label: 'Board IDs',
+      name: 'config.board_ids',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.trelloBoardIdsTip'),
+    },
+    {
+      label: 'Include Comments',
+      name: 'config.include_comments',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'Include Attachment Metadata',
+      name: 'config.include_attachments',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
     },
     {
       label: 'Batch Size',
@@ -1627,6 +1683,20 @@ export const DataSourceFormDefaultValues = {
       channels: [],
       credentials: {
         discord_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.TRELLO]: {
+    name: '',
+    source: DataSourceKey.TRELLO,
+    config: {
+      board_ids: [],
+      include_comments: true,
+      include_attachments: true,
+      batch_size: 2,
+      credentials: {
+        trello_api_key: '',
+        trello_api_token: '',
       },
     },
   },
