@@ -42,6 +42,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
     if not FACTORY_LLM_INFOS:
         return False, []
 
+    factory_info_map = {f["name"]: f for f in FACTORY_LLM_INFOS}
     if all_available:
         providers = []
         for factory_info in FACTORY_LLM_INFOS:
@@ -52,13 +53,16 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 for llm in factory_info.get("llm", [])
                 if llm.get("model_type")
             ))
-            providers.append({
+            provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
                 "url": {
                     "default": factory_info.get("url", "")
                 }
-            })
+            }
+            if factory_info["name"].lower() == "siliconflow":
+                provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            providers.append(provider)
         providers.sort(key=lambda x: x["name"])
         return True, providers
 
@@ -75,13 +79,16 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 for llm in factory_info.get("llm", [])
                 if llm.get("model_type")
             ))
-            providers.append({
+            provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
                 "url": {
                     "default": factory_info.get("url", "")
                 }
-            })
+            }
+            if factory_info["name"].lower() == "siliconflow":
+                provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            providers.append(provider)
     providers.sort(key=lambda x: x["name"])
     return True, providers
 
