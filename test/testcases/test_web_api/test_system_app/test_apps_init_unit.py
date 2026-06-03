@@ -182,12 +182,23 @@ def test_load_user_api_token_fallback_and_fallback_exception(monkeypatch, caplog
                 return [SimpleNamespace(tenant_id="tenant-1")]
             return []
 
+        def _query_user(**kwargs):
+            if (
+                kwargs.get("id") == "tenant-1"
+                and kwargs.get("status") == apps_module.StatusEnum.VALID.value
+            ):
+                return [beta_user]
+            return []
+
         monkeypatch.setattr(apps_module.APIToken, "query", _query_api_token)
-        monkeypatch.setattr(apps_module.UserService, "query", lambda **_kwargs: [beta_user])
+        monkeypatch.setattr(apps_module.UserService, "query", _query_user)
         async with quart_app.test_request_context("/", headers={"Authorization": "Bearer embed-beta"}):
             user = apps_module._load_user(auth_types=[apps_module.AUTH_BETA])
             assert user is beta_user
             assert apps_module.g.auth_type == apps_module.AUTH_BETA
+
+        async with quart_app.test_request_context("/", headers={"Authorization": "Bearer invalid-beta"}):
+            assert apps_module._load_user(auth_types=[apps_module.AUTH_BETA]) is None
 
     _run(_case())
     assert "api token fallback failed" in caplog.text
