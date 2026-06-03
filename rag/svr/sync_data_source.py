@@ -63,6 +63,7 @@ from common.data_source import (
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
+    LinearConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -1444,6 +1445,61 @@ class Asana(SyncBase):
 
         return document_generator
 
+
+class Linear(SyncBase):
+    SOURCE_NAME: str = FileSource.LINEAR
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = LinearConnector(
+            team_ids=self.conf.get("team_ids"),
+            project_ids=self.conf.get("project_ids"),
+            include_archived=self._as_bool(self.conf.get("include_archived", False)),
+            include_comments=self._as_bool(self.conf.get("include_comments", True)),
+            include_attachments=self._as_bool(self.conf.get("include_attachments", True)),
+            include_projects=self._as_bool(self.conf.get("include_projects", True)),
+            batch_size=batch_size,
+        )
+
+        credentials = self.conf.get("credentials", {})
+        self.connector.load_credentials(
+            {"linear_api_key": credentials.get("linear_api_key")}
+        )
+        self.connector.validate_connector_settings()
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or not poll_start:
+            document_generator = self.connector.load_from_state()
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+
+        self.log_connection(
+            "Linear",
+            f"team_ids({self.conf.get('team_ids') or '<all-teams>'}), "
+            f"project_ids({self.conf.get('project_ids') or '<all-projects>'})",
+            task,
+        )
+        return document_generator
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() not in {"false", "0", "no", "off", ""}
+        return bool(value)
+
+
 class Github(SyncBase):
     SOURCE_NAME: str = FileSource.GITHUB
 
@@ -1998,6 +2054,7 @@ func_factory = {
     FileSource.BOX: BOX,
     FileSource.AIRTABLE: Airtable,
     FileSource.ASANA: Asana,
+    FileSource.LINEAR: Linear,
     FileSource.IMAP: IMAP,
     FileSource.ZENDESK: Zendesk,
     FileSource.GITHUB: Github,
