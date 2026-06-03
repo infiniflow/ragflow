@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import aiohttp
 import json
 import logging
 import asyncio
@@ -26,6 +27,13 @@ from api.db.services.tenant_model_provider_service import TenantModelProviderSer
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 from rag.llm import EmbeddingModel, ChatModel, RerankModel
+
+
+def _to_int(v, default=500):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
 
 
 def list_providers(tenant_id: str, all_available: bool = False):
@@ -42,6 +50,8 @@ def list_providers(tenant_id: str, all_available: bool = False):
     if not FACTORY_LLM_INFOS:
         return False, []
 
+    factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
+    factory_info_map = {f["name"]: f for f in FACTORY_LLM_INFOS}
     if all_available:
         providers = []
         for factory_info in FACTORY_LLM_INFOS:
@@ -52,14 +62,17 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 for llm in factory_info.get("llm", [])
                 if llm.get("model_type")
             ))
-            providers.append({
+            provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
                 "url": {
                     "default": factory_info.get("url", "")
                 }
-            })
-        providers.sort(key=lambda x: x["name"])
+            }
+            if factory_info["name"].lower() == "siliconflow":
+                provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            providers.append(provider)
+        providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
 
     # List tenant-configured providers
@@ -75,14 +88,17 @@ def list_providers(tenant_id: str, all_available: bool = False):
                 for llm in factory_info.get("llm", [])
                 if llm.get("model_type")
             ))
-            providers.append({
+            provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
                 "url": {
                     "default": factory_info.get("url", "")
                 }
-            })
-    providers.sort(key=lambda x: x["name"])
+            }
+            if factory_info["name"].lower() == "siliconflow":
+                provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            providers.append(provider)
+    providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
 
 
@@ -317,7 +333,24 @@ async def verify_api_key(provider_name: str, api_key: str, base_url: str=None, r
 
     factory_llms = factory_info[0]["llm"]
     if not factory_llms:
-        return False, f"No models found for provider '{provider_name}'"
+        url = base_url or factory_info[0].get("url")
+        if not url:
+            return False, f"No models found for provider '{provider_name}'"
+        v1_index = url.find("/v1")
+        if v1_index >= 0:
+            models_url = url[: v1_index + 3] + "/models"
+        else:
+            models_url = url.rstrip("/") + "/v1/models"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(models_url, headers={"Authorization": f"Bearer {api_key}"}) as resp:
+                    if resp.status == 200:
+                        return True, "success"
+                    else:
+                        return False, f"Fail to access {models_url} using this api key."
+        except Exception as e:
+            logging.error(f"Fail to access {models_url} using this api key.", exc_info=e)
+            return False, f"Fail to access {models_url} using this api key."
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False

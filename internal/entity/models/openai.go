@@ -74,11 +74,11 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 	}
 }
 
-func (z *OpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewOpenAIModel(baseURL, z.URLSuffix)
+func (o *OpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewOpenAIModel(baseURL, o.URLSuffix)
 }
 
-func (z *OpenAIModel) Name() string {
+func (o *OpenAIModel) Name() string {
 	return "openai"
 }
 
@@ -86,8 +86,8 @@ func (z *OpenAIModel) Name() string {
 // error if no entry exists. This makes a misconfigured region fail
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
-func (z *OpenAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := z.BaseURL[region]
+func (o *OpenAIModel) baseURLForRegion(region string) (string, error) {
+	base, ok := o.BaseURL[region]
 	if !ok || base == "" {
 		return "", fmt.Errorf("openai: no base URL configured for region %q", region)
 	}
@@ -95,7 +95,7 @@ func (z *OpenAIModel) baseURLForRegion(region string) (string, error) {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response
-func (z *OpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -109,11 +109,11 @@ func (z *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -169,7 +169,7 @@ func (z *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -230,7 +230,7 @@ func (z *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 
 // ChatStreamlyWithSender sends messages and streams the response via the
 // sender function. Used for streaming chat responses with no extra channel.
-func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -244,11 +244,11 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -311,7 +311,7 @@ func (z *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -430,7 +430,7 @@ type openaiUsage struct {
 // OpenAI /v1/embeddings endpoint (e.g. text-embedding-3-small,
 // text-embedding-3-large, text-embedding-ada-002). The output has
 // one vector per input, in the same order the inputs were given.
-func (z *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -448,11 +448,11 @@ func (z *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -478,7 +478,7 @@ func (z *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -510,7 +510,7 @@ func (z *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -520,11 +520,11 @@ func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -537,7 +537,7 @@ func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	// GET has no body, so Content-Type is not needed.
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -580,13 +580,13 @@ func (z *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 // Balance is not exposed by the OpenAI API, so this returns "no such method".
-func (z *OpenAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (o *OpenAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
-func (z *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
+func (o *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := o.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
@@ -595,8 +595,8 @@ func (z *OpenAIModel) CheckConnection(apiConfig *APIConfig) error {
 
 // Rerank calculates similarity scores between query and documents. OpenAI does
 // not expose a rerank API, so this is left unimplemented.
-func (z *OpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+func (o *OpenAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", o.Name())
 }
 
 // TranscribeAudio transcribe audio
@@ -629,18 +629,18 @@ func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return decodeOpenAIASRResponse(respBody, responseFormat)
 }
 
-func (z *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 
-	req, responseFormat, err := z.newOpenAIASRRequest(context.Background(), modelName, file, apiConfig, asrConfig, true)
+	req, responseFormat, err := o.newOpenAIASRRequest(context.Background(), modelName, file, apiConfig, asrConfig, true)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -764,12 +764,12 @@ func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 
-	req, streamFormat, err := z.newOpenAITTSRequest(context.Background(), modelName, audioContent, apiConfig, ttsConfig, true)
+	req, streamFormat, err := o.newOpenAITTSRequest(context.Background(), modelName, audioContent, apiConfig, ttsConfig, true)
 	if err != nil {
 		return err
 	}
@@ -777,7 +777,7 @@ func (z *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *str
 		req.Header.Set("Accept", "text/event-stream")
 	}
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -1035,19 +1035,19 @@ func writeOpenAIMultipartField(writer *multipart.Writer, key string, value inter
 }
 
 // OCRFile OCR file
-func (m *OpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (o *OpenAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
 // ParseFile parse file
-func (z *OpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (z *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (z *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }

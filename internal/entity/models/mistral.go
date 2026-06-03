@@ -646,7 +646,7 @@ func (m *MistralModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 // OCRFile OCR file
-func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (m *MistralModel) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
 	if (urls == nil || *urls == "") && (content == nil || len(content) == 0) {
 		return nil, fmt.Errorf("file url or content is required")
 	}
@@ -656,7 +656,7 @@ func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.OCR)
+	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.OCR)
 
 	var docURL string
 	if urls != nil && *urls != "" {
@@ -691,7 +691,7 @@ func (z *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
