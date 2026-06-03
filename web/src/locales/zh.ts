@@ -1077,6 +1077,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       rssDescription:
         '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
+      tableauDescription:
+        '连接 Tableau，将工作簿和视图元数据同步到知识库。',
+      tableauServerUrlTip:
+        'Tableau Cloud 或 Tableau Server URL，例如 https://prod-useast-a.online.tableau.com。',
+      tableauSiteContentUrlTip:
+        'Tableau 站点 content URL。默认站点可留空。',
+      tableauProjectNamesTip:
+        '可选：要同步的项目名称，多个用逗号分隔。留空则同步所有可访问项目。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       google_cloud_storageDescription:
         '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',

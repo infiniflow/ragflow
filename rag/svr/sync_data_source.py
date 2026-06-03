@@ -63,6 +63,7 @@ from common.data_source import (
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
+    TableauConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -1975,6 +1976,33 @@ class REST_API(SyncBase):
         return document_generator
 
 
+class Tableau(SyncBase):
+    SOURCE_NAME: str = FileSource.TABLEAU
+
+    async def _generate(self, task: dict):
+        self.connector = TableauConnector(
+            server_url=self.conf.get("server_url", ""),
+            site_content_url=self.conf.get("site_content_url", ""),
+            api_version=self.conf.get("api_version", "3.24"),
+            project_names=self.conf.get("project_names", ""),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+        self.connector.load_credentials(self.conf.get("credentials") or {})
+        self.connector.validate_connector_settings()
+
+        poll_start = task.get("poll_range_start")
+        if task.get("reindex") == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+        else:
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+
+        self.log_connection("Tableau", self.conf.get("server_url", ""), task)
+        return document_generator
+
+
 func_factory = {
     FileSource.RSS: RSS,
     FileSource.S3: S3,
@@ -2008,6 +2036,7 @@ func_factory = {
     FileSource.POSTGRESQL: PostgreSQL,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.TABLEAU: Tableau,
 }
 
 
