@@ -1,6 +1,7 @@
 import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
 // import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
+import { IAvailableProvider } from '@/interfaces/database/llm';
 import { useCallback, useMemo } from 'react';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
@@ -41,6 +42,7 @@ const ModelProviders = () => {
     saveApiKeyLoading,
     initialApiKey,
     llmFactory,
+    savingParams,
     editMode,
     onApiKeySavingOk,
     apiKeyVisible,
@@ -175,15 +177,40 @@ const ModelProviders = () => {
     ],
   );
 
+  const getBaseUrlOptions = (urlObj: Record<string, string>) => {
+    if (!urlObj) {
+      return undefined;
+    }
+    return Object.keys(urlObj).map((key) => {
+      return {
+        value: urlObj[key],
+        label: (
+          <div className="flex justify-between items-center gap-1">
+            <span>{urlObj[key]}</span>
+            <span className="text-xs text-text-secondary bg-bg-card px-2 py-0.5 rounded-sm">
+              {key}
+            </span>
+          </div>
+        ),
+      } as { value: string; label: React.ReactNode };
+    });
+  };
+
   const handleAddModel = useCallback(
-    (llmFactory: string) => {
-      console.log('handleAddModel', llmFactory);
-      if (isLocalLlmFactory(llmFactory)) {
-        showLlmAddingModal(llmFactory);
-      } else if (llmFactory in ModalMap) {
-        ModalMap[llmFactory as keyof typeof ModalMap]();
+    (llmFactory: IAvailableProvider) => {
+      const llmFactoryName = llmFactory.name;
+      const baseUrlOptions = getBaseUrlOptions(
+        llmFactory.url as Record<string, string>,
+      );
+      if (isLocalLlmFactory(llmFactoryName)) {
+        showLlmAddingModal(llmFactoryName);
+      } else if (llmFactoryName in ModalMap) {
+        ModalMap[llmFactoryName as keyof typeof ModalMap]();
       } else {
-        showApiKeyModal({ llm_factory: llmFactory });
+        showApiKeyModal({
+          llm_factory: llmFactoryName,
+          options: baseUrlOptions,
+        });
       }
     },
     [showApiKeyModal, showLlmAddingModal, ModalMap],
@@ -294,7 +321,7 @@ const ModelProviders = () => {
       <Spotlight />
       <section className="flex flex-col gap-4 w-3/5 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
         <SystemSetting />
-        <UsedModel handleAddModel={handleAddModel} />
+        <UsedModel />
       </section>
       <section className="flex flex-col w-2/5 overflow-auto scrollbar-auto">
         <AvailableModels handleAddModel={handleAddModel} />
@@ -308,6 +335,7 @@ const ModelProviders = () => {
         onOk={onApiKeySavingOk}
         onVerify={onApiKeyVerifying}
         llmFactory={llmFactory}
+        options={savingParams.options}
       ></ApiKeyModal>
       {llmAddingVisible && (
         <OllamaModal

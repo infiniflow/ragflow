@@ -20,6 +20,7 @@ type SavingParamsState = {
   model_type?: string;
   instance_name?: string;
   base_url?: string;
+  options?: Array<{ label: React.ReactNode; value: string }>;
 };
 export type VerifyResult = {
   isValid: boolean | null;
@@ -209,6 +210,7 @@ export const useSubmitApiKey = () => {
     saveApiKeyLoading: saveLoading,
     initialApiKey: '',
     llmFactory: savingParams.llm_factory,
+    savingParams,
     editMode,
     onApiKeySavingOk,
     apiKeyVisible,

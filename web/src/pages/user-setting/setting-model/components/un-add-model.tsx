@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { APIMapUrl } from '@/constants/llm';
 import { useFetchAvailableProviders } from '@/hooks/use-llm-request';
+import { IAvailableProvider } from '@/interfaces/database/llm';
 import { ArrowUpRight, Plus } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -49,7 +50,7 @@ const sortModelTypes = (modelTypes: string[]) => {
 };
 
 export const AvailableModels: FC<{
-  handleAddModel: (factory: string) => void;
+  handleAddModel: (factory: IAvailableProvider) => void;
 }> = ({ handleAddModel }) => {
   const { t } = useTranslation();
   const { data: factoryList } = useFetchAvailableProviders();
@@ -143,7 +144,7 @@ export const AvailableModels: FC<{
             data-testid="available-model-card"
             data-provider={model.name}
             className="group border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors"
-            onClick={() => handleAddModel(model.name)}
+            onClick={() => handleAddModel(model)}
           >
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />

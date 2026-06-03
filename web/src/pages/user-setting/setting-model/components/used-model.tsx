@@ -25,11 +25,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { mapModelKey } from './un-add-model';
 
-export function UsedModel({
-  handleAddModel,
-}: {
-  handleAddModel: (factory: string) => void;
-}) {
+export function UsedModel() {
   const { t } = useTranslation();
   const { data: providerList } = useFetchAddedProviders();
 
@@ -42,23 +38,13 @@ export function UsedModel({
         {t('setting.addedModels')}
       </div>
       {providerList.map((provider) => (
-        <ProviderCard
-          key={provider.name}
-          provider={provider}
-          handleAddModel={handleAddModel}
-        />
+        <ProviderCard key={provider.name} provider={provider} />
       ))}
     </div>
   );
 }
 
-function ProviderCard({
-  provider,
-  handleAddModel,
-}: {
-  provider: IAvailableProvider;
-  handleAddModel: (factory: string) => void;
-}) {
+function ProviderCard({ provider }: { provider: IAvailableProvider }) {
   const { data: instances } = useFetchProviderInstances(provider.name);
 
   return (
@@ -85,7 +71,6 @@ function ProviderCard({
               key={instance.id}
               instance={instance}
               providerName={provider.name}
-              handleAddModel={handleAddModel}
             />
           ))}
         </div>
@@ -101,7 +86,6 @@ function InstanceRow({
 }: {
   instance: IProviderInstance;
   providerName: string;
-  handleAddModel: (factory: string) => void;
 }) {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(false);

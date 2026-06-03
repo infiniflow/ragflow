@@ -2,6 +2,7 @@ import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { InputSelect } from '@/components/ui/input-select';
 import { Modal } from '@/components/ui/modal/modal';
 import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
@@ -22,6 +23,7 @@ interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
     postBody: any,
   ) => Promise<boolean | void | VerifyResult | undefined>;
   showModal?(): void;
+  options?: Array<{ value: string; label: React.ReactNode }>;
 }
 
 type FieldType = {
@@ -45,6 +47,7 @@ const ApiKeyModal = ({
   llmFactory,
   loading,
   initialValue,
+  options,
   // editMode = false,
   onOk,
   onVerify,
@@ -140,8 +143,7 @@ const ApiKeyModal = ({
               labelClassName="text-sm font-medium text-text-primary"
             >
               {(field) => (
-                <Input
-                  {...field}
+                <InputSelect
                   placeholder={
                     llmFactory === LLMFactory.TongYiQianWen
                       ? t('tongyiBaseUrlPlaceholder')
@@ -151,7 +153,8 @@ const ApiKeyModal = ({
                           ? 'https://api.siliconflow.cn/v1'
                           : 'https://api.openai.com/v1'
                   }
-                  onKeyDown={handleKeyDown}
+                  {...field}
+                  options={options}
                   className="w-full"
                 />
               )}
