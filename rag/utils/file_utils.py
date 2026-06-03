@@ -19,6 +19,7 @@ import hashlib
 import zipfile
 import requests
 from requests.exceptions import Timeout, RequestException
+from urllib.parse import urljoin
 from io import BytesIO
 from typing import List, Union, Tuple, Optional, Dict
 import pypdf as PyPDF2
@@ -224,6 +225,12 @@ def _get_session(headers: Optional[Dict[str, str]] = None) -> requests.Session:
     return _GLOBAL_SESSION
 
 
+# Upper bound on redirect hops followed by extract_html.  Each hop is
+# re-validated and DNS-pinned, so this also caps the work an attacker can
+# force via a redirect chain.
+_MAX_HTML_REDIRECTS = 5
+
+
 def extract_html(
         url: str,
         timeout: float = 60.0,
@@ -233,6 +240,17 @@ def extract_html(
     """
     Extract the full HTML page as raw bytes from a given URL.
     Automatically reuses a persistent HTTP session and applies robust timeout & retry logic.
+
+    The target URL is attacker-controlled: it is extracted from hyperlinks
+    embedded in uploaded documents (see ``extract_links_from_docx`` /
+    ``extract_links_from_pdf``, consumed by ``rag/app/naive.py`` when
+    ``analyze_hyperlink`` is enabled).  To prevent SSRF, the URL is validated
+    against :func:`common.ssrf_guard.assert_url_is_safe` before any request,
+    and redirects are followed manually so that **every** hop is re-validated
+    and DNS-pinned before the connection is made — closing the TOCTOU /
+    DNS-rebinding window that ``allow_redirects=True`` with post-hoc checks
+    would leave open.  This mirrors the hardening already applied to the RSS
+    connector and the markdown image fetcher.
 
     Args:
         url (str): Target webpage URL.
@@ -245,12 +263,41 @@ def extract_html(
             - html_bytes: Raw HTML content (or None if failed)
             - metadata: HTTP info (status_code, content_type, final_url, error if any)
     """
+    from common.ssrf_guard import assert_url_is_safe, pin_dns
+
     session = _get_session(headers=headers)
     metadata = {"final_url": url, "status_code": "", "content_type": "", "error": ""}
 
+    # Validate the initial URL once, up front, to obtain the pinned IP for the
+    # first request and to reject obviously unsafe targets without retrying.
+    try:
+        initial_hostname, initial_ip = assert_url_is_safe(url)
+    except ValueError as e:
+        metadata["error"] = f"Blocked unsafe URL: {e}"
+        return None, metadata
+
     for attempt in range(1, max_retries + 1):
         try:
-            resp = session.get(url, timeout=timeout)
+            resp = None
+            hostname, ip, target = initial_hostname, initial_ip, url
+            for _ in range(_MAX_HTML_REDIRECTS + 1):
+                with pin_dns(hostname, ip):
+                    resp = session.get(target, timeout=timeout, allow_redirects=False)
+
+                if resp.status_code not in (301, 302, 303, 307, 308):
+                    break
+
+                location = resp.headers.get("Location")
+                if not location:
+                    break  # broken redirect; let raise_for_status() handle it
+
+                target = urljoin(target, location)
+                # Re-validate (and re-pin) the redirect target before following it.
+                hostname, ip = assert_url_is_safe(target)
+            else:
+                metadata["error"] = f"Exceeded {_MAX_HTML_REDIRECTS} redirects"
+                return None, metadata
+
             resp.raise_for_status()
 
             html_bytes = resp.content
@@ -261,6 +308,10 @@ def extract_html(
             })
             return html_bytes, metadata
 
+        except ValueError as e:
+            # A redirect hop resolved to an unsafe address — do not retry.
+            metadata["error"] = f"Blocked unsafe redirect: {e}"
+            return None, metadata
         except Timeout:
             metadata["error"] = f"Timeout after {timeout}s (attempt {attempt}/{max_retries})"
             if attempt >= max_retries:
