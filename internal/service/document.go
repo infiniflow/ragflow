@@ -303,37 +303,61 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to decrement KB counters for %s: %v", kbID, decErr))
 	}
 
-	// 5. Clean up file2document mapping, file record, and storage blob
+	// 5. Clean up file2document mapping, file record, and storage blob.
+	// A single file_id can be shared across multiple documents (via
+	// file2document rows with different document_id). Only delete the
+	// file record and its blob when no other document still references
+	// the same file_id.
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
 	if mapErr != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to get file2document mappings for %s: %v", docID, mapErr))
 	}
-	for _, m := range mappings {
-		if m.FileID == nil {
-			continue
+	if len(mappings) > 0 {
+		// Collect unique file_ids for this document
+		seen := make(map[string]bool)
+		var fileIDs []string
+		for _, m := range mappings {
+			if m.FileID == nil || seen[*m.FileID] {
+				continue
+			}
+			seen[*m.FileID] = true
+			fileIDs = append(fileIDs, *m.FileID)
 		}
-		fileID := *m.FileID
-		// Delete the mapping
+
+		// Delete all file2document rows for this document
 		if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
 			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete f2d mapping for %s: %v", docID, delErr))
 		}
-		// Get file to remove storage blob
-		fileDAO := dao.NewFileDAO()
-		file, fErr := fileDAO.GetByID(fileID)
-		if fErr != nil || file == nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: file not found %s: %v", fileID, fErr))
-			continue
-		}
-		// Delete file record
-		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete file %s: %v", fileID, delErr))
-		}
-		// Delete storage blob
-		if file.Location != nil && *file.Location != "" {
-			storageImpl := storage.GetStorageFactory().GetStorage()
-			if storageImpl != nil {
-				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
-					common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+
+		// For each file, only delete if no other document still references it
+		for _, fileID := range fileIDs {
+			remaining, remErr := s.file2DocumentDAO.GetByFileID(fileID)
+			if remErr != nil {
+				common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to check remaining f2d for %s: %v", fileID, remErr))
+				continue
+			}
+			if len(remaining) > 0 {
+				// file_id is still referenced by other documents; skip file/blob deletion
+				continue
+			}
+
+			fileDAO := dao.NewFileDAO()
+			file, fErr := fileDAO.GetByID(fileID)
+			if fErr != nil || file == nil {
+				common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: file not found %s: %v", fileID, fErr))
+				continue
+			}
+			// Delete file record
+			if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
+				common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete file %s: %v", fileID, delErr))
+			}
+			// Delete storage blob
+			if file.Location != nil && *file.Location != "" {
+				storageImpl := storage.GetStorageFactory().GetStorage()
+				if storageImpl != nil {
+					if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
+						common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+					}
 				}
 			}
 		}

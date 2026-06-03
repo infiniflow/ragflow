@@ -243,6 +243,48 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentFull_SharedFilePreserved(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 2, 20, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestDoc(t, "doc-2", "kb-1", 10, 5)
+	loc := "shared/blob"
+	insertTestFile(t, "file-shared", "kb-1", "shared.pdf", &loc)
+
+	// Same file linked to TWO documents
+	insertTestFile2Document(t, "f2d-1", "file-shared", "doc-1")
+	insertTestFile2Document(t, "f2d-2", "file-shared", "doc-2")
+
+	svc := testDocumentService(t)
+
+	// Delete doc-1; file-shared should survive because doc-2 still references it
+	err := svc.deleteDocumentFull("doc-1")
+	if err != nil {
+		t.Fatalf("deleteDocumentFull failed: %v", err)
+	}
+
+	// f2d mapping for doc-1 should be gone
+	f2dDAO := dao.NewFile2DocumentDAO()
+	mappings, _ := f2dDAO.GetByDocumentID("doc-1")
+	if len(mappings) != 0 {
+		t.Fatalf("expected 0 f2d mappings for doc-1, got %d", len(mappings))
+	}
+
+	// file record should still exist (doc-2 still references it)
+	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-shared"})
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file record to survive, got %d", len(files))
+	}
+
+	// f2d mapping for doc-2 should still exist
+	mappings, _ = f2dDAO.GetByDocumentID("doc-2")
+	if len(mappings) != 1 {
+		t.Fatalf("expected 1 f2d mapping for doc-2, got %d", len(mappings))
+	}
+}
+
 func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	t.Helper()
 	// Insert user if not exists (email is NOT NULL, password is nullable pointer)
