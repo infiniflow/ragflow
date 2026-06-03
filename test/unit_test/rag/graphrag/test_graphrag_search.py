@@ -13,11 +13,11 @@ def _make_kg_search():
     return ks
 
 
-def test_get_relevant_ents_by_keywords_is_coroutine():
+@pytest.mark.p1`ndef test_get_relevant_ents_by_keywords_is_coroutine():
     assert inspect.iscoroutinefunction(KGSearch.get_relevant_ents_by_keywords)
 
 
-def test_get_relevant_relations_by_txt_is_coroutine():
+@pytest.mark.p1`ndef test_get_relevant_relations_by_txt_is_coroutine():
     assert inspect.iscoroutinefunction(KGSearch.get_relevant_relations_by_txt)
 
 
@@ -87,3 +87,4 @@ async def test_filters_not_mutated():
         keywords=["e1"], filters=original, idxnms=["idx"], kb_ids=["kb1"], emb_mdl=MagicMock()
     )
     assert original == original_copy
+
