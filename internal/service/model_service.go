@@ -1961,87 +1961,6 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
 }
 
-type AddCustomModelRequest struct {
-	ProviderName string   `json:"provider_name"`
-	InstanceName string   `json:"instance_name"`
-	ModelName    string   `json:"model_name"`
-	ModelTypes   []string `json:"model_types"`
-	MaxTokens    int      `json:"max_tokens"`
-	Thinking     *bool    `json:"thinking"`
-}
-
-func (m *ModelProviderService) AddCustomModel(request *AddCustomModelRequest, userID string) (common.ErrorCode, error) {
-	if request == nil {
-		return common.CodeBadRequest, errors.New("request is required")
-	}
-	if len(request.ModelTypes) == 0 {
-		return common.CodeBadRequest, errors.New("model type is required")
-	}
-
-	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	if len(tenants) == 0 {
-		return common.CodeNotFound, errors.New("user has no tenants")
-	}
-
-	tenantID := tenants[0].TenantID
-
-	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, request.ProviderName)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, request.InstanceName)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, request.ModelName)
-	if err == nil {
-		return common.CodeConflict, errors.New("model already exists")
-	}
-
-	modelID, err := generateUUID1Hex()
-	if err != nil {
-		return common.CodeServerError, errors.New("fail to get UUID")
-	}
-
-	extra := make(map[string]interface{})
-	extra["max_tokens"] = request.MaxTokens
-	if request.Thinking != nil {
-		extra["thinking"] = *request.Thinking
-	}
-	extra["model_types"] = request.ModelTypes
-	// convert extra to string
-	extraByte, err := json.Marshal(extra)
-	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
-	}
-	extraStr := string(extraByte)
-
-	model := &entity.TenantModel{
-		ID:         modelID,
-		ModelName:  request.ModelName,
-		ModelType:  request.ModelTypes[0],
-		ProviderID: provider.ID,
-		InstanceID: instance.ID,
-		Status:     "active",
-		Extra:      extraStr,
-	}
-
-	err = m.modelDAO.Create(model)
-	if err != nil {
-		return common.CodeServerError, err
-	}
-
-	return common.CodeSuccess, nil
-}
-
 type AddModelRequest struct {
 	ProviderName string         `json:"provider_name"`
 	InstanceName string         `json:"instance_name"`
@@ -2088,6 +2007,9 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 
 	for _, model := range request.Models {
 		modelName := strings.TrimSpace(model.ModelName)
+		if len(model.ModelTypes) == 0 {
+			return common.CodeBadRequest, errors.New("model types is required")
+		}
 		modelType := strings.TrimSpace(model.ModelTypes[0])
 
 		if modelName == "" {

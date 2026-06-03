@@ -792,59 +792,6 @@ func prepareProviderInstance(providerName, instanceName, reqProviderName, reqIns
 	return nil
 }
 
-func prepareAddCustomModelRequest(req *service.AddCustomModelRequest, providerName, instanceName string) error {
-	if err := prepareProviderInstance(providerName, instanceName, req.ProviderName, req.InstanceName); err != nil {
-		return err
-	}
-
-	if req.ModelName == "" {
-		return errors.New("Model name is required")
-	}
-
-	if len(req.ModelTypes) == 0 {
-		return errors.New("Model type is required")
-	}
-
-	req.ProviderName = providerName
-	req.InstanceName = instanceName
-	return nil
-}
-
-func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
-	var req service.AddCustomModelRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		println("JSON bind error: %v (type: %T)", err, err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	if err := prepareAddCustomModelRequest(&req, c.Param("provider_name"), c.Param("instance_name")); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    common.CodeBadRequest,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	userID := c.GetString("user_id")
-
-	errorCode, err := h.modelProviderService.AddCustomModel(&req, userID)
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    errorCode,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-	})
-}
-
 func prepareAddModelRequest(req *service.AddModelRequest, providerName, instanceName string) error {
 	if err := prepareProviderInstance(providerName, instanceName, req.ProviderName, req.InstanceName); err != nil {
 		return err
