@@ -15,9 +15,29 @@
 #
 
 from .structure import compile_structure_from_text, merge_compiled_structures
+from .wiki import (
+    WIKI_DRAFT_COMPILE_KWD,
+    WIKI_MAP_COMPILE_KWD,
+    WIKI_PAGE_COMPILE_KWD,
+    WIKI_PLAN_COMPILE_KWD,
+    WIKI_REDUCE_COMPILE_KWD,
+    wiki_map_from_chunks,
+    wiki_plan_from_reduction,
+    wiki_reduce_from_extracts,
+    wiki_refine_from_plan,
+)
 
 
 __all__ = [
     "compile_structure_from_text",
     "merge_compiled_structures",
+    "wiki_map_from_chunks",
+    "wiki_reduce_from_extracts",
+    "wiki_plan_from_reduction",
+    "wiki_refine_from_plan",
+    "WIKI_MAP_COMPILE_KWD",
+    "WIKI_REDUCE_COMPILE_KWD",
+    "WIKI_PLAN_COMPILE_KWD",
+    "WIKI_PAGE_COMPILE_KWD",
+    "WIKI_DRAFT_COMPILE_KWD",
 ]
