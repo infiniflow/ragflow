@@ -52,15 +52,15 @@ func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel
 	}
 }
 
-func (z *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (a *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return nil
 }
 
-func (z *AliyunModel) Name() string {
+func (a *AliyunModel) Name() string {
 	return "aliyun"
 }
 
-func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
@@ -70,12 +70,12 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		region = *apiConfig.Region
 	}
 
-	baseURL, ok := z.BaseURL[region]
+	baseURL, ok := a.BaseURL[region]
 	if !ok || baseURL == "" {
 		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -142,7 +142,7 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -204,7 +204,7 @@ func (z *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -214,12 +214,12 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		region = *apiConfig.Region
 	}
 
-	baseURL, ok := z.BaseURL[region]
+	baseURL, ok := a.BaseURL[region]
 	if !ok || baseURL == "" {
 		return fmt.Errorf("aliyun: no base URL configured for region %q", region)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -286,7 +286,7 @@ func (z *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -387,7 +387,7 @@ type aliyunUsage struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (z *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (a *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -405,9 +405,9 @@ func (z *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL["default"]
+	baseURL := a.BaseURL["default"]
 	if region != "default" {
-		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+		if regional, ok := a.BaseURL[region]; ok && regional != "" {
 			baseURL = regional
 		}
 	}
@@ -415,7 +415,7 @@ func (z *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -438,7 +438,7 @@ func (z *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -484,7 +484,7 @@ type aliyunRerankResponse struct {
 	} `json:"results"`
 }
 
-func (z *AliyunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (a *AliyunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -500,9 +500,9 @@ func (z *AliyunModel) Rerank(modelName *string, query string, documents []string
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL["default"]
+	baseURL := a.BaseURL["default"]
 	if region != "default" {
-		if regional, ok := z.BaseURL[region]; ok && regional != "" {
+		if regional, ok := a.BaseURL[region]; ok && regional != "" {
 			baseURL = regional
 		}
 	}
@@ -510,7 +510,7 @@ func (z *AliyunModel) Rerank(modelName *string, query string, documents []string
 		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -541,7 +541,7 @@ func (z *AliyunModel) Rerank(modelName *string, query string, documents []string
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -565,31 +565,31 @@ func (z *AliyunModel) Rerank(modelName *string, query string, documents []string
 }
 
 // TranscribeAudio transcribe audio
-func (z *AliyunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AliyunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", a.Name())
 }
 
 // AudioSpeech convert text to audio
-func (z *AliyunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AliyunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", a.Name())
 }
 
 // OCRFile OCR file
-func (z *AliyunModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
 // ParseFile parse file
-func (z *AliyunModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
 type AliyunModelItem struct {
@@ -609,18 +609,18 @@ type AliyunModelList struct {
 	Output    AliyunModelOutput `json:"output"`
 }
 
-func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
 
-	baseURL, ok := z.BaseURL[region]
+	baseURL, ok := a.BaseURL[region]
 	if !ok || baseURL == "" {
 		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -641,7 +641,7 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -671,22 +671,22 @@ func (z *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (z *AliyunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AliyunModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
+func (a *AliyunModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := a.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (z *AliyunModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
 
-func (z *AliyunModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (a *AliyunModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
