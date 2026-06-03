@@ -336,6 +336,7 @@ def test_async_ask_stale_kb_ids_yields_error_final_event(monkeypatch):
     assert len(events) == 1
     assert events[0].get("final") is True
     assert "not valid" in events[0]["answer"]
+    assert events[0]["reference"] == {}
 
 
 # ---------------------------------------------------------------------------
