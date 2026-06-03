@@ -26,7 +26,6 @@ from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
-from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService

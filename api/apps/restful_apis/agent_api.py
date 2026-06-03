@@ -446,7 +446,7 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
 @manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-@_require_canvas_access_sync
+@_require_canvas_access_async
 async def delete_agent_session(tenant_id, agent_id):
     errors = []
     success_count = 0
