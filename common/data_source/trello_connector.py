@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -15,6 +16,8 @@ from common.data_source.models import (
 )
 
 _USER_AGENT = "RAGFlow"
+_FALLBACK_UPDATED_AT = datetime.fromtimestamp(0, tz=timezone.utc)
+logger = logging.getLogger(__name__)
 
 
 class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -42,7 +45,7 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def validate_connector_settings(self) -> None:
         self._require_credentials()
         if self.batch_size < 1:
-            raise ValueError("batch_size must be greater than 0")
+            raise ValueError("batch_size must be at least 1")
         if self.board_ids:
             for board_id in self.board_ids:
                 self._get(f"boards/{board_id}", {"fields": "id,name"})
@@ -255,11 +258,13 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     @staticmethod
     def _parse_trello_datetime(value: Any) -> datetime | None:
         if not isinstance(value, str) or not value.strip():
+            logger.warning("Missing Trello dateLastActivity value: %r", value)
             return None
         normalized = value.replace("Z", "+00:00")
         try:
             parsed = datetime.fromisoformat(normalized)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("Invalid Trello dateLastActivity value %r: %s", value, exc)
             return None
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
@@ -269,7 +274,7 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         parsed = self._parse_trello_datetime(card.get("dateLastActivity"))
         if parsed is not None:
             return parsed
-        return self._datetime_from_card_id(card.get("id")) or datetime.now(timezone.utc)
+        return self._datetime_from_card_id(card.get("id")) or _FALLBACK_UPDATED_AT
 
     @staticmethod
     def _datetime_from_card_id(card_id: Any) -> datetime | None:

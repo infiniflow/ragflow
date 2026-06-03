@@ -107,6 +107,7 @@ def make_connector() -> TrelloConnector:
     return connector
 
 
+@pytest.mark.p1
 def test_trello_connector_builds_card_documents() -> None:
     connector = make_connector()
 
@@ -127,6 +128,7 @@ def test_trello_connector_builds_card_documents() -> None:
     assert doc.fingerprint
 
 
+@pytest.mark.p1
 def test_trello_connector_poll_source_filters_by_date() -> None:
     connector = make_connector()
     start = datetime(2026, 5, 15, tzinfo=timezone.utc).timestamp()
@@ -137,6 +139,7 @@ def test_trello_connector_poll_source_filters_by_date() -> None:
     assert [[doc.id for doc in batch] for batch in batches] == [["trello:c1"]]
 
 
+@pytest.mark.p1
 def test_trello_connector_retrieves_slim_docs() -> None:
     connector = make_connector()
 
@@ -145,6 +148,7 @@ def test_trello_connector_retrieves_slim_docs() -> None:
     assert [[doc.id for doc in batch] for batch in batches] == [["trello:c1", "trello:c2"]]
 
 
+@pytest.mark.p1
 def test_trello_connector_falls_back_to_card_id_timestamp() -> None:
     connector = make_connector()
     expected = datetime(2026, 6, 1, 11, 0, tzinfo=timezone.utc)
@@ -152,8 +156,12 @@ def test_trello_connector_falls_back_to_card_id_timestamp() -> None:
 
     assert connector._parse_trello_datetime("not-a-date") is None
     assert connector._resolve_card_updated_at({"id": card_id, "dateLastActivity": "not-a-date"}) == expected
+    assert connector._resolve_card_updated_at({"id": "nothex", "dateLastActivity": ""}) == datetime.fromtimestamp(
+        0, tz=timezone.utc
+    )
 
 
+@pytest.mark.p1
 def test_trello_connector_requires_credentials() -> None:
     connector = TrelloConnector(api_base="https://trello.test/1")
 
