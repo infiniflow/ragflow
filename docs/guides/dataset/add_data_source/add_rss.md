@@ -12,7 +12,7 @@ Integrate an RSS feed as a data source.
 
 ---
 
-This guide explains how to add an RSS feed as a data source to your dataset in RAGFlow. 
+This guide explains how to add an RSS feed as a data source to your dataset in RAGFlow.
 
 RSS (Really Simple Syndication) is a standardized web feed format used to publish frequently updated content—such as blog entries, news headlines, and podcasts. By connecting an RSS feed to RAGFlow, you can automatically ingest new content from a website as soon as it is published.
 

@@ -1924,6 +1924,8 @@ async def get(doc_id):
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
+        if not data:
+            return get_data_error_result(message="This file is empty.")
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())

@@ -310,4 +310,3 @@ func TestNewOIDCMissingIssuer(t *testing.T) {
 		t.Errorf("expected Missing issuer error, got %v", err)
 	}
 }
-

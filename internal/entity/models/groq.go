@@ -232,8 +232,6 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}, nil
 }
 
-const groqStreamTimeout = 10 * time.Minute
-
 func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
@@ -261,7 +259,7 @@ func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), groqStreamTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
