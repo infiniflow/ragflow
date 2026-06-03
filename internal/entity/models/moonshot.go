@@ -184,10 +184,7 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 
 	var reasonContent string
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
-		}
+		reasonContent, _ = messageMap["reasoning_content"].(string)
 		// if first char of reasonContent is \n remove the \n
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
