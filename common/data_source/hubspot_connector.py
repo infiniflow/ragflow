@@ -65,15 +65,22 @@ _KB_PUBLISHED_STATE = "PUBLISHED"
 
 
 class HubSpotCheckpoint(ConnectorCheckpoint):
-    """Per-object lastmodified cursor.
+    """Checkpoint marker for the HubSpot connector.
 
-    Stored as epoch milliseconds (HubSpot's native time unit on the
-    CRM search endpoint) keyed by object name, so each object advances
-    independently — a failure mid-``tickets`` cannot rewind
-    ``contacts`` progress.
+    The connector keeps no cross-run state of its own. Incrementality is
+    owned entirely by the global ``poll_range_start`` watermark the sync
+    framework persists: each run queries every object from that lower
+    bound, and the connector **fails closed** (a partial object failure
+    aborts the whole run) so the watermark only advances on a fully
+    successful sync. A failed run leaves the watermark pinned and simply
+    retries the same window next time — so a partial failure can never
+    advance the watermark past records it never ingested.
+
+    We deliberately do *not* persist a per-object cursor here: the sync
+    framework rebuilds a fresh checkpoint each run, so a per-object cursor
+    would not survive and relying on it would silently drop the gap between
+    a failure point and the advanced global watermark.
     """
-
-    cursors: dict[str, int] | None = None
 
 
 class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync):
@@ -170,7 +177,7 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     # ------------------------------------------------------------------
 
     def build_dummy_checkpoint(self) -> HubSpotCheckpoint:
-        return HubSpotCheckpoint(has_more=True, cursors={})
+        return HubSpotCheckpoint(has_more=True)
 
     def validate_checkpoint_json(self, checkpoint_json: str) -> HubSpotCheckpoint:
         try:
@@ -219,39 +226,39 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         if not self._access_token:
             raise ConnectorMissingCredentialError("HubSpot")
 
+        # Fail closed: the prune flow treats the returned slim-doc snapshot
+        # as authoritative and deletes anything missing from it. If a single
+        # object/KB enumeration fails (429, 5xx, permission, transient API
+        # error) we must NOT return a partial snapshot — doing so would make
+        # the still-valid documents from the failed object look stale and get
+        # wrongly deleted. Letting the error propagate makes the prune
+        # collector abort and skip deletion for this run instead.
         batch: list[SlimDocument] = []
         for obj in self.objects:
-            try:
-                for record in self._search_records(obj, properties=["hs_object_id"], since_ms=None):
-                    rec_id = record.get("id")
-                    if not rec_id:
-                        continue
-                    doc_id = f"{obj}/{rec_id}"
-                    if callback:
-                        callback(doc_id, obj)
-                    batch.append(SlimDocument(id=doc_id))
-                    if len(batch) >= self.batch_size:
-                        yield batch
-                        batch = []
-            except UnexpectedValidationError:
-                logger.warning("HubSpot prune skipping %s (object unavailable)", obj)
-                continue
+            for record in self._search_records(obj, properties=["hs_object_id"], since_ms=None):
+                rec_id = record.get("id")
+                if not rec_id:
+                    continue
+                doc_id = f"{obj}/{rec_id}"
+                if callback:
+                    callback(doc_id, obj)
+                batch.append(SlimDocument(id=doc_id))
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
 
         if self.include_knowledge_base:
-            try:
-                for article in self._iter_kb_articles(since_ms=None):
-                    article_id = article.get("id")
-                    if not article_id:
-                        continue
-                    doc_id = f"kb_articles/{article_id}"
-                    if callback:
-                        callback(doc_id, "kb_articles")
-                    batch.append(SlimDocument(id=doc_id))
-                    if len(batch) >= self.batch_size:
-                        yield batch
-                        batch = []
-            except UnexpectedValidationError:
-                logger.warning("HubSpot prune skipping kb_articles (knowledge base unavailable)")
+            for article in self._iter_kb_articles(since_ms=None):
+                article_id = article.get("id")
+                if not article_id:
+                    continue
+                doc_id = f"kb_articles/{article_id}"
+                if callback:
+                    callback(doc_id, "kb_articles")
+                batch.append(SlimDocument(id=doc_id))
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
 
         if batch:
             yield batch
@@ -482,9 +489,8 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     ):
         from common.data_source.models import Document
 
-        cursors: dict[str, int] = {}
-        if checkpoint and checkpoint.cursors:
-            cursors = dict(checkpoint.cursors)
+        if self._access_token is None:
+            raise ConnectorMissingCredentialError("HubSpot")
 
         global_since_ms: int | None = None
         if since_epoch:
@@ -492,62 +498,40 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
 
         batch: list[Document] = []
 
+        # Fail closed: every object is queried from the global watermark and
+        # any object/KB failure is allowed to propagate so the whole run
+        # aborts. The sync framework advances the global watermark only when
+        # a run completes, so aborting keeps it pinned and the next run
+        # retries the same window — a partial object failure can never move
+        # the watermark past records it never ingested. Re-running re-fetches
+        # already-seen records, which the content-hash dedup drops. (A 403 /
+        # missing-scope already surfaces as InsufficientPermissionsError; a
+        # genuinely absent KB returns quietly from _iter_kb_articles on 404.)
         for obj in self.objects:
             props = self.properties.get(obj, _DEFAULT_PROPERTIES.get(obj, ["hs_object_id"]))
-            obj_since = global_since_ms
-            cursor = cursors.get(obj)
-            if cursor:
-                obj_since = max(obj_since or 0, cursor)
-
-            latest_seen: int | None = cursor
-            try:
-                for record in self._search_records(obj, props, obj_since):
-                    doc, last_modified_ms = self._record_to_document(obj, record)
-                    if doc is None:
-                        continue
-                    batch.append(doc)
-                    if last_modified_ms is not None:
-                        latest_seen = last_modified_ms
-                    if len(batch) >= self.batch_size:
-                        yield batch
-                        batch = []
-            except UnexpectedValidationError as exc:
-                logger.warning("HubSpot %s search failed: %s", obj, exc)
-                if latest_seen is not None:
-                    cursors[obj] = latest_seen
-                continue
-
-            if latest_seen is not None:
-                cursors[obj] = latest_seen
+            for record in self._search_records(obj, props, global_since_ms):
+                doc, _ = self._record_to_document(obj, record)
+                if doc is None:
+                    continue
+                batch.append(doc)
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
 
         if self.include_knowledge_base:
-            kb_since = global_since_ms
-            kb_cursor = cursors.get("kb_articles")
-            if kb_cursor:
-                kb_since = max(kb_since or 0, kb_cursor)
-            latest_kb: int | None = kb_cursor
-            try:
-                for article in self._iter_kb_articles(kb_since):
-                    doc, updated_ms = self._kb_article_to_document(article)
-                    if doc is None:
-                        continue
-                    batch.append(doc)
-                    if updated_ms is not None and (latest_kb is None or updated_ms > latest_kb):
-                        latest_kb = updated_ms
-                    if len(batch) >= self.batch_size:
-                        yield batch
-                        batch = []
-            except UnexpectedValidationError as exc:
-                logger.warning("HubSpot kb_articles fetch failed: %s", exc)
-
-            if latest_kb is not None:
-                cursors["kb_articles"] = latest_kb
+            for article in self._iter_kb_articles(global_since_ms):
+                doc, _ = self._kb_article_to_document(article)
+                if doc is None:
+                    continue
+                batch.append(doc)
+                if len(batch) >= self.batch_size:
+                    yield batch
+                    batch = []
 
         if batch:
             yield batch
 
         if checkpoint is not None:
-            checkpoint.cursors = cursors
             checkpoint.has_more = False
 
     def _record_to_document(self, obj: str, record: dict):

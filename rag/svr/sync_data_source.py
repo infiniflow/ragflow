@@ -1156,19 +1156,17 @@ class HubSpot(SyncBase):
         )
         self.connector.load_credentials(self.conf["credentials"])
 
-        # Always route through load_from_checkpoint so the per-object
-        # lastmodified cursor owns incrementality; poll_source would
-        # re-query every object from the caller's window each run and
-        # ignore the persisted per-object cursors entirely.
+        # Incrementality is owned by the global poll_range_start watermark.
+        # The connector fails closed (a partial object failure aborts the
+        # run), so the watermark only advances on a fully successful sync and
+        # a failed run simply retries the same window next time — no
+        # per-object checkpoint persistence is required or relied upon.
         if task["reindex"] == "1" or not task["poll_range_start"]:
             start_ts = 0.0
         else:
             start_ts = task["poll_range_start"].timestamp()
         end_ts = datetime.now(timezone.utc).timestamp()
-        checkpoint = self.connector.build_dummy_checkpoint()
-        document_batch_generator = self.connector.load_from_checkpoint(
-            start_ts, end_ts, checkpoint
-        )
+        document_batch_generator = self.connector.poll_source(start_ts, end_ts)
 
         self.log_connection(
             "HubSpot",
