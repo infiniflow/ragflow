@@ -43,6 +43,7 @@ type Router struct {
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
 	relatedQuestionsHandler *handler.SearchbotHandler
+	difyHandler             *handler.DifyHandler
 }
 
 // NewRouter create router
@@ -67,6 +68,7 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
 	relatedQuestionsHandler *handler.SearchbotHandler,
+	difyHandler *handler.DifyHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -89,6 +91,7 @@ func NewRouter(
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
 		relatedQuestionsHandler: relatedQuestionsHandler,
+		difyHandler:             difyHandler,
 	}
 }
 
@@ -147,6 +150,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+
+		// Dify external knowledge base reachability probe. Public by design:
+		// Dify must be able to test the connector before any credentials are
+		// configured.
+		apiNoAuth.GET("/dify/retrieval/health", r.difyHandler.RetrievalHealth)
 	}
 
 	// Protected routes
