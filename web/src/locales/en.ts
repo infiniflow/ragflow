@@ -1204,6 +1204,12 @@ Example: Virtual Hosted Style`,
         'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
+      opentextDescription:
+        'Connect OpenText Content Server to sync managed documents into your knowledge base.',
+      opentextBaseUrlTip:
+        'The base URL of your OpenText Content Server instance, e.g. https://content.example.com.',
+      opentextRootNodeIdsTip:
+        'Comma-separated root folder or document node IDs to sync.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
       google_cloud_storageDescription:
