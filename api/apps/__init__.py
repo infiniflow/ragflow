@@ -34,6 +34,7 @@ from quart_schema import QuartSchema
 from common import settings
 from api.utils.api_utils import server_error_response, get_json_result
 from api.constants import API_VERSION
+from common.exceptions import ModelException
 from common.misc_utils import get_uuid
 
 settings.init_settings()
@@ -308,9 +309,8 @@ def register_page(page_path):
     sys.modules[module_name] = page
     spec.loader.exec_module(page)
     page_name = getattr(page, "page_name", page_name)
-    sdk_path = "\\sdk\\" if sys.platform.startswith("win") else "/sdk/"
     restful_api_path = "\\restful_apis\\" if sys.platform.startswith("win") else "/restful_apis/"
-    url_prefix = f"/api/{API_VERSION}" if sdk_path in path or restful_api_path in path else f"/{API_VERSION}/{page_name}"
+    url_prefix = f"/api/{API_VERSION}" if restful_api_path in path else f"/{API_VERSION}/{page_name}"
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix
@@ -360,6 +360,12 @@ async def unauthorized_quart_auth(error):
 async def unauthorized_werkzeug(error):
     logging.warning("Unauthorized request (werkzeug)")
     return get_json_result(code=error.code, message=error.description), RetCode.UNAUTHORIZED
+
+
+@app.errorhandler(ModelException)
+async def handle_model_exception(error):
+    logging.warning("Forbidden request")
+    return get_json_result(code=RetCode.BAD_REQUEST, message=repr(error)), 200
 
 
 @app.teardown_request

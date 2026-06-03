@@ -31,7 +31,7 @@ from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
 from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
@@ -54,6 +54,28 @@ from rag.nlp import (
     append_context2table_image4pdf,
     tokenize_chunks_with_images,
 )  # noqa: F401
+
+
+def _is_short_header(text, max_tokens=50):
+    """
+    Check if text is a short markdown header.
+    
+    Args:
+        text: The text to check
+        max_tokens: Maximum tokens for a header to be considered "short"
+    
+    Returns:
+        bool: True if text is a short markdown header, False otherwise
+    """
+    if not text or not text.strip():
+        return False
+    
+    # Check if it matches markdown header pattern: 1-6 # followed by space
+    if not re.match(r"^#{1,6}\s+", text.strip()):
+        return False
+    
+    # Check if token count is below threshold
+    return num_tokens_from_string(text) < max_tokens
 
 
 def _normalize_section_text_for_rtl_presentation_forms(sections):
@@ -128,7 +150,7 @@ def by_mineru(
 
         if mineru_llm_name:
             try:
-                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, mineru_llm_name)
+                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, mineru_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
 
@@ -211,7 +233,7 @@ def by_opendataloader(
 
         if opendataloader_llm_name:
             try:
-                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, opendataloader_llm_name)
+                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, opendataloader_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 parse_options = {k: kwargs[k] for k in ("hybrid", "image_output", "sanitize") if k in kwargs}
@@ -272,7 +294,7 @@ def by_paddleocr(
 
         if paddleocr_llm_name:
             try:
-                ocr_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.OCR, paddleocr_llm_name)
+                ocr_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.OCR, paddleocr_llm_name)
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
@@ -301,7 +323,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
-        vision_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
+        vision_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
             model_config=vision_model_config,
@@ -799,6 +821,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     urls = set()
     url_res = []
 
+    lang = lang or "Chinese"
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get("parser_config", {"chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
@@ -1066,6 +1089,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
+    
     if is_markdown:
         merged_chunks = []
         merged_images = []
@@ -1080,7 +1104,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sec_tokens = num_tokens_from_string(text)
             sec_image = section_images[idx] if section_images and idx < len(section_images) else None
 
-            if current_text and current_tokens + sec_tokens > chunk_limit:
+            # Don't finalize chunk if current_text is a short header (force merge with next section)
+            if current_text and not _is_short_header(current_text) and current_tokens + sec_tokens > chunk_limit:
                 merged_chunks.append(current_text)
                 merged_images.append(current_image)
                 overlap_part = ""

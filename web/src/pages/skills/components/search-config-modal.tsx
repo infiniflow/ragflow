@@ -1,7 +1,4 @@
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -17,10 +14,8 @@ import { Label } from '@/components/ui/label';
 import message from '@/components/ui/message';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { LlmModelType } from '@/constants/knowledge';
-import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { SkillSearchConfig } from '@/services/skill-space-service';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -72,14 +67,6 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
   const formData = watch();
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
-
-  // Get embedding model options from user's configured LLMs
-  const llmOptions = useSelectLlmOptionsByModelType();
-  const embeddingModelOptions = useMemo(() => {
-    return llmOptions[
-      LlmModelType.Embedding
-    ] as SelectWithSearchFlagOptionType[];
-  }, [llmOptions]);
 
   useEffect(() => {
     if (open) {
@@ -166,12 +153,12 @@ export const SearchConfigModal: React.FC<SearchConfigModalProps> = ({
             {/* Embedding Model */}
             <div className="space-y-2">
               <Label htmlFor="embd_id">{t('skillSearch.embeddingModel')}</Label>
-              <SelectWithSearch
+              <ModelTreeSelect
+                modelTypes={['embedding']}
                 value={formData.embd_id}
                 onChange={(value) =>
                   setValue('embd_id', value, { shouldDirty: true })
                 }
-                options={embeddingModelOptions}
                 placeholder={t('skillSearch.embeddingModelPlaceholder')}
               />
             </div>

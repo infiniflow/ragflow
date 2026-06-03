@@ -19,6 +19,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,7 +42,6 @@ func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -150,7 +150,10 @@ func (z *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -318,7 +321,10 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -339,6 +345,7 @@ func (z *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -467,33 +474,45 @@ func (z *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 			)
 		}
 
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		// Run each per-text request in its own scope so the context's
+		// deadline is cancelled at the end of every iteration instead of
+		// piling up deferred cancels until the whole batch finishes.
+		parsed, err := func() (volcengineEmbeddingResponse, error) {
+			var parsed volcengineEmbeddingResponse
+
+			ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+			defer cancel()
+
+			req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+			if err != nil {
+				return parsed, fmt.Errorf("failed to create request: %w", err)
+			}
+
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+			resp, err := z.httpClient.Do(req)
+			if err != nil {
+				return parsed, fmt.Errorf("failed to send request: %w", err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return parsed, fmt.Errorf("failed to read response: %w", err)
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				return parsed, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			}
+
+			if err = json.Unmarshal(body, &parsed); err != nil {
+				return parsed, fmt.Errorf("failed to parse response: %w", err)
+			}
+			return parsed, nil
+		}()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-		resp, err := z.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to send request: %w", err)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to read response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-		}
-
-		var parsed volcengineEmbeddingResponse
-		if err = json.Unmarshal(body, &parsed); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, err
 		}
 
 		var embeddingData EmbeddingData
@@ -551,10 +570,17 @@ func (z *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
 	}
+	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	if modelsSuffix == "" {
+		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
+	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -607,7 +633,10 @@ func (z *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 
 	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Files)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,6 @@ func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOC
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -39,7 +39,6 @@ func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: p.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -51,39 +50,39 @@ func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (p *PaddleOCRModel) Name() string {
-	return "paddle_ocr"
+	return "paddle_ocr.net"
 }
 
 func (p *PaddleOCRModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 type paddleSubmitResponse struct {
@@ -135,6 +134,11 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	}
 	optBytes, _ := json.Marshal(optionalPayload)
 
+	// One generous deadline bounds the whole OCR operation (submit + poll +
+	// result download), so the poll loop below can no longer spin forever.
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
 	var req *http.Request
 	var err error
 
@@ -148,7 +152,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal json: %w", err)
 		}
-		req, err = http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 		req.Header.Set("Content-Type", "application/json")
 	} else {
 		body := &bytes.Buffer{}
@@ -164,7 +168,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		part.Write(content)
 		writer.Close()
 
-		req, err = http.NewRequest("POST", url, body)
+		req, err = http.NewRequestWithContext(ctx, "POST", url, body)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
 
@@ -195,9 +199,15 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	var jsonlUrl string
 
 	for {
-		time.Sleep(3 * time.Second)
+		// Wait between polls but bail out immediately if the overall
+		// deadline fires instead of sleeping through it.
+		select {
+		case <-time.After(3 * time.Second):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 
-		pollReq, _ := http.NewRequest("GET", pollUrl, nil)
+		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
 		pollReq.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
 
 		pollResp, err := p.httpClient.Do(pollReq)
@@ -231,7 +241,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		return nil, fmt.Errorf("job done but jsonl url is empty")
 	}
 
-	resReq, err := http.NewRequest("GET", jsonlUrl, nil)
+	resReq, err := http.NewRequestWithContext(ctx, "GET", jsonlUrl, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for jsonl: %w", err)
 	}
@@ -248,6 +258,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 
 	var fullMarkdown strings.Builder
 	scanner := bufio.NewScanner(resResp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -276,25 +287,25 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 }
 
 func (p *PaddleOCRModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method", p.Name())
+	return fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }
 
 func (p *PaddleOCRModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("no such method", p.Name())
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

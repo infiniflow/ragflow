@@ -3,6 +3,7 @@ package models
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +30,6 @@ func NewDeepInfraModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepInfr
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 120,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -44,7 +45,6 @@ func (d *DeepInfraModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: d.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 120,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -126,7 +126,10 @@ func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -260,7 +263,10 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -281,6 +287,7 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Mes
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -374,7 +381,10 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -418,12 +428,112 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 	}
 
 	return embeddings, nil
-
-	return embeddings, nil
 }
 
-func (d *DeepInfraModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s no such method", d.Name())
+// deepinfraRerankResponse is the JSON body returned by DeepInfra reranker models.
+type deepinfraRerankResponse struct {
+	Scores []float64 `json:"scores"`
+}
+
+// Rerank scores documents against a query using DeepInfra's inference endpoint.
+// The model id is part of the URL path (e.g. Qwen/Qwen3-Reranker-4B). The API
+// returns one score per input document; RerankConfig.TopN is enforced client-side
+// by keeping the highest-scoring entries when TopN is less than len(documents).
+func (d *DeepInfraModel) Rerank(
+	modelName *string,
+	query string,
+	documents []string,
+	apiConfig *APIConfig,
+	rerankConfig *RerankConfig,
+) (*RerankResponse, error) {
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	region := "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+	baseURL := d.BaseURL[region]
+	if baseURL == "" {
+		return nil, fmt.Errorf("deepinfra: no base URL configured for region %q", region)
+	}
+
+	// Reranker model ids may contain slashes (e.g. Qwen/Qwen3-Reranker-4B).
+	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.URLSuffix.Rerank, *modelName)
+
+	reqBody := map[string]interface{}{
+		"query":     query,
+		"documents": documents,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("DeepInfra rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var parsed deepinfraRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if len(parsed.Scores) != len(documents) {
+		return nil, fmt.Errorf("deepinfra: expected %d scores, got %d", len(documents), len(parsed.Scores))
+	}
+
+	results := make([]RerankResult, len(parsed.Scores))
+	for i, score := range parsed.Scores {
+		results[i] = RerankResult{
+			Index:          i,
+			RelevanceScore: score,
+		}
+	}
+
+	topN := len(results)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+		slices.SortFunc(results, func(a, b RerankResult) int {
+			if a.RelevanceScore > b.RelevanceScore {
+				return -1
+			}
+			if a.RelevanceScore < b.RelevanceScore {
+				return 1
+			}
+			return 0
+		})
+		results = results[:topN]
+	}
+
+	return &RerankResponse{Data: results}, nil
 }
 
 func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
@@ -501,7 +611,10 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, &body)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -592,7 +705,10 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -668,7 +784,10 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -737,7 +856,10 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -789,7 +911,10 @@ func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 
 	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Balance)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

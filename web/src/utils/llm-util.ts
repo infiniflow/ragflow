@@ -1,27 +1,8 @@
-import { IThirdOAIModel } from '@/interfaces/database/llm';
 import { getCachedLlmList } from './llm-cache';
-
-export const getLLMIconName = (fid: string, llm_name: string) => {
-  if (fid === 'FastEmbed') {
-    return llm_name.split('/').at(0) ?? '';
-  }
-
-  return fid;
-};
-
-export const getLlmNameAndFIdByLlmId = (llmId?: string) => {
-  const [llmName, fId] = llmId?.split('@') || [];
-
-  return { fId, llmName };
-};
 
 // The names of the large models returned by the interface are similar to "deepseek-r1___OpenAI-API"
 export function getRealModelName(llmName: string) {
   return llmName.split('__').at(0) ?? '';
-}
-
-export function buildLlmUuid(llm: IThirdOAIModel) {
-  return `${llm.llm_name}@${llm.fid}`;
 }
 
 // Get tenant model ID from LLM list by model name and factory ID
@@ -53,12 +34,37 @@ export function getTenantModelId(
   return '';
 }
 
-// Extract model name and factory ID from a model UUID (e.g., "model_name@factory_id")
+/** Build "modelName@instanceName@providerName" */
+export function buildModelValue(model: {
+  model_name: string;
+  model_instance: string;
+  model_provider: string;
+}) {
+  return `${model.model_name}@${model.model_instance}@${model.model_provider}`;
+}
+
+/** Parse "modelName@instanceName@providerName" */
+export function parseModelValue(val: string) {
+  if (!val) return null;
+  const firstAt = val.indexOf('@');
+  const lastAt = val.lastIndexOf('@');
+  if (firstAt === -1 || firstAt === lastAt) return null;
+  return {
+    model_name: val.substring(0, firstAt),
+    model_instance: val.substring(firstAt + 1, lastAt),
+    model_provider: val.substring(lastAt + 1),
+  };
+}
+
+// Extract model name and factory ID from a model UUID
+// Supports both "model_name@factory_id" and "model_name@factory_id#instance_name"
 export function parseModelUuid(uuid: string): {
   modelName: string;
   factoryId: string;
 } {
-  const [modelName, factoryId] = uuid.split('@');
+  const hashIndex = uuid.indexOf('#');
+  const core = hashIndex === -1 ? uuid : uuid.slice(0, hashIndex);
+  const [modelName, factoryId] = core.split('@');
   return { modelName, factoryId };
 }
 

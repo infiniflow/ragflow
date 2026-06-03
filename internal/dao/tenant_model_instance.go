@@ -41,6 +41,15 @@ func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(providerID string
 	return instances, nil
 }
 
+func (dao *TenantModelInstanceDAO) GetInstanceByApiKey(apiKey, providerID string) (*entity.TenantModelInstance, error) {
+	var instance entity.TenantModelInstance
+	err := DB.Where("api_key = ? && provider_id = ?", apiKey, providerID).First(&instance).Error
+	if err != nil {
+		return nil, err
+	}
+	return &instance, nil
+}
+
 func (dao *TenantModelInstanceDAO) GetByProviderIDAndInstanceName(providerID, instanceName string) (*entity.TenantModelInstance, error) {
 	var instance entity.TenantModelInstance
 	err := DB.Where("provider_id = ? AND instance_name = ?", providerID, instanceName).First(&instance).Error

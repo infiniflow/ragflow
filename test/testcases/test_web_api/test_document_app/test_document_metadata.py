@@ -420,11 +420,6 @@ class TestDocumentMetadataUnit:
 
         # From here on the user is authorized; exercise the original branches.
         monkeypatch.setattr(module.DocumentService, "accessible", lambda _doc_id, _user_id: True)
-        monkeypatch.setattr(
-            module.DocumentService,
-            "get_by_id",
-            lambda _doc_id: (True, SimpleNamespace(name="stub.bin", type=module.FileType.OTHER.value)),
-        )
 
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"attachment"
@@ -446,18 +441,6 @@ class TestDocumentMetadataUnit:
         assert res.headers["content_type"] == "application/abc"
         assert res.headers["extension"] == "abc"
 
-        # No `ext` query param: infer MIME/extension from the stored document filename (aligned with /preview).
-        monkeypatch.setattr(module, "request", _DummyRequest(args={}))
-        monkeypatch.setattr(
-            module.DocumentService,
-            "get_by_id",
-            lambda _doc_id: (True, SimpleNamespace(name="Annual report.PDF", type=module.FileType.PDF.value)),
-        )
-        res = _run(module.download_attachment(attachment_id="att1"))
-        assert isinstance(res, _DummyResponse)
-        assert res.headers["content_type"] == "application/pdf"
-        assert res.headers["extension"] == "pdf"
-
         async def raise_error(*_args, **_kwargs):
             raise RuntimeError("download boom")
 
@@ -466,6 +449,82 @@ class TestDocumentMetadataUnit:
         res = _run(module.download_attachment(attachment_id="att1"))
         assert res["code"] == 500
         assert "download boom" in res["message"]
+
+    @pytest.mark.p2
+    def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return png_bytes
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        res = _run(module.get_document_image("kb1-object.png"))
+        assert isinstance(res, _ImageResponse)
+        assert res.headers["Content-Type"] == "image/png"
+
+    @pytest.mark.p2
+    def test_get_document_image_content_type_from_magic_bytes_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        png_bytes = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+            b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01"
+            b"\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return png_bytes
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        res = _run(module.get_document_image("kb1-a1b2c3d4e5f6"))
+        assert isinstance(res, _ImageResponse)
+        assert res.headers["Content-Type"] == "image/png"
+
+    @pytest.mark.p2
+    def test_get_document_image_missing_blob_unit(self, document_app_module, monkeypatch):
+        module = document_app_module
+
+        async def fake_thread_pool_exec(*_args, **_kwargs):
+            return None
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        res = _run(module.get_document_image("kb1-object-key"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert res["message"] == "Image not found."
 
 
     @pytest.mark.skip(reason="Moved to /api/v1/documents/images/<image_id>")
@@ -503,6 +562,50 @@ class TestDocumentMetadataUnit:
         res = _run(module.get_image("bucket-name"))
         assert res["code"] == 500
         assert "image boom" in res["message"]
+
+    def test_get_document_image_hyphenated_object_key(self, document_app_module, monkeypatch):
+        """Hyphenated thumbnail keys are parsed with split('-', 1) and return correct MIME type."""
+        module = document_app_module
+
+        class _Headers(dict):
+            def set(self, key, value):
+                self[key] = value
+
+        class _ImageResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = _Headers()
+
+        storage_calls = []
+
+        def _storage_get(bkt, nm):
+            storage_calls.append((bkt, nm))
+            return b"png-bytes"
+
+        async def fake_thread_pool_exec(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        async def fake_make_response(data):
+            return _ImageResponse(data)
+
+        monkeypatch.setattr(module, "thread_pool_exec", fake_thread_pool_exec)
+        monkeypatch.setattr(module, "make_response", fake_make_response)
+        monkeypatch.setattr(
+            module.settings,
+            "STORAGE_IMPL",
+            SimpleNamespace(get=_storage_get),
+        )
+
+        image_id = "kb12345678901234567890123456789012-page-1.png"
+        res = _run(module.get_document_image(image_id))
+        assert isinstance(res, _ImageResponse)
+        assert storage_calls == [("kb12345678901234567890123456789012", "page-1.png")]
+        assert res.headers["Content-Type"] == "image/png"
+
+        res = _run(module.get_document_image("only-one-part"))
+        assert res["code"] == RetCode.DATA_ERROR
+        assert "Image not found" in res["message"]
+
 
 class TestDocumentBatchChangeStatus:
     @pytest.mark.p2

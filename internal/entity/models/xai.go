@@ -23,16 +23,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// nonStreamCallTimeout caps the time spent on a single non-streaming
-// request (ChatWithMessages, ListModels). The shared httpClient itself
-// has no client-wide timeout, so streaming requests can run as long as
-// the API keeps the SSE connection open.
-const nonStreamCallTimeout = 120 * time.Second
+// Per-call context deadlines shared by every provider in this package.
+//
+// The shared httpClient sets no Client.Timeout: that field also bounds the time
+// spent reading the response body, which would sever long-lived SSE streams in
+// ChatStreamlyWithSender once a generation outlasts the limit. Each call wraps
+// its request in a context.WithTimeout sized to the operation instead:
+//
+//   - nonStreamCallTimeout for interactive non-streaming calls
+//     (chat, embed, rerank, list models, check connection, balance).
+//   - streamCallTimeout for streaming chat, bounded generously so slow or
+//     reasoning-heavy generations are not truncated mid-stream.
+//   - longOpCallTimeout for heavy synchronous file work (OCR, document
+//     parsing, audio transcription/synthesis) that legitimately runs for
+//     minutes. Kept distinct from streamCallTimeout so the two can be tuned
+//     independently even though they currently share a value.
+//
+// They are vars rather than consts so tests can shrink them to milliseconds
+// and exercise the deadline behaviour without real-time waits.
+var (
+	nonStreamCallTimeout = 120 * time.Second
+	streamCallTimeout    = 10 * time.Minute
+	longOpCallTimeout    = 10 * time.Minute
+)
 
 // XAIModel implements ModelDriver for xAI (Grok models)
 type XAIModel struct {
@@ -292,7 +314,10 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -418,7 +443,11 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
+	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	if modelsSuffix == "" {
+		return nil, fmt.Errorf("xai: models URL suffix is not configured")
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -495,7 +524,127 @@ func (z *XAIModel) Rerank(modelName *string, query string, documents []string, a
 
 // TranscribeAudio transcribe audio
 func (o *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+
+	region := "default"
+	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.ASR)
+
+	// multipart body
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// 1. model field
+	if modelName != nil && *modelName != "" {
+		if err := writer.WriteField("model", *modelName); err != nil {
+			return nil, fmt.Errorf("failed to write model field: %w", err)
+		}
+	}
+
+	// 2. extra params
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+
+			switch v := value.(type) {
+			case []interface{}:
+				for _, item := range v {
+					if err := writer.WriteField(key, fmt.Sprintf("%v", item)); err != nil {
+						return nil, fmt.Errorf("failed to write array field %s: %w", key, err)
+					}
+				}
+			case []string:
+				for _, item := range v {
+					if err := writer.WriteField(key, item); err != nil {
+						return nil, fmt.Errorf("failed to write array field %s: %w", key, err)
+					}
+				}
+			default:
+				var val string
+				switch v2 := value.(type) {
+				case string:
+					val = v2
+				case bool:
+					val = strconv.FormatBool(v2)
+				case int:
+					val = strconv.Itoa(v2)
+				case int64:
+					val = strconv.FormatInt(v2, 10)
+				case float32:
+					val = strconv.FormatFloat(float64(v2), 'f', -1, 32)
+				case float64:
+					val = strconv.FormatFloat(v2, 'f', -1, 64)
+				default:
+					val = fmt.Sprintf("%v", v2)
+				}
+
+				if err := writer.WriteField(key, val); err != nil {
+					return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+				}
+			}
+		}
+	}
+
+	// open audio file
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	// create multipart file field
+	part, err := writer.CreateFormFile("file", filepath.Base(*file))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file: %w", err)
+	}
+
+	// copy file content
+	if _, err = io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", err)
+	}
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// build request
+	req, err := http.NewRequest("POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// send request
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("xAI ASR API error: %s - %s", resp.Status, string(respBody))
+	}
+
+	// xAI response parsing (assuming standard format matching OpenAI)
+	var result struct {
+		Text string `json:"text"`
+	}
+
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w, body=%s", err, string(respBody))
+	}
+
+	return &ASRResponse{Text: result.Text}, nil
 }
 
 func (z *XAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
@@ -504,7 +653,66 @@ func (z *XAIModel) TranscribeAudioWithSender(modelName *string, file *string, ap
 
 // AudioSpeech convert text to audio
 func (o *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("xai API key is missing")
+	}
+
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("text content is missing")
+	}
+
+	var region = "default"
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
+		region = *apiConfig.Region
+	}
+
+	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"text":     *audioContent,
+		"voice_id": modelName,
+	}
+
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["output_format"] = map[string]interface{}{
+			"codec": ttsConfig.Format,
+		}
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := o.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s - %s", resp.Status, string(body))
+	}
+
+	return &TTSResponse{Audio: body}, nil
 }
 
 func (z *XAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {

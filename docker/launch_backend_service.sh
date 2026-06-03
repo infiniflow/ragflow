@@ -73,7 +73,7 @@ task_exe(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
-        LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$task_id"
+        LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py -i "$task_id"
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "task_executor.py for task $task_id exited successfully."
@@ -113,6 +113,24 @@ run_server(){
         cleanup
     fi
 }
+
+ensure_db_init() {
+    echo "Initializing database tables..."
+    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Database tables initialized."
+}
+
+run_mysql_migrations() {
+    echo "Running model provider table migrations..."
+    "$PY" tools/scripts/mysql_migration.py --stages tenant_model_provider --config conf/service_conf.yaml --execute
+    "$PY" tools/scripts/mysql_migration.py --stages tenant_model_instance --config conf/service_conf.yaml --execute
+    "$PY" tools/scripts/mysql_migration.py --stages tenant_model --config conf/service_conf.yaml --execute
+    "$PY" tools/scripts/mysql_migration.py --stages model_id_config --config conf/service_conf.yaml --execute
+    echo "Model provider table migrations completed."
+}
+
+ensure_db_init
+run_mysql_migrations
 
 # Start task executors
 for ((i=0;i<WS;i++))

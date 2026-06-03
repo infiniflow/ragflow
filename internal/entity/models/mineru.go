@@ -2,6 +2,7 @@ package models
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ func NewMinerUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerUModel
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 120,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -36,7 +36,6 @@ func (m *MinerUModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: m.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 120,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -48,7 +47,7 @@ func (m *MinerUModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (m *MinerUModel) Name() string {
-	return "mineru"
+	return "mineru.net"
 }
 
 func (m *MinerUModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
@@ -137,7 +136,10 @@ func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -206,7 +208,10 @@ func (m *MinerUModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespon
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
 	apiURL := fmt.Sprintf("%s/api/%s/%s", m.BaseURL[region], m.URLSuffix.DocumentParse, taskID)
 
-	req, err := http.NewRequest("GET", apiURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
