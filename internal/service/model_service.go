@@ -1982,7 +1982,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 		return common.CodeBadRequest, errors.New("models is required")
 	}
 
-	tenants, err := m.userTenantDAO.GetByUserID(userID)
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
