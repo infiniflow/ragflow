@@ -1534,7 +1534,11 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     if not kbs:
-        yield {"answer": "**ERROR**: No KB selected", "reference": {}, "final": True}
+        if not kb_ids:
+            error = "**ERROR**: No KB selected"
+        else:
+            error = "**ERROR**: The selected KB is not valid"
+        yield {"answer": error, "reference": {}, "final": True}
         return
 
     embedding_list = list(set([kb.embd_id for kb in kbs]))
