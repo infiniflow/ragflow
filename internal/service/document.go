@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 
@@ -500,6 +501,92 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
 	return responses, nil
+}
+
+// StopParseDocuments stops parsing for the given documents in a dataset.
+// It sets Redis cancel signals for associated tasks and updates doc.run to CANCEL.
+// Returns a map with success_count and optionally errors.
+func (s *DocumentService) StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error) {
+	uniqueDocIDs := common.Deduplicate(docIDs)
+	if len(uniqueDocIDs) == 0 {
+		return nil, fmt.Errorf("no document IDs provided")
+	}
+
+	// Validate all documents exist and belong to this dataset
+	docs, err := s.documentDAO.GetByIDs(uniqueDocIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch documents: %w", err)
+	}
+	if len(docs) != len(uniqueDocIDs) {
+		return nil, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
+	}
+	var invalidDocs []string
+	for _, d := range docs {
+		if d.KbID != datasetID {
+			invalidDocs = append(invalidDocs, d.ID)
+		}
+	}
+	if len(invalidDocs) > 0 {
+		return nil, fmt.Errorf("these documents do not belong to dataset %s: %v", datasetID, invalidDocs)
+	}
+
+	var errors []string
+	successCount := 0
+	cancelStatus := string(entity.TaskStatusCancel)
+
+	for _, doc := range docs {
+		// Fetch tasks for this document
+		tasks, taskErr := s.taskDAO.GetByDocID(doc.ID)
+		if taskErr != nil {
+			errors = append(errors, fmt.Sprintf("failed to get tasks for %s: %v", doc.ID, taskErr))
+			continue
+		}
+
+		// Check if document is in a cancellable state
+		hasUnfinishedTask := false
+		for _, t := range tasks {
+			if t.Progress < 1 {
+				hasUnfinishedTask = true
+				break
+			}
+		}
+
+		canCancel := false
+		if doc.Run != nil {
+			if *doc.Run == string(entity.TaskStatusRunning) || *doc.Run == string(entity.TaskStatusCancel) {
+				canCancel = true
+			}
+		}
+		if hasUnfinishedTask {
+			canCancel = true
+		}
+
+		if !canCancel {
+			errors = append(errors, "Can't stop parsing document that has not started or already completed")
+			continue
+		}
+
+		// Set Redis cancel signal for each task (best-effort)
+		redisClient := cache.Get()
+		for _, t := range tasks {
+			if redisClient != nil {
+				redisClient.Set(fmt.Sprintf("%s-cancel", t.ID), "x", 0)
+			}
+		}
+
+		// Update document run status to CANCEL
+		if upErr := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"run": cancelStatus}); upErr != nil {
+			errors = append(errors, fmt.Sprintf("failed to update document %s: %v", doc.ID, upErr))
+			continue
+		}
+		successCount++
+	}
+
+	result := map[string]interface{}{"success_count": successCount}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	return result, nil
 }
 
 // toResponse convert model.Document to DocumentResponse

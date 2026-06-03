@@ -448,6 +448,206 @@ func TestDeleteDocuments_Deduplicate(t *testing.T) {
 	}
 }
 
+// insertTestDocWithRun inserts a document with the given Run status for StopParseDocuments tests.
+func insertTestDocWithRun(t *testing.T, id, kbID, run string, tokenNum, chunkNum int64) {
+	t.Helper()
+	doc := &entity.Document{
+		ID:           id,
+		KbID:         kbID,
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+		TokenNum:     tokenNum,
+		ChunkNum:     chunkNum,
+		Suffix:       ".txt",
+		Status:       sptr("1"),
+		Run:          &run,
+	}
+	if err := dao.DB.Create(doc).Error; err != nil {
+		t.Fatalf("insert test doc: %v", err)
+	}
+}
+
+// insertTestTaskWithProgress inserts a task with the given progress value.
+func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64) {
+	t.Helper()
+	task := &entity.Task{
+		ID:       id,
+		DocID:    docID,
+		Progress: progress,
+	}
+	if err := dao.DB.Create(task).Error; err != nil {
+		t.Fatalf("insert test task: %v", err)
+	}
+}
+
+func TestStopParseDocuments_Success(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestTask(t, "task-1", "doc-1")
+
+	svc := testDocumentService(t)
+
+	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("StopParseDocuments failed: %v", err)
+	}
+
+	sc, ok := result["success_count"].(int)
+	if !ok {
+		t.Fatalf("success_count not found or wrong type: %v", result)
+	}
+	if sc != 1 {
+		t.Fatalf("expected success_count=1, got %d", sc)
+	}
+
+	// Verify document run status updated to CANCEL
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	if doc == nil || doc.Run == nil {
+		t.Fatal("doc not found or run is nil")
+	}
+	if *doc.Run != string(entity.TaskStatusCancel) {
+		t.Fatalf("expected run=%q, got %q", string(entity.TaskStatusCancel), *doc.Run)
+	}
+}
+
+func TestStopParseDocuments_CancelStatus(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	// Doc is already in CANCEL state — should still be accepted
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusCancel), 10, 5)
+	insertTestTask(t, "task-1", "doc-1")
+
+	svc := testDocumentService(t)
+
+	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("StopParseDocuments failed: %v", err)
+	}
+
+	sc := result["success_count"].(int)
+	if sc != 1 {
+		t.Fatalf("expected success_count=1, got %d", sc)
+	}
+}
+
+func TestStopParseDocuments_NotRunningOrCancel(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	// Doc with Run="0" (UNSTART) and no unfinished tasks → cannot cancel
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+
+	svc := testDocumentService(t)
+
+	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("StopParseDocuments failed: %v", err)
+	}
+
+	sc := result["success_count"].(int)
+	if sc != 0 {
+		t.Fatalf("expected success_count=0, got %d", sc)
+	}
+	errors, ok := result["errors"].([]string)
+	if !ok || len(errors) == 0 {
+		t.Fatal("expected errors in result")
+	}
+}
+
+func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	// Doc with Run="0" but has an unfinished task (progress < 1) → can cancel
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusUnstart), 10, 5)
+	insertTestTaskWithProgress(t, "task-1", "doc-1", 0.0)
+
+	svc := testDocumentService(t)
+
+	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("StopParseDocuments failed: %v", err)
+	}
+
+	sc := result["success_count"].(int)
+	if sc != 1 {
+		t.Fatalf("expected success_count=1 (has unfinished task), got %d", sc)
+	}
+}
+
+func TestStopParseDocuments_WrongDataset(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestKB(t, "kb-2", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-2", string(entity.TaskStatusRunning), 10, 5)
+
+	svc := testDocumentService(t)
+
+	_, err := svc.StopParseDocuments("kb-1", []string{"doc-1"})
+	if err == nil {
+		t.Fatal("expected error for doc not belonging to dataset")
+	}
+}
+
+func TestStopParseDocuments_NotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+
+	svc := testDocumentService(t)
+
+	_, err := svc.StopParseDocuments("kb-1", []string{"nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent document IDs")
+	}
+}
+
+func TestStopParseDocuments_EmptyIDs(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+
+	svc := testDocumentService(t)
+
+	_, err := svc.StopParseDocuments("kb-1", []string{})
+	if err == nil {
+		t.Fatal("expected error for empty doc IDs")
+	}
+}
+
+func TestStopParseDocuments_Deduplicate(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestTask(t, "task-1", "doc-1")
+
+	svc := testDocumentService(t)
+
+	result, err := svc.StopParseDocuments("kb-1", []string{"doc-1", "doc-1", "doc-1"})
+	if err != nil {
+		t.Fatalf("StopParseDocuments failed: %v", err)
+	}
+
+	// Dedup should result in only 1 success
+	sc := result["success_count"].(int)
+	if sc != 1 {
+		t.Fatalf("expected success_count=1 after dedup, got %d", sc)
+	}
+}
+
 func TestDeleteDocument_DeligatesToFullCleanup(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
