@@ -51,7 +51,9 @@ from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
+    check_duplicate_ids,
     get_data_error_result,
+    get_error_data_result,
     get_json_result,
     get_result,
     get_request_json,
@@ -439,6 +441,61 @@ def get_agent_session(agent_id, session_id, tenant_id):
 @_require_canvas_access_sync
 def delete_agent_session_item(agent_id, session_id, tenant_id):
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
+
+
+@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_sync
+async def delete_agent_session(tenant_id, agent_id):
+    errors = []
+    success_count = 0
+    req = await get_request_json()
+    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+
+    if not req:
+        return get_result()
+
+    ids = req.get("ids")
+    if not ids:
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
+
+    conv_list = ids
+
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+
+    for session_id in conv_list:
+        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
+        if not conv:
+            errors.append(f"The agent doesn't own the session {session_id}")
+            continue
+        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
+        success_count += 1
+
+    if errors:
+        if success_count > 0:
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+        else:
+            return get_error_data_result(message="; ".join(errors))
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+
+    return get_result()
 
 
 @manager.route("/agents/download", methods=["GET"])  # noqa: F821

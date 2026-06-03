@@ -36,9 +36,9 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
-from common.misc_utils import get_uuid, thread_pool_exec
-from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_json_result, \
-    get_result, get_request_json, server_error_response, token_required, validate_request
+from common.misc_utils import thread_pool_exec
+from api.utils.api_utils import get_error_data_result, get_json_result, \
+    get_result, get_request_json, server_error_response, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
@@ -57,97 +57,6 @@ def _get_sdk_authorization_token():
     if len(token) != 2:
         return None
     return token[1]
-
-
-@token_required
-async def create_agent_session(tenant_id, agent_id):
-    req = await get_request_json()
-    user_id = req.get("user_id") or request.args.get("user_id", tenant_id)
-    release_mode = bool(req.get("release", request.args.get("release", False)))
-
-    if not await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id):
-        return get_error_data_result("You cannot access the agent.")
-
-    try:
-        cvs, dsl = await thread_pool_exec(UserCanvasService.get_agent_dsl_with_release, agent_id, release_mode, tenant_id)
-    except LookupError:
-        return get_error_data_result("Agent not found.")
-    except PermissionError as e:
-        return get_error_data_result(str(e))
-
-    session_id = get_uuid()
-    canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id)
-    canvas.reset()
-
-    cvs.dsl = json.loads(str(canvas))
-    # Get the version title based on release_mode
-    version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode)
-    conv = {
-        "id": session_id,
-        "dialog_id": cvs.id,
-        "user_id": user_id,
-        "message": [{"role": "assistant", "content": canvas.get_prologue()}],
-        "source": "agent",
-        "dsl": cvs.dsl,
-        "version_title": version_title
-    }
-    await thread_pool_exec(API4ConversationService.save, **conv)
-    conv["agent_id"] = conv.pop("dialog_id")
-    return get_result(data=conv)
-
-
-@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
-@token_required
-async def delete_agent_session(tenant_id, agent_id):
-    errors = []
-    success_count = 0
-    req = await get_request_json()
-    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
-    if not cvs:
-        return get_error_data_result(f"You don't own the agent {agent_id}")
-
-    if not req:
-        return get_result()
-
-    ids = req.get("ids")
-    if not ids:
-        if req.get("delete_all") is True:
-            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
-            if not ids:
-                return get_result()
-        else:
-            return get_result()
-
-    conv_list = ids
-
-    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
-    conv_list = unique_conv_ids
-
-    for session_id in conv_list:
-        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
-        if not conv:
-            errors.append(f"The agent doesn't own the session {session_id}")
-            continue
-        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
-        success_count += 1
-
-    if errors:
-        if success_count > 0:
-            return get_result(data={"success_count": success_count, "errors": errors},
-                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
-        else:
-            return get_error_data_result(message="; ".join(errors))
-
-    if duplicate_messages:
-        if success_count > 0:
-            return get_result(
-                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
-                data={"success_count": success_count, "errors": duplicate_messages})
-        else:
-            return get_error_data_result(message=";".join(duplicate_messages))
-
-    return get_result()
-
 
 
 @manager.route("/chatbots/<dialog_id>/completions", methods=["POST"])  # noqa: F821
