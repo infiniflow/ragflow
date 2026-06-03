@@ -562,8 +562,8 @@ func (n *NvidiaModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (z *NvidiaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (n *NvidiaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -571,18 +571,18 @@ func (n *NvidiaModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (z *NvidiaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (n *NvidiaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // OCRFile OCR file
-func (m *NvidiaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *NvidiaModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ParseFile parse file
-func (z *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (n *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ListModels calls /v1/models on the configured NVIDIA NIM base URL
@@ -671,10 +671,10 @@ func (n NvidiaModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *NvidiaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (n *NvidiaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (z *NvidiaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (n *NvidiaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
