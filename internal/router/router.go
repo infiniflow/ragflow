@@ -43,7 +43,8 @@ type Router struct {
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
 	relatedQuestionsHandler *handler.SearchbotHandler
-	difyRetrievalHandler  *handler.DifyRetrievalHandler
+	difyRetrievalHandler    *handler.DifyRetrievalHandler
+	pluginHandler           *handler.PluginHandler
 }
 
 // NewRouter create router
@@ -68,7 +69,8 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
 	relatedQuestionsHandler *handler.SearchbotHandler,
-	difyRetrievalHandler  *handler.DifyRetrievalHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -91,7 +93,8 @@ func NewRouter(
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
 		relatedQuestionsHandler: relatedQuestionsHandler,
-			difyRetrievalHandler:  difyRetrievalHandler,
+		difyRetrievalHandler:    difyRetrievalHandler,
+		pluginHandler:           pluginHandler,
 	}
 }
 
@@ -374,6 +377,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+			}
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
+			{
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
 			connector := v1.Group("/connectors")
