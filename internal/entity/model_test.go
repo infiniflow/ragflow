@@ -17,23 +17,37 @@
 package entity
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
-	modeldrivers "ragflow/internal/entity/models"
+	"strings"
 	"testing"
+
+	modeldrivers "ragflow/internal/entity/models"
 )
+
+func providerConfigDir(t *testing.T) string {
+	t.Helper()
+
+	for _, candidate := range []string{
+		filepath.Join("..", "..", "conf", "models"),
+		filepath.Join("conf", "models"),
+	} {
+		if entries, err := os.ReadDir(candidate); err == nil && len(entries) > 0 {
+			return candidate
+		}
+	}
+
+	t.Fatal("could not locate conf/models")
+	return ""
+}
 
 func readProviderConfig(t *testing.T, fileName string) []byte {
 	t.Helper()
 
-	for _, candidate := range []string{
-		filepath.Join("..", "..", "conf", "models", fileName),
-		filepath.Join("conf", "models", fileName),
-	} {
-		data, err := os.ReadFile(candidate)
-		if err == nil {
-			return data
-		}
+	data, err := os.ReadFile(filepath.Join(providerConfigDir(t), fileName))
+	if err == nil {
+		return data
 	}
 
 	t.Fatalf("could not locate conf/models/%s", fileName)
@@ -43,6 +57,100 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 func readPPIOProviderConfig(t *testing.T) []byte {
 	t.Helper()
 	return readProviderConfig(t, "ppio.json")
+}
+
+func TestProviderConfigURLSuffixKeysAreKnown(t *testing.T) {
+	dir := providerConfigDir(t)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read provider config dir: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		t.Run(entry.Name(), func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				t.Fatalf("read config: %v", err)
+			}
+
+			var provider Provider
+			if err := json.Unmarshal(data, &provider); err != nil {
+				t.Fatalf("parse provider config: %v", err)
+			}
+		})
+	}
+}
+
+func TestProviderConfigURLSuffixRegressionFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		fileName string
+		check    func(*testing.T, Provider)
+	}{
+		{
+			name:     "cohere embedding suffix",
+			fileName: "cohere.json",
+			check: func(t *testing.T, provider Provider) {
+				t.Helper()
+				if provider.URLSuffix.Embedding != "v2/embed" {
+					t.Fatalf("embedding suffix=%q, want v2/embed", provider.URLSuffix.Embedding)
+				}
+			},
+		},
+		{
+			name:     "xai asr suffix",
+			fileName: "xai.json",
+			check: func(t *testing.T, provider Provider) {
+				t.Helper()
+				if provider.URLSuffix.ASR != "stt" {
+					t.Fatalf("asr suffix=%q, want stt", provider.URLSuffix.ASR)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var provider Provider
+			if err := json.Unmarshal(readProviderConfig(t, tt.fileName), &provider); err != nil {
+				t.Fatalf("parse %s: %v", tt.fileName, err)
+			}
+			tt.check(t, provider)
+		})
+	}
+}
+
+func TestNewProviderManagerRejectsUnknownURLSuffixKey(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "bad.json")
+	data := []byte(`{
+  "name": "OpenAI",
+  "url": {
+    "default": "http://unused"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "embeddings": "embeddings"
+  },
+  "models": []
+}`)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatalf("write bad provider config: %v", err)
+	}
+
+	_, err := NewProviderManager(dir)
+	if err == nil {
+		t.Fatal("expected unknown url_suffix key error, got nil")
+	}
+	for _, want := range []string{"bad.json", "unknown url_suffix key", "embeddings"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected error to contain %q, got %v", want, err)
+		}
+	}
 }
 
 func TestHostedProviderConfigsLoadSharedDrivers(t *testing.T) {

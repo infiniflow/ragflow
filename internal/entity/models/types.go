@@ -1,5 +1,13 @@
 package models
 
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"sort"
+	"strings"
+)
+
 // Message represents a chat message with role and content
 //
 // Content is interface{} to support different formats:
@@ -113,6 +121,45 @@ type URLSuffix struct {
 	Status        string `json:"status"`
 	Tasks         string `json:"tasks"`
 	Task          string `json:"task"`
+}
+
+type urlSuffixAlias URLSuffix
+
+var urlSuffixJSONKeys = func() map[string]struct{} {
+	keys := make(map[string]struct{})
+	t := reflect.TypeOf(urlSuffixAlias{})
+	for i := 0; i < t.NumField(); i++ {
+		name := strings.Split(t.Field(i).Tag.Get("json"), ",")[0]
+		if name != "" && name != "-" {
+			keys[name] = struct{}{}
+		}
+	}
+	return keys
+}()
+
+func (u *URLSuffix) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	unknownKeys := make([]string, 0)
+	for key := range raw {
+		if _, ok := urlSuffixJSONKeys[key]; !ok {
+			unknownKeys = append(unknownKeys, key)
+		}
+	}
+	if len(unknownKeys) > 0 {
+		sort.Strings(unknownKeys)
+		return fmt.Errorf("unknown url_suffix key %q", unknownKeys[0])
+	}
+
+	var parsed urlSuffixAlias
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return err
+	}
+	*u = URLSuffix(parsed)
+	return nil
 }
 
 type ChatConfig struct {
