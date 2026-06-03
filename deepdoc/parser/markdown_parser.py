@@ -20,6 +20,8 @@ import re
 
 from markdown import markdown
 
+logger = logging.getLogger(__name__)
+
 
 class RAGFlowMarkdownParser:
     def __init__(self, chunk_token_num=128):
@@ -326,6 +328,10 @@ class MarkdownElementExtractor:
             else:
                 # Unterminated fence: treat the rest of the document as
                 # atomic so a stray ``` doesn't poison the delimiter pass.
+                logger.debug(
+                    "Unterminated fenced code block at offset %d; marking remainder as atomic.",
+                    m.start(),
+                )
                 end = len(text)
             ranges.append((m.start(), end))
             pos = end
@@ -342,6 +348,11 @@ class MarkdownElementExtractor:
         if len(dels) > 0:
             text = "\n".join(self.lines)
             atomic_ranges = self._atomic_region_ranges(text)
+            logger.debug(
+                "Delimiter extraction enabled: atomic_regions=%d delimiter=%s",
+                len(atomic_ranges),
+                delimiter,
+            )
             pattern = re.compile(dels)
 
             def emit(part_start: int, part_end: int):
