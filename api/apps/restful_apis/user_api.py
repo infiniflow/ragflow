@@ -173,7 +173,7 @@ async def oauth_login(channel):
     state = get_uuid()
     session["oauth_state"] = state
     auth_url = auth_cli.get_authorization_url(state)
-    logging.info("OAuth login initiated: channel='%s', state='%s'", channel, state)
+    logging.info("OAuth login initiated: channel='%s'", channel)
     return redirect(auth_url)
 
 
@@ -639,7 +639,6 @@ async def set_tenant_info():
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
         update_dict = ensure_tenant_model_id_for_params(tid, req)
         TenantService.update_by_id(tid, update_dict)
-        TenantService.update_by_id(tid, req)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
