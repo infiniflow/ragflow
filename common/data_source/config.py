@@ -71,6 +71,7 @@ class DocumentSource(str, Enum):
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    HIGHSPOT = "highspot"
 
 
 class FileOrigin(str, Enum):
