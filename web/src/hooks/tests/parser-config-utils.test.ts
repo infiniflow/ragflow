@@ -1,6 +1,49 @@
-import { extractParserConfigExt } from '../parser-config-utils';
+import {
+  extractParserConfigExt,
+  normalizeInboundParserConfig,
+} from '../parser-config-utils';
+
+describe('normalizeInboundParserConfig', () => {
+  it('maps parent_child settings onto enable_children for the dataset form', () => {
+    const result = normalizeInboundParserConfig({
+      parent_child: {
+        use_parent_child: true,
+        children_delimiter: '****',
+      },
+    });
+
+    expect(result).toMatchObject({
+      enable_children: true,
+      children_delimiter: '****',
+    });
+  });
+
+  it('prefers flattened enable_children when parent_child is absent', () => {
+    const result = normalizeInboundParserConfig({
+      enable_children: true,
+      children_delimiter: '****',
+    });
+
+    expect(result).toMatchObject({
+      enable_children: true,
+      children_delimiter: '****',
+    });
+  });
+});
 
 describe('extractParserConfigExt', () => {
+  it('serializes parent-child chunking for dataset update APIs', () => {
+    const result = extractParserConfigExt({
+      enable_children: true,
+      children_delimiter: '****',
+    });
+
+    expect(result?.parent_child).toEqual({
+      children_delimiter: '****',
+      use_parent_child: true,
+    });
+  });
+
   it('serializes RAPTOR clustering fields through ext for API compatibility', () => {
     const result = extractParserConfigExt({
       raptor: {
