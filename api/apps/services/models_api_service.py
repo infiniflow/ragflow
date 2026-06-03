@@ -61,6 +61,10 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     elif len(parts) == 2:
         model_name, provider_name = parts
         instance_name = "default"
+    elif len(parts) == 1:
+        model_name = parts[0]
+        provider_name = ""
+        instance_name = "default"
     else:
         logging.warning(f"Invalid model string: {default_model}")
         return None
@@ -71,6 +75,22 @@ def _get_model_info(tenant_id: str, default_model: str, model_type: str):
         return {
             "model_provider": provider_name,
             "model_instance": instance_name,
+            "model_name": model_name,
+            "model_type": model_type,
+            "enable": True,
+        }
+
+    # Special case: TEI Builtin embedding model
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    tei_model = os.getenv("TEI_MODEL", "")
+    if (model_type == "embedding"
+        and "tei-" in compose_profiles
+        and tei_model
+        and model_name == tei_model
+        and (not provider_name or provider_name == "Builtin")):
+        return {
+            "model_provider": "Builtin",
+            "model_instance": "default",
             "model_name": model_name,
             "model_type": model_type,
             "enable": True,
@@ -154,7 +174,7 @@ def _check_model_available(tenant_id: str, provider_name: str, instance_name: st
             model_type == LLMType.EMBEDDING.value
             and "tei-" in compose_profiles
             and model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or provider_name is None)
+            and (provider_name == "Builtin" or not provider_name)
     )
     if is_tei_builtin_embedding:
         return True, None
@@ -356,6 +376,25 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 "instance_id": instance_id,
                 "instance_name": instance_info_map[instance_id].instance_name if instance_info_map.get(instance_id) else ""
             })
+
+    # Add TEI Builtin embedding model if configured
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    tei_model = os.getenv("TEI_MODEL", "")
+    if "tei-" in compose_profiles and tei_model:
+        if not model_type_filter or model_type_filter == "embedding":
+            tei_already_added = any(
+                m["provider_name"] == "Builtin" and m["name"] == tei_model
+                for m in added_models
+            )
+            if not tei_already_added:
+                added_models.append({
+                    "model_type": ["embedding"],
+                    "name": tei_model,
+                    "provider_id": "",
+                    "provider_name": "Builtin",
+                    "instance_id": "",
+                    "instance_name": "default",
+                })
 
     added_models.sort(key=lambda x: (x["provider_name"], x["instance_name"], x["name"]))
 

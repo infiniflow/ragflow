@@ -81,7 +81,7 @@ def get_model_config_from_provider_instance(tenant_id, model_type: str|enum.Enum
             model_type_val == LLMType.EMBEDDING.value
             and "tei-" in compose_profiles
             and pure_model_name == os.getenv("TEI_MODEL", "")
-            and (provider_name == "Builtin" or provider_name is None)
+            and (provider_name == "Builtin" or not provider_name)
     )
     if is_tei_builtin_embedding:
         # configured local embedding model
