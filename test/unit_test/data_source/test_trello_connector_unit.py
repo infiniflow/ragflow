@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import requests
 
 from common.data_source.trello_connector import TrelloConnector
 
@@ -95,6 +97,16 @@ class FakeSession:
         return FakeResponse(payloads[path])
 
 
+class FailingSession:
+    def get(self, url: str, params: dict[str, Any], timeout: int) -> FakeResponse:
+        del timeout
+        response = FakeResponse({"error": "unauthorized"}, status_code=401)
+        response.request = SimpleNamespace(
+            url=f"{url}?key={params['key']}&token={params['token']}&fields=id,name"
+        )
+        return response
+
+
 def make_connector() -> TrelloConnector:
     connector = TrelloConnector(api_base="https://trello.test/1")
     connector.session = FakeSession()
@@ -167,3 +179,23 @@ def test_trello_connector_requires_credentials() -> None:
 
     with pytest.raises(ValueError, match="trello_api_key"):
         connector.validate_connector_settings()
+
+
+@pytest.mark.p1
+def test_trello_connector_redacts_credentials_from_http_errors() -> None:
+    connector = TrelloConnector(api_base="https://trello.test/1")
+    connector.session = FailingSession()
+    connector.load_credentials(
+        {
+            "trello_api_key": "secret-key",
+            "trello_api_token": "secret-token",
+        }
+    )
+
+    with pytest.raises(requests.exceptions.HTTPError) as exc_info:
+        connector.validate_connector_settings()
+
+    message = str(exc_info.value)
+    assert "secret-key" not in message
+    assert "secret-token" not in message
+    assert "fields=id%2Cname" in message
