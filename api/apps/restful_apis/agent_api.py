@@ -32,7 +32,6 @@ from api.utils.file_response import (
     apply_preview_file_response_headers,
     resolve_attachment_content_type,
 )
-from api.utils.web_utils import CONTENT_TYPE_MAP, apply_safe_file_response_headers
 import jwt
 from quart import Response, jsonify, request, make_response
 
