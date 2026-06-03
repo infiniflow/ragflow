@@ -108,12 +108,12 @@ export const useVerifyConnection = () => {
       if (ret.code === 0) {
         return {
           isValid: true,
-          logs: ret.message || 'success',
+          logs: ret.message,
         } as VerifyResult;
       } else {
         return {
           isValid: false,
-          logs: ret.message || 'Verification failed',
+          logs: ret.message,
         } as VerifyResult;
       }
     },
@@ -127,42 +127,13 @@ export const useSubmitApiKey = () => {
   );
   const [editMode, setEditMode] = useState(false);
   const submitProviderInstance = useSubmitProviderInstance();
-  const { verifyProviderConnection } = useVerifyProviderConnection();
+  const verifyConnection = useVerifyConnection();
   const [saveLoading, setSaveLoading] = useState(false);
   const {
     visible: apiKeyVisible,
     hideModal: hideApiKeyModal,
     showModal: showApiKeyModal,
   } = useSetModalState();
-
-  const verifyConnection = useCallback(
-    async (
-      providerName: string,
-      apiKey: string,
-      baseUrl?: string,
-      region?: string,
-    ) => {
-      const ret = await verifyProviderConnection({
-        provider_name: providerName,
-        api_key: apiKey,
-        base_url: baseUrl,
-        region: region,
-      });
-
-      if (ret.code === 0) {
-        return {
-          isValid: true,
-          logs: ret.message,
-        } as VerifyResult;
-      } else {
-        return {
-          isValid: false,
-          logs: ret.message,
-        } as VerifyResult;
-      }
-    },
-    [verifyProviderConnection],
-  );
 
   const onApiKeySavingOk = useCallback(
     async (postBody: ApiKeyPostBody, isVerify = false) => {
