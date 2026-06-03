@@ -151,8 +151,12 @@ func main() {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
+	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
 	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: "/usr/share/infinity/resource",
+		DictPath: dictPath,
 	}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
