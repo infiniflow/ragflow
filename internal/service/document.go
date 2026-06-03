@@ -250,7 +250,10 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 		return err
 	}
 
-	s.deleteDocTasks(docID)
+	// Delete tasks from DB
+	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("failed to delete tasks for %s: %v", docID, delErr))
+	}
 	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
 	if err := s.deleteDocRecordWithCounters(doc, kb.ID); err != nil {
 		return err
@@ -272,14 +275,6 @@ func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *enti
 		return nil, nil, fmt.Errorf("knowledgebase not found: %w", err)
 	}
 	return doc, kb, nil
-}
-
-// deleteDocTasks removes all task rows for the given document. Failures are
-// logged and continue.
-func (s *DocumentService) deleteDocTasks(docID string) {
-	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocTasks: failed to delete tasks for %s: %v", docID, delErr))
-	}
 }
 
 // deleteDocEngineData removes chunks and metadata from the document engine.

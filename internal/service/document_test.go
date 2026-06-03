@@ -728,33 +728,6 @@ func TestResolveDocAndKB_KBNotFound(t *testing.T) {
 	}
 }
 
-func TestDeleteDocTasks_RemovesTasks(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-
-	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
-	insertTestTask(t, "task-1", "doc-1")
-	insertTestTask(t, "task-2", "doc-1")
-
-	svc := testDocumentService(t)
-	svc.deleteDocTasks("doc-1")
-
-	tasks, _ := dao.NewTaskDAO().GetAllTasks()
-	if len(tasks) != 0 {
-		t.Fatalf("expected 0 tasks after delete, got %d", len(tasks))
-	}
-}
-
-func TestDeleteDocTasks_NoopWhenNone(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-
-	svc := testDocumentService(t)
-	// Should not panic or error
-	svc.deleteDocTasks("no-such-doc")
-}
-
 func TestDeleteDocRecordWithCounters_Success(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
