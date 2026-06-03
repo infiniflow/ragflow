@@ -16,10 +16,47 @@
 
 package models
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+	"strings"
+)
 
 type BaseModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
+}
+
+func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return fmt.Errorf("api key is nil or empty")
+	}
+
+	if apiConfig.BaseURL == nil || *apiConfig.BaseURL == "" {
+		if apiConfig.Region == nil || *apiConfig.Region == "" {
+			return fmt.Errorf("no base url and region")
+		}
+	}
+
+	return nil
+}
+
+func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+
+	if apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
+		return strings.TrimSuffix(*apiConfig.BaseURL, "/"), nil
+	}
+
+	region := "default"
+	if apiConfig.Region != nil {
+		region = *apiConfig.Region
+	}
+
+	baseURL, ok := b.BaseURL[region]
+	if !ok || baseURL == "" {
+		return "", fmt.Errorf("no base URL configured for region %q", region)
+	}
+
+	return baseURL, nil
 }

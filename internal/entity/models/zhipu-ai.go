@@ -66,19 +66,21 @@ func (z *ZhipuAIModel) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", z.baseModel.BaseURL[region], z.baseModel.URLSuffix.Chat)
+
+	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -210,16 +212,21 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.baseModel.BaseURL[region], "/"), z.baseModel.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -398,20 +405,21 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(z.baseModel.BaseURL[region], "/"), z.baseModel.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{}
 	reqBody["model"] = modelName
@@ -470,22 +478,17 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	baseURL := z.baseModel.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := z.baseModel.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("zhipu-ai: no base URL configured for default region")
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.baseModel.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -537,12 +540,17 @@ func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, er
 }
 
 func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return err
 	}
 
-	url := fmt.Sprintf("%s/%s", z.baseModel.BaseURL[region], z.baseModel.BaseURL[region], z.baseModel.URLSuffix.Files)
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -613,25 +621,21 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 		return &RerankResponse{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	baseURL, ok := z.baseModel.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
-	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.baseModel.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -696,9 +700,11 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 
 // TranscribeAudio transcribe audio
 func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
@@ -709,15 +715,12 @@ func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfi
 		return nil, fmt.Errorf("zhipu-ai: ASR URL suffix is not configured")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-	baseURL, ok := z.baseModel.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
-	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimLeft(z.baseModel.URLSuffix.ASR, "/"))
+
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(z.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -829,6 +832,11 @@ func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string
 
 // AudioSpeech convert text to audio
 func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	reqBody, url, err := z.buildTTSRequest(modelName, audioContent, apiConfig, ttsConfig, false)
 	if err != nil {
 		return nil, err
@@ -867,6 +875,11 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 }
 
 func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -921,9 +934,7 @@ func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *st
 }
 
 func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, stream bool) (map[string]interface{}, string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, "", fmt.Errorf("api key is required")
-	}
+
 	if modelName == nil || *modelName == "" {
 		return nil, "", fmt.Errorf("model name is required")
 	}
@@ -934,13 +945,9 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 		return nil, "", fmt.Errorf("zhipu-ai: TTS URL suffix is not configured")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	baseURL, ok := z.baseModel.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, "", fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, "", err
 	}
 
 	reqBody := map[string]interface{}{
@@ -961,14 +968,15 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 		}
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimLeft(z.baseModel.URLSuffix.TTS, "/"))
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(z.baseModel.URLSuffix.TTS, "/"))
 	return reqBody, url, nil
 }
 
 // OCRFile OCR file
 func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	err := z.baseModel.APIConfigCheck(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -979,14 +987,9 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 		return nil, fmt.Errorf("file url or content is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	baseURL, ok := z.baseModel.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, fmt.Errorf("zhipu-ai: no base URL configured for region %q", region)
+	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	if z.baseModel.URLSuffix.OCR == "" {
@@ -1014,11 +1017,11 @@ func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(z.baseModel.URLSuffix.OCR, "/"))
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(z.baseModel.URLSuffix.OCR, "/"))
 	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
