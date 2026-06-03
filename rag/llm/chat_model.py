@@ -1370,8 +1370,24 @@ class LiteLLMBase(ABC):
             self.api_key = json.loads(key).get("api_key", "")
             self.provider_order = json.loads(key).get("provider_order", "")
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.api_version = json.loads(key).get("api_version", "2024-02-01")
+            # During the "Add Azure-OpenAI" flow verify_api_key passes the
+            # user-typed raw key string directly (see
+            # api/apps/services/provider_api_service.py:verify_api_key),
+            # while the runtime path passes a JSON blob the model-instance
+            # row was packed with at save time. The previous
+            # `json.loads(key).get(...)` crashed the verify flow with
+            # `JSONDecodeError: Extra data` — fixes #15587. Mirror the
+            # defensive pattern already used for MiniMax just below.
+            try:
+                key_obj = json.loads(key) if isinstance(key, str) else key
+            except (json.JSONDecodeError, TypeError):
+                key_obj = None
+            if isinstance(key_obj, dict):
+                self.api_key = key_obj.get("api_key", "")
+                self.api_version = key_obj.get("api_version", "2024-02-01")
+            else:
+                self.api_key = key
+                self.api_version = "2024-02-01"
         elif self.provider == SupportedLiteLLMProvider.MiniMax:
             # MiniMax requires GroupId as a query parameter for API authentication
             try:
