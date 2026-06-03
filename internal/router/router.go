@@ -442,15 +442,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 		}
 
-		// LLM routes
-		llm := authorized.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-			llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
-		}
-
 		// Chat routes
 		chat := authorized.Group("/v1/dialog")
 		{

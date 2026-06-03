@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 	"strings"
 
 	"gorm.io/gorm"
@@ -116,7 +117,7 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 
 	tenantID := tenants[0].TenantID
 
-	providerID, err := generateUUID1Hex()
+	providerID, err := utility.GenerateUUID1()
 	if err != nil {
 		return common.CodeServerError, errors.New("fail to get UUID")
 	}
@@ -258,7 +259,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerName, instanceName
 		return common.CodeServerError, err
 	}
 
-	instanceID, err := generateUUID1Hex()
+	instanceID, err := utility.GenerateUUID1()
 	if err != nil {
 		return common.CodeServerError, errors.New("fail to get UUID")
 	}
@@ -840,7 +841,7 @@ func (m *ModelProviderService) UpdateModelStatus(providerName, instanceName, mod
 	model, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 	if err != nil {
 		var modelID string
-		modelID, err = generateUUID1Hex()
+		modelID, err = utility.GenerateUUID1()
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to get UUID")
 		}
@@ -2035,7 +2036,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 			return common.CodeServerError, err
 		}
 
-		modelID, err := generateUUID1Hex()
+		modelID, err := utility.GenerateUUID1()
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to get UUID")
 		}
