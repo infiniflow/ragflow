@@ -165,8 +165,6 @@ def _load_user(auth_types=None):
         auth_token = authorization
 
     g.user = None
-    g.auth_via_api_token = False
-    g.auth_via_beta_token = False
     g.auth_type = None
     g.auth_error_message = None
 
@@ -177,7 +175,6 @@ def _load_user(auth_types=None):
             if objs:
                 user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
                 if user:
-                    g.auth_via_beta_token = True
                     g.auth_type = AUTH_BETA
                     g.user = user[0]
                     return user[0]
@@ -222,7 +219,6 @@ def _load_user(auth_types=None):
                     if not user[0].access_token or not user[0].access_token.strip():
                         logging.warning(f"User {user[0].email} has empty access_token in database")
                         return _load_user_from_session() if AUTH_JWT in auth_types else None
-                    g.auth_via_api_token = True
                     g.auth_type = AUTH_API
                     g.user = user[0]
                     return user[0]

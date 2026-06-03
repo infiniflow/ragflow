@@ -1191,6 +1191,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 def list_thumbnails():
     """
     Get thumbnails for documents.
@@ -1687,6 +1688,7 @@ def _content_type_for_document_image(object_name, data):
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
 async def get_document_image(image_id):
     """
     Get a document image by ID.
