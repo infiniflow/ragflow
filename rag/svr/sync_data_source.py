@@ -77,8 +77,8 @@ from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.bitbucket.connector import BitbucketConnector
-from common.data_source.xwiki_connector import XWikiConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.xwiki_connector import XWikiConnector
 from common.data_source.exceptions import ConnectorValidationError
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
