@@ -15,7 +15,7 @@
 import argparse
 import time
 
-from rag.flow.extractor.extractor import compile_structure_from_text, merge_compiled_structures
+from rag.advanced_rag.knowlege_compile.structure import compile_structure_from_text, merge_compiled_structures
 from rag.svr.task_executor_refactor.task_manager import TaskManager
 from rag.svr.task_executor_refactor.recording_context import timed_with_recording, get_recording_context, \
     RecordingContext, set_recording_context, NullRecordingContext
