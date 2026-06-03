@@ -17,7 +17,7 @@ import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -143,6 +143,12 @@ const MinerUModal = ({
       hideModal?.();
     }
   };
+
+  useEffect(() => {
+    if (!visible) {
+      form.reset();
+    }
+  }, [visible, form]);
 
   return (
     <Dialog open={visible} onOpenChange={hideModal}>

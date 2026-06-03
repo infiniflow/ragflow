@@ -21,16 +21,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
 	mcpServerNameLimit          = 255
+	mcpServerDateFormat         = "2006-01-02T15:04:05"
 )
 
 // MCPService handles MCP server operations.
@@ -67,6 +72,27 @@ type CreateMCPServerResponse struct {
 	Description *string        `json:"description,omitempty"`
 	Variables   entity.JSONMap `json:"variables"`
 	Headers     entity.JSONMap `json:"headers"`
+}
+
+// UpdateMCPServerRequest is the raw request payload for updating an MCP server.
+type UpdateMCPServerRequest map[string]json.RawMessage
+
+// MCPServerListItem is an MCP server item in the list response.
+type MCPServerListItem struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	ServerType  string         `json:"server_type"`
+	URL         string         `json:"url"`
+	Description *string        `json:"description"`
+	Variables   entity.JSONMap `json:"variables"`
+	CreateDate  *string        `json:"create_date"`
+	UpdateDate  *string        `json:"update_date"`
+}
+
+// ListMCPServersResponse is the response payload for listing MCP servers.
+type ListMCPServersResponse struct {
+	MCPServers []*MCPServerListItem `json:"mcp_servers"`
+	Total      int64                `json:"total"`
 }
 
 // CreateMCPServer creates an MCP server owned by a tenant.
@@ -127,6 +153,159 @@ func (s *MCPService) CreateMCPServer(tenantID string, req CreateMCPServerRequest
 	}, common.CodeSuccess, nil
 }
 
+// UpdateMCPServer updates an MCP server owned by a tenant.
+func (s *MCPService) UpdateMCPServer(tenantID, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
+	server, err := s.mcpServerDAO.GetByIDAndTenant(mcpID, tenantID)
+	if err != nil {
+		if isMCPServerNotFound(err) {
+			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
+	}
+	if server == nil {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+	}
+
+	serverType := server.ServerType
+	serverTypeProvided := false
+	if value, ok, err := optionalString(req, "server_type"); err != nil {
+		return nil, common.CodeDataError, err
+	} else if ok {
+		serverType = value
+		serverTypeProvided = true
+	}
+	if serverTypeProvided && !isValidMCPServerType(serverType) {
+		return nil, common.CodeDataError, errors.New("Unsupported MCP server type.")
+	}
+
+	serverName := server.Name
+	serverNameProvided := false
+	if value, ok, err := optionalString(req, "name"); err != nil {
+		return nil, common.CodeDataError, err
+	} else if ok {
+		serverName = value
+		serverNameProvided = true
+	}
+	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
+		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
+	}
+
+	serverURL := server.URL
+	serverURLProvided := false
+	if value, ok, err := optionalString(req, "url"); err != nil {
+		return nil, common.CodeDataError, err
+	} else if ok {
+		serverURL = strings.TrimSpace(value)
+		if serverURL == "" {
+			return nil, common.CodeDataError, errors.New("Invalid url.")
+		}
+		serverURLProvided = true
+	}
+	if serverURL == "" {
+		return nil, common.CodeDataError, errors.New("Invalid url.")
+	}
+
+	headers := server.Headers
+	if raw, ok := req["headers"]; ok {
+		headers = safeJSONMap(raw)
+	}
+	if headers == nil {
+		headers = entity.JSONMap{}
+	}
+
+	variables := server.Variables
+	if raw, ok := req["variables"]; ok {
+		variables = safeJSONMap(raw)
+	}
+	if variables == nil {
+		variables = entity.JSONMap{}
+	}
+	delete(variables, "tools")
+	variables["tools"] = map[string]interface{}{}
+
+	updates := map[string]interface{}{
+		"id":        mcpID,
+		"tenant_id": tenantID,
+		"headers":   headers,
+		"variables": variables,
+	}
+	if serverNameProvided {
+		updates["name"] = serverName
+	}
+	if serverURLProvided {
+		updates["url"] = serverURL
+	}
+	if serverTypeProvided {
+		updates["server_type"] = serverType
+	}
+	if raw, ok := req["description"]; ok {
+		description, err := optionalNullableString(raw, "description")
+		if err != nil {
+			return nil, common.CodeDataError, err
+		}
+		updates["description"] = description
+	}
+
+	if _, err := s.mcpServerDAO.UpdateMCPServer(mcpID, tenantID, updates); err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	updatedServer, err := s.mcpServerDAO.GetByIDAndTenant(mcpID, tenantID)
+	if err != nil {
+		if isMCPServerNotFound(err) {
+			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+		}
+		return nil, common.CodeServerError, fmt.Errorf("failed to fetch updated MCP server %s: %w", mcpID, err)
+	}
+	if updatedServer == nil {
+		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+	}
+	return updatedServer, common.CodeSuccess, nil
+}
+
+func isMCPServerNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+// ListMCPServers lists MCP servers owned by a tenant.
+func (s *MCPService) ListMCPServers(tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	servers, total, err := s.mcpServerDAO.ListMCPServers(tenantID, ids, keywords, orderby, desc)
+	if err != nil {
+		var orderbyErr *dao.InvalidMCPServerOrderByError
+		if errors.As(err, &orderbyErr) {
+			return nil, common.CodeExceptionError, err
+		}
+		return nil, common.CodeServerError, err
+	}
+	if servers == nil {
+		servers = []*entity.MCPServer{}
+	}
+	servers = paginateMCPServers(servers, page, pageSize)
+
+	items := make([]*MCPServerListItem, 0, len(servers))
+	for _, server := range servers {
+		variables := server.Variables
+		if variables == nil {
+			variables = entity.JSONMap{}
+		}
+		items = append(items, &MCPServerListItem{
+			ID:          server.ID,
+			Name:        server.Name,
+			ServerType:  server.ServerType,
+			URL:         server.URL,
+			Description: server.Description,
+			Variables:   variables,
+			CreateDate:  formatMCPServerDate(server.CreateDate),
+			UpdateDate:  formatMCPServerDate(server.UpdateDate),
+		})
+	}
+
+	return &ListMCPServersResponse{
+		MCPServers: items,
+		Total:      total,
+	}, common.CodeSuccess, nil
+}
+
 // DeleteMCPServer deletes an MCP server owned by a tenant.
 func (s *MCPService) DeleteMCPServer(tenantID, mcpID string) (bool, common.ErrorCode, error) {
 	server, err := s.mcpServerDAO.GetByID(mcpID)
@@ -156,6 +335,31 @@ func isValidMCPServerType(serverType string) bool {
 	return serverType == mcpServerTypeSSE || serverType == mcpServerTypeStreamableHTTP
 }
 
+func optionalString(req UpdateMCPServerRequest, key string) (string, bool, error) {
+	raw, ok := req[key]
+	if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", false, nil
+	}
+
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", true, fmt.Errorf("%s must be a string", key)
+	}
+	return value, true, nil
+}
+
+func optionalNullableString(raw json.RawMessage, key string) (*string, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, fmt.Errorf("%s must be a string", key)
+	}
+	return &value, nil
+}
+
 func safeJSONMap(raw json.RawMessage) entity.JSONMap {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
@@ -176,4 +380,45 @@ func safeJSONMap(raw json.RawMessage) entity.JSONMap {
 		return entity.JSONMap{}
 	}
 	return entity.JSONMap(value)
+}
+
+func formatMCPServerDate(date *time.Time) *string {
+	if date == nil {
+		return nil
+	}
+	formatted := date.Format(mcpServerDateFormat)
+	return &formatted
+}
+
+func paginateMCPServers(servers []*entity.MCPServer, page, pageSize int) []*entity.MCPServer {
+	if page == 0 || pageSize == 0 {
+		return servers
+	}
+
+	start := (page - 1) * pageSize
+	stop := page * pageSize
+	return sliceMCPServers(servers, start, stop)
+}
+
+func sliceMCPServers(servers []*entity.MCPServer, start, stop int) []*entity.MCPServer {
+	length := len(servers)
+	start = normalizeMCPServerSliceIndex(start, length)
+	stop = normalizeMCPServerSliceIndex(stop, length)
+	if stop < start {
+		return []*entity.MCPServer{}
+	}
+	return servers[start:stop]
+}
+
+func normalizeMCPServerSliceIndex(index, length int) int {
+	if index < 0 {
+		index += length
+	}
+	if index < 0 {
+		return 0
+	}
+	if index > length {
+		return length
+	}
+	return index
 }

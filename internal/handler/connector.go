@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -37,6 +38,7 @@ type connectorServiceIface interface {
 	DeleteConnector(connectorID, userID string) (bool, common.ErrorCode, error)
 	RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error)
 	TestConnector(connectorID, userID string) error
+	UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error)
 }
 
 // ConnectorHandler connector handler
@@ -131,6 +133,60 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 		"data":    connector,
 		"message": "success",
 	})
+}
+
+// UpdateConnector Update an accessible connector's polling configuration.
+func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	req, err := decodeUpdateConnectorRequest(c)
+	if err != nil {
+		jsonError(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	connector, code, err := h.connectorService.UpdateConnector(c.Param("connector_id"), user.ID, req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    connector,
+		"message": "success",
+	})
+}
+
+func decodeUpdateConnectorRequest(c *gin.Context) (*service.UpdateConnectorRequest, error) {
+	var raw map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		return nil, err
+	}
+
+	payload := raw
+	if dataRaw, ok := raw["data"]; ok {
+		var nested map[string]json.RawMessage
+		if err := json.Unmarshal(dataRaw, &nested); err == nil && nested != nil {
+			payload = nested
+		}
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var req service.UpdateConnectorRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
 }
 
 // ListLogs list connector sync logs.

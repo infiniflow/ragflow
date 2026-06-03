@@ -185,3 +185,48 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(mineru_mo
     assert sections == []
     assert "Skip section after sanitization" in caplog.text
     assert f"type={mineru_module.MinerUContentType.TEXT}" in caplog.text
+
+
+def test_transfer_to_sections_skips_page_chrome_without_duplicating_text(mineru_module):
+    parser = mineru_module.MinerUParser()
+    fixture_path = Path(__file__).resolve().parents[3] / "fixtures" / "mineru" / "bmw_page_chrome_content_list.json"
+    outputs = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    sections = parser._transfer_to_sections(outputs, parse_method="raw")
+    texts = [section[0] for section in sections]
+
+    assert texts == ["打开和关闭", "车辆装备", "车辆钥匙", "概述", "安全提示"]
+    assert texts.count("打开和关闭") == 1
+    assert texts.count("概述") == 1
+    assert "77" not in texts
+    assert "Online Edition for Part no." not in " ".join(texts)
+
+
+def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(mineru_module, caplog):
+    parser = mineru_module.MinerUParser()
+    outputs = [
+        {
+            "type": mineru_module.MinerUContentType.TEXT,
+            "text": "Primary content",
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+        {
+            "type": "sidebar",
+            "text": "Should not repeat previous section",
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+        {
+            "type": mineru_module.MinerUContentType.TEXT,
+            "text": "Next content",
+            "page_idx": 0,
+            "bbox": (0, 0, 1, 1),
+        },
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger=parser.logger.name):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw")
+
+    assert [section[0] for section in sections] == ["Primary content", "Next content"]
+    assert "Skip unsupported section type=sidebar" in caplog.text
