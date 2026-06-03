@@ -2,7 +2,6 @@
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 
-from types import SimpleNamespace
 from urllib.parse import urlencode
 
 import pytest
