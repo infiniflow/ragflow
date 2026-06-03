@@ -793,29 +793,32 @@ func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
-	insertTestKB(t, "kb-1", "tenant-1", 2, 20, 10)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 
 	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
 	svc := testDocumentService(t)
 
-	// First delete succeeds
+	// First delete: row removed, counters decremented
 	if err := svc.deleteDocRecordWithCounters(doc, "kb-1"); err != nil {
 		t.Fatalf("first delete: %v", err)
 	}
 
-	// Second delete on same doc: GORM hard-deletes 0 rows without error.
-	// The DecreaseDocumentNum still fires (and decrements again — caller
-	// should guard against double-delete upstream).
-	err := svc.deleteDocRecordWithCounters(doc, "kb-1")
-	if err != nil {
-		t.Fatalf("second delete should not error (GORM deletes 0 rows silently): %v", err)
+	// Second delete: RowsAffected==0 → counters NOT decremented again
+	if err := svc.deleteDocRecordWithCounters(doc, "kb-1"); err != nil {
+		t.Fatalf("second delete should not error: %v", err)
 	}
 
-	// KB counters decremented twice: 2→1→0 for doc_num
+	// KB counters should be decremented exactly once: 1→0 for doc_num
 	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
 	if kb.DocNum != 0 {
-		t.Fatalf("doc_num after double delete: expected 0, got %d", kb.DocNum)
+		t.Fatalf("doc_num: expected 0 (decremented once), got %d", kb.DocNum)
+	}
+	if kb.TokenNum != 0 {
+		t.Fatalf("token_num: expected 0, got %d", kb.TokenNum)
+	}
+	if kb.ChunkNum != 0 {
+		t.Fatalf("chunk_num: expected 0, got %d", kb.ChunkNum)
 	}
 }
 

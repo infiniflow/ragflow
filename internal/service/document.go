@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/server"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // DocumentService document service
@@ -298,15 +299,31 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 }
 
 // deleteDocRecordWithCounters hard-deletes the document row and decrements the
-// KB counters atomically.
+// KB counters in a single transaction. Counters are only decremented when a
+// document row was actually removed (RowsAffected > 0), guarding against
+// double-decrement on retries or concurrent deletes.
 func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID string) error {
-	if delErr := s.documentDAO.Delete(doc.ID); delErr != nil {
-		return fmt.Errorf("failed to delete document %s: %w", doc.ID, delErr)
-	}
-	if decErr := s.kbDAO.DecreaseDocumentNum(kbID, 1, doc.ChunkNum, doc.TokenNum); decErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
-	}
-	return nil
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ?", doc.ID).Delete(&entity.Document{})
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete document %s: %w", doc.ID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil // already deleted by a concurrent request — skip counters
+		}
+
+		decErr := tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"doc_num":   gorm.Expr("doc_num - 1"),
+				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
+				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
+			}).Error
+		if decErr != nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
+		}
+		return nil
+	})
 }
 
 // cleanupFileReferences deletes file2document mappings for docID, and for each
