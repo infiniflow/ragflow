@@ -341,8 +341,8 @@ func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string,
 }
 
 // ParseFile parse file
-func (z *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -452,10 +452,10 @@ func (f *FishAudioModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (z *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }

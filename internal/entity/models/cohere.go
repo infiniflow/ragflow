@@ -604,8 +604,8 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (z *CoHereModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (c *CoHereModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -613,8 +613,8 @@ func (c *CoHereModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (z *CoHereModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (c *CoHereModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", c.Name())
 }
 
 // OCRFile OCR file
@@ -623,8 +623,8 @@ func (c *CoHereModel) OCRFile(modelName *string, content []byte, url *string, ap
 }
 
 // ParseFile parse file
-func (z *CoHereModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
 func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -693,10 +693,10 @@ func (c *CoHereModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *CoHereModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (c *CoHereModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
 
-func (z *CoHereModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (c *CoHereModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
 }

@@ -1435,7 +1435,7 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> command
+// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region> command
 // instance_name cannot be "default"
 func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1444,8 +1444,8 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected provider name: %w", err)
 	}
-
 	p.nextToken()
+
 	if p.curToken.Type != TokenInstance {
 		return nil, fmt.Errorf("expected INSTANCE after provider name")
 	}
@@ -1455,7 +1455,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected instance name: %w", err)
 	}
-
 	p.nextToken()
 
 	if p.curToken.Type != TokenKey {
@@ -1470,23 +1469,27 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	p.nextToken()
 
 	baseURL := ""
-	if p.curToken.Type == TokenURL {
-		p.nextToken()
-		baseURL, err = p.parseQuotedString()
-		if err != nil {
-			return nil, fmt.Errorf("expected base URL: %w", err)
-		}
-		p.nextToken()
-	}
-
 	region := ""
-	if p.curToken.Type == TokenRegion {
-		p.nextToken()
-		region, err = p.parseQuotedString()
-		if err != nil {
-			return nil, fmt.Errorf("expected base URL: %w", err)
+optionsLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenRegion:
+			p.nextToken()
+			region, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected region: %w", err)
+			}
+			p.nextToken()
+		case TokenURL:
+			p.nextToken()
+			baseURL, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected base URL: %w", err)
+			}
+			p.nextToken()
+		default:
+			break optionsLoop
 		}
-		p.nextToken()
 	}
 
 	cmd := NewCommand("create_provider_instance")
@@ -1496,9 +1499,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if baseURL != "" {
 		// Only local model provider need to set URL
 		cmd.Params["base_url"] = baseURL
-		if region == "" {
-			region = instanceName
-		}
 	}
 
 	if region != "" {
