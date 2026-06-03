@@ -390,7 +390,7 @@ def test_related_questions_contract(rest_client, rest_client_noauth):
     assert success_payload["code"] == 0, success_payload
     assert isinstance(success_payload["data"], list), success_payload
 
-    missing_res = rest_client.post("/searchbots/related_questions", json={"industry": "search"})
+    missing_res = success_client.post("/searchbots/related_questions", json={"industry": "search"})
     assert missing_res.status_code == 200
     missing_payload = missing_res.json()
     assert missing_payload["code"] == 101, missing_payload
@@ -404,4 +404,8 @@ def test_related_questions_contract(rest_client, rest_client_noauth):
     assert invalid_auth_res.status_code == 200
     invalid_auth_payload = invalid_auth_res.json()
     assert invalid_auth_payload["code"] == 102, invalid_auth_payload
-    assert "Authorization is not valid!" in invalid_auth_payload["message"], invalid_auth_payload
+    assert invalid_auth_payload["message"].strip() in {
+        "Authorization is not valid!",
+        'Authentication error: API key is invalid!"',
+        "Authentication error: API key is invalid!",
+    }, invalid_auth_payload
