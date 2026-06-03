@@ -296,7 +296,9 @@ async def add_llm():
             )
             api_key = json.dumps(structured_api_key)
         else:
-            api_key = apikey_json(["api_key"])
+            # Keep the legacy provider_order field for existing clients while
+            # still accepting the new structured api_key payload above.
+            api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "PaddleOCR":
         api_key = apikey_json(["api_key", "provider_order"])
