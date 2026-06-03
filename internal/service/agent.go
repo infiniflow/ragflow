@@ -611,3 +611,22 @@ func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanva
 	}
 	return version, nil
 }
+
+// DeleteAgent removes the agent canvas identified by agentID, but only if it
+// is owned by tenantID. Mirrors the Python `_require_canvas_owner_sync`
+// decorator + `UserCanvasService.delete_by_id` flow.
+//
+// Returns CodeOperatingError with no DB error when the caller does not own
+// the agent (or the agent does not exist) — same response shape and code
+// Python returns from the decorator.
+func (s *AgentService) DeleteAgent(agentID, tenantID string) (common.ErrorCode, error) {
+	rows, err := s.canvasDAO.DeleteByIDOwnedBy(agentID, tenantID)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete agent: %w", err)
+	}
+	if rows == 0 {
+		return common.CodeOperatingError,
+			fmt.Errorf("only the owner of the agent is authorized for this operation")
+	}
+	return common.CodeSuccess, nil
+}

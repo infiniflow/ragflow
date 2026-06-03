@@ -592,12 +592,18 @@ type fakeAgentService struct {
 	err          error
 	templates    []*entity.CanvasTemplate
 	templatesErr error
+
+	deleteCode common.ErrorCode
+	deleteErr  error
+	deletedID  string
+	deletedBy  string
 }
 
 // agentServiceIface is the minimum interface the handler depends on.
 type agentServiceIface interface {
 	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error)
 	ListTemplates() ([]*entity.CanvasTemplate, error)
+	DeleteAgent(agentID, tenantID string) (common.ErrorCode, error)
 }
 
 // agentHandlerTestable is a version of AgentHandler that accepts the interface.
@@ -635,12 +641,33 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
 }
 
+func (h *agentHandlerTestable) deleteAgent(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	agentID := c.Param("agent_id")
+	code, err := h.svc.DeleteAgent(agentID, user.ID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+}
+
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return f.result, f.code, f.err
 }
 
 func (f *fakeAgentService) ListTemplates() ([]*entity.CanvasTemplate, error) {
 	return f.templates, f.templatesErr
+}
+
+func (f *fakeAgentService) DeleteAgent(agentID, tenantID string) (common.ErrorCode, error) {
+	f.deletedID = agentID
+	f.deletedBy = tenantID
+	return f.deleteCode, f.deleteErr
 }
 
 func setupAgentRouter(svc agentServiceIface) *gin.Engine {
@@ -658,6 +685,14 @@ func setupAgentRouter(svc agentServiceIface) *gin.Engine {
 	r.GET("/api/v1/agents/templates_anon", func(c *gin.Context) {
 		// no user set → unauthenticated probe
 		h.listTemplates(c)
+	})
+	r.DELETE("/api/v1/agents/:agent_id", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-abc"})
+		h.deleteAgent(c)
+	})
+	r.DELETE("/api/v1/agents_anon/:agent_id", func(c *gin.Context) {
+		// no user set → unauthenticated
+		h.deleteAgent(c)
 	})
 	return r
 }
@@ -769,3 +804,80 @@ func TestListAgentTemplates_RequiresAuth(t *testing.T) {
 		t.Errorf("expected non-success without auth, got body=%v", body)
 	}
 }
+
+func TestDeleteAgent_Success(t *testing.T) {
+	svc := &fakeAgentService{deleteCode: common.CodeSuccess}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodDelete, "/api/v1/agents/canvas-7", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, w.Body.String())
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Errorf("code=%v want %d", body["code"], common.CodeSuccess)
+	}
+	if body["data"] != true {
+		t.Errorf("data=%v want true", body["data"])
+	}
+	if svc.deletedID != "canvas-7" {
+		t.Errorf("service was passed agentID=%q want %q", svc.deletedID, "canvas-7")
+	}
+	if svc.deletedBy != "user-abc" {
+		t.Errorf("service was passed tenantID=%q want %q", svc.deletedBy, "user-abc")
+	}
+}
+
+func TestDeleteAgent_NotOwner(t *testing.T) {
+	// Service returns CodeOperatingError when the caller does not own the
+	// agent (or it does not exist) - mirrors the Python decorator.
+	svc := &fakeAgentService{
+		deleteCode: common.CodeOperatingError,
+		deleteErr:  errNotOwner,
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodDelete, "/api/v1/agents/canvas-7", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	var body map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["code"] != float64(common.CodeOperatingError) {
+		t.Errorf("code=%v want %d", body["code"], common.CodeOperatingError)
+	}
+	if body["data"] != false {
+		t.Errorf("data=%v want false", body["data"])
+	}
+	msg, _ := body["message"].(string)
+	if msg == "" {
+		t.Errorf("message must be non-empty, got body=%v", body)
+	}
+}
+
+func TestDeleteAgent_RequiresAuth(t *testing.T) {
+	svc := &fakeAgentService{deleteCode: common.CodeSuccess}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodDelete, "/api/v1/agents_anon/canvas-7", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	var body map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if code, _ := body["code"].(float64); int(code) == int(common.CodeSuccess) {
+		t.Errorf("expected non-success without auth, got body=%v", body)
+	}
+	if svc.deletedID != "" {
+		t.Errorf("service should not be called without auth, but was called with %q", svc.deletedID)
+	}
+}
+
+var errNotOwner = sErr("Only the owner of the agent is authorized for this operation.")
+
+type sErr string
+
+func (e sErr) Error() string { return string(e) }
