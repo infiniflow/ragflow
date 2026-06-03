@@ -56,6 +56,28 @@ from rag.nlp import (
 )  # noqa: F401
 
 
+def _is_short_header(text, max_tokens=50):
+    """
+    Check if text is a short markdown header.
+    
+    Args:
+        text: The text to check
+        max_tokens: Maximum tokens for a header to be considered "short"
+    
+    Returns:
+        bool: True if text is a short markdown header, False otherwise
+    """
+    if not text or not text.strip():
+        return False
+    
+    # Check if it matches markdown header pattern: 1-6 # followed by space
+    if not re.match(r"^#{1,6}\s+", text.strip()):
+        return False
+    
+    # Check if token count is below threshold
+    return num_tokens_from_string(text) < max_tokens
+
+
 def _normalize_section_text_for_rtl_presentation_forms(sections):
     if not sections:
         return sections
@@ -1067,6 +1089,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     st = timer()
     overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
+    
     if is_markdown:
         merged_chunks = []
         merged_images = []
@@ -1081,7 +1104,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             sec_tokens = num_tokens_from_string(text)
             sec_image = section_images[idx] if section_images and idx < len(section_images) else None
 
-            if current_text and current_tokens + sec_tokens > chunk_limit:
+            # Don't finalize chunk if current_text is a short header (force merge with next section)
+            if current_text and not _is_short_header(current_text) and current_tokens + sec_tokens > chunk_limit:
                 merged_chunks.append(current_text)
                 merged_images.append(current_image)
                 overlap_part = ""

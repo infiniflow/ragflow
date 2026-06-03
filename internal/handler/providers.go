@@ -387,7 +387,42 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 	})
 }
 
-func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
+func (h *ProviderHandler) CheckConnection(c *gin.Context) {
+	providerName := c.Param("provider_name")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "Provider name is required",
+		})
+		return
+	}
+
+	var req service.CheckConnectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+	errCode, err := h.modelProviderService.CheckConnection(providerName, req.APIKey, req.Region, req.BaseURL, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    errCode,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
+func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 	providerName := c.Param("provider_name")
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -408,8 +443,21 @@ func (h *ProviderHandler) CheckProviderConnection(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
+	instanceInfo, code, err := h.modelProviderService.ShowProviderInstance(providerName, instanceName, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	apikey, _ := instanceInfo["apikey"].(string)
+	region, _ := instanceInfo["region"].(string)
+	baseURL, _ := instanceInfo["base_url"].(string)
+
 	// Get tenant ID from user
-	errorCode, err := h.modelProviderService.CheckProviderConnection(providerName, instanceName, userID)
+	errorCode, err := h.modelProviderService.CheckConnection(providerName, apikey, region, baseURL, userID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    errorCode,

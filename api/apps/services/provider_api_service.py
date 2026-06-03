@@ -28,6 +28,13 @@ from api.db.services.tenant_model_service import TenantModelService
 from rag.llm import EmbeddingModel, ChatModel, RerankModel
 
 
+def _to_int(v, default=500):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def list_providers(tenant_id: str, all_available: bool = False):
     """
     List providers for a tenant.
@@ -42,6 +49,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
     if not FACTORY_LLM_INFOS:
         return False, []
 
+    factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
     factory_info_map = {f["name"]: f for f in FACTORY_LLM_INFOS}
     if all_available:
         providers = []
@@ -63,7 +71,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             providers.append(provider)
-        providers.sort(key=lambda x: x["name"])
+        providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
 
     # List tenant-configured providers
@@ -89,7 +97,7 @@ def list_providers(tenant_id: str, all_available: bool = False):
             if factory_info["name"].lower() == "siliconflow":
                 provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
             providers.append(provider)
-    providers.sort(key=lambda x: x["name"])
+    providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
 
 
