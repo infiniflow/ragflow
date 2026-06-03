@@ -2036,7 +2036,7 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.HUBSPOT,
     config: {
-      objects: '',
+      objects: ['contacts', 'companies', 'deals', 'tickets'],
       include_knowledge_base: true,
       batch_size: 2,
       credentials: {

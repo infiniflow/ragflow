@@ -192,7 +192,7 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     def poll_source(
         self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
     ) -> Any:
-        return self._iter_documents(since_epoch=start)
+        return self._iter_documents(since_epoch=start, until_epoch=end)
 
     def load_from_checkpoint(
         self,
@@ -203,7 +203,10 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         if not isinstance(checkpoint, HubSpotCheckpoint):
             checkpoint = self.build_dummy_checkpoint()
         since = start if start else None
-        return self._iter_documents(checkpoint=checkpoint, since_epoch=since)
+        until = end if end else None
+        return self._iter_documents(
+            checkpoint=checkpoint, since_epoch=since, until_epoch=until
+        )
 
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -248,7 +251,9 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                     batch = []
 
         if self.include_knowledge_base:
-            for article in self._iter_kb_articles(since_ms=None):
+            # allow_missing=False: an unavailable KB aborts prune rather than
+            # producing a CRM-only snapshot that would wrongly delete KB docs.
+            for article in self._iter_kb_articles(since_ms=None, allow_missing=False):
                 article_id = article.get("id")
                 if not article_id:
                     continue
@@ -314,6 +319,14 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                 resp.status_code,
                 correlation_id,
             )
+            # 401/403 are auth/scope problems — surface them as an actionable
+            # InsufficientPermissionsError so a missing object/KB scope reads
+            # as "fix your token" rather than an opaque unexpected failure.
+            if resp.status_code in (401, 403):
+                raise InsufficientPermissionsError(
+                    f"HubSpot request lacks access ({context}): HTTP {resp.status_code} "
+                    f"(correlation_id={correlation_id})"
+                )
             raise UnexpectedValidationError(
                 f"HubSpot request failed ({context}): HTTP {resp.status_code} "
                 f"(correlation_id={correlation_id})"
@@ -334,6 +347,7 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         obj: str,
         properties: list[str],
         since_ms: int | None,
+        until_ms: int | None = None,
     ) -> Generator[dict, None, None]:
         """Yield CRM records for *obj* via the v3 search endpoint.
 
@@ -396,6 +410,17 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                     ):
                         continue
 
+                    # Inclusive upper bound. Results are sorted ascending, so
+                    # the first record past ``until_ms`` means every remaining
+                    # record (this window and beyond) is also out of range —
+                    # stop the whole search here.
+                    if (
+                        until_ms is not None
+                        and last_modified is not None
+                        and last_modified > until_ms
+                    ):
+                        return
+
                     if last_modified is not None:
                         if latest_in_window is None or last_modified > latest_in_window:
                             latest_in_window = last_modified
@@ -437,14 +462,23 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
     def _iter_kb_articles(
         self,
         since_ms: int | None,
+        until_ms: int | None = None,
+        allow_missing: bool = True,
     ) -> Generator[dict, None, None]:
         """Yield Knowledge Base articles via the CMS knowledge endpoint.
 
         KB articles aren't exposed via CRM search, so the connector
         pages the dedicated ``/cms/v3/knowledge/articles`` endpoint and
-        filters client-side by ``updatedAt``. This is bounded by the
-        ``after`` cursor and stops the moment we see an article older
-        than the floor (results come back newest-first by default).
+        filters client-side by ``updatedAt`` (strict-lower / inclusive-upper
+        window). This is bounded by the ``after`` cursor and stops the moment
+        we see an article at or older than the floor (results come back
+        newest-first by default).
+
+        ``allow_missing`` controls how a ``404`` (portal without a Knowledge
+        Base) is treated: the sync path passes ``True`` so an absent KB does
+        not abort the run, while the prune path passes ``False`` so a
+        missing/unavailable KB aborts prune (fail closed) instead of
+        returning a CRM-only snapshot that would wrongly delete KB documents.
         """
         url = f"{_API_BASE}/cms/v3/knowledge/articles"
         after: str | None = None
@@ -459,19 +493,27 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
 
             resp = self._request("GET", url, params=params)
             if resp.status_code == 404:
-                # Portal doesn't have Knowledge Base enabled — skip
-                # silently rather than abort the surrounding sync.
-                return
+                if allow_missing:
+                    # Portal doesn't have Knowledge Base enabled — skip
+                    # silently rather than abort the surrounding sync.
+                    return
+                raise UnexpectedValidationError(
+                    "HubSpot Knowledge Base is unavailable (HTTP 404); refusing to "
+                    "return a partial prune snapshot that could delete KB documents."
+                )
             page = self._json(resp, context="kb_articles list")
 
             results = page.get("results", []) or []
             for article in results:
-                if since_ms is not None:
-                    updated_at = _iso_to_ms(article.get("updatedAt"))
-                    if updated_at is not None and updated_at <= since_ms:
-                        # Sorted descending; first stale entry means
-                        # everything after it is also stale.
-                        return
+                updated_at = _iso_to_ms(article.get("updatedAt"))
+                if since_ms is not None and updated_at is not None and updated_at <= since_ms:
+                    # Sorted descending; first stale entry means everything
+                    # after it is also stale.
+                    return
+                if until_ms is not None and updated_at is not None and updated_at > until_ms:
+                    # Too new for this snapshot window; descending order means
+                    # newer articles come first, so skip until we drop in-range.
+                    continue
                 yield article
 
             after = (page.get("paging", {}).get("next") or {}).get("after")
@@ -486,6 +528,7 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         self,
         checkpoint: HubSpotCheckpoint | None = None,
         since_epoch: float | None = None,
+        until_epoch: float | None = None,
     ):
         from common.data_source.models import Document
 
@@ -495,21 +538,32 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
         global_since_ms: int | None = None
         if since_epoch:
             global_since_ms = int(since_epoch * 1000)
+        global_until_ms: int | None = None
+        if until_epoch:
+            global_until_ms = int(until_epoch * 1000)
 
         batch: list[Document] = []
 
+        # Strict-lower / inclusive-upper window: records are pulled with
+        # ``since`` < hs_lastmodifieddate and bounded above by ``until`` (the
+        # framework's snapshot end). Honoring the upper bound keeps records
+        # modified mid-run from leaking in and pushing the watermark past the
+        # true window (they're picked up next run, whose lower bound is this
+        # run's upper bound — so an update can never fall into a gap).
+        #
         # Fail closed: every object is queried from the global watermark and
-        # any object/KB failure is allowed to propagate so the whole run
-        # aborts. The sync framework advances the global watermark only when
-        # a run completes, so aborting keeps it pinned and the next run
-        # retries the same window — a partial object failure can never move
-        # the watermark past records it never ingested. Re-running re-fetches
-        # already-seen records, which the content-hash dedup drops. (A 403 /
-        # missing-scope already surfaces as InsufficientPermissionsError; a
-        # genuinely absent KB returns quietly from _iter_kb_articles on 404.)
+        # any object/KB failure propagates so the whole run aborts. The sync
+        # framework advances the global watermark only when a run completes,
+        # so aborting keeps it pinned and the next run retries the same window
+        # — a partial object failure can never move the watermark past records
+        # it never ingested. Re-running re-fetches already-seen records, which
+        # the content-hash dedup drops. (A 401/403 surfaces as
+        # InsufficientPermissionsError via _json; a genuinely absent KB
+        # returns quietly from _iter_kb_articles on 404 here, while prune
+        # treats a missing KB as fail-closed.)
         for obj in self.objects:
             props = self.properties.get(obj, _DEFAULT_PROPERTIES.get(obj, ["hs_object_id"]))
-            for record in self._search_records(obj, props, global_since_ms):
+            for record in self._search_records(obj, props, global_since_ms, global_until_ms):
                 doc, _ = self._record_to_document(obj, record)
                 if doc is None:
                     continue
@@ -519,7 +573,7 @@ class HubSpotConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermS
                     batch = []
 
         if self.include_knowledge_base:
-            for article in self._iter_kb_articles(global_since_ms):
+            for article in self._iter_kb_articles(global_since_ms, global_until_ms):
                 doc, _ = self._kb_article_to_document(article)
                 if doc is None:
                     continue
