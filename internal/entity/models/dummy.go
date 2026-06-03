@@ -79,8 +79,8 @@ func (d *DummyModel) TranscribeAudio(modelName *string, file *string, apiConfig 
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (z *DummyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", d.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -88,8 +88,8 @@ func (d *DummyModel) AudioSpeech(modelName *string, audioContent *string, apiCon
 	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (z *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", d.Name())
 }
 
 // OCRFile OCR file
@@ -98,14 +98,14 @@ func (d *DummyModel) OCRFile(modelName *string, content []byte, url *string, api
 }
 
 // ParseFile parse file
-func (z *DummyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (z *DummyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
 }
 
-func (z *DummyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (d *DummyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

@@ -80,7 +80,14 @@ func (r *CommonDataResponse) SetOutputFormat(format OutputFormat) {
 func (r *CommonDataResponse) PrintOut() {
 	if r.Code == 0 {
 		table := make([]map[string]interface{}, 0)
-		table = append(table, r.Data)
+		for key, value := range r.Data {
+			elem := map[string]interface{}{
+				"field": key,
+				"value": value,
+			}
+			table = append(table, elem)
+		}
+		//table = append(table, r.Data)
 		PrintTableSimpleByFormat(table, r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
@@ -156,9 +163,9 @@ func (r *ChunkResponse) PrintOut() {
 }
 
 type MetadataResponse struct {
-	Code         int                     `json:"code"`
-	Data         map[string]interface{}  `json:"data"`
-	Message      string                  `json:"message"`
+	Code         int                    `json:"code"`
+	Data         map[string]interface{} `json:"data"`
+	Message      string                 `json:"message"`
 	Duration     float64
 	OutputFormat OutputFormat
 }
@@ -213,8 +220,8 @@ func printFlattenedMetadata(data map[string]interface{}, format OutputFormat) {
 				docIDStr = fmt.Sprintf("%v", docIDs)
 			}
 			tableData = append(tableData, map[string]interface{}{
-				"field":         field,
-				"value":         value,
+				"field":        field,
+				"value":        value,
 				"document_ids": docIDStr,
 			})
 		}

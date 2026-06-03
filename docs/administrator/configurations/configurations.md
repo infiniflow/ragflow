@@ -166,6 +166,32 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
+### `s3` (Tigris)
+
+To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `STORAGE_IMPL=AWS_S3` in `.env` and configure the `s3:` section:
+
+```yaml
+s3:
+  access_key: 'tid_YOUR_ACCESS_KEY'
+  secret_key: 'tsec_YOUR_SECRET_KEY'
+  region_name: 'auto'
+  endpoint_url: 'https://t3.storage.dev'
+  bucket: 'ragflow'
+  prefix_path: 'ragflow'
+  signature_version: 'v4'
+  addressing_style: 'virtual'
+```
+
+- `access_key` / `secret_key`: Create at [console.tigris.dev](https://console.tigris.dev).
+- `region_name`: Must be `auto`.
+- `endpoint_url`: `https://t3.storage.dev`, or `https://fly.storage.tigris.dev` on Fly.io.
+- `addressing_style`: Must be `virtual`.
+- `bucket` / `prefix_path`: Optional. Enables single-bucket mode — see [Migrate from multi-bucket to single-bucket mode](/migration#migrate-from-multi-bucket-to-single-bucket-mode).
+
+When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
+
+For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google Cloud Storage), see the commented examples in [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template).
+
 ### `redis`
 
 - `host`: The Redis serving IP *and* port inside the Docker container. Defaults to `redis:6379`.

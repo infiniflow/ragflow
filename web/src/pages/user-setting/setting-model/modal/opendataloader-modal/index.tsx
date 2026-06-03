@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { LLMFactory } from '@/constants/llm';
 import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -77,6 +77,12 @@ const OpenDataLoaderModal = ({
       hideModal?.();
     }
   };
+
+  useEffect(() => {
+    if (!visible) {
+      form.reset();
+    }
+  }, [visible, form]);
 
   return (
     <Dialog open={visible} onOpenChange={hideModal}>

@@ -70,6 +70,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
         return _gen()
 
     _stub(monkeypatch, "quart", Response=lambda *a, **k: SimpleNamespace(headers=SimpleNamespace(add_header=lambda *aa, **kk: None)), request=SimpleNamespace())
+    _stub(monkeypatch, "api.apps", AUTH_BETA="beta", login_required=lambda *_a, **_k: (lambda func: func))
     _stub(monkeypatch, "agent.canvas", Canvas=lambda *a, **k: SimpleNamespace(get_component_input_form=lambda _n: {}, get_prologue=lambda: "", get_mode=lambda: "agent"))
     _stub(monkeypatch, "api.db.db_models", APIToken=SimpleNamespace(query=lambda **_k: [SimpleNamespace(tenant_id="attacker-tenant")]))
     _stub(monkeypatch, "api.db.services.api_service", API4ConversationService=SimpleNamespace())
@@ -88,6 +89,7 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     _stub(
         monkeypatch,
         "api.utils.api_utils",
+        add_tenant_id_to_kwargs=lambda func: func,
         check_duplicate_ids=lambda *_a, **_k: None,
         get_error_data_result=lambda message="Sorry", **_k: {"code": 102, "message": message, "data": None},
         get_json_result=lambda code=0, message="", data=None: {"code": code, "message": message, "data": data},
@@ -112,9 +114,6 @@ def _load_bot_api(monkeypatch, *, accessible, calls):
     module.manager = _PassthroughManager()
     monkeypatch.setitem(sys.modules, "test_agentbots_bot_api", module)
     spec.loader.exec_module(module)
-    # The token is read from request headers; force a valid one so we exercise
-    # the access-control branch rather than the auth-missing branch.
-    module._get_sdk_authorization_token = lambda: "beta-token"
     return module
 
 
