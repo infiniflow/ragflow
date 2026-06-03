@@ -1,5 +1,6 @@
 import {
   DynamicForm,
+  DynamicFormRef,
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
@@ -13,7 +14,7 @@ import {
   useHideWhenInstanceExists,
   VerifyResult,
 } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -34,6 +35,7 @@ const FishAudioModal = ({
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
+  const formRef = useRef<DynamicFormRef>(null);
   const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
 
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
@@ -125,6 +127,12 @@ const FishAudioModal = ({
     [llmFactory, onVerify],
   );
 
+  useEffect(() => {
+    if (!visible) {
+      formRef.current?.reset();
+    }
+  }, [visible]);
+
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
@@ -137,6 +145,7 @@ const FishAudioModal = ({
       <DynamicForm.Root
         fields={fields}
         onSubmit={(data) => console.log(data)}
+        ref={formRef}
         defaultValues={{
           instance_name: '',
           model_type: ['tts'],

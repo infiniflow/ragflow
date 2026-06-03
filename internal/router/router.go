@@ -280,6 +280,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
 				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
 				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
 			}
 
@@ -318,14 +319,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances", r.providerHandler.ListProviderInstances)
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
-				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckProviderConnection)
+				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
+				provider.GET("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
-				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
+				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
 				v1.POST("/embeddings", r.providerHandler.EmbedText)
@@ -438,15 +440,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			chunk.POST("/list", r.chunkHandler.List)
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
-		}
-
-		// LLM routes
-		llm := authorized.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-			llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
 		}
 
 		// Chat routes

@@ -72,10 +72,14 @@ export const useGetPaginationWithRouter = () => {
   } = useSetPaginationParams();
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize?: number) => {
-      setPaginationParams(pageNumber, pageSize);
+    (pageNumber: number, size?: number) => {
+      if (size !== pageSize) {
+        setPaginationParams(1, size);
+      } else {
+        setPaginationParams(pageNumber, size);
+      }
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const setCurrentPagination = useCallback(

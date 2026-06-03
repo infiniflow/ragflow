@@ -53,7 +53,7 @@ const ApiKeyModal = ({
   const { t } = useTranslate('setting');
 
   const handleOk = useCallback(async () => {
-    await form.handleSubmit((values) => onOk(values))();
+    await form.handleSubmit((values) => onOk(values as ApiKeyPostBody))();
   }, [form, onOk]);
 
   const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = useCallback(
@@ -68,6 +68,8 @@ const ApiKeyModal = ({
   useEffect(() => {
     if (visible) {
       form.setValue('api_key', initialValue);
+    } else {
+      form.reset();
     }
   }, [initialValue, form, visible]);
 
