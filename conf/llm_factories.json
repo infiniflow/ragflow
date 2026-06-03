@@ -232,7 +232,7 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "930",
+            "rank": "992",
             "llm": [
                 {
                     "llm_name": "grok-4",
@@ -404,7 +404,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,TTS,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "950",
+            "rank": "994",
             "url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "llm": [
                 {
@@ -831,7 +831,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "940",
+            "rank": "993",
             "url": "https://open.bigmodel.cn/api/paas/v4",
             "llm": [
                 {
@@ -985,7 +985,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "830",
+            "rank": "988",
             "llm": []
         },
         {
@@ -1008,7 +1008,7 @@
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
             "llm": [],
-            "rank": "890"
+            "rank": "985"
         },
         {
             "name": "VLLM",
@@ -1022,7 +1022,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
-            "rank": "960",
+            "rank": "995",
             "url": "https://api.moonshot.cn/v1",
             "llm": [
                 {
@@ -1151,7 +1151,7 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "970",
+            "rank": "996",
             "url": "https://api.deepseek.com/v1",
             "llm": [
                 {
@@ -1337,7 +1337,7 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "810",
+            "rank": "987",
             "url": "https://api.minimaxi.com/v1",
             "llm": [
                 {
@@ -1394,7 +1394,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,MODERATION",
             "status": "1",
-            "rank": "910",
             "url": "https://api.mistral.ai/v1",
             "llm": [
                 {
@@ -1489,7 +1488,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,MODERATION",
             "status": "1",
-            "rank": "850",
             "llm": [
                 {
                     "llm_name": "gpt-4o-mini",
@@ -1574,7 +1572,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
-            "rank": "860",
             "llm": []
         },
         {
@@ -1582,7 +1579,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
-            "rank": "980",
+            "rank": "997",
             "llm": [
                 {
                     "llm_name": "gemini-3-pro-preview",
@@ -1639,7 +1636,6 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "800",
             "llm": [
                 {
                     "llm_name": "gemma2-9b-it",
@@ -1700,7 +1696,7 @@
             "tags": "LLM,IMAGE2TEXT",
             "status": "1",
             "llm": [],
-            "rank": "840"
+            "rank": "989"
         },
         {
             "name": "StepFun",
@@ -1813,7 +1809,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",
-            "rank": "790",
             "llm": [
                 {
                     "llm_name": "01-ai/yi-large",
@@ -2561,7 +2556,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
             "status": "1",
-            "rank": "900",
+            "rank": "990",
             "llm": [
                 {
                     "llm_name": "command-r-plus",
@@ -2840,7 +2835,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
             "status": "1",
-            "rank": "780",
+            "rank": "986",
             "url": "https://api.siliconflow.cn/v1",
             "llm": [
                 {
@@ -3298,7 +3293,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT,TTS",
             "status": "1",
-            "rank": "781",
             "llm": [
                 {
                     "llm_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -3906,7 +3900,6 @@
             "logo": "",
             "tags": "LLM,TTS",
             "status": "1",
-            "rank": "820",
             "llm": []
         },
         {
@@ -3914,7 +3907,6 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "880",
             "llm": []
         },
         {
@@ -3936,7 +3928,7 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "990",
+            "rank": "998",
             "url": "https://api.anthropic.com/",
             "llm": [
                 {
@@ -4598,7 +4590,7 @@
             "logo": "",
             "tags": "TEXT EMBEDDING,TEXT RE-RANK",
             "status": "1",
-            "rank": "920",
+            "rank": "991",
             "llm": []
         },
         {
@@ -5342,7 +5334,6 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "870",
             "url": "https://api.longcat.chat/openai",
             "llm": [
                 {
@@ -6266,7 +6257,6 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "rank": "900",
             "llm": []
         },
         {
@@ -6274,7 +6264,6 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "rank": "910",
             "llm": []
         },
         {
@@ -6282,7 +6271,6 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "rank": "920",
             "llm": []
         },
         {
@@ -6290,7 +6278,6 @@
             "logo": "",
             "tags": "LLM",
             "status": "1",
-            "rank": "900",
             "url": "https://api.n1n.ai/v1",
             "llm": [
                 {
@@ -6328,7 +6315,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
-            "rank": "250",
             "url": "https://api-us-ca.umodelverse.ai/v1",
             "llm": [
                 {
@@ -6485,7 +6471,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT,SPEECH2TEXT,TTS,TEXT RE-RANK",
             "status": "1",
-            "rank": "248",
             "url": "https://futurmix.ai/v1",
             "llm": [
                 {
@@ -6600,7 +6585,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
-            "rank": "249",
             "url": "https://api.modelverse.cn/v1",
             "llm": [
                 {
@@ -6793,7 +6777,6 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,IMAGE2TEXT",
             "status": "1",
-            "rank": "100",
             "llm": []
         },
         {

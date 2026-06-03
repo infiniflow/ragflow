@@ -7,6 +7,7 @@ const {
   listProviders,
   addProvider,
   addProviderInstance,
+  verifyProviderConnection,
   listProviderInstances,
   listInstanceModels,
   showProviderInstance,
@@ -38,6 +39,10 @@ const methods = {
   },
   addProviderInstance: {
     url: addProviderInstance,
+    method: 'post',
+  },
+  verifyProviderConnection: {
+    url: verifyProviderConnection,
     method: 'post',
   },
   listProviderInstances: {
