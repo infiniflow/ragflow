@@ -47,6 +47,7 @@ from .seafile_connector import SeaFileConnector
 from .rdbms_connector import RDBMSConnector
 from .webdav_connector import WebDAVConnector
 from .rest_api_connector import RestAPIConnector
+from .lumapps_connector import LumAppsConnector
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
 from .exceptions import (
@@ -93,4 +94,5 @@ __all__ = [
     "WebDAVConnector",
     "DingTalkAITableConnector",
     "RestAPIConnector",
+    "LumAppsConnector",
 ]
