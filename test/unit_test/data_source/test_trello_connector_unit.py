@@ -145,6 +145,15 @@ def test_trello_connector_retrieves_slim_docs() -> None:
     assert [[doc.id for doc in batch] for batch in batches] == [["trello:c1", "trello:c2"]]
 
 
+def test_trello_connector_falls_back_to_card_id_timestamp() -> None:
+    connector = make_connector()
+    expected = datetime(2026, 6, 1, 11, 0, tzinfo=timezone.utc)
+    card_id = f"{int(expected.timestamp()):08x}0000000000000000"
+
+    assert connector._parse_trello_datetime("not-a-date") is None
+    assert connector._resolve_card_updated_at({"id": card_id, "dateLastActivity": "not-a-date"}) == expected
+
+
 def test_trello_connector_requires_credentials() -> None:
     connector = TrelloConnector(api_base="https://trello.test/1")
 

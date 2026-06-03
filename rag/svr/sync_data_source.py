@@ -1143,11 +1143,11 @@ class Trello(SyncBase):
 
         self.connector = TrelloConnector(
             board_ids=self.conf.get("board_ids"),
-            include_comments=bool(self.conf.get("include_comments", True)),
-            include_attachments=bool(self.conf.get("include_attachments", True)),
+            include_comments=self._as_bool(self.conf.get("include_comments", True)),
+            include_attachments=self._as_bool(self.conf.get("include_attachments", True)),
             batch_size=batch_size,
         )
-        self.connector.load_credentials(self.conf["credentials"])
+        self.connector.load_credentials(self.conf.get("credentials", {}))
         self.connector.validate_connector_settings()
 
         poll_start = task.get("poll_range_start")
@@ -1162,6 +1162,14 @@ class Trello(SyncBase):
         board_ids = self.conf.get("board_ids") or "<all-accessible-boards>"
         self.log_connection("Trello", f"board_ids({board_ids})", task)
         return document_generator
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() not in {"false", "0", "no", "off", ""}
+        return bool(value)
 
 
 class Slack(SyncBase):

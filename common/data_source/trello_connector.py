@@ -14,6 +14,8 @@ from common.data_source.models import (
     SlimDocument,
 )
 
+_USER_AGENT = "RAGFlow"
+
 
 class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
     def __init__(
@@ -31,6 +33,7 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self.api_base = api_base.rstrip("/")
         self.credentials: dict[str, Any] = {}
         self.session = requests.Session()
+        self.session.headers.update({"User-Agent": _USER_AGENT})
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.credentials = credentials or {}
@@ -82,7 +85,7 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         for board in self._iter_boards():
             lists_by_id = self._lists_by_id(board["id"])
             for card in self._iter_cards(board["id"]):
-                updated_at = self._parse_trello_datetime(card.get("dateLastActivity"))
+                updated_at = self._resolve_card_updated_at(card)
                 ts = updated_at.timestamp()
                 if start is not None and ts <= start:
                     continue
@@ -250,14 +253,33 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         return f"trello:{card['id']}"
 
     @staticmethod
-    def _parse_trello_datetime(value: Any) -> datetime:
+    def _parse_trello_datetime(value: Any) -> datetime | None:
         if not isinstance(value, str) or not value.strip():
-            return datetime.now(timezone.utc)
+            return None
         normalized = value.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(normalized)
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc)
+
+    def _resolve_card_updated_at(self, card: dict[str, Any]) -> datetime:
+        parsed = self._parse_trello_datetime(card.get("dateLastActivity"))
+        if parsed is not None:
+            return parsed
+        return self._datetime_from_card_id(card.get("id")) or datetime.now(timezone.utc)
+
+    @staticmethod
+    def _datetime_from_card_id(card_id: Any) -> datetime | None:
+        if not isinstance(card_id, str) or len(card_id) < 8:
+            return None
+        try:
+            timestamp = int(card_id[:8], 16)
+        except ValueError:
+            return None
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
     @staticmethod
     def _normalize_id_list(value: list[str] | str | None) -> list[str]:
