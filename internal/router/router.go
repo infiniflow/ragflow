@@ -101,6 +101,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
 
+	// OAuth callbacks are invoked by third-party providers and cannot rely on
+	// the RAGFlow auth middleware.
+	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
+	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
@@ -126,6 +131,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// Document images are embedded directly in pages and match Python's public route.
 		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+
+		// Google redirects here after Gmail / Google Drive web OAuth completes.
+		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
+		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
 	}
 
 	// Protected routes
@@ -354,6 +363,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
 				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
+				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
