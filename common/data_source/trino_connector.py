@@ -103,6 +103,7 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         response.raise_for_status()
         payload = response.json()
         while True:
+            self._raise_for_trino_error(payload)
             yield from self._rows_from_payload(payload)
             next_uri = payload.get("nextUri")
             if not next_uri:
@@ -118,6 +119,17 @@ class TrinoConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         if self.schema:
             headers["X-Trino-Schema"] = self.schema
         return headers
+
+    @staticmethod
+    def _raise_for_trino_error(payload: dict[str, Any]) -> None:
+        error = payload.get("error")
+        if not error:
+            return
+        message = error.get("message") or "Trino query failed"
+        name = error.get("errorName")
+        if name:
+            message = f"{name}: {message}"
+        raise ValueError(message)
 
     @staticmethod
     def _rows_from_payload(payload: dict[str, Any]) -> Iterator[dict[str, Any]]:

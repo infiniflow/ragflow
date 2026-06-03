@@ -45,6 +45,12 @@ class FakeSession:
         return FakeResponse({})
 
 
+class ErrorSession(FakeSession):
+    def post(self, url: str, data: str, headers: dict[str, str], timeout: int) -> FakeResponse:
+        del url, data, headers, timeout
+        return FakeResponse({"error": {"errorName": "USER_ERROR", "message": "bad query"}})
+
+
 def make_connector() -> TrinoConnector:
     connector = TrinoConnector(
         server_url="https://trino.test",
@@ -106,3 +112,12 @@ def test_trino_connector_requires_query() -> None:
 
     with pytest.raises(ValueError, match="query"):
         connector.validate_connector_settings()
+
+
+@pytest.mark.p1
+def test_trino_connector_raises_trino_errors() -> None:
+    connector = make_connector()
+    connector.session = ErrorSession()
+
+    with pytest.raises(ValueError, match="USER_ERROR: bad query"):
+        list(connector.load_from_state())
