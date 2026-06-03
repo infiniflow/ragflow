@@ -41,7 +41,7 @@
                                 ]
                             }
                         },
-                        "llm_id": "deepseek-chat@DeepSeek",
+                        "llm_id": "deepseek-chat@default@DeepSeek",
                         "message_history_window_size": 1,
                         "outputs": {
                             "category_name": {
@@ -86,7 +86,7 @@
                             }
                         },
                         "llm_filter": "all",
-                        "llm_id": "deepseek-chat@DeepSeek",
+                        "llm_id": "deepseek-chat@default@DeepSeek",
                         "message_history_window_size": 1,
                         "outputs": {
                             "category_name": {
@@ -324,7 +324,7 @@
                                 }
                             ],
                             "llm_filter": "all",
-                            "llm_id": "deepseek-chat@DeepSeek",
+                            "llm_id": "deepseek-chat@default@DeepSeek",
                             "maxTokensEnabled": false,
                             "max_tokens": 4096,
                             "message_history_window_size": 1,
@@ -388,7 +388,7 @@
                                     "uuid": "2fda442d-8580-440c-a947-0df607ca56fe"
                                 }
                             ],
-                            "llm_id": "deepseek-chat@DeepSeek",
+                            "llm_id": "deepseek-chat@default@DeepSeek",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "message_history_window_size": 1,
