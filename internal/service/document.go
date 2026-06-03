@@ -373,6 +373,7 @@ func (s *DocumentService) cleanupFileReferences(docID string) {
 		}
 		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
 			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
+			continue // keep the blob so the live file row still has its object
 		}
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
