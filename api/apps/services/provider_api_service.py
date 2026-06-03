@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import aiohttp
 import json
 import logging
 import asyncio
@@ -332,7 +333,24 @@ async def verify_api_key(provider_name: str, api_key: str, base_url: str=None, r
 
     factory_llms = factory_info[0]["llm"]
     if not factory_llms:
-        return False, f"No models found for provider '{provider_name}'"
+        url = base_url or factory_info[0].get("url")
+        if not url:
+            return False, f"No models found for provider '{provider_name}'"
+        v1_index = url.find("/v1")
+        if v1_index >= 0:
+            models_url = url[: v1_index + 3] + "/models"
+        else:
+            models_url = url.rstrip("/") + "/v1/models"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(models_url, headers={"Authorization": f"Bearer {api_key}"}) as resp:
+                    if resp.status == 200:
+                        return True, "success"
+                    else:
+                        return False, f"Fail to access {models_url} using this api key."
+        except Exception as e:
+            logging.error(f"Fail to access {models_url} using this api key.", exc_info=e)
+            return False, f"Fail to access {models_url} using this api key."
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
