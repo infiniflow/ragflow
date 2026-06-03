@@ -158,15 +158,35 @@ class TrelloConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         return card_list
 
     def _comments_for_card(self, card_id: str) -> list[dict[str, Any]]:
-        actions = self._get(
-            f"cards/{card_id}/actions",
-            {
+        comments: list[dict[str, Any]] = []
+        before = None
+
+        while True:
+            params = {
                 "filter": "commentCard",
-                "fields": "data,date,memberCreator",
+                "fields": "id,data,date,memberCreator",
                 "limit": "1000",
-            },
-        )
-        comments = [action for action in actions if action.get("data", {}).get("text")]
+            }
+            if before:
+                params["before"] = before
+
+            actions = self._get(f"cards/{card_id}/actions", params)
+            comments.extend(
+                action for action in actions if action.get("data", {}).get("text")
+            )
+
+            if len(actions) < 1000:
+                break
+
+            next_before = actions[-1].get("id") or actions[-1].get("date")
+            if not next_before or next_before == before:
+                self.logger.warning(
+                    "Stopping Trello comment pagination for card_id=%s: missing cursor",
+                    card_id,
+                )
+                break
+            before = next_before
+
         self.logger.debug("Loaded %s Trello comment(s) for card_id=%s", len(comments), card_id)
         return comments
 

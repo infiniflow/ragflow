@@ -107,6 +107,40 @@ class FailingSession:
         return response
 
 
+class PaginatedCommentsSession:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def get(self, url: str, params: dict[str, Any], timeout: int) -> FakeResponse:
+        del timeout
+        path = url.split("/1/", 1)[1]
+        self.calls.append((path, params))
+        if path != "cards/c1/actions":
+            return FakeResponse([])
+
+        if not params.get("before"):
+            return FakeResponse(
+                [
+                    {
+                        "id": f"a{index}",
+                        "date": f"2026-06-01T12:{index % 60:02d}:00.000Z",
+                        "data": {"text": f"Comment {index}"},
+                    }
+                    for index in range(1000)
+                ]
+            )
+
+        return FakeResponse(
+            [
+                {
+                    "id": "older",
+                    "date": "2026-05-31T12:00:00.000Z",
+                    "data": {"text": "Older comment"},
+                }
+            ]
+        )
+
+
 def make_connector() -> TrelloConnector:
     connector = TrelloConnector(api_base="https://trello.test/1")
     connector.session = FakeSession()
@@ -158,6 +192,19 @@ def test_trello_connector_retrieves_slim_docs() -> None:
     batches = list(connector.retrieve_all_slim_docs_perm_sync())
 
     assert [[doc.id for doc in batch] for batch in batches] == [["trello:c1", "trello:c2"]]
+
+
+@pytest.mark.p1
+def test_trello_connector_paginates_card_comments() -> None:
+    connector = make_connector()
+    connector.session = PaginatedCommentsSession()
+
+    comments = connector._comments_for_card("c1")
+
+    assert len(comments) == 1001
+    assert comments[-1]["data"]["text"] == "Older comment"
+    assert connector.session.calls[0][1]["limit"] == "1000"
+    assert connector.session.calls[1][1]["before"] == "a999"
 
 
 @pytest.mark.p1
