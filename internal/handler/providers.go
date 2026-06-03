@@ -772,7 +772,7 @@ func (h *ProviderHandler) EnableOrDisableModel(c *gin.Context) {
 	})
 }
 
-func prepareAddCustomModelRequest(req *service.AddCustomModelRequest, providerName, instanceName string) error {
+func prepareProviderInstance(providerName, instanceName, reqProviderName, reqInstanceName string) error {
 	if providerName == "" {
 		return errors.New("Provider name is required")
 	}
@@ -781,12 +781,20 @@ func prepareAddCustomModelRequest(req *service.AddCustomModelRequest, providerNa
 		return errors.New("Instance name is required")
 	}
 
-	if req.ProviderName != "" && !strings.EqualFold(req.ProviderName, providerName) {
+	if reqProviderName != "" && !strings.EqualFold(reqProviderName, providerName) {
 		return errors.New("Provider name does not match path")
 	}
 
-	if req.InstanceName != "" && !strings.EqualFold(req.InstanceName, instanceName) {
+	if reqInstanceName != "" && !strings.EqualFold(reqInstanceName, instanceName) {
 		return errors.New("Instance name does not match path")
+	}
+
+	return nil
+}
+
+func prepareAddCustomModelRequest(req *service.AddCustomModelRequest, providerName, instanceName string) error {
+	if err := prepareProviderInstance(providerName, instanceName, req.ProviderName, req.InstanceName); err != nil {
+		return err
 	}
 
 	if req.ModelName == "" {
@@ -835,7 +843,66 @@ func (h *ProviderHandler) AddCustomModel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": common.CodeSuccess,
 	})
+}
 
+func prepareAddModelRequest(req *service.AddModelRequest, providerName, instanceName string) error {
+	if err := prepareProviderInstance(providerName, instanceName, req.ProviderName, req.InstanceName); err != nil {
+		return err
+	}
+
+	if len(req.Models) == 0 {
+		return errors.New("Models are required")
+	}
+
+	for _, model := range req.Models {
+		if model.ModelName == "" {
+			return errors.New("Model name is required")
+		}
+
+		if len(model.ModelTypes) == 0 {
+			return errors.New("Model type is required")
+		}
+	}
+
+	req.ProviderName = providerName
+	req.InstanceName = instanceName
+	return nil
+}
+
+func (h *ProviderHandler) AddModel(c *gin.Context) {
+	var req service.AddModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if err := prepareAddModelRequest(&req, c.Param("provider_name"), c.Param("instance_name")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	code, err := h.modelProviderService.AddModel(&req, userID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"message": "success",
+	})
 }
 
 type DropInstanceModelRequest struct {
