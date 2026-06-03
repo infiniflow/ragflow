@@ -1380,7 +1380,20 @@ class LiteLLMBase(ABC):
             # defensive pattern already used for MiniMax just below.
             try:
                 key_obj = json.loads(key) if isinstance(key, str) else key
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                # Falling back to treating `key` as the raw API key — the
+                # verify-api-key flow during "Add Azure-OpenAI" reaches us
+                # here. Log at debug level (not info) since this is the
+                # common verify path, not an error. Never log the key value
+                # itself: log its length only so credentials don't leak into
+                # auth-troubleshooting traces.
+                logging.debug(
+                    "Azure-OpenAI chat init: key is not JSON (key_type=%s, key_len=%s, exc=%s); "
+                    "falling back to raw-key handling for self.api_key, default api_version.",
+                    type(key).__name__,
+                    len(key) if isinstance(key, (str, bytes)) else "n/a",
+                    e,
+                )
                 key_obj = None
             if isinstance(key_obj, dict):
                 self.api_key = key_obj.get("api_key", "")
