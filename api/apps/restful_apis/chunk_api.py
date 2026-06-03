@@ -44,7 +44,6 @@ from api.utils.api_utils import (
     get_request_json,
     get_result,
     server_error_response,
-    token_required,
 )
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
