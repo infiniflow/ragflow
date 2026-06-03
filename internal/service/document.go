@@ -253,118 +253,132 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 	return deleted, nil
 }
 
-// deleteDocumentFull performs full document cleanup:
-//  1. Delete tasks from DB
-//  2. Delete chunks from document engine
-//  3. Delete metadata from document engine
-//  4. Hard-delete document row + decrement KB counters
-//  5. Delete file2document mapping + file record + storage blob
-//
-// Non-critical failures are tolerated (logged and continue).
+// deleteDocumentFull performs full document cleanup. Non-critical failures
+// are tolerated (logged and continue). Critical failures (e.g. document or
+// KB not found) return an error immediately.
 func (s *DocumentService) deleteDocumentFull(docID string) error {
+	doc, kb, err := s.resolveDocAndKB(docID)
+	if err != nil {
+		return err
+	}
+
+	s.deleteDocTasks(docID)
+	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	if err := s.deleteDocRecordWithCounters(doc, kb.ID); err != nil {
+		return err
+	}
+	s.cleanupFileReferences(docID)
+
+	return nil
+}
+
+// resolveDocAndKB loads the document and its knowledgebase, returning both or
+// an error.
+func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {
 	doc, err := s.documentDAO.GetByID(docID)
 	if err != nil {
-		return fmt.Errorf("document not found: %w", err)
+		return nil, nil, fmt.Errorf("document not found: %w", err)
 	}
-	kbID := doc.KbID
-	tokenNum := doc.TokenNum
-	chunkIDNum := doc.ChunkNum
-
-	// Resolve tenant ID for engine index name
-	kb, err := s.kbDAO.GetByID(kbID)
+	kb, err := s.kbDAO.GetByID(doc.KbID)
 	if err != nil {
-		return fmt.Errorf("knowledgebase not found: %w", err)
+		return nil, nil, fmt.Errorf("knowledgebase not found: %w", err)
 	}
-	tenantID := kb.TenantID
+	return doc, kb, nil
+}
 
-	// 1. Delete tasks from DB
+// deleteDocTasks removes all task rows for the given document. Failures are
+// logged and continue.
+func (s *DocumentService) deleteDocTasks(docID string) {
 	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete tasks for %s: %v", docID, delErr))
+		common.Logger.Warn(fmt.Sprintf("deleteDocTasks: failed to delete tasks for %s: %v", docID, delErr))
 	}
+}
 
-	// 2. Delete chunks from document engine
-	if s.docEngine != nil {
-		ctx := context.Background()
-		indexName := fmt.Sprintf("ragflow_%s", tenantID)
-		if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete chunks for %s: %v", docID, delErr))
-		}
+// deleteDocEngineData removes chunks and metadata from the document engine.
+// No-op when the engine is nil.
+func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
+	if s.docEngine == nil {
+		return
 	}
-
-	// 3. Delete metadata from document engine (skip if engine not available)
-	if s.docEngine != nil && s.metadataSvc != nil {
+	ctx := context.Background()
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
+	}
+	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(docID) // logs internally
 	}
+}
 
-	// 4. Hard-delete document + decrement KB counters
-	if delErr := s.documentDAO.Delete(docID); delErr != nil {
-		return fmt.Errorf("failed to delete document %s: %w", docID, delErr)
+// deleteDocRecordWithCounters hard-deletes the document row and decrements the
+// KB counters atomically.
+func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID string) error {
+	if delErr := s.documentDAO.Delete(doc.ID); delErr != nil {
+		return fmt.Errorf("failed to delete document %s: %w", doc.ID, delErr)
 	}
-	if decErr := s.kbDAO.DecreaseDocumentNum(kbID, 1, chunkIDNum, tokenNum); decErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to decrement KB counters for %s: %v", kbID, decErr))
+	if decErr := s.kbDAO.DecreaseDocumentNum(kbID, 1, doc.ChunkNum, doc.TokenNum); decErr != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
 	}
+	return nil
+}
 
-	// 5. Clean up file2document mapping, file record, and storage blob.
-	// A single file_id can be shared across multiple documents (via
-	// file2document rows with different document_id). Only delete the
-	// file record and its blob when no other document still references
-	// the same file_id.
+// cleanupFileReferences deletes file2document mappings for docID, and for each
+// referenced file, only hard-deletes the file record and its storage blob when
+// no other document still references the same file_id.
+func (s *DocumentService) cleanupFileReferences(docID string) {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
 	if mapErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to get file2document mappings for %s: %v", docID, mapErr))
+		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
 	}
-	if len(mappings) > 0 {
-		// Collect unique file_ids for this document
-		seen := make(map[string]bool)
-		var fileIDs []string
-		for _, m := range mappings {
-			if m.FileID == nil || seen[*m.FileID] {
-				continue
-			}
-			seen[*m.FileID] = true
-			fileIDs = append(fileIDs, *m.FileID)
+	if len(mappings) == 0 {
+		return
+	}
+
+	// Collect unique file_ids
+	seen := make(map[string]bool)
+	var fileIDs []string
+	for _, m := range mappings {
+		if m.FileID == nil || seen[*m.FileID] {
+			continue
+		}
+		seen[*m.FileID] = true
+		fileIDs = append(fileIDs, *m.FileID)
+	}
+
+	// Delete all file2document rows for this document
+	if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
+	}
+
+	// For each file, only delete the record and blob when no other doc references it
+	for _, fileID := range fileIDs {
+		remaining, remErr := s.file2DocumentDAO.GetByFileID(fileID)
+		if remErr != nil {
+			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
+			continue
+		}
+		if len(remaining) > 0 {
+			continue
 		}
 
-		// Delete all file2document rows for this document
-		if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete f2d mapping for %s: %v", docID, delErr))
+		fileDAO := dao.NewFileDAO()
+		file, fErr := fileDAO.GetByID(fileID)
+		if fErr != nil || file == nil {
+			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
+			continue
 		}
-
-		// For each file, only delete if no other document still references it
-		for _, fileID := range fileIDs {
-			remaining, remErr := s.file2DocumentDAO.GetByFileID(fileID)
-			if remErr != nil {
-				common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to check remaining f2d for %s: %v", fileID, remErr))
-				continue
-			}
-			if len(remaining) > 0 {
-				// file_id is still referenced by other documents; skip file/blob deletion
-				continue
-			}
-
-			fileDAO := dao.NewFileDAO()
-			file, fErr := fileDAO.GetByID(fileID)
-			if fErr != nil || file == nil {
-				common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: file not found %s: %v", fileID, fErr))
-				continue
-			}
-			// Delete file record
-			if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
-				common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete file %s: %v", fileID, delErr))
-			}
-			// Delete storage blob
-			if file.Location != nil && *file.Location != "" {
-				storageImpl := storage.GetStorageFactory().GetStorage()
-				if storageImpl != nil {
-					if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
-						common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
-					}
+		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
+			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
+		}
+		if file.Location != nil && *file.Location != "" {
+			storageImpl := storage.GetStorageFactory().GetStorage()
+			if storageImpl != nil {
+				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
+					common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
 				}
 			}
 		}
 	}
-
-	return nil
 }
 
 // ListDocuments list documents

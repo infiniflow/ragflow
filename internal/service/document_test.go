@@ -668,3 +668,214 @@ func TestDeleteDocument_DeligatesToFullCleanup(t *testing.T) {
 		t.Fatal("document should be deleted")
 	}
 }
+
+// --- Sub-method tests ---
+
+func TestResolveDocAndKB_Success(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+
+	svc := testDocumentService(t)
+
+	doc, kb, err := svc.resolveDocAndKB("doc-1")
+	if err != nil {
+		t.Fatalf("resolveDocAndKB: %v", err)
+	}
+	if doc.ID != "doc-1" {
+		t.Fatalf("doc ID mismatch: %s", doc.ID)
+	}
+	if kb.ID != "kb-1" {
+		t.Fatalf("kb ID mismatch: %s", kb.ID)
+	}
+	if kb.TenantID != "tenant-1" {
+		t.Fatalf("tenant ID mismatch: %s", kb.TenantID)
+	}
+}
+
+func TestResolveDocAndKB_DocNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	svc := testDocumentService(t)
+
+	_, _, err := svc.resolveDocAndKB("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent doc")
+	}
+}
+
+func TestResolveDocAndKB_KBNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	// Insert a doc with kb_id that has no KB row
+	d := &entity.Document{
+		ID: "orphan-doc", KbID: "no-such-kb", ParserID: "naive",
+		ParserConfig: entity.JSONMap{}, Suffix: ".txt", Status: sptr("1"),
+	}
+	if err := dao.DB.Create(d).Error; err != nil {
+		t.Fatalf("insert doc: %v", err)
+	}
+
+	svc := testDocumentService(t)
+
+	_, _, err := svc.resolveDocAndKB("orphan-doc")
+	if err == nil {
+		t.Fatal("expected error for nonexistent KB")
+	}
+}
+
+func TestDeleteDocTasks_RemovesTasks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestTask(t, "task-1", "doc-1")
+	insertTestTask(t, "task-2", "doc-1")
+
+	svc := testDocumentService(t)
+	svc.deleteDocTasks("doc-1")
+
+	tasks, _ := dao.NewTaskDAO().GetAllTasks()
+	if len(tasks) != 0 {
+		t.Fatalf("expected 0 tasks after delete, got %d", len(tasks))
+	}
+}
+
+func TestDeleteDocTasks_NoopWhenNone(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	svc := testDocumentService(t)
+	// Should not panic or error
+	svc.deleteDocTasks("no-such-doc")
+}
+
+func TestDeleteDocRecordWithCounters_Success(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 3, 100, 50)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	svc := testDocumentService(t)
+
+	err := svc.deleteDocRecordWithCounters(doc, "kb-1")
+	if err != nil {
+		t.Fatalf("deleteDocRecordWithCounters: %v", err)
+	}
+
+	// Doc gone
+	_, err = dao.NewDocumentDAO().GetByID("doc-1")
+	if err == nil {
+		t.Fatal("document should be deleted")
+	}
+
+	// Counters decremented
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.DocNum != 2 {
+		t.Fatalf("doc_num: expected 2, got %d", kb.DocNum)
+	}
+	if kb.TokenNum != 70 {
+		t.Fatalf("token_num: expected 70, got %d", kb.TokenNum)
+	}
+	if kb.ChunkNum != 40 {
+		t.Fatalf("chunk_num: expected 40, got %d", kb.ChunkNum)
+	}
+}
+
+func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 2, 20, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+
+	doc, _ := dao.NewDocumentDAO().GetByID("doc-1")
+	svc := testDocumentService(t)
+
+	// First delete succeeds
+	if err := svc.deleteDocRecordWithCounters(doc, "kb-1"); err != nil {
+		t.Fatalf("first delete: %v", err)
+	}
+
+	// Second delete on same doc: GORM hard-deletes 0 rows without error.
+	// The DecreaseDocumentNum still fires (and decrements again — caller
+	// should guard against double-delete upstream).
+	err := svc.deleteDocRecordWithCounters(doc, "kb-1")
+	if err != nil {
+		t.Fatalf("second delete should not error (GORM deletes 0 rows silently): %v", err)
+	}
+
+	// KB counters decremented twice: 2→1→0 for doc_num
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	if kb.DocNum != 0 {
+		t.Fatalf("doc_num after double delete: expected 0, got %d", kb.DocNum)
+	}
+}
+
+func TestCleanupFileReferences_NoMappings(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	svc := testDocumentService(t)
+	// Should not panic with no f2d mappings
+	svc.cleanupFileReferences("no-mappings")
+}
+
+func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	loc := "blob/path"
+	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+
+	svc := testDocumentService(t)
+	svc.cleanupFileReferences("doc-1")
+
+	// f2d gone
+	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID("doc-1")
+	if len(mappings) != 0 {
+		t.Fatalf("expected 0 f2d after cleanup, got %d", len(mappings))
+	}
+	// file record gone
+	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-1"})
+	if len(files) != 0 {
+		t.Fatalf("expected 0 files after cleanup, got %d", len(files))
+	}
+}
+
+func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	loc := "shared/blob"
+	insertTestFile(t, "file-shared", "kb-1", "shared.pdf", &loc)
+	insertTestFile2Document(t, "f2d-1", "file-shared", "doc-1")
+	insertTestFile2Document(t, "f2d-2", "file-shared", "doc-2")
+
+	svc := testDocumentService(t)
+	svc.cleanupFileReferences("doc-1")
+
+	// f2d for doc-1 gone
+	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID("doc-1")
+	if len(mappings) != 0 {
+		t.Fatalf("expected 0 f2d for doc-1, got %d", len(mappings))
+	}
+	// file record survives
+	files, _ := dao.NewFileDAO().GetByIDs([]string{"file-shared"})
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file record, got %d", len(files))
+	}
+	// f2d for doc-2 survives
+	mappings, _ = dao.NewFile2DocumentDAO().GetByDocumentID("doc-2")
+	if len(mappings) != 1 {
+		t.Fatalf("expected 1 f2d for doc-2, got %d", len(mappings))
+	}
+}
