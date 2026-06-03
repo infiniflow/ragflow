@@ -609,7 +609,7 @@ func (m *MistralModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 // Balance is not exposed by the Mistral API, so this returns "no such method".
 func (m *MistralModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -624,7 +624,7 @@ func (m *MistralModel) CheckConnection(apiConfig *APIConfig) error {
 // Rerank calculates similarity scores between query and documents. Mistral
 // does not expose a public rerank API, so this returns "no such method".
 func (m *MistralModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 // TranscribeAudio transcribe audio
@@ -731,8 +731,7 @@ func (m *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 }
 
 func (m *MistralModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 func (m *MistralModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
