@@ -237,7 +237,7 @@ def is_english(texts):
     if not texts:
         return False
 
-    pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]")
+    pattern = re.compile(r"[`a-zA-Z0-9\s.,':;/\"?<>!\(\)\-]+")
 
     if isinstance(texts, str):
         texts = list(texts)
