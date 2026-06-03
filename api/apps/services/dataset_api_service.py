@@ -151,6 +151,16 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
                         File.id == f2d[0].file_id,
                     ]
                 )
+            else:
+                # Normal uploads create a File2Document row via FileService.add_file_from_kb.
+                # A missing row usually means stale/partial data (e.g. link removed earlier,
+                # failed post-insert file linkage, or legacy rows). Deletion still proceeds.
+                logging.warning(
+                    "delete_datasets: document %s in dataset %s has no File2Document row; "
+                    "skipping linked file delete",
+                    doc.id,
+                    kb_id,
+                )
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
 
