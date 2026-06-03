@@ -422,8 +422,10 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 	}
 
 	region := extra["region"]
+	baseURL := extra["base_url"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
+	apiConfig.BaseURL = &baseURL
 
 	var result map[string]interface{}
 	result, err = providerInfo.ModelDriver.Balance(apiConfig)
