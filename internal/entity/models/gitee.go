@@ -34,7 +34,7 @@ import (
 type GiteeModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	httpClient *http.Client
 }
 
 // NewGiteeModel creates a new Gitee model instance
