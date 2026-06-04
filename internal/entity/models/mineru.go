@@ -1,7 +1,24 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +37,6 @@ func NewMinerUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerUModel
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 120,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -36,7 +52,6 @@ func (m *MinerUModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: m.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 120,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -137,7 +152,10 @@ func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -206,7 +224,10 @@ func (m *MinerUModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespon
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
 	apiURL := fmt.Sprintf("%s/api/%s/%s", m.BaseURL[region], m.URLSuffix.DocumentParse, taskID)
 
-	req, err := http.NewRequest("GET", apiURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

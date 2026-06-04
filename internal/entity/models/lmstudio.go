@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
@@ -26,7 +42,6 @@ func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioM
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -42,7 +57,6 @@ func (l *LmStudioModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: l.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -132,7 +146,10 @@ func (l *LmStudioModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -274,7 +291,10 @@ func (l *LmStudioModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -295,6 +315,7 @@ func (l *LmStudioModel) ChatStreamlyWithSender(modelName string, messages []Mess
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -399,7 +420,7 @@ func (l *LmStudioModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -448,21 +469,21 @@ func (l *LmStudioModel) Rerank(modelName *string, query string, documents []stri
 }
 
 // TranscribeAudio transcribe audio
-func (z *LmStudioModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LmStudioModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", l.Name())
 }
 
 // AudioSpeech convert text to audio
-func (z *LmStudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LmStudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", l.Name())
 }
 
 // OCRFile OCR file
@@ -471,8 +492,8 @@ func (l *LmStudioModel) OCRFile(modelName *string, content []byte, url *string, 
 }
 
 // ParseFile parse file
-func (z *LmStudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
 // ListModels list supported models
@@ -499,7 +520,10 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -554,10 +578,10 @@ func (l *LmStudioModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *LmStudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }
 
-func (z *LmStudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (l *LmStudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

@@ -42,7 +42,6 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -53,12 +52,11 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	}
 }
 
-func (z *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &VllmModel{
 		BaseURL:   baseURL,
-		URLSuffix: z.URLSuffix,
+		URLSuffix: v.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
@@ -69,12 +67,12 @@ func (z *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (z *VllmModel) Name() string {
+func (v *VllmModel) Name() string {
 	return "vllm"
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
@@ -84,12 +82,12 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format
@@ -148,7 +146,10 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -156,7 +157,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -217,7 +218,7 @@ func (z *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (v *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -227,10 +228,10 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", z.BaseURL[region], z.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format (supporting multimodal content)
@@ -290,7 +291,10 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -298,7 +302,7 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -311,6 +315,7 @@ func (z *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -387,7 +392,7 @@ type vllmEmbeddingResponse struct {
 }
 
 // Embed embeds a list of texts into embeddings
-func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -401,15 +406,15 @@ func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL[region]
+	baseURL := v.BaseURL[region]
 	if baseURL == "" {
-		baseURL = z.BaseURL["default"]
+		baseURL = v.BaseURL["default"]
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -424,7 +429,7 @@ func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -437,7 +442,7 @@ func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -468,22 +473,22 @@ func (z *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	return embeddings, nil
 }
 
-func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	var region = "default"
 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL[region]
+	baseURL := v.BaseURL[region]
 	if baseURL == "" {
-		baseURL = z.BaseURL["default"]
+		baseURL = v.BaseURL["default"]
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, v.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -492,7 +497,10 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -505,7 +513,7 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -537,13 +545,13 @@ func (z *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (z *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (v *VllmModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // CheckConnection verifies that the configured vLLM base URL is reachable
-func (z *VllmModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
+func (v *VllmModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := v.ListModels(apiConfig)
 	return err
 }
 
@@ -576,7 +584,7 @@ type vllmRerankResponse struct {
 // Authorization header is sent only when APIConfig.ApiKey is non-empty,
 // matching the existing Embed/ListModels behaviour for this local
 // driver.
-func (z *VllmModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (v *VllmModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -589,15 +597,15 @@ func (z *VllmModel) Rerank(modelName *string, query string, documents []string, 
 		region = *apiConfig.Region
 	}
 
-	baseURL := z.BaseURL[region]
+	baseURL := v.BaseURL[region]
 	if baseURL == "" {
-		baseURL = z.BaseURL["default"]
+		baseURL = v.BaseURL["default"]
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), z.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -616,7 +624,7 @@ func (z *VllmModel) Rerank(modelName *string, query string, documents []string, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -629,7 +637,7 @@ func (z *VllmModel) Rerank(modelName *string, query string, documents []string, 
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -664,37 +672,37 @@ func (z *VllmModel) Rerank(modelName *string, query string, documents []string, 
 }
 
 // TranscribeAudio transcribe audio
-func (o *VllmModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+func (v *VllmModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VllmModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (v *VllmModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // AudioSpeech convert text to audio
-func (o *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+func (v *VllmModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VllmModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (v *VllmModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", v.Name())
 }
 
 // OCRFile OCR file
-func (m *VllmModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (v *VllmModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
 // ParseFile parse file
-func (z *VllmModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VllmModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VllmModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VllmModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VllmModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VllmModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

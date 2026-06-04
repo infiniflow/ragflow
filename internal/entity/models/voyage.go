@@ -384,14 +384,14 @@ func (v *VoyageModel) OCRFile(modelName *string, content []byte, url *string, ap
 }
 
 // ParseFile parse file
-func (z *VoyageModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VoyageModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VoyageModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VoyageModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-func (z *VoyageModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (v *VoyageModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

@@ -19,7 +19,6 @@ Integration tests for TaskHandler orchestration.
 
 import asyncio
 import gc
-import uuid
 from typing import Any, Dict
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -37,6 +36,11 @@ from test.unit_test.rag.svr.task_executor_refactor.conftest import (
     create_default_chunks,
     create_mock_settings,
     create_mock_chunk_service,
+    make_task_dict,
+    patch_get_storage_binary,
+    patch_task_handler_settings,
+    mock_thread_return_binary,
+    mock_thread_return_none,
 )
 
 
@@ -82,48 +86,13 @@ def create_task_context(
     return ctx
 
 
-# Common patcher for _get_storage_binary since it imports settings internally
-def patch_get_storage_binary():
-    return patch.object(TaskHandler, '_get_storage_binary', new_callable=AsyncMock, return_value=b"fake pdf binary")
-
-
-def patch_task_handler_settings(mock_settings):
-    """Patch the settings module-level import in task_handler."""
-    return patch("rag.svr.task_executor_refactor.task_handler.settings", mock_settings)
-
-
 class TestStandardChunkingPipelineIntegration:
     """P0: Integration tests for the complete standard chunking pipeline."""
-
-    def _create_standard_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": "doc_test",
-            "name": "test_document.pdf",
-            "location": "/path/to/test_document.pdf",
-            "size": 1024,
-            "parser_id": "naive",
-            "parser_config": {
-                "auto_keywords": 0,
-                "auto_questions": 0,
-                "enable_metadata": False,
-            },
-            "kb_parser_config": {},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "standard",
-            "pagerank": 0,
-        }
 
     @pytest.mark.asyncio
     async def test_full_chunking_pipeline_records_task_status(self):
         """Verify that the complete pipeline records task_status as 'completed'."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -132,7 +101,7 @@ class TestStandardChunkingPipelineIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -152,11 +121,8 @@ class TestStandardChunkingPipelineIntegration:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -168,7 +134,7 @@ class TestStandardChunkingPipelineIntegration:
     @pytest.mark.asyncio
     async def test_full_chunking_pipeline_records_insertion_result(self):
         """Verify that insertion_result is recorded as 'success'."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -177,7 +143,7 @@ class TestStandardChunkingPipelineIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -197,11 +163,8 @@ class TestStandardChunkingPipelineIntegration:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -213,7 +176,7 @@ class TestStandardChunkingPipelineIntegration:
     @pytest.mark.asyncio
     async def test_full_chunking_pipeline_records_chunk_ids(self):
         """Verify that chunk_ids_count is recorded after build_chunks."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -223,7 +186,7 @@ class TestStandardChunkingPipelineIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -245,11 +208,8 @@ class TestStandardChunkingPipelineIntegration:
             mock_chunk_service_cls.return_value = mock_chunk_service
             mock_run_toc.return_value = []  # TOC returns empty when not enabled
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -262,7 +222,7 @@ class TestStandardChunkingPipelineIntegration:
     @pytest.mark.asyncio
     async def test_full_chunking_pipeline_records_token_count(self):
         """Verify that token_count and vector_size are recorded after embedding."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -271,7 +231,7 @@ class TestStandardChunkingPipelineIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -291,11 +251,8 @@ class TestStandardChunkingPipelineIntegration:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -311,7 +268,7 @@ class TestStandardChunkingPipelineIntegration:
     @pytest.mark.asyncio
     async def test_full_chunking_pipeline_progress_callback_invoked(self):
         """Verify that progress_callback is invoked multiple times during pipeline."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -320,7 +277,7 @@ class TestStandardChunkingPipelineIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -340,11 +297,8 @@ class TestStandardChunkingPipelineIntegration:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -357,31 +311,10 @@ class TestStandardChunkingPipelineIntegration:
 class TestTaskCancellationCleanupIntegration:
     """P0: Integration tests for task cancellation cleanup flow."""
 
-    def _create_standard_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": "doc_test",
-            "name": "test_document.pdf",
-            "location": "/path/to/test_document.pdf",
-            "size": 1024,
-            "parser_id": "naive",
-            "parser_config": {},
-            "kb_parser_config": {},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "standard",
-            "pagerank": 0,
-        }
-
     @pytest.mark.asyncio
     async def test_canceled_task_calls_docstore_delete(self):
         """Verify that docStoreConn.delete is called when task is canceled."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict, is_canceled=True)
         mock_settings = create_mock_settings()
 
@@ -411,7 +344,7 @@ class TestTaskCancellationCleanupIntegration:
     @pytest.mark.asyncio
     async def test_canceled_task_progress_callback_with_negative_one(self):
         """Verify that progress_callback is called with -1 when task is canceled."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict, is_canceled=True)
         mock_settings = create_mock_settings()
 
@@ -450,14 +383,14 @@ class TestTaskCancellationCleanupIntegration:
     @pytest.mark.asyncio
     async def test_canceled_task_does_not_proceed_to_chunking(self):
         """Verify that canceled task does not proceed to embedding model binding."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict, is_canceled=True)
         mock_settings = create_mock_settings()
 
         with patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.task_handler.search.index_name") as mock_index_name, \
              patch("rag.svr.task_executor_refactor.task_handler.thread_pool_exec") as mock_thread_exec, \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default:
 
@@ -481,30 +414,10 @@ class TestTaskCancellationCleanupIntegration:
 class TestRaptorPipelineIntegration:
     """P1: Integration tests for the RAPTOR pipeline."""
 
-    def _create_raptor_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": GRAPH_RAPTOR_FAKE_DOC_ID,
-            "doc_ids": ["doc1", "doc2"],
-            "name": "raptor_task",
-            "parser_id": "naive",
-            "parser_config": {"raptor": {"use_raptor": False}},
-            "kb_parser_config": {"raptor": {"use_raptor": False}},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "raptor",
-            "pagerank": 0,
-        }
-
     @pytest.mark.asyncio
     async def test_raptor_pipeline_records_task_status(self):
         """Verify that RAPTOR pipeline records task_status."""
-        task_dict = self._create_raptor_task_dict()
+        task_dict = make_task_dict(doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=["doc1", "doc2"], task_type="raptor", parser_config={"raptor": {"use_raptor": False}}, kb_parser_config={"raptor": {"use_raptor": False}})
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -514,7 +427,7 @@ class TestRaptorPipelineIntegration:
 
         with patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.search.index_name") as mock_index_name, \
@@ -534,10 +447,7 @@ class TestRaptorPipelineIntegration:
             mock_chunk_service.return_value.insert_chunks = AsyncMock(return_value=True)
             mock_doc_service.increment_chunk_num = MagicMock()
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return None
-
-            mock_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_none
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -549,7 +459,7 @@ class TestRaptorPipelineIntegration:
     @pytest.mark.asyncio
     async def test_raptor_pipeline_enables_raptor_if_not_configured(self):
         """Verify that RAPTOR is enabled if not already configured."""
-        task_dict = self._create_raptor_task_dict()
+        task_dict = make_task_dict(doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=["doc1", "doc2"], task_type="raptor", parser_config={"raptor": {"use_raptor": False}}, kb_parser_config={"raptor": {"use_raptor": False}})
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -559,7 +469,7 @@ class TestRaptorPipelineIntegration:
 
         with patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.search.index_name") as mock_index_name, \
@@ -579,10 +489,7 @@ class TestRaptorPipelineIntegration:
             mock_chunk_service.return_value.insert_chunks = AsyncMock(return_value=True)
             mock_doc_service.increment_chunk_num = MagicMock()
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return None
-
-            mock_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_none
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -598,34 +505,13 @@ class TestRaptorPipelineIntegration:
 class TestEmbeddingModelBindingFailureIntegration:
     """P1: Integration tests for embedding model binding failure."""
 
-    def _create_standard_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": "doc_test",
-            "name": "test_document.pdf",
-            "location": "/path/to/test_document.pdf",
-            "size": 1024,
-            "parser_id": "naive",
-            "parser_config": {},
-            "kb_parser_config": {},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "standard",
-            "pagerank": 0,
-        }
-
     @pytest.mark.asyncio
     async def test_embedding_binding_failure_raises_exception(self):
         """Verify that embedding model binding failure raises an exception."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
 
-        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default:
 
             mock_get_config.side_effect = Exception("Model not found")
@@ -639,10 +525,10 @@ class TestEmbeddingModelBindingFailureIntegration:
     @pytest.mark.asyncio
     async def test_embedding_binding_failure_calls_progress_callback(self):
         """Verify that embedding model binding failure calls progress_callback."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
 
-        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default:
 
             mock_get_config.side_effect = Exception("Model not found")
@@ -659,49 +545,26 @@ class TestEmbeddingModelBindingFailureIntegration:
 class TestDataflowPipelineIntegration:
     """P2: Integration tests for the dataflow pipeline."""
 
-    def _create_dataflow_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": CANVAS_DEBUG_DOC_ID,
-            "name": "dataflow_debug",
-            "parser_id": "naive",
-            "parser_config": {},
-            "kb_parser_config": {},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "dataflow",
-            "pagerank": 0,
-        }
-
     @pytest.mark.asyncio
     async def test_dataflow_pipeline_calls_dataflow_service(self):
         """Verify that dataflow pipeline calls DataflowService.run_dataflow()."""
-        task_dict = self._create_dataflow_task_dict()
+        task_dict = make_task_dict(doc_id=CANVAS_DEBUG_DOC_ID, task_type="dataflow")
         ctx = create_task_context(task_dict)
+        mock_embedding = create_mock_embedding_model(vector_size=128)
 
-        with patch("rag.svr.task_executor_refactor.task_handler.DataflowService") as mock_dataflow_service:
-            mock_instance = MagicMock()
-            mock_instance.run_dataflow = AsyncMock(return_value=None)
-            mock_dataflow_service.return_value = mock_instance
+        with patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
+             patch("rag.svr.task_executor_refactor.task_handler.search.index_name", return_value="test_idx"), \
+             patch("rag.svr.task_executor_refactor.task_handler.settings") as mock_settings, \
+             patch("rag.svr.task_executor_refactor.task_handler.DataflowService") as mock_dataflow_service:
 
-            handler = TaskHandler(ctx=ctx)
-            await handler.handle()
+            mock_get_config.return_value = MagicMock()
+            mock_get_default.return_value = MagicMock()
+            mock_bundle.return_value = mock_embedding
+            mock_settings.docStoreConn = MagicMock()
+            mock_settings.docStoreConn.create_idx = MagicMock()
 
-            mock_dataflow_service.assert_called_once()
-            mock_instance.run_dataflow.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_dataflow_debug_mode_calls_dataflow_service(self):
-        """Verify that dataflow debug mode also calls DataflowService."""
-        task_dict = self._create_dataflow_task_dict()
-        ctx = create_task_context(task_dict)
-
-        with patch("rag.svr.task_executor_refactor.task_handler.DataflowService") as mock_dataflow_service:
             mock_instance = MagicMock()
             mock_instance.run_dataflow = AsyncMock(return_value=None)
             mock_dataflow_service.return_value = mock_instance
@@ -716,37 +579,11 @@ class TestDataflowPipelineIntegration:
 class TestTocAsyncFlowIntegration:
     """P2: Integration tests for TOC async flow."""
 
-    def _create_toc_enabled_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": "doc_test",
-            "name": "test_document.pdf",
-            "location": "/path/to/test_document.pdf",
-            "size": 1024,
-            "parser_id": "naive",
-            "parser_config": {
-                "auto_keywords": 0,
-                "auto_questions": 0,
-                "enable_metadata": False,
-                "toc_extraction": True,
-            },
-            "kb_parser_config": {},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "standard",
-            "pagerank": 0,
-        }
-
     @pytest.mark.asyncio
     async def test_toc_async_flow_creates_toc_thread(self):
         """Verify that TOC async flow creates a TOC thread when enabled."""
 
-        task_dict = self._create_toc_enabled_task_dict()
+        task_dict = make_task_dict(parser_config={"auto_keywords": 0, "auto_questions": 0, "enable_metadata": False, "toc_extraction": True})
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -755,7 +592,7 @@ class TestTocAsyncFlowIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -779,11 +616,8 @@ class TestTocAsyncFlowIntegration:
             mock_run_toc.return_value = [{"title": "Test TOC", "level": 1}]
             mock_post_doc_service.increment_chunk_num = MagicMock()
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -811,7 +645,7 @@ class TestTocAsyncFlowIntegration:
         by pytest-asyncio.
         """
 
-        task_dict = self._create_toc_enabled_task_dict()
+        task_dict = make_task_dict(parser_config={"auto_keywords": 0, "auto_questions": 0, "enable_metadata": False, "toc_extraction": True})
         task_dict["parser_config"]["toc_extraction"] = False
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
@@ -821,7 +655,7 @@ class TestTocAsyncFlowIntegration:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -842,11 +676,8 @@ class TestTocAsyncFlowIntegration:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -873,35 +704,10 @@ class TestTocAsyncFlowIntegration:
 class TestRecordingContextDataFlowAssertions:
     """P2: Integration tests for RecordingContext data flow assertions."""
 
-    def _create_standard_task_dict(self) -> Dict[str, Any]:
-        return {
-            "id": f"task_{uuid.uuid4().hex[:8]}",
-            "tenant_id": "tenant_test",
-            "kb_id": "kb_test",
-            "doc_id": "doc_test",
-            "name": "test_document.pdf",
-            "location": "/path/to/test_document.pdf",
-            "size": 1024,
-            "parser_id": "naive",
-            "parser_config": {
-                "auto_keywords": 0,
-                "auto_questions": 0,
-                "enable_metadata": False,
-            },
-            "kb_parser_config": {},
-            "language": "en",
-            "llm_id": "llm_test",
-            "embd_id": "embd_test",
-            "from_page": 0,
-            "to_page": -1,
-            "task_type": "standard",
-            "pagerank": 0,
-        }
-
     @pytest.mark.asyncio
     async def test_recording_context_captures_file_size_check(self):
         """Verify that RecordingContext captures file_size_exceeded result."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -910,7 +716,7 @@ class TestRecordingContextDataFlowAssertions:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -930,11 +736,8 @@ class TestRecordingContextDataFlowAssertions:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -947,7 +750,7 @@ class TestRecordingContextDataFlowAssertions:
     @pytest.mark.asyncio
     async def test_recording_context_captures_parser_id(self):
         """Verify that RecordingContext captures parser_id from task context."""
-        task_dict = self._create_standard_task_dict()
+        task_dict = make_task_dict()
         ctx = create_task_context(task_dict)
         mock_embedding = create_mock_embedding_model(vector_size=128)
         mock_settings = create_mock_settings()
@@ -956,7 +759,7 @@ class TestRecordingContextDataFlowAssertions:
         with patch_get_storage_binary(), \
              patch_task_handler_settings(mock_settings), \
              patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
-             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_by_type_and_name") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
              patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
              patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
              patch("rag.svr.task_executor_refactor.task_handler.File2DocumentService") as mock_file_service, \
@@ -976,11 +779,8 @@ class TestRecordingContextDataFlowAssertions:
             mock_doc_service.update_document_metadata = MagicMock()
             mock_chunk_service_cls.return_value = mock_chunk_service
 
-            async def mock_thread_impl(func, *args, **kwargs):
-                return b"fake pdf binary"
-
-            mock_thread_exec.side_effect = mock_thread_impl
-            mock_chunk_thread_exec.side_effect = mock_thread_impl
+            mock_thread_exec.side_effect = mock_thread_return_binary
+            mock_chunk_thread_exec.side_effect = mock_thread_return_binary
 
             handler = TaskHandler(ctx=ctx)
             await handler.handle()
@@ -991,3 +791,66 @@ class TestRecordingContextDataFlowAssertions:
             assert task_status == "completed", f"Expected task_status='completed', got {task_status}"
             # Verify the parser_id is accessible from the task context
             assert ctx.parser_id == "naive", f"Expected parser_id='naive', got {ctx.parser_id}"
+
+
+class TestGraphragPipelineIntegration:
+    """P2: Integration tests for GraphRAG pipeline default configuration."""
+
+    @pytest.mark.asyncio
+    async def test_graphrag_pipeline_configures_full_defaults(self):
+        """Verify that GraphRAG configures all default parameters when not already set."""
+        task_dict = make_task_dict(doc_ids=["doc1", "doc2"], task_type="graphrag")
+        rec_ctx = RecordingContext()
+        ctx = create_task_context(task_dict, recording_context=rec_ctx)
+        mock_embedding = create_mock_embedding_model(vector_size=128)
+        mock_settings = create_mock_settings()
+        mock_kb = MagicMock()
+        mock_kb.id = "kb_test"
+        mock_kb.parser_config = {}
+
+        with patch_task_handler_settings(mock_settings), \
+             patch("rag.svr.task_executor_refactor.chunk_service.settings", mock_settings), \
+             patch("rag.svr.task_executor_refactor.task_handler.get_model_config_from_provider_instance") as mock_get_config, \
+             patch("rag.svr.task_executor_refactor.task_handler.LLMBundle") as mock_bundle, \
+             patch("rag.svr.task_executor_refactor.task_handler.get_tenant_default_model_by_type") as mock_get_default, \
+             patch("rag.svr.task_executor_refactor.task_handler.search.index_name") as mock_index_name, \
+             patch("rag.svr.task_executor_refactor.task_handler.thread_pool_exec") as mock_thread_exec, \
+             patch("rag.svr.task_executor_refactor.task_handler.KnowledgebaseService") as mock_kb_service, \
+             patch("rag.svr.task_executor_refactor.task_handler.run_graphrag_for_kb") as mock_run_graphrag, \
+             patch("rag.svr.task_executor_refactor.task_handler.DocumentService"):
+
+            mock_get_config.return_value = MagicMock()
+            mock_get_default.return_value = MagicMock()
+            mock_bundle.return_value = mock_embedding
+            mock_index_name.return_value = "test_index"
+            mock_kb_service.get_by_id.return_value = (True, mock_kb)
+            mock_kb_service.update_by_id.return_value = True
+            mock_run_graphrag.return_value = {"status": "completed"}
+
+            mock_thread_exec.side_effect = mock_thread_return_none
+
+            handler = TaskHandler(ctx=ctx)
+            await handler.handle()
+
+            # Verify update_by_id was called with full default config
+            mock_kb_service.update_by_id.assert_called_once()
+            call_args = mock_kb_service.update_by_id.call_args
+            config = call_args[0][1]["parser_config"]["graphrag"]
+            assert config["use_graphrag"] is True
+            assert "organization" in config["entity_types"]
+            assert "person" in config["entity_types"]
+            assert "geo" in config["entity_types"]
+            assert "event" in config["entity_types"]
+            assert "category" in config["entity_types"]
+            assert config["method"] == "light"
+            assert "batch_chunk_token_size" in config
+            assert "retry_attempts" in config
+            assert "retry_backoff_seconds" in config
+            assert "retry_backoff_max_seconds" in config
+            assert "build_subgraph_timeout_per_chunk_seconds" in config
+            assert "build_subgraph_min_timeout_seconds" in config
+            assert "merge_timeout_seconds" in config
+            assert "resolution_timeout_seconds" in config
+            assert "community_timeout_seconds" in config
+            assert "lock_acquire_timeout_seconds" in config, \
+                "All GraphRAG default config parameters should be present"

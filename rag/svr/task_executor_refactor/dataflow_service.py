@@ -38,7 +38,8 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.document_service import DocumentService
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.joint_services.tenant_model_service import get_model_config_by_type_and_name
+from api.db.joint_services.tenant_model_service import get_model_config_from_provider_instance
+from common.connection_utils import timeout
 from common.constants import LLMType, PipelineTaskType
 from common.metadata_utils import update_metadata_to
 from common.misc_utils import thread_pool_exec
@@ -102,9 +103,10 @@ class DataflowService:
             task_dataset_id = ctx.kb_id
 
             # Load DSL
-            dsl = await self._load_dsl(dataflow_id)
+            dsl, corrected_id = await self._load_dsl(dataflow_id)
             if dsl is None:
                 return
+            dataflow_id = corrected_id
 
             # Run pipeline
             pipeline = Pipeline(
@@ -193,17 +195,23 @@ class DataflowService:
                 await self._billing_hook.on_pipeline_error()
             raise
 
-    async def _load_dsl(self, dataflow_id: str) -> Optional[str]:
-        """Load dataflow DSL from service."""
+    async def _load_dsl(self, dataflow_id: str) -> tuple:
+        """Load dataflow DSL from service.
+
+        Returns:
+            Tuple of (dsl, corrected_dataflow_id).
+            When task_type is not 'dataflow', the dataflow_id is corrected
+            from the pipeline log's pipeline_id.
+        """
         ctx = self._task_context
         if ctx.task_type == "dataflow":
             e, cvs = UserCanvasService.get_by_id(dataflow_id)
             assert e, "User pipeline not found."
-            return cvs.dsl
+            return cvs.dsl, dataflow_id
         else:
             e, pipeline_log = PipelineOperationLogService.get_by_id(dataflow_id)
             assert e, "Pipeline log not found."
-            return pipeline_log.dsl
+            return pipeline_log.dsl, pipeline_log.pipeline_id
 
     @staticmethod
     def _get_output_type(chunks: Dict) -> str:
@@ -235,6 +243,7 @@ class DataflowService:
             return [{"text": [chunks["html"]]}] if chunks["html"] else []
         return []
 
+    @timeout(60)
     async def _embed_chunks(
         self, chunks: List[Dict], token_consumption: int
     ) -> Tuple[Optional[List[Dict]], int]:
@@ -244,7 +253,7 @@ class DataflowService:
             self._progress(prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = self._get_kb_by_id(ctx.kb_id)
             embedding_id = kb.embd_id
-            embd_model_config = get_model_config_by_type_and_name(
+            embd_model_config = get_model_config_from_provider_instance(
                 ctx.tenant_id, LLMType.EMBEDDING, embedding_id
             )
             from api.db.services.llm_service import LLMBundle

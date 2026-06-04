@@ -478,7 +478,7 @@ def _load_doc_module(monkeypatch):
                 raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
         return _MockModelConfig2(mock_tenant_id, "model-1").to_dict()
     
-    def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
+    def _get_model_config_from_provider_instance(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
             raise Exception("Model Name is required")
         return _MockModelConfig2(tenant_id, model_name).to_dict()
@@ -488,7 +488,7 @@ def _load_doc_module(monkeypatch):
         return _MockModelConfig2(tenant_id, "chat-model").to_dict()
     
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
-    tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
+    tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 

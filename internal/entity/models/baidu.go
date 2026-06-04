@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
@@ -25,7 +41,6 @@ func (b *BaiduModel) NewInstance(baseURL map[string]string) ModelDriver {
 		BaseURL:   baseURL,
 		URLSuffix: b.URLSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        10,
 				MaxIdleConnsPerHost: 100,
@@ -41,7 +56,6 @@ func NewBaiduModel(baseURL map[string]string, urlSuffix URLSuffix) *BaiduModel {
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
 			Transport: &http.Transport{
 				MaxConnsPerHost:     10,
 				MaxIdleConnsPerHost: 100,
@@ -156,7 +170,10 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -326,7 +343,10 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -347,6 +367,7 @@ func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -465,7 +486,10 @@ func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -558,7 +582,10 @@ func (b *BaiduModel) Rerank(modelName *string, query string, documents []string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -609,8 +636,8 @@ func (b *BaiduModel) TranscribeAudio(modelName *string, file *string, apiConfig 
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (z *BaiduModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (b *BaiduModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -618,8 +645,8 @@ func (b *BaiduModel) AudioSpeech(modelName *string, audioContent *string, apiCon
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (z *BaiduModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (b *BaiduModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // OCRFile OCR file
@@ -679,7 +706,7 @@ func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string,
 		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -739,7 +766,10 @@ func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -788,14 +818,14 @@ func (b *BaiduModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (b *BaiduModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (z *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (b *BaiduModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (z *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (b *BaiduModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
