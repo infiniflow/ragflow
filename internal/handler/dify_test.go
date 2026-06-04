@@ -56,8 +56,11 @@ func TestDifyRetrievalHealthReturnsTrueEnvelope(t *testing.T) {
 	}
 }
 
-func TestDifyRetrievalHealthDoesNotRequireAuth(t *testing.T) {
-	// Public probe: must succeed even with no user attached to the context.
+func TestDifyRetrievalHealthHandlerDoesNotReadUser(t *testing.T) {
+	// Handler-scope contract: the handler itself must not call GetUser or
+	// otherwise depend on an authenticated context, so that mounting it on
+	// the public apiNoAuth group succeeds without middleware. Router-level
+	// no-auth placement is verified by the router setup, not here.
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -72,8 +75,10 @@ func TestDifyRetrievalHealthDoesNotRequireAuth(t *testing.T) {
 	}
 
 	var body map[string]interface{}
-	_ = json.Unmarshal(resp.Body.Bytes(), &body)
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, resp.Body.String())
+	}
 	if code, _ := body["code"].(float64); int(code) != int(common.CodeSuccess) {
-		t.Errorf("unauthenticated probe should succeed, got code=%v", body["code"])
+		t.Errorf("handler returned non-success without user context: code=%v", body["code"])
 	}
 }

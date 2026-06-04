@@ -33,7 +33,7 @@ func NewDifyHandler() *DifyHandler {
 	return &DifyHandler{}
 }
 
-// RetrievalHealth handles GET /v1/dify/retrieval/health.
+// RetrievalHealth handles GET /api/v1/dify/retrieval/health.
 //
 // Returns a constant success envelope. Dify probes this endpoint to check
 // whether the RAGFlow external-knowledge connector is reachable, so it must
@@ -43,7 +43,7 @@ func NewDifyHandler() *DifyHandler {
 // @Tags     dify
 // @Produce  json
 // @Success  200 {object} map[string]interface{}
-// @Router   /v1/dify/retrieval/health [get]
+// @Router   /api/v1/dify/retrieval/health [get]
 func (h *DifyHandler) RetrievalHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
