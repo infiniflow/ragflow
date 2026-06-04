@@ -248,9 +248,8 @@ func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
 		Joins("LEFT JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ?", userID).
 		Where(`knowledgebase.id = ? AND knowledgebase.status = ? AND (
 			knowledgebase.created_by = ? OR
-			knowledgebase.tenant_id = ? OR
 			(knowledgebase.permission = ? AND user_tenant.user_id IS NOT NULL)
-		)`, kbID, string(entity.StatusValid), userID, userID, string(entity.TenantPermissionTeam)).
+		)`, kbID, string(entity.StatusValid), userID, string(entity.TenantPermissionTeam)).
 		Count(&count).Error
 
 	if err != nil {
@@ -327,7 +326,7 @@ func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
-			"doc_num":     DB.Raw("doc_num + 1"),
+			"doc_num": DB.Raw("doc_num + 1"),
 		}).Error
 }
 
@@ -337,9 +336,9 @@ func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, 
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
-			"doc_num":     DB.Raw("doc_num - ?", docNum),
-			"chunk_num":   DB.Raw("chunk_num - ?", chunkNum),
-			"token_num":   DB.Raw("token_num - ?", tokenNum),
+			"doc_num":   DB.Raw("doc_num - ?", docNum),
+			"chunk_num": DB.Raw("chunk_num - ?", chunkNum),
+			"token_num": DB.Raw("token_num - ?", tokenNum),
 		}).Error
 }
 

@@ -163,6 +163,23 @@ func TestKnowledgebaseDAO_AccessibleRejectsTenantMemberForPrivateKnowledgebase(t
 	}
 }
 
+func TestKnowledgebaseDAO_AccessibleRejectsTenantIDMatchWhenNotCreatorForPrivateKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	kb := testKnowledgebase(t, db, "kb-private-tenant-match", 0, 0, 0)
+	kb.CreatedBy = "member-creator"
+	kb.Permission = string(entity.TenantPermissionMe)
+	if err := db.Save(kb).Error; err != nil {
+		t.Fatalf("failed to update test kb creator: %v", err)
+	}
+
+	if dao.Accessible("kb-private-tenant-match", "tenant-1") {
+		t.Fatal("non-creator should not access private knowledgebase even when tenant_id matches requester")
+	}
+}
+
 func TestKnowledgebaseDAO_AccessibleAllowsTenantMemberForTeamKnowledgebase(t *testing.T) {
 	db := setupKBTestDB(t)
 	pushDB(t, db)
