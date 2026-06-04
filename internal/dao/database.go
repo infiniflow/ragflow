@@ -206,5 +206,15 @@ func autoMigrateSafely(db *gorm.DB, model interface{}) error {
 		return nil
 	}
 
+	if strings.Contains(errStr, "Error 1091") && strings.Contains(errStr, "Can't DROP") {
+		common.Info("Index/column already dropped, skipping", zap.String("error", errStr))
+		return nil
+	}
+
+	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
+		common.Info("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
+		return nil
+	}
+
 	return err
 }
