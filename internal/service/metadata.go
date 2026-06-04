@@ -257,7 +257,7 @@ func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	result := make(KBDocIDsMap)
 	for _, chunk := range chunks {
 		kbID, _ := chunk["kb_id"].(string)
-		docID, _ := chunk["doc_id"].(string)
+		docID := extractDocID(chunk)
 		if kbID == "" || docID == "" {
 			continue
 		}
@@ -280,7 +280,7 @@ func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID stri
 			continue
 		}
 		for _, metaChunk := range result.Chunks {
-			docID, _ := metaChunk["doc_id"].(string)
+			docID := extractDocID(metaChunk)
 			if docID == "" {
 				continue
 			}
@@ -301,7 +301,7 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 		filter[f] = struct{}{}
 	}
 	for _, chunk := range chunks {
-		docID, _ := chunk["doc_id"].(string)
+		docID := extractDocID(chunk)
 		meta, ok := metaByDoc[docID]
 		if !ok {
 			continue
@@ -336,6 +336,17 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 		return
 	}
 	AttachDocMetaToChunks(chunks, metaByDoc, metadataFields)
+}
+
+// extractDocID extracts the document ID from a chunk, checking both id and doc_id.
+func extractDocID(chunk map[string]interface{}) string {
+	if id, ok := chunk["id"].(string); ok {
+		return id
+	}
+	if id, ok := chunk["doc_id"].(string); ok {
+		return id
+	}
+	return ""
 }
 
 // ExtractDocumentID extracts the document ID from a chunk
