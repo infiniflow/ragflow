@@ -108,7 +108,7 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		},
 	})
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.ListAgentVersions(c)
 
 	if w.Code != http.StatusOK {
@@ -158,7 +158,7 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	// Canvas owned by user-b
 	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", Title: sptr("Not Yours")})
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.ListAgentVersions(c)
 
 	var resp map[string]interface{}
@@ -185,7 +185,7 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "agent_id", Value: "non-existent"}}
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.ListAgentVersions(c)
 
 	var resp map[string]interface{}
@@ -212,7 +212,7 @@ func TestGetAgentVersionHandler_Success(t *testing.T) {
 		DSL:          entity.JSONMap{"key": "value"},
 	})
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.GetAgentVersion(c)
 
 	if w.Code != http.StatusOK {
@@ -249,7 +249,7 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 		Title:  sptr("Test Agent"),
 	})
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.GetAgentVersion(c)
 
 	var resp map[string]interface{}
@@ -259,6 +259,7 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 		t.Errorf("expected not found code %d, got %v", common.CodeNotFound, code)
 	}
 }
+
 
 
 // sptr returns a pointer to the given string.

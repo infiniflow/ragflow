@@ -18,6 +18,8 @@ package handler
 
 import (
 	"errors"
+	"mime/multipart"
+
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,13 +33,20 @@ import (
 )
 
 // AgentHandler agent handler
+// fileUploader is the subset of FileService used by agent handlers.
+type fileUploader interface {
+	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+}
+
+// AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
+	fileService  fileUploader
 }
 
 // NewAgentHandler create agent handler
-func NewAgentHandler(agentService *service.AgentService) *AgentHandler {
-	return &AgentHandler{agentService: agentService}
+func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
+	return &AgentHandler{agentService: agentService, fileService: fileService}
 }
 
 // ListAgents lists agent canvases for the current user.
@@ -183,6 +192,7 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{agent_id}/versions/{version_id} [get]
 func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -196,6 +206,7 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 			"code":    common.CodeArgumentError,
 			"data":    nil,
 			"message": "agent_id and version_id are required",
+
 		})
 		return
 	}
@@ -226,6 +237,7 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 			"code":    common.CodeNotFound,
 			"data":    nil,
 			"message": "Version not found.",
+
 		})
 		return
 	}
@@ -233,6 +245,7 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    version,
+
 		"message": "",
 	})
 }
