@@ -71,8 +71,19 @@ var embeddedLLMTools = []LLMToolMetadata{
 
 // ListLLMTools returns the metadata of every embedded LLM tool plugin in the
 // same order, shape and field names as the Python /plugin/tools endpoint.
+//
+// The returned slice and its nested Parameters maps are fresh copies — callers
+// may mutate the result without affecting other requests or the package-level
+// embeddedLLMTools table.
 func (s *PluginService) ListLLMTools() []LLMToolMetadata {
 	out := make([]LLMToolMetadata, len(embeddedLLMTools))
 	copy(out, embeddedLLMTools)
+	for i := range out {
+		params := make(map[string]LLMToolParameter, len(out[i].Parameters))
+		for k, v := range out[i].Parameters {
+			params[k] = v
+		}
+		out[i].Parameters = params
+	}
 	return out
 }
