@@ -84,6 +84,13 @@ class _FakeKGRetriever:
 
 def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id, chunks=None):
     """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
+    def _add_tenant_id_to_kwargs(func):
+        async def wrapper(**kwargs):
+            kwargs["tenant_id"] = tenant_id
+            return await func(**kwargs)
+
+        return wrapper
+
     _stub(
         monkeypatch,
         "api.apps",
@@ -93,6 +100,7 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id
     _stub(
         monkeypatch,
         "api.utils.api_utils",
+        add_tenant_id_to_kwargs=_add_tenant_id_to_kwargs,
         build_error_result=lambda message="", code=0, data=False: {"code": code, "message": message, "data": data},
         get_request_json=lambda: _AwaitableValue(request_body),
         get_json_result=lambda code=0, message="", data=None: {"code": code, "message": message, "data": data},
