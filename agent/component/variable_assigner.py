@@ -64,6 +64,8 @@ class VariableAssigner(ComponentBase,ABC):
                     raise ValueError("Variable is not complete.")
                 variable=item["variable"]
                 parameter=item.get("parameter")
+                if operator not in self._SUPPORTED_OPERATORS:
+                    raise ValueError(f"Unsupported operator: {operator}")
                 if parameter is None and operator in ["clear", "remove_first", "remove_last"]:
                     logger.debug(
                         "Executing parameterless operator '%s' on variable '%s'.",
@@ -72,6 +74,8 @@ class VariableAssigner(ComponentBase,ABC):
                     )
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
+                if new_variable is None and operator not in ["clear", "remove_first", "remove_last"]:
+                    raise ValueError(f"Operator '{operator}' produced no result.")
                 self._canvas.set_variable_value(variable, new_variable)
 
     def _operate(self,variable,operator,parameter):
