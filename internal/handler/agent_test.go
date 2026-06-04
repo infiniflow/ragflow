@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
@@ -89,15 +90,22 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 	})
 
 	// Insert 2 versions with staggered timestamps
+	now := time.Now()
 	db.Create(&entity.UserCanvasVersion{
 		ID:           "v2",
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v2"),
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(now.UnixMilli()),
+		},
 	})
 	db.Create(&entity.UserCanvasVersion{
 		ID:           "v1",
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v1"),
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+		},
 	})
 
 	h := NewAgentHandler(service.NewAgentService())
@@ -189,3 +197,6 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 }
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
+
+// ptr returns a pointer to the given int64.
+func ptr(v int64) *int64 { return &v }
