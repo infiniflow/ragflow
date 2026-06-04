@@ -1121,6 +1121,24 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip:
         '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      azure_blobDescription:
+        '将 Azure Blob 存储容器中的文件索引到知识库。支持账户密钥、连接字符串和 SAS 令牌三种认证方式，通过 ETag 指纹跳过未变更的文件。',
+      azureBlobAuthModeTip:
+        '选择认证方式。账户密钥和连接字符串需填写容器名称；SAS 令牌方式需填写容器 URL 和 SAS 令牌。',
+      azureBlobAccountNameTip:
+        'Azure 存储账户名称（例如 mystorageaccount），账户密钥认证时必填。',
+      azureBlobAccountKeyTip:
+        '存储账户访问密钥（Base64 编码），账户密钥认证时必填。',
+      azureBlobConnectionStringTip:
+        '完整的 Azure 存储连接字符串（DefaultEndpointsProtocol=https;AccountName=...;...），连接字符串认证时必填。',
+      azureBlobContainerUrlTip:
+        '容器的完整 HTTPS 地址（例如 https://account.blob.core.windows.net/container），SAS 令牌认证时必填。',
+      azureBlobSasTokenTip:
+        'SAS 查询字符串（不含开头的"?"），SAS 令牌认证时必填。',
+      azureBlobContainerNameTip:
+        '要索引的容器名称，账户密钥和连接字符串认证时必填。',
+      azureBlobPrefixTip:
+        '可选的 Blob 名称前缀，用于限定索引范围（例如 documents/reports/）。留空则索引整个容器。',
       teamsDescription:
         '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
       teamsTenantIdTip:

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -131,9 +132,9 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
-func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interface{}, error) {
+func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
 	if len(kbIDs) == 0 {
-		return make(map[string]interface{}), nil
+		return make(common.MetaData), nil
 	}
 
 	// Get metadata for all docs in KBs (use large limit like Python's 10000)
@@ -142,7 +143,7 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 		return nil, err
 	}
 
-	flattedMeta := make(map[string]interface{})
+	flattedMeta := make(common.MetaData)
 
 	for _, chunk := range result.Chunks {
 		// Extract doc_id from chunk
@@ -171,13 +172,10 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 
 			// Initialize field map if not exists
 			if _, exists := flattedMeta[fieldName]; !exists {
-				flattedMeta[fieldName] = make(map[string]interface{})
+				flattedMeta[fieldName] = make(common.MetaValueDocs)
 			}
 
-			valueMap, ok := flattedMeta[fieldName].(map[string]interface{})
-			if !ok {
-				continue
-			}
+			valueMap := flattedMeta[fieldName]
 
 			// Handle string, number (float64/int), and list of string/number
 			switch v := fieldValue.(type) {
