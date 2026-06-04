@@ -205,7 +205,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
 
-			// Dataset routes
+			// Chatbot routes
+				v1.GET("/chatbots/:dialog_id/info", handler.GetChatbotInfo)
+
+				// Dataset routes
 			datasets := v1.Group("/datasets")
 			{
 				datasets.GET("", r.datasetsHandler.ListDatasets)
