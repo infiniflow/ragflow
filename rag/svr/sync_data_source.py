@@ -63,6 +63,7 @@ from common.data_source import (
     RestAPIConnector,
     OneDriveConnector,
     OutlookConnector,
+    AzureBlobConnector,
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
@@ -1129,6 +1130,58 @@ class Outlook(SyncBase):
         return wrapper()
 
 
+class AzureBlob(SyncBase):
+    SOURCE_NAME: str = FileSource.AZURE_BLOB
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = AzureBlobConnector(
+            batch_size=batch_size,
+            prefix=self.conf.get("prefix") or None,
+            allow_images=bool(self.conf.get("allow_images", False)),
+            auth_mode=self.conf.get("auth_mode"),
+        )
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+
+        # Route through load_from_checkpoint so incremental runs are scoped
+        # by the poll time window; per-blob ETags ride along as document
+        # fingerprints (content_hash) so unchanged blobs aren't re-embedded.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        container_hint = (
+            credentials.get("container_name")
+            or credentials.get("container_url", "").rstrip("/").rsplit("/", 1)[-1]
+            or "<container>"
+        )
+        self.log_connection(
+            "Azure Blob",
+            f"{container_hint}/{self.conf.get('prefix', '') or ''}",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
 class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
@@ -2041,6 +2094,7 @@ func_factory = {
     FileSource.SHAREPOINT: SharePoint,
     FileSource.ONEDRIVE: OneDrive,
     FileSource.OUTLOOK: Outlook,
+    FileSource.AZURE_BLOB: AzureBlob,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,

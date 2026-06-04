@@ -262,5 +262,87 @@ func TestCheckCanvasAccess_NotFound(t *testing.T) {
 	}
 }
 
+// TestGetVersion_Success verifies getting a specific version by ID.
+func TestGetVersion_Success(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvasVersion{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.UserCanvasVersion{
+		ID:           "v1",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("version-1"),
+		DSL:          entity.JSONMap{"model": "gpt-4"},
+	})
+
+	svc := NewAgentService()
+	v, err := svc.GetVersion("canvas-1", "v1")
+	if err != nil {
+		t.Fatalf("GetVersion failed: %v", err)
+	}
+	if *v.Title != "version-1" {
+		t.Errorf("expected title 'version-1', got %s", *v.Title)
+	}
+}
+
+// TestGetVersion_WrongCanvas verifies version belonging to another canvas returns error.
+func TestGetVersion_WrongCanvas(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvasVersion{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.UserCanvasVersion{
+		ID:           "v1",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("version-1"),
+	})
+
+	svc := NewAgentService()
+	_, err := svc.GetVersion("canvas-other", "v1")
+	if err == nil {
+		t.Error("expected error for version belonging to another canvas")
+	}
+}
+
+// TestGetVersion_NotFound verifies error for non-existent version.
+func TestGetVersion_NotFound(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.UserCanvasVersion{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	svc := NewAgentService()
+	_, err := svc.GetVersion("canvas-1", "non-existent")
+	if err == nil {
+		t.Error("expected error for non-existent version")
+	}
+}
+
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }

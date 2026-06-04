@@ -31,29 +31,29 @@ import (
 
 // MoonshotModel implements ModelDriver for Moonshot
 type MoonshotModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewMoonshotModel creates a new Moonshot model instance
 func NewMoonshotModel(baseURL map[string]string, urlSuffix URLSuffix) *MoonshotModel {
 	return &MoonshotModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (m *MoonshotModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewMoonshotModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *MoonshotModel) Name() string {
@@ -61,16 +61,19 @@ func (m *MoonshotModel) Name() string {
 }
 
 func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -137,11 +140,9 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -201,16 +202,19 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -282,7 +286,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -369,12 +373,15 @@ func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Models)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -395,7 +402,7 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -428,12 +435,15 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Balance)
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -454,7 +464,7 @@ func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
