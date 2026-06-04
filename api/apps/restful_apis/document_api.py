@@ -1413,7 +1413,10 @@ def _run_sync(user_id:str, req):
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
             DocumentService.clear_chunk_num_when_rerun(doc_id)
 
-        DocumentService.update_by_id(doc_id, info)
+        affected_rows = DocumentService.update_by_id_if_update_time(doc_id, doc.update_time, info)
+        if not affected_rows:
+            return RetCode.DATA_ERROR, "Document is already running"
+
         if req.get("delete", False):
             TaskService.filter_delete([Task.doc_id == doc_id])
             if settings.docStoreConn.index_exist(search.index_name(doc_tenant_id), doc.kb_id):
