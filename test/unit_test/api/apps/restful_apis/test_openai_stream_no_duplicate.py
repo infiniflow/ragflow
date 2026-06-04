@@ -53,6 +53,16 @@ def _load_openai_api(monkeypatch):
     """Load api/apps/restful_apis/openai_api.py with the heavy deps stubbed."""
     _stub(monkeypatch, "quart", Response=object, jsonify=lambda *a, **k: None)
     _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
+    # `api.apps` is stubbed as a bare (non-package) module, so a real
+    # `from api.apps.restful_apis._generation_params import ...` cannot resolve.
+    # Stub the leaf module directly; these helpers are only used on the request
+    # parsing path, not by `_stream_chat_completion_sse` exercised here.
+    _stub(
+        monkeypatch,
+        "api.apps.restful_apis._generation_params",
+        extract_generation_config=lambda *_a, **_k: {},
+        merge_generation_config=lambda *_a, **_k: {},
+    )
     _stub(monkeypatch, "api.db.services.dialog_service", DialogService=SimpleNamespace(), async_chat=lambda *_a, **_k: None)
     _stub(monkeypatch, "api.db.services.doc_metadata_service", DocMetadataService=SimpleNamespace())
     _stub(
