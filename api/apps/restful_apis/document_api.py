@@ -1403,11 +1403,12 @@ def _run_sync(user_id:str, req):
             if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value] or has_active_task:
                 return RetCode.DATA_ERROR, "Document is already running"
 
+        should_cancel = False
         if str(req["run"]) == TaskStatus.CANCEL.value:
             tasks = list(TaskService.query(doc_id=doc_id))
             has_unfinished_task = any((task.progress or 0) < 1 for task in tasks)
             if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.CANCEL.value] or has_unfinished_task:
-                cancel_all_task_of(doc_id)
+                should_cancel = True
             else:
                 return RetCode.DATA_ERROR, "Cannot cancel a task that is not in RUNNING status"
         if all([rerun_with_delete, str(doc.run) == TaskStatus.DONE.value]):
@@ -1416,6 +1417,9 @@ def _run_sync(user_id:str, req):
         affected_rows = DocumentService.update_by_id_if_update_time(doc_id, doc.update_time, info)
         if not affected_rows:
             return RetCode.DATA_ERROR, "Document is already running"
+
+        if str(req["run"]) == TaskStatus.CANCEL.value and should_cancel:
+            cancel_all_task_of(doc_id)
 
         if req.get("delete", False):
             TaskService.filter_delete([Task.doc_id == doc_id])
