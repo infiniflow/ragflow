@@ -18,6 +18,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"mime/multipart"
 
 	"net/http"
@@ -246,6 +247,72 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"data":    version,
 
+		"message": "",
+	})
+}
+
+
+// UploadAgentFile uploads one or more files associated with an agent.
+func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+	if err != nil || !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "Agent not found or no permission.",
+		})
+		return
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": fmt.Sprintf("invalid form data: %v", err),
+		})
+		return
+	}
+
+	files := form.File["file"]
+	if len(files) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "You have to upload at least one file.",
+		})
+		return
+	}
+
+	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    uploaded,
 		"message": "",
 	})
 }
