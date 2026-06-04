@@ -59,6 +59,7 @@ def _load_document_api(
 
     _stub(
         monkeypatch, "api.apps",
+        AUTH_JWT="JWT", AUTH_API="API", AUTH_BETA="BETA",
         current_user=SimpleNamespace(id="caller-tenant"),
         login_required=lambda func: func,
     )
@@ -141,6 +142,11 @@ def _load_document_api(
         apply_safe_file_response_headers=lambda *_a, **_k: None,
     )
     _stub(monkeypatch, "common.ssrf_guard", assert_url_is_safe=lambda *_a, **_k: None)
+    _stub(
+        monkeypatch, "rag.nlp",
+        search=SimpleNamespace(index_name=lambda *_a, **_k: "index"),
+    )
+    _stub(monkeypatch, "rag.nlp.search", index_name=lambda *_a, **_k: "index")
 
     quart_stub = ModuleType("quart")
     quart_stub.request = SimpleNamespace(method="GET", args={})
