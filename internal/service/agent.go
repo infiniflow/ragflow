@@ -35,6 +35,13 @@ const (
 	agentTagMaxLen    = 64
 )
 
+// errAgentNotOwner is the not-owner sentinel returned by DeleteAgent. The
+// wire message must match the Python decorator byte-for-byte because
+// conformance tests (test/testcases/restful_api/test_agents.py,
+// test/testcases/test_http_api/test_session_management/test_agent_sessions.py)
+// substring-match on this exact text.
+var errAgentNotOwner = errors.New("Only the owner of the agent is authorized for this operation.") //nolint:staticcheck // ST1005: matches Python wire contract
+
 // AgentService agent service
 type AgentService struct {
 	canvasDAO            *dao.UserCanvasDAO
@@ -625,8 +632,7 @@ func (s *AgentService) DeleteAgent(agentID, tenantID string) (common.ErrorCode, 
 		return common.CodeServerError, fmt.Errorf("failed to delete agent: %w", err)
 	}
 	if rows == 0 {
-		return common.CodeOperatingError,
-			fmt.Errorf("only the owner of the agent is authorized for this operation")
+		return common.CodeOperatingError, errAgentNotOwner
 	}
 	return common.CodeSuccess, nil
 }
