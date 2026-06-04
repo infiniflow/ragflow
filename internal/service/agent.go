@@ -137,8 +137,13 @@ func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+	// Owner always has access
 	if canvas.UserID == userID {
 		return true, nil
+	}
+	// Non-owner: only team-level permission grants tenant access
+	if canvas.Permission != string(entity.TenantPermissionTeam) {
+		return false, nil
 	}
 	// Check team membership
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)

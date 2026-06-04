@@ -168,7 +168,8 @@ func TestCheckCanvasAccess_Owner(t *testing.T) {
 	}
 }
 
-// TestCheckCanvasAccess_NotOwner verifies that another user is denied.
+// TestCheckCanvasAccess_NotOwner verifies that a tenant member can access
+// a team-level canvas.
 func TestCheckCanvasAccess_NotOwner(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	t.Helper()
@@ -186,8 +187,46 @@ func TestCheckCanvasAccess_NotOwner(t *testing.T) {
 	t.Cleanup(func() { dao.DB = orig })
 
 	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
-	testDB.Create(&entity.User{ID: "user-2", Nickname: "attacker", Email: "c@d.com"})
-	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sptr("My Agent")})
+	testDB.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "c@d.com"})
+	// user-2 is a member of user-1's tenant (status "1" = active)
+	testDB.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-2", TenantID: "user-1", Role: "member", Status: sptr("1")})
+	// Canvas has team-level permission
+	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Permission: "team", Title: sptr("Team Agent")})
+
+	svc := NewAgentService()
+	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
+	if err != nil {
+		t.Fatalf("CheckCanvasAccess failed: %v", err)
+	}
+	if !ok {
+		t.Error("expected tenant member to have access to team canvas")
+	}
+}
+
+// TestCheckCanvasAccess_PrivateCanvas_Denied verifies that a tenant member
+// cannot access a private (default "me") canvas.
+func TestCheckCanvasAccess_PrivateCanvas_Denied(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "a@b.com"})
+	testDB.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "c@d.com"})
+	// user-2 is a tenant member (status "1" = active)
+	testDB.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-2", TenantID: "user-1", Role: "member", Status: sptr("1")})
+	// Canvas has default "me" permission (private)
+	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sptr("Private Agent")})
 
 	svc := NewAgentService()
 	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
@@ -195,7 +234,7 @@ func TestCheckCanvasAccess_NotOwner(t *testing.T) {
 		t.Fatalf("CheckCanvasAccess failed: %v", err)
 	}
 	if ok {
-		t.Error("expected non-owner to be denied access")
+		t.Error("expected tenant member to be denied access to private canvas")
 	}
 }
 
