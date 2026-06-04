@@ -94,9 +94,7 @@ const bedrockAssumeRoleSession = "BedrockSession"
 // has its own endpoint and the URL is fully determined by the region
 // in the API key.
 type BedrockModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewBedrockModel creates a new Bedrock model instance.
@@ -120,10 +118,12 @@ func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &BedrockModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
@@ -133,7 +133,7 @@ func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockMod
 // instance with a custom endpoint override (e.g. a VPC endpoint
 // fronting Bedrock for compliance reasons).
 func (b *BedrockModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewBedrockModel(baseURL, b.URLSuffix)
+	return NewBedrockModel(baseURL, b.baseModel.URLSuffix)
 }
 
 // Name returns the canonical lower-case provider name used by the
@@ -281,8 +281,8 @@ func assumeBedrockRole(ctx context.Context, key *bedrockKey, region string) (aws
 // the AWS-defined "converse" path when conf/models/bedrock.json does
 // not override it.
 func (b *BedrockModel) chatSuffix() string {
-	if b.URLSuffix.Chat != "" {
-		return b.URLSuffix.Chat
+	if b.baseModel.URLSuffix.Chat != "" {
+		return b.baseModel.URLSuffix.Chat
 	}
 	return defaultBedrockChatSuffix
 }
@@ -292,11 +292,11 @@ func (b *BedrockModel) chatSuffix() string {
 // stream path from the chat suffix rather than carrying a separate
 // configuration field that would have to stay in sync.
 func (b *BedrockModel) streamSuffix() string {
-	if b.URLSuffix.AsyncChat != "" {
-		return b.URLSuffix.AsyncChat
+	if b.baseModel.URLSuffix.AsyncChat != "" {
+		return b.baseModel.URLSuffix.AsyncChat
 	}
-	if b.URLSuffix.Chat != "" {
-		return b.URLSuffix.Chat + bedrockStreamSuffixSuffix
+	if b.baseModel.URLSuffix.Chat != "" {
+		return b.baseModel.URLSuffix.Chat + bedrockStreamSuffixSuffix
 	}
 	return defaultBedrockStreamSuffix
 }
@@ -304,16 +304,16 @@ func (b *BedrockModel) streamSuffix() string {
 // modelsSuffix returns the list-models URL suffix on the control
 // plane, falling back to the AWS-defined "foundation-models" path.
 func (b *BedrockModel) modelsSuffix() string {
-	if b.URLSuffix.Models != "" {
-		return b.URLSuffix.Models
+	if b.baseModel.URLSuffix.Models != "" {
+		return b.baseModel.URLSuffix.Models
 	}
 	return defaultBedrockListModelsSuffix
 }
 
 // embeddingSuffix returns the runtime InvokeModel operation path.
 func (b *BedrockModel) embeddingSuffix() string {
-	if b.URLSuffix.Embedding != "" {
-		return b.URLSuffix.Embedding
+	if b.baseModel.URLSuffix.Embedding != "" {
+		return b.baseModel.URLSuffix.Embedding
 	}
 	return defaultBedrockEmbeddingSuffix
 }
@@ -324,7 +324,7 @@ func (b *BedrockModel) embeddingSuffix() string {
 // wins so on-premises proxies (e.g. CloudFront-fronted VPC endpoints)
 // keep working.
 func (b *BedrockModel) bedrockRuntimeURL(region, modelID, op string) string {
-	if override, ok := b.BaseURL[region]; ok && override != "" {
+	if override, ok := b.baseModel.BaseURL[region]; ok && override != "" {
 		return joinBedrockPath(override, "model", modelID, op)
 	}
 	host := fmt.Sprintf(bedrockRuntimeHostTmpl, region)
@@ -335,7 +335,7 @@ func (b *BedrockModel) bedrockRuntimeURL(region, modelID, op string) string {
 // for a given operation (typically "foundation-models" for the model
 // catalog).
 func (b *BedrockModel) bedrockControlURL(region, op string) string {
-	if override, ok := b.BaseURL["control:"+region]; ok && override != "" {
+	if override, ok := b.baseModel.BaseURL["control:"+region]; ok && override != "" {
 		return joinBedrockPath(override, op)
 	}
 	host := fmt.Sprintf(bedrockControlHostTmpl, region)
@@ -524,9 +524,10 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 // driver contract; Bedrock surfaces no reasoning channel today, so it
 // is left empty rather than nil.
 func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return nil, fmt.Errorf("api key is required")
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
+
 	if modelName == "" {
 		return nil, fmt.Errorf("bedrock: model id is required")
 	}
@@ -567,7 +568,7 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)
 	}
@@ -603,9 +604,10 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 // messageStop, and (for error propagation) exception frames; other
 // events are ignored.
 func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return fmt.Errorf("api key is required")
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
+
 	if modelName == "" {
 		return fmt.Errorf("bedrock: model id is required")
 	}
@@ -654,7 +656,7 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("bedrock: send request: %w", err)
 	}
@@ -776,9 +778,10 @@ type bedrockListModelsResponse struct {
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
 func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return nil, fmt.Errorf("api key is required")
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
+
 	key, err := parseBedrockKey(*apiConfig.ApiKey)
 	if err != nil {
 		return nil, err
@@ -806,7 +809,7 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send request: %w", err)
 	}
@@ -919,7 +922,7 @@ func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string,
 		return nil, err
 	}
 
-	resp, err := b.httpClient.Do(req)
+	resp, err := b.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bedrock: send embedding request: %w", err)
 	}

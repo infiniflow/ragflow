@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
@@ -14,39 +30,28 @@ import (
 )
 
 type PaddleOCRModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewPaddleOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOCRModel {
 	return &PaddleOCRModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (p PaddleOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &PaddleOCRModel{
-		BaseURL:   baseURL,
-		URLSuffix: p.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewPaddleOCRModel(baseURL, p.baseModel.URLSuffix)
 }
 
 func (p *PaddleOCRModel) Name() string {
@@ -112,20 +117,19 @@ type paddleJsonlLine struct {
 }
 
 func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if (content == nil || len(content) == 0) && (fileURL == nil || *fileURL == "") {
 		return nil, fmt.Errorf("content and fileURL cannot be both empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
-	url := fmt.Sprintf("%s/%s", p.BaseURL[region], p.URLSuffix.OCR)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, p.baseModel.URLSuffix.OCR)
 
 	optionalPayload := map[string]bool{
 		"useDocOrientationClassify": false,
@@ -140,7 +144,6 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	defer cancel()
 
 	var req *http.Request
-	var err error
 
 	if fileURL != nil && strings.HasPrefix(*fileURL, "http") {
 		reqData := map[string]interface{}{
@@ -174,7 +177,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit job: %w", err)
 	}
@@ -199,8 +202,6 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	var jsonlUrl string
 
 	for {
-		// Wait between polls but bail out immediately if the overall
-		// deadline fires instead of sleeping through it.
 		select {
 		case <-time.After(3 * time.Second):
 		case <-ctx.Done():
@@ -210,7 +211,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
 		pollReq.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
 
-		pollResp, err := p.httpClient.Do(pollReq)
+		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
 			return nil, fmt.Errorf("failed to poll job status: %w", err)
 		}
@@ -246,7 +247,7 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		return nil, fmt.Errorf("failed to create request for jsonl: %w", err)
 	}
 
-	resResp, err := p.httpClient.Do(resReq)
+	resResp, err := p.baseModel.httpClient.Do(resReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download jsonl result: %w", err)
 	}
