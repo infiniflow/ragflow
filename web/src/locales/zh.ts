@@ -1148,6 +1148,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       dingtalkAITableDescription: '连接钉钉AI表格，同步指定表格中的记录。',
       gitlabDescription:
         '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
+      linearDescription:
+        '连接 Linear，同步 Issue、评论、项目和附件元数据。',
+      linearApiKeyTip: '请从 Linear 工作区 API 设置中创建个人 API Key。',
+      linearTeamIdsTip:
+        '可选：要同步的 Linear Team ID。留空则同步该 API Key 可见的所有团队。',
+      linearProjectIdsTip:
+        '可选：要同步的 Linear Project ID。留空则同步该 API Key 可见的所有项目。',
       asanaDescription: '连接 Asana，同步工作区中的文件。',
       imapDescription:
         '连接你的 IMAP 邮箱，同步指定mailboxes中的邮件，用于知识检索与分析',

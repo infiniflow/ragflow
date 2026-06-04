@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { ListTodo, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -48,6 +48,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  LINEAR = 'linear',
 }
 
 type DataSourceFeatureVisibility = {
@@ -144,6 +145,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.SHAREPOINT]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.LINEAR]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.MYSQL]: {
@@ -334,6 +338,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
       icon: <Mail className="text-text-primary" size={22} />,
+    },
+    [DataSourceKey.LINEAR]: {
+      name: 'Linear',
+      description: t(`setting.${DataSourceKey.LINEAR}Description`),
+      icon: <ListTodo className="text-text-primary" size={22} />,
     },
   };
 };
@@ -1034,6 +1043,67 @@ export const DataSourceFormFields = {
       name: 'config.asana_team_id',
       type: FormFieldType.Text,
       required: false,
+    },
+  ],
+  [DataSourceKey.LINEAR]: [
+    {
+      label: 'Linear API Key',
+      name: 'config.credentials.linear_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.linearApiKeyTip'),
+    },
+    {
+      label: 'Team IDs',
+      name: 'config.team_ids',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.linearTeamIdsTip'),
+    },
+    {
+      label: 'Project IDs',
+      name: 'config.project_ids',
+      type: FormFieldType.Tag,
+      required: false,
+      tooltip: t('setting.linearProjectIdsTip'),
+    },
+    {
+      label: 'Include Comments',
+      name: 'config.include_comments',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'Include Attachments',
+      name: 'config.include_attachments',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'Include Projects',
+      name: 'config.include_projects',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'Include Archived',
+      name: 'config.include_archived',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
     },
   ],
   [DataSourceKey.GITHUB]: [
@@ -1846,6 +1916,22 @@ export const DataSourceFormDefaultValues = {
       asana_team_id: '',
       credentials: {
         asana_api_token_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.LINEAR]: {
+    name: '',
+    source: DataSourceKey.LINEAR,
+    config: {
+      team_ids: [],
+      project_ids: [],
+      include_comments: true,
+      include_attachments: true,
+      include_projects: true,
+      include_archived: false,
+      batch_size: 2,
+      credentials: {
+        linear_api_key: '',
       },
     },
   },

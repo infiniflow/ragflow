@@ -1270,6 +1270,14 @@ Example: Virtual Hosted Style`,
         'Connect to Dingtalk AI Table and synchronize records from a specified table.',
       gitlabDescription:
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
+      linearDescription:
+        'Connect Linear to sync issues, comments, projects, and attachment metadata.',
+      linearApiKeyTip:
+        'Create a Linear personal API key from Linear workspace API settings.',
+      linearTeamIdsTip:
+        'Optional: Linear team IDs to sync. Leave empty to sync all teams visible to the API key.',
+      linearProjectIdsTip:
+        'Optional: Linear project IDs to sync. Leave empty to sync all projects visible to the API key.',
       asanaDescription:
         'Connect to Asana and synchronize files from a specified workspace.',
       imapDescription:
