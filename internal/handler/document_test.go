@@ -24,17 +24,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
 // fakeDocumentService implements documentServiceIface for handler tests.
 type fakeDocumentService struct {
-	deleted int
-	err     error
+	deleted    int
+	err        error
+	stopResult map[string]interface{}
+	stopErr    error
 }
 
 func (f *fakeDocumentService) CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error) {
@@ -54,6 +59,9 @@ func (f *fakeDocumentService) DeleteDocuments(ids []string, deleteAll bool, data
 }
 func (f *fakeDocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
+}
+func (f *fakeDocumentService) StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error) {
+	return f.stopResult, f.stopErr
 }
 func (f *fakeDocumentService) ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error) {
 	return nil, 0, nil
@@ -251,5 +259,195 @@ func TestDeleteDocumentsHandler_MissingDatasetID(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == float64(common.CodeSuccess) {
 		t.Fatal("expected error for missing dataset_id")
+	}
+}
+
+func TestStopParseDocumentsHandler_EmptyDocIDs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": []}`)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code == float64(common.CodeSuccess) {
+		t.Fatal("expected error for empty document_ids")
+	}
+}
+
+func TestStopParseDocumentsHandler_BadJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `not json`)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code == float64(common.CodeSuccess) {
+		t.Fatal("expected error for bad JSON body")
+	}
+}
+
+// setupHandlerAccessDB sets up SQLite in-memory DB for handler tests that need
+// datasetService.Accessible to work.
+func setupHandlerAccessDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		TranslateError: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.Knowledgebase{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	// Insert user
+	db.Create(&entity.User{ID: "user-1", Nickname: "test", Email: "test@test.com", Password: sptr("x")})
+	// Insert tenant
+	db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
+	// Insert user_tenant mapping
+	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "admin"})
+	// Insert knowledgebase
+	db.Create(&entity.Knowledgebase{
+		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
+		CreatedBy: "user-1", Permission: string(entity.TenantPermissionMe),
+		Status:    sptr(string(entity.StatusValid)),
+	})
+
+	return db
+}
+
+// sptr returns a pointer to the given string (copy of service test helper).
+func sptr(s string) *string { return &s }
+
+func TestStopParseDocumentsHandler_Success(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		stopResult: map[string]interface{}{"success_count": 1},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp)
+	}
+	data := resp["data"].(map[string]interface{})
+	if data["success_count"] != float64(1) {
+		t.Fatalf("expected success_count=1, got %v", data["success_count"])
+	}
+}
+
+func TestStopParseDocumentsHandler_ServiceError(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{
+		stopErr: fmt.Errorf("internal failure"),
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code == float64(common.CodeSuccess) {
+		t.Fatal("expected error code for service error")
+	}
+}
+
+func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  service.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	// Use a user that doesn't have access to ds-1
+	c.Set("user_id", "other-user")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code == float64(common.CodeSuccess) {
+		t.Fatal("expected error for no authorization")
 	}
 }

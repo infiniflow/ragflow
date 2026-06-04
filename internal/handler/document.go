@@ -45,6 +45,7 @@ type documentServiceIface interface {
 	DeleteDocument(id string) error
 	DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error)
 	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
 	ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
@@ -955,5 +956,48 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 		"data":    parseResult,
+	})
+}
+
+type StopParseDocumentRequest struct {
+	DocumentIDs []string `json:"document_ids" binding:"required"`
+}
+
+func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+
+	var req StopParseDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if len(req.DocumentIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"message": "`document_ids` is required",
+		})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	if !h.datasetService.Accessible(datasetID, userID) {
+		jsonError(c, common.CodeAuthenticationError, "You don't own the dataset.")
+		return
+	}
+
+	result, err := h.documentService.StopParseDocuments(datasetID, req.DocumentIDs)
+	if err != nil {
+		jsonError(c, common.CodeExceptionError, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+		"data":    result,
 	})
 }

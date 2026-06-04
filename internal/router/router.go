@@ -237,6 +237,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}
 
