@@ -53,6 +53,7 @@ def _load_openai_api(monkeypatch):
     """Load api/apps/restful_apis/openai_api.py with the heavy deps stubbed."""
     _stub(monkeypatch, "quart", Response=object, jsonify=lambda *a, **k: None)
     _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
+    _stub(monkeypatch, "api.apps.restful_apis._generation_params", extract_generation_config=lambda req: {}, merge_generation_config=lambda *_a, **_k: None)
     # Pre-register nested modules so importlib finds them directly in
     # sys.modules without trying to traverse the stubbed parent package.
     _stub(
