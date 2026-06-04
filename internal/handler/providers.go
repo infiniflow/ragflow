@@ -1585,3 +1585,40 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// ListTenantAddedModels is the response handler for GET /api/v1/models.
+// It is the Go port of Python's
+// api/apps/restful_apis/models_api.py:get_added_models and feeds
+// web/src/hooks/use-llm-request.tsx → useFetchAllAddedModels. The data
+// shape is the array form (one row per (provider × instance × llm) with
+// model_type: string[]), matching the IAddedModel interface in
+// web/src/interfaces/database/llm.ts:64-71.
+//
+// The previous contract routed this path to TenantHandler.GetModels →
+// TenantService.ListTenantDefaultModels, which only enumerates the 6-7
+// default tenant fields and returned `[]` for any tenant without
+// defaults, breaking the front-end's "View Models" list. The Go port
+// has no writers for tenant_model, so this endpoint must be driven by
+// the factory catalog cross-referenced with the tenant's instance list —
+// see service.ModelProviderService.ListTenantAddedModels.
+func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	modelType := c.Query("type")
+
+	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(user.ID, modelType)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    addedModels,
+		"message": "success",
+	})
+}
