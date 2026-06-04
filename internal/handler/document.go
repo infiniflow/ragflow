@@ -18,8 +18,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strconv"
@@ -31,9 +34,31 @@ import (
 	"ragflow/internal/service"
 )
 
+var IMG_BASE64_PREFIX = "data:image/png;base64,"
+
+// documentServiceIface defines the DocumentService methods used by DocumentHandler.
+type documentServiceIface interface {
+	CreateDocument(req *service.CreateDocumentRequest) (*entity.Document, error)
+	GetDocumentByID(id string) (*service.DocumentResponse, error)
+	UpdateDocument(id string, req *service.UpdateDocumentRequest) error
+	DeleteDocument(id string) error
+	DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error)
+	ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	ListDocuments(page, pageSize int) ([]*service.DocumentResponse, int64, error)
+	ListDocumentsByDatasetID(kbID string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
+	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
+	GetThumbnail(docID string) (*service.ThumbnailResponse, error)
+	GetDocumentImage(imageID string) ([]byte, error)
+	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
+	SetDocumentMetadata(docID string, meta map[string]interface{}) error
+	DeleteDocumentMetadata(docID string, keys []string) error
+	DeleteDocumentAllMetadata(docID string) error
+	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
+}
+
 // DocumentHandler document handler
 type DocumentHandler struct {
-	documentService *service.DocumentService
+	documentService documentServiceIface
 	datasetService  *service.DatasetService
 }
 
@@ -120,6 +145,58 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	})
 }
 
+// GetThumbnail Get thumbnails for documents.
+func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	id := c.Query("doc_ids")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": errors.New("invalid document id"),
+		})
+		return
+	}
+
+	result, err := h.documentService.GetThumbnail(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Errorf("thumbnail not found"),
+		})
+		return
+	}
+
+	if result.Thumbnail != nil && *result.Thumbnail != "" {
+		newThumbURL := fmt.Sprintf("/api/v1/documents/images/%s-%s", result.KbID, *result.Thumbnail)
+		result.Thumbnail = &newThumbURL
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    map[string]interface{}{result.ID: result.Thumbnail},
+		"message": "success",
+	})
+}
+
+// GetDocumentImage returns a document image from object storage.
+func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
+	imageID := c.Param("image_id")
+	data, err := h.documentService.GetDocumentImage(imageID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, "Image not found.")
+		return
+	}
+
+	contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(imageID)))
+	if contentType == "" {
+		contentType = "image/JPEG"
+	}
+	c.Data(http.StatusOK, contentType, data)
+}
+
 // UpdateDocument update document
 // @Summary Update Document
 // @Description Update document info
@@ -199,6 +276,54 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "deleted successfully",
 	})
+}
+
+// DeleteDocuments handles DELETE /api/v1/datasets/:dataset_id/documents
+func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	if datasetID == "" {
+		jsonError(c, common.CodeArgumentError, "dataset_id is required")
+		return
+	}
+
+	var req struct {
+		IDs       *[]string `json:"ids"`
+		DeleteAll bool      `json:"delete_all,omitempty"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			jsonError(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	var ids []string
+	if req.IDs != nil {
+		ids = *req.IDs
+	}
+	if len(ids) > 0 && req.DeleteAll {
+		jsonError(c, common.CodeArgumentError, "should not provide both ids and delete_all")
+		return
+	}
+	if len(ids) == 0 && !req.DeleteAll {
+		jsonError(c, common.CodeArgumentError, "should either provide doc ids or set delete_all(true)")
+		return
+	}
+
+	userID := c.GetString("user_id")
+	deleted, err := h.documentService.DeleteDocuments(ids, req.DeleteAll, datasetID, userID)
+	if err != nil {
+		jsonError(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	jsonResponse(c, common.CodeSuccess, map[string]interface{}{"deleted": deleted}, "success")
 }
 
 // ListDocuments document list

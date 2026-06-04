@@ -216,10 +216,10 @@ class TestTaskContextLanguageAndModelProperties:
     """Tests for language and model properties."""
 
     def test_language_default(self):
-        """Test language property defaults to 'en'."""
+        """Test language property defaults to 'Chinese'."""
         task = {"id": "task_1", "tenant_id": "tenant_1"}
         ctx = _make_ctx(task=task)
-        assert ctx.language == "en"
+        assert ctx.language == "Chinese"
 
     def test_language(self):
         """Test language property."""

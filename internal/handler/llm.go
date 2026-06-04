@@ -22,7 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/service"
 )
 
@@ -139,73 +138,6 @@ func (h *LLMHandler) SetAPIKey(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"message": "success",
 		"data":    true,
-	})
-}
-
-// Factories get model provider factories
-// @Summary Get Model Provider Factories
-// @Description Get list of model provider factories
-// @Tags llm
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Success 200 {array} FactoryResponse
-// @Router /v1/llm/factories [get]
-func (h *LLMHandler) Factories(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-
-	// Get model providers
-	dao := dao.NewModelProviderDAO()
-	providers := dao.GetAllProviders()
-
-	// Filter out unwanted providers
-	filtered := make([]FactoryResponse, 0)
-	excluded := map[string]bool{
-		"Youdao":    true,
-		"FastEmbed": true,
-		"BAAI":      true,
-		"Builtin":   true,
-	}
-
-	for _, provider := range providers {
-		if excluded[provider.Name] {
-			continue
-		}
-
-		// Collect unique model types from LLMs
-		modelTypes := make(map[string]bool)
-		for _, llm := range provider.LLMs {
-			modelTypes[llm.ModelType] = true
-		}
-
-		// Convert to slice
-		modelTypeSlice := make([]string, 0, len(modelTypes))
-		for mt := range modelTypes {
-			modelTypeSlice = append(modelTypeSlice, mt)
-		}
-
-		// If no model types found, use defaults
-		if len(modelTypeSlice) == 0 {
-			modelTypeSlice = []string{"chat", "embedding", "rerank", "image2text", "speech2text", "tts", "ocr"}
-		}
-
-		filtered = append(filtered, FactoryResponse{
-			Name:       provider.Name,
-			Logo:       provider.Logo,
-			Tags:       provider.Tags,
-			Status:     provider.Status,
-			Rank:       provider.Rank,
-			ModelTypes: modelTypeSlice,
-		})
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": common.CodeSuccess,
-		"data": filtered,
 	})
 }
 
