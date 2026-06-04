@@ -17,11 +17,14 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
@@ -209,6 +212,16 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 
 	version, err := h.agentService.GetVersion(agentID, versionID)
 	if err != nil {
+		isNotFound := errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "version not found"
+		if !isNotFound {
+			common.Warn("get agent version failed", zap.String("error", err.Error()))
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeServerError,
+				"data":    nil,
+				"message": err.Error(),
+			})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeNotFound,
 			"data":    nil,
