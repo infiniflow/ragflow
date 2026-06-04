@@ -37,9 +37,7 @@ import (
 // The non-streaming call timeout is the shared nonStreamCallTimeout
 // constant defined alongside the xAI driver in this package.
 type OpenAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewOpenAIModel creates a new OpenAI model instance.
@@ -66,16 +64,18 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &OpenAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (o *OpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewOpenAIModel(baseURL, o.URLSuffix)
+	return NewOpenAIModel(baseURL, o.baseModel.URLSuffix)
 }
 
 func (o *OpenAIModel) Name() string {
@@ -87,17 +87,18 @@ func (o *OpenAIModel) Name() string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (o *OpenAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := o.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("openai: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("openai: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -113,7 +114,7 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -169,7 +170,7 @@ func (o *OpenAIModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -235,20 +236,21 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -311,7 +313,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -435,8 +437,8 @@ func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -447,12 +449,13 @@ func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -478,7 +481,7 @@ func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -511,8 +514,8 @@ func (o *OpenAIModel) Embed(modelName *string, texts []string, apiConfig *APICon
 
 // ListModels returns the list of model ids visible to the API key.
 func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	var region = "default"
@@ -524,7 +527,7 @@ func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, o.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -537,7 +540,7 @@ func (o *OpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	// GET has no body, so Content-Type is not needed.
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -611,7 +614,7 @@ func (o *OpenAIModel) TranscribeAudio(modelName *string, file *string, apiConfig
 
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -640,7 +643,7 @@ func (o *OpenAIModel) TranscribeAudioWithSender(modelName *string, file *string,
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -746,7 +749,7 @@ func (o *OpenAIModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 		return nil, err
 	}
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -777,7 +780,7 @@ func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *str
 		req.Header.Set("Accept", "text/event-stream")
 	}
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -795,8 +798,8 @@ func (o *OpenAIModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, stream bool) (*http.Request, string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, "", fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, "", err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, "", fmt.Errorf("model name is required")
@@ -804,7 +807,7 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 	if file == nil || *file == "" {
 		return nil, "", fmt.Errorf("file is missing")
 	}
-	if strings.TrimSpace(o.URLSuffix.ASR) == "" {
+	if strings.TrimSpace(o.baseModel.URLSuffix.ASR) == "" {
 		return nil, "", fmt.Errorf("openai ASR URL suffix is required")
 	}
 
@@ -812,12 +815,13 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return nil, "", err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.URLSuffix.ASR, "/"))
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -874,8 +878,8 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 }
 
 func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, stream bool) (*http.Request, string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, "", fmt.Errorf("api key is required")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, "", err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, "", fmt.Errorf("model name is required")
@@ -883,7 +887,7 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 	if audioContent == nil || *audioContent == "" {
 		return nil, "", fmt.Errorf("audio content is empty")
 	}
-	if strings.TrimSpace(o.URLSuffix.TTS) == "" {
+	if strings.TrimSpace(o.baseModel.URLSuffix.TTS) == "" {
 		return nil, "", fmt.Errorf("openai TTS URL suffix is required")
 	}
 
@@ -891,12 +895,13 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := o.baseURLForRegion(region)
 	if err != nil {
 		return nil, "", err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.URLSuffix.TTS, "/"))
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.baseModel.URLSuffix.TTS, "/"))
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,

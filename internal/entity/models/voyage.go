@@ -44,9 +44,7 @@ import (
 // Aliyun/SiliconFlow); the driver translates RerankConfig.TopN to
 // top_k on the wire.
 type VoyageModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewVoyageModel creates a new Voyage AI model instance.
@@ -72,16 +70,18 @@ func NewVoyageModel(baseURL map[string]string, urlSuffix URLSuffix) *VoyageModel
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &VoyageModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (v *VoyageModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewVoyageModel(baseURL, v.URLSuffix)
+	return NewVoyageModel(baseURL, v.baseModel.URLSuffix)
 }
 
 func (v *VoyageModel) Name() string {
@@ -92,11 +92,12 @@ func (v *VoyageModel) Name() string {
 // error if no entry exists. Single-region for Voyage but kept here
 // for consistency with other drivers.
 func (v *VoyageModel) baseURLForRegion(region string) (string, error) {
-	base, ok := v.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("voyage: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("voyage: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 type voyageEmbeddingData struct {
@@ -119,8 +120,8 @@ func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -131,12 +132,13 @@ func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := v.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -169,7 +171,7 @@ func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -241,8 +243,8 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -252,12 +254,13 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := v.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
 
 	topK := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -287,7 +290,7 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

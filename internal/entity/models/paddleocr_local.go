@@ -29,39 +29,28 @@ import (
 )
 
 type PaddleOCRLocalModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewPaddleOCRLocalModel(baseURL map[string]string, urlSuffix URLSuffix) *PaddleOCRLocalModel {
 	return &PaddleOCRLocalModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        10,
+					MaxIdleConnsPerHost: 100,
+					IdleConnTimeout:     time.Second * 90,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (p *PaddleOCRLocalModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &PaddleOCRLocalModel{
-		BaseURL:   baseURL,
-		URLSuffix: p.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewPaddleOCRLocalModel(baseURL, p.baseModel.URLSuffix)
 }
 
 func (p *PaddleOCRLocalModel) Name() string {
@@ -125,8 +114,13 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", p.BaseURL[region], p.URLSuffix.OCR)
+	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, p.baseModel.URLSuffix.OCR)
 
 	base64Str := base64.StdEncoding.EncodeToString(content)
 
@@ -159,7 +153,7 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request to local PaddleOCR: %w", err)
 	}

@@ -35,9 +35,7 @@ import (
 // continue to be used and will not be affected for the time being. If you wish to activate new model services or utilise additional
 // model capabilities, please visit TokenHub.
 type HunyuanModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewHunyuanModel creates a new Hunyuan model instance.
@@ -55,16 +53,18 @@ func NewHunyuanModel(baseURL map[string]string, urlSuffix URLSuffix) *HunyuanMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &HunyuanModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (h *HunyuanModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewHunyuanModel(baseURL, h.URLSuffix)
+	return NewHunyuanModel(baseURL, h.baseModel.URLSuffix)
 }
 
 func (h *HunyuanModel) Name() string {
@@ -72,11 +72,12 @@ func (h *HunyuanModel) Name() string {
 }
 
 func (h *HunyuanModel) baseURLForRegion(region string) (string, error) {
-	base, ok := h.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("hunyuan: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("hunyuan: %w", err)
 	}
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends a non-streaming chat request and returns the
@@ -84,8 +85,8 @@ func (h *HunyuanModel) baseURLForRegion(region string) (string, error) {
 // caller supplies them; reasoning_content is surfaced separately so the
 // visible Answer is never polluted by chain-of-thought.
 func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -95,12 +96,13 @@ func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := h.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, h.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -146,7 +148,7 @@ func (h *HunyuanModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -211,20 +213,21 @@ func (h *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := h.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, h.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -275,7 +278,7 @@ func (h *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -365,20 +368,21 @@ func (h *HunyuanModel) ChatStreamlyWithSender(modelName string, messages []Messa
 // /v1/models. Used by Add-Provider's connection check and by the UI's
 // model picker.
 func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := h.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, h.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -389,7 +393,7 @@ func (h *HunyuanModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -443,20 +447,21 @@ func (h *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := h.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, h.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -479,7 +484,7 @@ func (h *HunyuanModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

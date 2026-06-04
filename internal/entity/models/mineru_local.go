@@ -28,39 +28,28 @@ import (
 )
 
 type MinerULocalModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewMinerLocalUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerULocalModel {
 	return &MinerULocalModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        10,
+					MaxIdleConnsPerHost: 100,
+					IdleConnTimeout:     time.Second * 90,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (m *MinerULocalModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &MinerULocalModel{
-		BaseURL:   baseURL,
-		URLSuffix: m.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewMinerLocalUModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *MinerULocalModel) Name() string {
@@ -124,8 +113,13 @@ func (m *MinerULocalModel) ParseFile(modelName *string, content []byte, document
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	apiURL := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.DocumentParse)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	apiURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -163,7 +157,7 @@ func (m *MinerULocalModel) ParseFile(modelName *string, content []byte, document
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -214,8 +208,13 @@ func (m *MinerULocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskR
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s/%s/result", m.BaseURL[region], m.URLSuffix.Task, taskID)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s/%s/result", resolvedBaseURL, m.baseModel.URLSuffix.Task, taskID)
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
 
@@ -228,7 +227,7 @@ func (m *MinerULocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskR
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send status request: %w", err)
 	}

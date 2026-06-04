@@ -32,29 +32,29 @@ import (
 
 // MinimaxModel implements ModelDriver for Minimax
 type MinimaxModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewMinimaxModel creates a new Minimax model instance
 func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
 	return &MinimaxModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (m *MinimaxModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewMinimaxModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *MinimaxModel) Name() string {
@@ -63,8 +63,8 @@ func (m *MinimaxModel) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -74,8 +74,13 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Chat)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -145,7 +150,7 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -216,8 +221,13 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Chat)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -289,7 +299,7 @@ func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -380,8 +390,13 @@ func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Models)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -402,7 +417,7 @@ func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -443,8 +458,13 @@ func (m *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.Files)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -457,7 +477,7 @@ func (m *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -491,8 +511,8 @@ func (m *MinimaxModel) TranscribeAudioWithSender(modelName *string, file *string
 
 // AudioSpeech convert text to audio
 func (m *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("MiniMax API key is missing")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is empty")
@@ -502,8 +522,13 @@ func (m *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.TTS)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
@@ -537,7 +562,7 @@ func (m *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -582,8 +607,8 @@ func (m *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 }
 
 func (m *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("MiniMax API key is missing")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is empty")
@@ -593,12 +618,17 @@ func (m *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := strings.TrimSuffix(m.BaseURL[region], "/")
-	if baseURL == "" {
-		baseURL = strings.TrimSuffix(m.BaseURL["default"], "/")
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-	suffix := strings.TrimPrefix(m.URLSuffix.TTS, "/")
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	if baseURL == "" {
+		baseURL = strings.TrimSuffix(resolvedBaseURL, "/")
+	}
+	suffix := strings.TrimPrefix(m.baseModel.URLSuffix.TTS, "/")
 	if suffix == "" {
 		suffix = "v1/t2a_v2"
 	}
@@ -639,7 +669,7 @@ func (m *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

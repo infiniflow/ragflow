@@ -43,9 +43,7 @@ import (
 // (stop, reasoning_effort, etc.) is not documented and is therefore
 // omitted to avoid relying on undocumented upstream behavior.
 type LongCatModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewLongCatModel creates a new LongCat model instance.
@@ -76,16 +74,18 @@ func NewLongCatModel(baseURL map[string]string, urlSuffix URLSuffix) *LongCatMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &LongCatModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (l *LongCatModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewLongCatModel(baseURL, l.URLSuffix)
+	return NewLongCatModel(baseURL, l.baseModel.URLSuffix)
 }
 
 func (l *LongCatModel) Name() string {
@@ -97,17 +97,18 @@ func (l *LongCatModel) Name() string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (l *LongCatModel) baseURLForRegion(region string) (string, error) {
-	base, ok := l.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("longcat: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("longcat: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -118,12 +119,13 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -175,7 +177,7 @@ func (l *LongCatModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -246,20 +248,21 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -312,7 +315,7 @@ func (l *LongCatModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -424,20 +427,21 @@ type longCatListModelsResponse struct {
 const longCatMaxListModelsResponseBytes = 1 << 20
 
 func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -449,7 +453,7 @@ func (l *LongCatModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

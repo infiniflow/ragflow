@@ -28,50 +28,38 @@ import (
 )
 
 type JieKouAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIModel {
 	return &JieKouAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				MaxIdleConns:       10,
-				MaxConnsPerHost:    100,
-				IdleConnTimeout:    time.Second * 90,
-				DisableCompression: false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Timeout: time.Second * 120,
+				Transport: &http.Transport{
+					MaxIdleConns:       10,
+					MaxConnsPerHost:    100,
+					IdleConnTimeout:    time.Second * 90,
+					DisableCompression: false,
+				},
 			},
 		},
 	}
 }
 
 func (j *JieKouAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &JieKouAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: j.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 120,
-			Transport: &http.Transport{
-				MaxIdleConns:       10,
-				MaxConnsPerHost:    100,
-				IdleConnTimeout:    time.Second * 90,
-				DisableCompression: false,
-			},
-		},
-	}
+	return NewJieKouAIModel(baseURL, j.baseModel.URLSuffix)
 }
 
 func (j *JieKouAIModel) Name() string {
 	return "jiekouai"
 }
 
-func validateJieKouAIAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return "", fmt.Errorf("api key is required")
+func validateJieKouAIAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
+	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
+		return "", err
 	}
 	return strings.TrimSpace(*apiConfig.ApiKey), nil
 }
@@ -84,7 +72,7 @@ func validateJieKouAIModelName(modelName *string) (string, error) {
 }
 
 func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -99,8 +87,13 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Chat)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -158,7 +151,7 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -220,7 +213,7 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
 	if err != nil {
 		return err
 	}
@@ -238,8 +231,13 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(j.BaseURL[region], "/"), j.URLSuffix.Chat)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -300,7 +298,7 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -387,7 +385,7 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -396,8 +394,13 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(j.BaseURL[region], "/"), j.URLSuffix.Embedding)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": model,
@@ -417,7 +420,7 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -469,7 +472,7 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -478,8 +481,13 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(j.BaseURL[region], "/"), j.URLSuffix.Rerank)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Rerank)
 
 	reqBody := map[string]interface{}{
 		"model":     model,
@@ -503,7 +511,7 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -566,7 +574,7 @@ func (j *JieKouAIModel) ParseFile(modelName *string, content []byte, url *string
 }
 
 func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := validateJieKouAIAPIKey(apiConfig)
+	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -574,8 +582,13 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Models)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -585,7 +598,7 @@ func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

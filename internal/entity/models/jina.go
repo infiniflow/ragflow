@@ -23,33 +23,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
 type JinaModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
 	return &JinaModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 90,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Timeout: time.Second * 90,
+			},
 		},
 	}
 }
 
 func (j *JinaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &JinaModel{
-		BaseURL:   baseURL,
-		URLSuffix: j.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 90,
-		},
-	}
+	return NewJinaModel(baseURL, j.baseModel.URLSuffix)
 }
 
 func (j *JinaModel) Name() string {
@@ -57,16 +52,17 @@ func (j *JinaModel) Name() string {
 }
 
 func (j *JinaModel) baseURLForRegion(region string) (string, error) {
-	base, ok := j.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("jina: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("jina: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -79,12 +75,13 @@ func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := j.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, j.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -131,7 +128,7 @@ func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -192,8 +189,13 @@ func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Embedding)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -213,7 +215,7 @@ func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -263,8 +265,13 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Rerank)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN != 0 {
@@ -291,7 +298,7 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -334,8 +341,13 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Models)
+	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -344,7 +356,7 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := j.httpClient.Do(req)
+	resp, err := j.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

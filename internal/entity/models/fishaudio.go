@@ -35,25 +35,21 @@ import (
 // 208cc2d0e4594ca896a600c43c9497aa
 
 type FishAudioModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudioModel {
 	return &FishAudioModel{
-		BaseURL:    baseURL,
-		URLSuffix:  urlSuffix,
-		httpClient: &http.Client{},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: &http.Client{},
+		},
 	}
 }
 
 func (f *FishAudioModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &FishAudioModel{
-		BaseURL:    baseURL,
-		URLSuffix:  f.URLSuffix,
-		httpClient: &http.Client{},
-	}
+	return NewFishAudioModel(baseURL, f.baseModel.URLSuffix)
 }
 
 func (f *FishAudioModel) Name() string {
@@ -78,8 +74,8 @@ func (f *FishAudioModel) Rerank(modelName *string, query string, documents []str
 
 // TranscribeAudio transcribe audio
 func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("FishAudio API key is missing")
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if file == nil || *file == "" {
@@ -90,8 +86,13 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.ASR)
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -153,7 +154,7 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -188,8 +189,8 @@ func (f *FishAudioModel) TranscribeAudioWithSender(modelName *string, file *stri
 
 // AudioSpeech convert text to audio
 func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("FishAudio API key is missing")
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -200,8 +201,13 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.TTS)
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -233,7 +239,7 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("model", *modelName)
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -252,8 +258,8 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 }
 
 func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("FishAudio API key is missing")
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -264,8 +270,13 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s/%s", f.BaseURL[region], f.URLSuffix.TTS, "stream/with-timestamp")
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.TTS, "stream/with-timestamp")
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -298,7 +309,7 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("model", *modelName)
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -366,8 +377,13 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.Models)
+	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -383,7 +399,7 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("Fish Audio API key is missing")
 	}
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -422,10 +438,11 @@ func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := f.BaseURL[region]
-	if baseURL == "" {
-		baseURL = f.BaseURL["default"]
+	baseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	url := fmt.Sprintf("%s/wallet/self/api-credit", strings.TrimSuffix(baseURL, "/"))
@@ -440,7 +457,7 @@ func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

@@ -37,9 +37,7 @@ import (
 // the docs but out of scope for this driver, which sticks to the
 // ModelDriver methods backed by documented JSON surfaces.
 type N1NModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewN1NModel creates a new n1n.ai model instance.
@@ -70,16 +68,18 @@ func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &N1NModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (n *N1NModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewN1NModel(baseURL, n.URLSuffix)
+	return NewN1NModel(baseURL, n.baseModel.URLSuffix)
 }
 
 func (n *N1NModel) Name() string {
@@ -90,11 +90,12 @@ func (n *N1NModel) Name() string {
 // of any trailing slash so callers can append a suffix without
 // producing "//" in the path.
 func (n *N1NModel) baseURLForRegion(region string) (string, error) {
-	base, ok := n.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("n1n: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("n1n: %w", err)
 	}
-	return strings.TrimRight(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (n *N1NModel) endpointURL(region, suffix string) (string, error) {
@@ -112,9 +113,9 @@ func n1nRegion(apiConfig *APIConfig) string {
 	return "default"
 }
 
-func n1nValidateAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return "", fmt.Errorf("api key is required")
+func n1nValidateAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
+	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
+		return "", err
 	}
 	return *apiConfig.ApiKey, nil
 }
@@ -221,7 +222,7 @@ type n1nChatResponse struct {
 // ChatWithMessages sends a single, non-streaming chat completion
 // against n1n.ai's /v1/chat/completions endpoint.
 func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := n1nValidateAPIKey(apiConfig)
+	apiKey, err := n1nValidateAPIKey(&n.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +233,7 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Chat)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +251,7 @@ func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -305,12 +306,12 @@ func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	apiKey, err := n1nValidateAPIKey(apiConfig)
+	apiKey, err := n1nValidateAPIKey(&n.baseModel, apiConfig)
 	if err != nil {
 		return err
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Chat)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -333,7 +334,7 @@ func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -429,7 +430,7 @@ func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	apiKey, err := n1nValidateAPIKey(apiConfig)
+	apiKey, err := n1nValidateAPIKey(&n.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +438,7 @@ func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Embedding)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +459,7 @@ func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -527,7 +528,7 @@ func (n *N1NModel) Rerank(modelName *string, query string, documents []string, a
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	apiKey, err := n1nValidateAPIKey(apiConfig)
+	apiKey, err := n1nValidateAPIKey(&n.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +536,7 @@ func (n *N1NModel) Rerank(modelName *string, query string, documents []string, a
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Rerank)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +558,7 @@ func (n *N1NModel) Rerank(modelName *string, query string, documents []string, a
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -607,12 +608,12 @@ type n1nModelCatalogResponse struct {
 // representative subset; this method surfaces the full upstream list
 // (hundreds of models routed through the aggregator).
 func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := n1nValidateAPIKey(apiConfig)
+	apiKey, err := n1nValidateAPIKey(&n.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Models)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +626,7 @@ func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

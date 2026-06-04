@@ -46,9 +46,7 @@ import (
 // DeepSeek-R1 applies and there's no need for an inline <think>...
 // extractor like Novita's.
 type AstraflowModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewAstraflowModel creates a new Astraflow model instance.
@@ -66,16 +64,18 @@ func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Astraflo
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &AstraflowModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (a *AstraflowModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAstraflowModel(baseURL, a.URLSuffix)
+	return NewAstraflowModel(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AstraflowModel) Name() string {
@@ -83,11 +83,12 @@ func (a *AstraflowModel) Name() string {
 }
 
 func (a *AstraflowModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("astraflow: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("astraflow: %w", err)
 	}
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends a non-streaming chat request and returns the
@@ -95,8 +96,8 @@ func (a *AstraflowModel) baseURLForRegion(region string) (string, error) {
 // caller supplies them; reasoning_content is surfaced separately so the
 // visible Answer is never polluted by chain-of-thought.
 func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -106,12 +107,13 @@ func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, 
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -157,7 +159,7 @@ func (a *AstraflowModel) ChatWithMessages(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -222,20 +224,21 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -286,7 +289,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -376,20 +379,21 @@ func (a *AstraflowModel) ChatStreamlyWithSender(modelName string, messages []Mes
 // /v1/models. Used by Add-Provider's connection check and by the UI's
 // model picker.
 func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -400,7 +404,7 @@ func (a *AstraflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -456,12 +460,15 @@ func (a *AstraflowModel) Embed(modelName *string, texts []string, apiConfig *API
 		return []EmbeddingData{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Embedding)
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -481,7 +488,7 @@ func (a *AstraflowModel) Embed(modelName *string, texts []string, apiConfig *API
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -531,8 +538,13 @@ func (a *AstraflowModel) Rerank(modelName *string, query string, documents []str
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.Rerank)
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN != 0 {
@@ -559,7 +571,7 @@ func (a *AstraflowModel) Rerank(modelName *string, query string, documents []str
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -610,8 +622,8 @@ func (a *AstraflowModel) TranscribeAudioWithSender(modelName *string, file *stri
 }
 
 func (a *AstraflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("Astraflow API key is missing")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -622,8 +634,13 @@ func (a *AstraflowModel) AudioSpeech(modelName *string, audioContent *string, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", a.BaseURL[region], a.URLSuffix.TTS)
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -652,7 +669,7 @@ func (a *AstraflowModel) AudioSpeech(modelName *string, audioContent *string, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

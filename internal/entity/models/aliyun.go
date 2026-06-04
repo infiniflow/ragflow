@@ -31,29 +31,29 @@ import (
 
 // AliyunModel implements ModelDriver for Aliyun
 type AliyunModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewAliyunModel creates a new Aliyun model instance
 func NewAliyunModel(baseURL map[string]string, urlSuffix URLSuffix) *AliyunModel {
 	return &AliyunModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (a *AliyunModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewAliyunModel(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AliyunModel) Name() string {
@@ -69,13 +69,15 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL, ok := a.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -142,7 +144,7 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -213,13 +215,15 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL, ok := a.BaseURL[region]
-	if !ok || baseURL == "" {
-		return fmt.Errorf("aliyun: no base URL configured for region %q", region)
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
+	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -286,7 +290,7 @@ func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -392,8 +396,8 @@ func (a *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -404,18 +408,18 @@ func (a *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := a.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := a.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -438,7 +442,7 @@ func (a *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -488,8 +492,8 @@ func (a *AliyunModel) Rerank(modelName *string, query string, documents []string
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -499,18 +503,18 @@ func (a *AliyunModel) Rerank(modelName *string, query string, documents []string
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := a.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := a.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -541,7 +545,7 @@ func (a *AliyunModel) Rerank(modelName *string, query string, documents []string
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -614,13 +618,15 @@ func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL, ok := a.BaseURL[region]
-	if !ok || baseURL == "" {
-		return nil, fmt.Errorf("aliyun: no base URL configured for region %q", region)
+	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -641,7 +647,7 @@ func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

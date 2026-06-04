@@ -35,29 +35,29 @@ import (
 
 // SiliconflowModel implements ModelDriver for Siliconflow
 type SiliconflowModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewSiliconflowModel creates a new Siliconflow model instance
 func NewSiliconflowModel(baseURL map[string]string, urlSuffix URLSuffix) *SiliconflowModel {
 	return &SiliconflowModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (s *SiliconflowModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewSiliconflowModel(baseURL, s.baseModel.URLSuffix)
 }
 
 func (s *SiliconflowModel) Name() string {
@@ -77,8 +77,8 @@ type SiliconflowRerankRequest struct {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -89,7 +89,12 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.Chat)
+	_ = region
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -146,7 +151,7 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -223,8 +228,13 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.Chat)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -297,7 +307,7 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []M
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -418,8 +428,13 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(s.BaseURL[region], "/"), s.URLSuffix.Embedding)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Embedding)
 
 	apiKey := ""
 	if apiConfig != nil && apiConfig.ApiKey != nil {
@@ -449,7 +464,7 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -486,8 +501,13 @@ func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.Models)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -508,7 +528,7 @@ func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -552,26 +572,22 @@ type siliconflowBalanceResponse struct {
 }
 
 func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := s.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := s.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("siliconflow: no base URL configured for default region")
+	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), s.URLSuffix.Balance)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), s.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -583,7 +599,7 @@ func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -674,6 +690,7 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	apiKey := ""
 	if apiConfig != nil && apiConfig.ApiKey != nil {
@@ -700,7 +717,11 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(s.BaseURL[region], "/"), s.URLSuffix.Rerank)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Rerank)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -715,7 +736,7 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -753,8 +774,13 @@ func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.ASR)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -833,7 +859,7 @@ func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiC
 	req.Header.Set("Accept", "application/json")
 
 	// send request
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -874,8 +900,13 @@ func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.TTS)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model":  *modelName,
@@ -908,7 +939,7 @@ func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -927,8 +958,8 @@ func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, 
 }
 
 func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("SiliconFlow API key is missing")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -939,8 +970,13 @@ func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.TTS)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model":  *modelName,
@@ -973,7 +1009,7 @@ func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

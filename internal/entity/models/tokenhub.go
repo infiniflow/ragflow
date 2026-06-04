@@ -29,37 +29,37 @@ import (
 )
 
 type TokenHubModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewTokenHubModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenHubModel {
 	return &TokenHubModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 60,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        10,
+					MaxIdleConnsPerHost: 100,
+					IdleConnTimeout:     time.Second * 60,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (t *TokenHubModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewTokenHubModel(baseURL, t.URLSuffix)
+	return NewTokenHubModel(baseURL, t.baseModel.URLSuffix)
 }
 
 func (t *TokenHubModel) Name() string {
 	return "tokenhub"
 }
 
-func validateTokenHubChatRequest(modelName string, messages []Message, apiConfig *APIConfig) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+func validateTokenHubChatRequest(baseModel *BaseModel, modelName string, messages []Message, apiConfig *APIConfig) error {
+	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -71,7 +71,7 @@ func validateTokenHubChatRequest(modelName string, messages []Message, apiConfig
 }
 
 func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if err := validateTokenHubChatRequest(modelName, messages, apiConfig); err != nil {
+	if err := validateTokenHubChatRequest(&t.baseModel, modelName, messages, apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -79,8 +79,13 @@ func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, a
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Chat)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -135,7 +140,7 @@ func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, a
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -199,7 +204,7 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
-	if err := validateTokenHubChatRequest(modelName, messages, apiConfig); err != nil {
+	if err := validateTokenHubChatRequest(&t.baseModel, modelName, messages, apiConfig); err != nil {
 		return err
 	}
 
@@ -207,8 +212,13 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Chat)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -268,7 +278,7 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -359,16 +369,21 @@ func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Embedding)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -391,7 +406,7 @@ func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -461,16 +476,21 @@ func (t *TokenHubModel) ParseFile(modelName *string, content []byte, url *string
 }
 
 func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Models)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -482,7 +502,7 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

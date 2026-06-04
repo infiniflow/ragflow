@@ -44,9 +44,7 @@ import (
 // DeepSeek-R1 applies and there's no need for an inline <think>...
 // extractor like Novita's.
 type TokenPonyModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewTokenPonyModel creates a new TokenPony model instance.
@@ -64,16 +62,18 @@ func NewTokenPonyModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenPon
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &TokenPonyModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (t *TokenPonyModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewTokenPonyModel(baseURL, t.URLSuffix)
+	return NewTokenPonyModel(baseURL, t.baseModel.URLSuffix)
 }
 
 func (t *TokenPonyModel) Name() string {
@@ -81,11 +81,12 @@ func (t *TokenPonyModel) Name() string {
 }
 
 func (t *TokenPonyModel) baseURLForRegion(region string) (string, error) {
-	base, ok := t.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("tokenpony: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("tokenpony: %w", err)
 	}
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends a non-streaming chat request and returns the
@@ -93,8 +94,8 @@ func (t *TokenPonyModel) baseURLForRegion(region string) (string, error) {
 // caller supplies them; reasoning_content is surfaced separately so the
 // visible Answer is never polluted by chain-of-thought.
 func (t *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -104,12 +105,13 @@ func (t *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, 
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -155,7 +157,7 @@ func (t *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -220,20 +222,21 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -284,7 +287,7 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -374,20 +377,21 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 // /v1/models. Used by Add-Provider's connection check and by the UI's
 // model picker.
 func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -398,7 +402,7 @@ func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

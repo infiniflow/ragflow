@@ -48,9 +48,7 @@ var localAIStreamIdleTimeout = 60 * time.Second
 // an empty key by default, and the driver only sets the Authorization
 // header when a non-empty key was supplied.
 type LocalAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewLocalAIModel creates a new LocalAI model instance.
@@ -73,16 +71,18 @@ func NewLocalAIModel(baseURL map[string]string, urlSuffix URLSuffix) *LocalAIMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &LocalAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (l *LocalAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewLocalAIModel(baseURL, l.URLSuffix)
+	return NewLocalAIModel(baseURL, l.baseModel.URLSuffix)
 }
 
 func (l *LocalAIModel) Name() string {
@@ -94,13 +94,12 @@ func (l *LocalAIModel) Name() string {
 // message when nothing is configured. LocalAI is self-hosted so the
 // driver cannot fall back to a public endpoint.
 func (l *LocalAIModel) resolveBaseURL(region string) (string, error) {
-	if base, ok := l.BaseURL[region]; ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("localai: %w", err)
 	}
-	if base, ok := l.BaseURL["default"]; ok && base != "" {
-		return strings.TrimSuffix(base, "/"), nil
-	}
-	return "", fmt.Errorf("localai: missing base URL, configure the local access address (e.g., http://127.0.0.1:8080/v1)")
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // setAuth sets the Authorization header only when a non-empty API key
@@ -175,12 +174,13 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.resolveBaseURL(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -234,7 +234,7 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	setLocalAIAuth(req, apiConfig)
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -300,12 +300,13 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.resolveBaseURL(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -373,7 +374,7 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	setLocalAIAuth(req, apiConfig)
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -532,12 +533,13 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.resolveBaseURL(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -563,7 +565,7 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	req.Header.Set("Content-Type", "application/json")
 	setLocalAIAuth(req, apiConfig)
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -645,12 +647,13 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.resolveBaseURL(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -680,7 +683,7 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	req.Header.Set("Content-Type", "application/json")
 	setLocalAIAuth(req, apiConfig)
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -722,12 +725,13 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := l.resolveBaseURL(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, l.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -739,7 +743,7 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	setLocalAIAuth(req, apiConfig)
 
-	resp, err := l.httpClient.Do(req)
+	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

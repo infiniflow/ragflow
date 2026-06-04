@@ -47,9 +47,7 @@ const azureAPIVersion = "2024-10-21"
 // The base URL is user-supplied (e.g. https://<resource>.openai.azure.com/openai)
 // because each Azure resource has its own endpoint; there is no shared default.
 type AzureOpenAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewAzureOpenAIModel creates a new Azure OpenAI model instance.
@@ -69,16 +67,18 @@ func NewAzureOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *AzureO
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &AzureOpenAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (a *AzureOpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAzureOpenAIModel(baseURL, a.URLSuffix)
+	return NewAzureOpenAIModel(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AzureOpenAIModel) Name() string {
@@ -89,11 +89,12 @@ func (a *AzureOpenAIModel) Name() string {
 // no entry exists. A misconfigured region fails fast with a clear message
 // instead of silently producing a relative URL the transport then rejects.
 func (a *AzureOpenAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("azure-openai: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("azure-openai: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // deploymentURL builds a deployment-scoped data-plane URL of the form
@@ -105,8 +106,8 @@ func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string 
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (a *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -121,12 +122,13 @@ func (a *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := a.deploymentURL(baseURL, modelName, a.URLSuffix.Chat)
+	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -175,7 +177,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", *apiConfig.ApiKey)
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -236,8 +238,8 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if modelName == "" {
@@ -252,12 +254,13 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := a.deploymentURL(baseURL, modelName, a.URLSuffix.Chat)
+	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -308,7 +311,7 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(modelName string, messages []M
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", *apiConfig.ApiKey)
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -406,8 +409,8 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -418,12 +421,13 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := a.deploymentURL(baseURL, *modelName, a.URLSuffix.Embedding)
+	url := a.deploymentURL(baseURL, *modelName, a.baseModel.URLSuffix.Embedding)
 
 	// As with chat, the deployment is in the URL path, so no "model" field.
 	reqBody := map[string]interface{}{
@@ -449,7 +453,7 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", *apiConfig.ApiKey)
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -491,21 +495,22 @@ func (a *AzureOpenAIModel) Embed(modelName *string, texts []string, apiConfig *A
 // Azure exposes deployments (not a shared model catalog) at
 // {baseURL}/deployments?api-version={azureAPIVersion}.
 func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s?api-version=%s",
-		strings.TrimRight(baseURL, "/"), a.URLSuffix.Models, azureAPIVersion)
+		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, azureAPIVersion)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -517,7 +522,7 @@ func (a *AzureOpenAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("api-key", *apiConfig.ApiKey)
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

@@ -38,9 +38,7 @@ import (
 // no reasoning_content pass-through (Mistral does not expose one), and a
 // distinct Name() so the factory can route to this driver.
 type MistralModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewMistralModel creates a new Mistral model instance.
@@ -63,16 +61,18 @@ func NewMistralModel(baseURL map[string]string, urlSuffix URLSuffix) *MistralMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &MistralModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (m *MistralModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewMistralModel(baseURL, m.URLSuffix)
+	return NewMistralModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *MistralModel) Name() string {
@@ -84,17 +84,18 @@ func (m *MistralModel) Name() string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (m *MistralModel) baseURLForRegion(region string) (string, error) {
-	base, ok := m.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("mistral: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("mistral: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -105,12 +106,13 @@ func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -160,7 +162,7 @@ func (m *MistralModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -281,20 +283,21 @@ func (m *MistralModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -349,7 +352,7 @@ func (m *MistralModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -448,8 +451,8 @@ func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -460,12 +463,13 @@ func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -488,7 +492,7 @@ func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -541,20 +545,21 @@ func (m *MistralModel) Embed(modelName *string, texts []string, apiConfig *APICo
 
 // ListModels returns the list of model ids visible to the API key.
 func (m *MistralModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := m.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -566,7 +571,7 @@ func (m *MistralModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -655,8 +660,13 @@ func (m *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", m.BaseURL[region], m.URLSuffix.OCR)
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.OCR)
 
 	var docURL string
 	if urls != nil && *urls != "" {
@@ -691,7 +701,7 @@ func (m *MistralModel) OCRFile(modelName *string, content []byte, urls *string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

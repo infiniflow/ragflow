@@ -37,9 +37,7 @@ import (
 // OpenAI driver. The legacy /v1/solar/* paths still work but the canonical
 // base is /v1.
 type UpstageModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewUpstageModel creates a new Upstage model instance.
@@ -62,16 +60,18 @@ func NewUpstageModel(baseURL map[string]string, urlSuffix URLSuffix) *UpstageMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &UpstageModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (u *UpstageModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewUpstageModel(baseURL, u.URLSuffix)
+	return NewUpstageModel(baseURL, u.baseModel.URLSuffix)
 }
 
 func (u *UpstageModel) Name() string {
@@ -83,17 +83,18 @@ func (u *UpstageModel) Name() string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (u *UpstageModel) baseURLForRegion(region string) (string, error) {
-	base, ok := u.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("upstage: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("upstage: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -104,12 +105,13 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := u.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, u.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -166,7 +168,7 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := u.httpClient.Do(req)
+	resp, err := u.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -234,20 +236,21 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := u.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, u.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -306,7 +309,7 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := u.httpClient.Do(req)
+	resp, err := u.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -419,8 +422,8 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -431,12 +434,13 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := u.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, u.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -459,7 +463,7 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := u.httpClient.Do(req)
+	resp, err := u.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -512,20 +516,21 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 
 // ListModels returns the list of model ids visible to the API key.
 func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := u.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, u.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -537,7 +542,7 @@ func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := u.httpClient.Do(req)
+	resp, err := u.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

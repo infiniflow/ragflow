@@ -33,9 +33,7 @@ const anthropicVersion = "2023-06-01"
 // AnthropicModel implements ModelDriver for Claude models through the
 // Anthropic Messages API.
 type AnthropicModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *AnthropicModel {
@@ -46,16 +44,18 @@ func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *Anthropi
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &AnthropicModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (a *AnthropicModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAnthropicModel(baseURL, a.URLSuffix)
+	return NewAnthropicModel(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AnthropicModel) Name() string {
@@ -63,11 +63,12 @@ func (a *AnthropicModel) Name() string {
 }
 
 func (a *AnthropicModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
-	if !ok || strings.TrimSpace(base) == "" {
-		return "", fmt.Errorf("anthropic: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("anthropic: %w", err)
 	}
-	return strings.TrimRight(base, "/"), nil
+	return strings.TrimSpace(strings.TrimSuffix(baseURL, "/")), nil
 }
 
 func (a *AnthropicModel) region(apiConfig *APIConfig) string {
@@ -78,7 +79,7 @@ func (a *AnthropicModel) region(apiConfig *APIConfig) string {
 }
 
 func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := anthropicAPIKey(apiConfig)
+	apiKey, err := anthropicAPIKey(&a.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,7 @@ func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, 
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.URLSuffix.Chat, "/"))
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
 		"model":      modelName,
@@ -121,7 +122,7 @@ func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, 
 	}
 	setAnthropicHeaders(req, apiKey)
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -145,9 +146,9 @@ func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, 
 	}, nil
 }
 
-func anthropicAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return "", fmt.Errorf("api key is required")
+func anthropicAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
+	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
+		return "", err
 	}
 	return strings.TrimSpace(*apiConfig.ApiKey), nil
 }
@@ -386,7 +387,7 @@ func parseAnthropicChatResponse(body []byte) (string, string, error) {
 }
 
 func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := anthropicAPIKey(apiConfig)
+	apiKey, err := anthropicAPIKey(&a.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +396,7 @@ func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.URLSuffix.Models, "/"))
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Models, "/"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -406,7 +407,7 @@ func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	setAnthropicHeaders(req, apiKey)
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

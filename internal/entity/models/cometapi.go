@@ -40,9 +40,7 @@ import (
 // https://api.cometapi.com/api/models, and account quota data through the
 // separate query service at https://query.cometapi.com/user/quota.
 type CometAPIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewCometAPIModel creates a new CometAPI model instance.
@@ -65,25 +63,27 @@ func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIM
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &CometAPIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (c *CometAPIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewCometAPIModel(baseURL, c.URLSuffix)
+	return NewCometAPIModel(baseURL, c.baseModel.URLSuffix)
 }
 
 func (c *CometAPIModel) Name() string {
 	return "cometapi"
 }
 
-func validateCometAPIAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return "", fmt.Errorf("api key is required")
+func validateCometAPIAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
+	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
+		return "", err
 	}
 	return *apiConfig.ApiKey, nil
 }
@@ -107,11 +107,12 @@ func cometapiRegion(apiConfig *APIConfig) string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (c *CometAPIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := c.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("cometapi: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("cometapi: %w", err)
 	}
-	return strings.TrimRight(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (c *CometAPIModel) endpointURL(region, suffix string) (string, error) {
@@ -123,7 +124,7 @@ func (c *CometAPIModel) endpointURL(region, suffix string) (string, error) {
 }
 
 func (c *CometAPIModel) balanceURL(apiKey string) string {
-	rawURL := strings.TrimSpace(c.URLSuffix.Balance)
+	rawURL := strings.TrimSpace(c.baseModel.URLSuffix.Balance)
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = fmt.Sprintf("https://query.cometapi.com/%s", strings.TrimLeft(rawURL, "/"))
 	}
@@ -199,7 +200,7 @@ type cometapiHTTPResponse struct {
 }
 
 func (c *CometAPIModel) doCometAPIRequest(req *http.Request) (*cometapiHTTPResponse, error) {
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -294,7 +295,7 @@ func parseCometAPIModelCatalog(body []byte) ([]string, error) {
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateCometAPIAPIKey(apiConfig)
+	apiKey, err := validateCometAPIAPIKey(&c.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +307,7 @@ func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := c.endpointURL(cometapiRegion(apiConfig), c.URLSuffix.Chat)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -350,12 +351,12 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("messages is empty")
 	}
 
-	apiKey, err := validateCometAPIAPIKey(apiConfig)
+	apiKey, err := validateCometAPIAPIKey(&c.baseModel, apiConfig)
 	if err != nil {
 		return err
 	}
 
-	url, err := c.endpointURL(cometapiRegion(apiConfig), c.URLSuffix.Chat)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -378,7 +379,7 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if err != nil {
 		return err
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -472,7 +473,7 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return []EmbeddingData{}, nil
 	}
 
-	apiKey, err := validateCometAPIAPIKey(apiConfig)
+	apiKey, err := validateCometAPIAPIKey(&c.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +482,7 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	url, err := c.endpointURL(cometapiRegion(apiConfig), c.URLSuffix.Embedding)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +550,7 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 
 // ListModels returns the public CometAPI model catalog.
 func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	url, err := c.endpointURL(cometapiRegion(apiConfig), c.URLSuffix.Models)
+	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -576,10 +577,10 @@ func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 // Balance queries CometAPI's quota service. Unlike model requests, this
 // endpoint authenticates with the key query parameter on query.cometapi.coc.
 func (c *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(c.URLSuffix.Balance) == "" {
+	if strings.TrimSpace(c.baseModel.URLSuffix.Balance) == "" {
 		return nil, fmt.Errorf("balance URL is required")
 	}
 
@@ -633,8 +634,13 @@ func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConf
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.ASR)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -707,7 +713,7 @@ func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConf
 	req.Header.Set("Accept", "application/json")
 
 	// send request
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -748,8 +754,13 @@ func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, api
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.TTS)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -778,7 +789,7 @@ func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, api
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

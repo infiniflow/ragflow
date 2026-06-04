@@ -34,9 +34,7 @@ import (
 )
 
 type TogetherAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewTogetherAIModel(baseURL map[string]string, urlSuffix URLSuffix) *TogetherAIModel {
@@ -48,16 +46,18 @@ func NewTogetherAIModel(baseURL map[string]string, urlSuffix URLSuffix) *Togethe
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &TogetherAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (t *TogetherAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewTogetherAIModel(baseURL, t.URLSuffix)
+	return NewTogetherAIModel(baseURL, t.baseModel.URLSuffix)
 }
 
 func (t *TogetherAIModel) Name() string {
@@ -65,11 +65,12 @@ func (t *TogetherAIModel) Name() string {
 }
 
 func (t *TogetherAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := t.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("togetherai: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("togetherai: %w", err)
 	}
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 type togetherAIReasoningOptions struct {
@@ -122,12 +123,13 @@ func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat), nil
+	return fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat), nil
 }
 
 type togetherAIChatMessage struct {
@@ -149,8 +151,8 @@ type togetherAIChatResponse struct {
 }
 
 func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -179,7 +181,7 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -219,8 +221,8 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -256,7 +258,7 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -330,20 +332,21 @@ type togetherAIModelInfo struct {
 }
 
 func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -355,7 +358,7 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -405,8 +408,8 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
@@ -417,12 +420,13 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -448,7 +452,7 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -501,8 +505,13 @@ func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []st
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.Rerank)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN != 0 {
@@ -529,7 +538,7 @@ func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []st
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -572,8 +581,8 @@ func (t *TogetherAIModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 }
 
 func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("TogetherAI API key is missing")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if file == nil || *file == "" {
@@ -584,8 +593,13 @@ func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiCo
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.ASR)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -644,7 +658,7 @@ func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiCo
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -678,8 +692,8 @@ func (t *TogetherAIModel) TranscribeAudioWithSender(modelName *string, file *str
 }
 
 func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("TogetherAI API key is missing")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -690,8 +704,13 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", t.BaseURL[region], t.URLSuffix.TTS)
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -720,7 +739,7 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -739,8 +758,8 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 }
 
 func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("TogetherAI API key is missing")
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -751,9 +770,14 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	cleanBaseURL := strings.TrimRight(t.BaseURL[region], "/")
-	cleanSuffix := strings.TrimLeft(t.URLSuffix.TTS, "/")
+	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	cleanBaseURL := strings.TrimRight(resolvedBaseURL, "/")
+	cleanSuffix := strings.TrimLeft(t.baseModel.URLSuffix.TTS, "/")
 	url := fmt.Sprintf("%s/%s", cleanBaseURL, cleanSuffix)
 
 	// Build Request body
@@ -788,7 +812,7 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := t.httpClient.Do(req)
+	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

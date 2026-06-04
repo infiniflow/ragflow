@@ -32,24 +32,20 @@ import (
 )
 
 type CoHereModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func (c *CoHereModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &CoHereModel{
-		BaseURL:    baseURL,
-		URLSuffix:  c.URLSuffix,
-		httpClient: &http.Client{},
-	}
+	return NewCoHereModel(baseURL, c.baseModel.URLSuffix)
 }
 
 func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel {
 	return &CoHereModel{
-		BaseURL:    baseURL,
-		URLSuffix:  urlSuffix,
-		httpClient: &http.Client{},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: &http.Client{},
+		},
 	}
 }
 
@@ -58,8 +54,8 @@ func (c *CoHereModel) Name() string {
 }
 
 func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -69,8 +65,13 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Chat)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -136,7 +137,7 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -200,8 +201,13 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Chat)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -277,7 +283,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -360,9 +366,14 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
-	suffix := strings.TrimPrefix(c.URLSuffix.Embedding, "/")
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Embedding, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	reqBody := map[string]interface{}{
@@ -389,7 +400,7 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -437,9 +448,14 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := strings.TrimSuffix(c.BaseURL[region], "/")
-	suffix := strings.TrimPrefix(c.URLSuffix.Rerank, "/")
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Rerank, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	var topN = rerankConfig.TopN
@@ -471,7 +487,7 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -519,8 +535,13 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.ASR)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.ASR)
 
 	// multipart body
 
@@ -594,7 +615,7 @@ func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -648,8 +669,13 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", c.BaseURL[region], c.URLSuffix.Models)
+	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -664,7 +690,7 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

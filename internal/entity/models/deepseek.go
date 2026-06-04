@@ -32,29 +32,29 @@ import (
 
 // DeepSeekModel implements ModelDriver for DeepSeek
 type DeepSeekModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewDeepSeekModel creates a new DeepSeek model instance
 func NewDeepSeekModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepSeekModel {
 	return &DeepSeekModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (d *DeepSeekModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewDeepSeekModel(baseURL, d.baseModel.URLSuffix)
 }
 
 func (d *DeepSeekModel) Name() string {
@@ -70,8 +70,13 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Chat)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -170,7 +175,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -241,8 +246,13 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/chat/completions", d.BaseURL[region])
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -341,7 +351,7 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -443,8 +453,13 @@ func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Models)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -465,7 +480,7 @@ func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -512,30 +527,22 @@ type deepseekBalanceResponse struct {
 // The result map matches the shape used by the Moonshot driver,
 // so the UI can render it without provider-specific code.
 func (d *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	// Look up the base URL for the requested region. If the region was
-	// supplied but is not configured (or is empty), fall back to the
-	// "default" region instead of erroring out, so a stray region value
-	// does not break an otherwise valid request.
-	baseURL := d.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := d.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("deepseek: no base URL configured for default region")
+	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), d.URLSuffix.Balance)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -547,7 +554,7 @@ func (d *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

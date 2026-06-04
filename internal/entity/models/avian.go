@@ -42,9 +42,7 @@ import (
 // extracts whichever is non-empty and routes it to ChatResponse.ReasonContent
 // (non-stream) or the sender's second argument (stream).
 type AvianModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewAvianModel creates a new Avian model instance.
@@ -62,16 +60,18 @@ func NewAvianModel(baseURL map[string]string, urlSuffix URLSuffix) *AvianModel {
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &AvianModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (a *AvianModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewAvianModel(baseURL, a.URLSuffix)
+	return NewAvianModel(baseURL, a.baseModel.URLSuffix)
 }
 
 func (a *AvianModel) Name() string {
@@ -79,16 +79,12 @@ func (a *AvianModel) Name() string {
 }
 
 func (a *AvianModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("avian: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("avian: %w", err)
 	}
-	// Tenants may paste in a base URL that already includes the API
-	// version (".../v1" or ".../v1/"); callers append "v1/..." so we
-	// strip those plus any trailing "/" to avoid "/v1/v1/..." paths.
-	base = strings.TrimSuffix(base, "/")
-	base = strings.TrimSuffix(base, "/v1")
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (a *AvianModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
@@ -129,12 +125,13 @@ func (a *AvianModel) chatURL(apiConfig *APIConfig) (string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat), nil
+	return fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat), nil
 }
 
 type avianChatMessage struct {
@@ -156,8 +153,8 @@ type avianChatResponse struct {
 }
 
 func (a *AvianModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -186,7 +183,7 @@ func (a *AvianModel) ChatWithMessages(modelName string, messages []Message, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -226,8 +223,8 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -262,7 +259,7 @@ func (a *AvianModel) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -335,20 +332,21 @@ type avianModelInfo struct {
 }
 
 func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := a.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -360,7 +358,7 @@ func (a *AvianModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

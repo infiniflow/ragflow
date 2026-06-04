@@ -33,9 +33,7 @@ import (
 const replicatePollInterval = time.Second
 
 type ReplicateModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *ReplicateModel {
@@ -47,16 +45,18 @@ func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *Replicat
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &ReplicateModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (r *ReplicateModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewReplicateModel(baseURL, r.URLSuffix)
+	return NewReplicateModel(baseURL, r.baseModel.URLSuffix)
 }
 
 func (r *ReplicateModel) Name() string {
@@ -89,11 +89,12 @@ type replicateSSEEvent struct {
 }
 
 func (r *ReplicateModel) baseURLForRegion(region string) (string, error) {
-	base, ok := r.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("replicate: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("replicate: %w", err)
 	}
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
@@ -101,6 +102,7 @@ func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := r.baseURLForRegion(region)
 	if err != nil {
@@ -116,7 +118,7 @@ func replicateUsesVersionEndpoint(modelName string) bool {
 
 func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName string) (string, string, error) {
 	if replicateUsesVersionEndpoint(modelName) {
-		endpoint, err := r.endpoint(apiConfig, r.URLSuffix.Chat)
+		endpoint, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Chat)
 		return endpoint, modelName, err
 	}
 
@@ -125,7 +127,7 @@ func (r *ReplicateModel) predictionEndpoint(apiConfig *APIConfig, modelName stri
 		return "", "", fmt.Errorf("replicate: official model name must be owner/name")
 	}
 
-	modelsPrefix := strings.TrimSuffix(r.URLSuffix.Models, "models")
+	modelsPrefix := strings.TrimSuffix(r.baseModel.URLSuffix.Models, "models")
 	if modelsPrefix == "" {
 		modelsPrefix = "v1/"
 	}
@@ -248,7 +250,7 @@ func (r *ReplicateModel) createPrediction(ctx context.Context, url string, versi
 		req.Header.Set("Prefer", "wait=60")
 	}
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -288,7 +290,7 @@ func (r *ReplicateModel) getPrediction(ctx context.Context, url string, apiKey s
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -342,8 +344,8 @@ func (r *ReplicateModel) waitForPrediction(ctx context.Context, prediction *repl
 }
 
 func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -384,8 +386,8 @@ func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -437,7 +439,7 @@ func (r *ReplicateModel) readPredictionStream(url string, apiKey string, sender 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -515,11 +517,11 @@ func dispatchReplicateSSEEvent(event replicateSSEEvent, sender func(*string, *st
 }
 
 func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url, err := r.endpoint(apiConfig, r.URLSuffix.Models)
+	url, err := r.endpoint(apiConfig, r.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -534,7 +536,7 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := r.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -682,8 +684,8 @@ func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *API
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -805,8 +807,8 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -868,7 +870,6 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 	}
 	return &RerankResponse{Data: results}, nil
 }
-
 
 func (r *ReplicateModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())

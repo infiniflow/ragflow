@@ -36,39 +36,28 @@ import (
 )
 
 type DeepInfraModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewDeepInfraModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepInfraModel {
 	return &DeepInfraModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        10,
+					MaxIdleConnsPerHost: 100,
+					IdleConnTimeout:     time.Second * 90,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (d *DeepInfraModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &DeepInfraModel{
-		BaseURL:   baseURL,
-		URLSuffix: d.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     time.Second * 90,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewDeepInfraModel(baseURL, d.baseModel.URLSuffix)
 }
 
 func (d *DeepInfraModel) Name() string {
@@ -84,8 +73,13 @@ func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Chat)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -153,7 +147,7 @@ func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -214,8 +208,13 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Chat)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -290,7 +289,7 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -380,8 +379,13 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Embedding)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -408,7 +412,7 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -465,8 +469,8 @@ func (d *DeepInfraModel) Rerank(
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -476,13 +480,18 @@ func (d *DeepInfraModel) Rerank(
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
-	baseURL := d.BaseURL[region]
+	_ = region
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("deepinfra: no base URL configured for region %q", region)
 	}
 
 	// Reranker model ids may contain slashes (e.g. Qwen/Qwen3-Reranker-4B).
-	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.URLSuffix.Rerank, *modelName)
+	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Rerank, *modelName)
 
 	reqBody := map[string]interface{}{
 		"query":     query,
@@ -504,7 +513,7 @@ func (d *DeepInfraModel) Rerank(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -553,8 +562,8 @@ func (d *DeepInfraModel) Rerank(
 }
 
 func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("DeepInfra API key is missing")
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if file == nil || *file == "" {
@@ -569,8 +578,13 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.ASR)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -639,7 +653,7 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -673,8 +687,8 @@ func (d *DeepInfraModel) TranscribeAudioWithSender(modelName *string, file *stri
 }
 
 func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("DeepInfra API key is missing")
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -685,6 +699,7 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -710,7 +725,11 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 	}
 
 	// URL: https://api.deepinfra.com/v1/text-to-speech/{voice_id}
-	url := fmt.Sprintf("%s/%s/%s", d.BaseURL[region], d.URLSuffix.TTS, voiceID)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.TTS, voiceID)
 
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["output_format"] = ttsConfig.Format
@@ -732,7 +751,7 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -751,8 +770,8 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 }
 
 func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("DeepInfra API key is missing")
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -763,6 +782,7 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	voiceID := ""
 
@@ -789,7 +809,11 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	}
 
 	// URL: https://api.deepinfra.com/v1/text-to-speech/{voice_id}/stream
-	url := fmt.Sprintf("%s/%s/%s/stream", d.BaseURL[region], d.URLSuffix.TTS, voiceID)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s/%s/stream", resolvedBaseURL, d.baseModel.URLSuffix.TTS, voiceID)
 
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["output_format"] = ttsConfig.Format
@@ -811,7 +835,7 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -862,8 +886,13 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Models)
+	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -882,7 +911,7 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -916,16 +945,21 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", d.BaseURL[region], d.URLSuffix.Balance)
+	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, d.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -938,7 +972,7 @@ func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

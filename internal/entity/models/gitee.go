@@ -32,29 +32,29 @@ import (
 
 // GiteeModel implements ModelDriver for Gitee
 type GiteeModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewGiteeModel creates a new Gitee model instance
 func NewGiteeModel(baseURL map[string]string, urlSuffix URLSuffix) *GiteeModel {
 	return &GiteeModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (g *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewGiteeModel(baseURL, g.baseModel.URLSuffix)
 }
 
 func (g *GiteeModel) Name() string {
@@ -63,8 +63,8 @@ func (g *GiteeModel) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -75,7 +75,12 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Chat)
+	_ = region
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -147,7 +152,7 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -225,8 +230,13 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/chat/completions", g.BaseURL[region])
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -297,7 +307,7 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -429,8 +439,8 @@ func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -441,18 +451,18 @@ func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := g.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := g.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("gitee: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -478,7 +488,7 @@ func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -523,8 +533,8 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 		return &RerankResponse{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -535,18 +545,18 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := g.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := g.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("gitee: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -577,7 +587,7 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -629,8 +639,8 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 		return nil, fmt.Errorf("url or content is required")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -641,18 +651,18 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := g.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := g.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("gitee: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.OCR)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.OCR)
 
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -690,7 +700,7 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -735,8 +745,8 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 		return nil, fmt.Errorf("url or content is required")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -747,18 +757,18 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := g.BaseURL["default"]
-	if region != "default" {
-		if regional, ok := g.BaseURL[region]; ok && regional != "" {
-			baseURL = regional
-		}
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		return nil, fmt.Errorf("gitee: no base URL configured for default region")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.URLSuffix.DocumentParse)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.DocumentParse)
 
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -796,7 +806,7 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -851,7 +861,7 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
 
-		resp, err := g.httpClient.Do(req)
+		resp, err := g.baseModel.httpClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to send request: %w", err)
 		}
@@ -890,8 +900,13 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Models)
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -911,7 +926,7 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -945,21 +960,15 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-
-	var baseURL = ""
-	if apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
-		baseURL = *apiConfig.BaseURL
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
 
-	if baseURL == "" {
-		var region = "default"
-		if apiConfig.Region != nil && *apiConfig.Region != "" {
-			region = *apiConfig.Region
-		}
-		baseURL = g.BaseURL[region]
-	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, g.URLSuffix.Balance)
+	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -980,7 +989,7 @@ func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -1016,8 +1025,13 @@ func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
 	if apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Status)
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Status)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -1038,7 +1052,7 @@ func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -1091,8 +1105,13 @@ func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Tasks)
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Tasks)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -1113,7 +1132,7 @@ func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -1149,8 +1168,13 @@ func (g *GiteeModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespons
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s/%s/get", g.BaseURL[region], g.URLSuffix.Task, taskID)
+	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s/%s/get", resolvedBaseURL, g.baseModel.URLSuffix.Task, taskID)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -1171,7 +1195,7 @@ func (g *GiteeModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespons
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := g.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

@@ -29,14 +29,8 @@ type BaseModel struct {
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is nil or empty")
-	}
-
-	if apiConfig.BaseURL == nil || *apiConfig.BaseURL == "" {
-		if apiConfig.Region == nil || *apiConfig.Region == "" {
-			return fmt.Errorf("no base url and region")
-		}
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return fmt.Errorf("api key is required")
 	}
 
 	return nil
@@ -49,7 +43,7 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	}
 
 	region := "default"
-	if apiConfig.Region != nil {
+	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
 

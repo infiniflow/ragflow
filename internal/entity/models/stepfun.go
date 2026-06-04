@@ -36,9 +36,7 @@ import (
 // shape matches OpenAI closely enough that the chat path here is a direct
 // port of the OpenAI driver.
 type StepFunModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewStepFunModel creates a new StepFun model instance.
@@ -61,10 +59,12 @@ func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunMod
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &StepFunModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
@@ -79,7 +79,7 @@ SUCCESS
 */
 
 func (s *StepFunModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewStepFunModel(baseURL, s.URLSuffix)
+	return NewStepFunModel(baseURL, s.baseModel.URLSuffix)
 }
 
 func (s *StepFunModel) Name() string {
@@ -91,17 +91,18 @@ func (s *StepFunModel) Name() string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (s *StepFunModel) baseURLForRegion(region string) (string, error) {
-	base, ok := s.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("stepfun: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("stepfun: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -112,12 +113,13 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := s.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, s.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -167,7 +169,7 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -226,20 +228,21 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := s.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, s.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -294,7 +297,7 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -382,20 +385,21 @@ func (s *StepFunModel) Embed(modelName *string, texts []string, apiConfig *APICo
 
 // ListModels returns the list of model ids visible to the API key.
 func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := s.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, s.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -407,7 +411,7 @@ func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -488,8 +492,13 @@ func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.TTS)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -518,7 +527,7 @@ func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -539,8 +548,8 @@ func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiC
 // AudioSpeechWithSender for Streaming TTS
 func (s *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
 	// TODO Test it
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("StepFun API key is missing")
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -551,8 +560,13 @@ func (s *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", s.BaseURL[region], s.URLSuffix.TTS)
+	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model":         *modelName,
@@ -582,7 +596,7 @@ func (s *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

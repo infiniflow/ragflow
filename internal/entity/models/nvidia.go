@@ -30,40 +30,29 @@ import (
 
 // NvidiaModel implements ModelDriver for Nvidia
 type NvidiaModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewNvidiaModel creates a new Nvidia model instance
 func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel {
 	return &NvidiaModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (n NvidiaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &NvidiaModel{
-		BaseURL:   baseURL,
-		URLSuffix: n.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewNvidiaModel(baseURL, n.baseModel.URLSuffix)
 }
 
 func (n NvidiaModel) Name() string {
@@ -79,12 +68,17 @@ func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, api
 	if apiConfig != nil && apiConfig.Region != nil {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := n.BaseURL[region]
-	if baseURL == "" {
-		baseURL = n.BaseURL["default"]
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Chat)
+	baseURL := resolvedBaseURL
+	if baseURL == "" {
+		baseURL = resolvedBaseURL
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -143,7 +137,7 @@ func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, api
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -211,12 +205,17 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := n.BaseURL[region]
-	if baseURL == "" {
-		baseURL = n.BaseURL["default"]
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Chat)
+	baseURL := resolvedBaseURL
+	if baseURL == "" {
+		baseURL = resolvedBaseURL
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -278,7 +277,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -363,8 +362,8 @@ func (n NvidiaModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return []EmbeddingData{}, nil
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -375,16 +374,21 @@ func (n NvidiaModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := n.BaseURL[region]
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = n.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
@@ -413,7 +417,7 @@ func (n NvidiaModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -483,8 +487,8 @@ func (n NvidiaModel) Rerank(modelName *string, query string, documents []string,
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -494,16 +498,21 @@ func (n NvidiaModel) Rerank(modelName *string, query string, documents []string,
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := n.BaseURL[region]
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = n.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -539,7 +548,7 @@ func (n NvidiaModel) Rerank(modelName *string, query string, documents []string,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -610,16 +619,21 @@ func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := n.BaseURL[region]
+	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = n.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, n.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -633,7 +647,7 @@ func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := n.httpClient.Do(req)
+	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

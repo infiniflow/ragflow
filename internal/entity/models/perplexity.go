@@ -29,9 +29,7 @@ import (
 )
 
 type PerplexityModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewPerplexityModel(baseURL map[string]string, urlSuffix URLSuffix) *PerplexityModel {
@@ -43,16 +41,18 @@ func NewPerplexityModel(baseURL map[string]string, urlSuffix URLSuffix) *Perplex
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &PerplexityModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (p *PerplexityModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewPerplexityModel(baseURL, p.URLSuffix)
+	return NewPerplexityModel(baseURL, p.baseModel.URLSuffix)
 }
 
 func (p *PerplexityModel) Name() string {
@@ -60,11 +60,12 @@ func (p *PerplexityModel) Name() string {
 }
 
 func (p *PerplexityModel) baseURLForRegion(region string) (string, error) {
-	base, ok := p.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("perplexity: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("perplexity: %w", err)
 	}
-	return strings.TrimSuffix(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (p *PerplexityModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
@@ -109,12 +110,13 @@ func (p *PerplexityModel) chatURL(apiConfig *APIConfig) (string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := p.baseURLForRegion(region)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", baseURL, p.URLSuffix.Chat), nil
+	return fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Chat), nil
 }
 
 type perplexityChatMessage struct {
@@ -136,8 +138,8 @@ type perplexityChatResponse struct {
 }
 
 func (p *PerplexityModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -166,7 +168,7 @@ func (p *PerplexityModel) ChatWithMessages(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -206,8 +208,8 @@ func (p *PerplexityModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -243,7 +245,7 @@ func (p *PerplexityModel) ChatStreamlyWithSender(modelName string, messages []Me
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -321,20 +323,21 @@ type perplexityModelListResponse struct {
 }
 
 func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	region := "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := p.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, p.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -345,7 +348,7 @@ func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -406,8 +409,8 @@ func (p *PerplexityModel) Embed(modelName *string, texts []string, apiConfig *AP
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -417,12 +420,13 @@ func (p *PerplexityModel) Embed(modelName *string, texts []string, apiConfig *AP
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := p.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, p.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -447,7 +451,7 @@ func (p *PerplexityModel) Embed(modelName *string, texts []string, apiConfig *AP
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := p.httpClient.Do(req)
+	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

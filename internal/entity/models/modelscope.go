@@ -46,9 +46,7 @@ var modelscopeStreamIdleTimeout = 60 * time.Second
 // Authentication is optional: deployments without auth ignore API keys,
 // while auth-enabled deployments require Authorization: Bearer <api_key>.
 type ModelScopeModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 type modelscopeChatChoice struct {
@@ -88,16 +86,18 @@ func NewModelScopeModel(baseURL map[string]string, urlSuffix URLSuffix) *ModelSc
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &ModelScopeModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (m *ModelScopeModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewModelScopeModel(baseURL, m.URLSuffix)
+	return NewModelScopeModel(baseURL, m.baseModel.URLSuffix)
 }
 
 func (m *ModelScopeModel) Name() string {
@@ -105,13 +105,12 @@ func (m *ModelScopeModel) Name() string {
 }
 
 func (m *ModelScopeModel) baseURLForRegion(region string) (string, error) {
-	if base, ok := m.BaseURL[region]; ok && strings.TrimSpace(base) != "" {
-		return normalizeModelScopeBaseURL(base), nil
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("modelscope: %w", err)
 	}
-	if base, ok := m.BaseURL["default"]; ok && strings.TrimSpace(base) != "" {
-		return normalizeModelScopeBaseURL(base), nil
-	}
-	return "", fmt.Errorf("modelscope: missing base URL, configure the ModelScope endpoint (e.g., http://127.0.0.1:8000 or http://127.0.0.1:8000/v1)")
+	return normalizeModelScopeBaseURL(baseURL), nil
 }
 
 func normalizeModelScopeBaseURL(base string) string {
@@ -204,7 +203,7 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildModelScopeChatBody(modelName, messages, false, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
@@ -222,7 +221,7 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	setModelScopeAuth(req, apiConfig)
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -273,7 +272,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildModelScopeChatBody(modelName, messages, true, chatModelConfig)
 	jsonData, err := json.Marshal(reqBody)
@@ -291,7 +290,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 	req.Header.Set("Content-Type", "application/json")
 	setModelScopeAuth(req, apiConfig)
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -428,7 +427,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -439,7 +438,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	setModelScopeAuth(req, apiConfig)
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

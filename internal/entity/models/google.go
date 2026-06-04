@@ -70,20 +70,21 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 
 // GoogleModel implements ModelDriver for Google AI
 type GoogleModel struct {
-	BaseURL   map[string]string
-	URLSuffix URLSuffix
+	baseModel BaseModel
 }
 
 // NewGoogleModel creates a new Google AI model instance
 func NewGoogleModel(baseURL map[string]string, urlSuffix URLSuffix) *GoogleModel {
 	return &GoogleModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+		},
 	}
 }
 
 func (g *GoogleModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewGoogleModel(baseURL, g.URLSuffix)
+	return NewGoogleModel(baseURL, g.baseModel.URLSuffix)
 }
 
 func (g *GoogleModel) Name() string {
@@ -95,17 +96,16 @@ func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.C
 }
 
 func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
-	if apiConfig != nil && apiConfig.Region != nil {
-		if baseURL := strings.TrimSpace(g.BaseURL[*apiConfig.Region]); baseURL != "" {
-			return baseURL
-		}
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return ""
 	}
-	return strings.TrimSpace(g.BaseURL["default"])
+	return strings.TrimSpace(baseURL)
 }
 
 func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is empty")
@@ -181,8 +181,8 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return fmt.Errorf("api key is nil or empty")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is empty")
@@ -278,8 +278,8 @@ func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Messag
 // Embed generates embeddings for a batch of texts using the Gemini embeddings API.
 // The SDK routes to batchEmbedContents internally, so all texts are sent in one request.
 func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -332,8 +332,8 @@ func (g *GoogleModel) Embed(modelName *string, texts []string, apiConfig *APICon
 }
 
 func (g *GoogleModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	return googleListModels(context.Background(), g.clientConfig(strings.TrimSpace(*apiConfig.ApiKey), apiConfig))

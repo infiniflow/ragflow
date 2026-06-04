@@ -58,9 +58,7 @@ var (
 
 // XAIModel implements ModelDriver for xAI (Grok models)
 type XAIModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewXAIModel creates a new xAI model instance.
@@ -82,16 +80,18 @@ func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
 	transport.DisableCompression = false
 
 	return &XAIModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (x *XAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewXAIModel(baseURL, x.URLSuffix)
+	return NewXAIModel(baseURL, x.baseModel.URLSuffix)
 }
 
 func (x *XAIModel) Name() string {
@@ -103,17 +103,18 @@ func (x *XAIModel) Name() string {
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
 func (x *XAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := x.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("xai: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("xai: %w", err)
 	}
-	return base, nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if len(messages) == 0 {
@@ -129,7 +130,7 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -185,7 +186,7 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -251,20 +252,21 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("messages is empty")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is required")
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := x.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -325,7 +327,7 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -430,20 +432,21 @@ func (x *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 
 // ListModels returns the list of model ids visible to the API key.
 func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	var region = "default"
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	baseURL, err := x.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	modelsSuffix := strings.Trim(strings.TrimSpace(x.URLSuffix.Models), "/")
+	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xai: models URL suffix is not configured")
 	}
@@ -460,7 +463,7 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -532,8 +535,13 @@ func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.ASR)
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -620,7 +628,7 @@ func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// send request
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -653,8 +661,8 @@ func (x *XAIModel) TranscribeAudioWithSender(modelName *string, file *string, ap
 
 // AudioSpeech convert text to audio
 func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("xai API key is missing")
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	if audioContent == nil || *audioContent == "" {
@@ -665,8 +673,13 @@ func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.TTS)
+	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text":     *audioContent,
@@ -697,7 +710,7 @@ func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := x.httpClient.Do(req)
+	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

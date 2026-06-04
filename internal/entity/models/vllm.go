@@ -31,40 +31,29 @@ import (
 
 // VllmModel implements ModelDriver for Vllm AI
 type VllmModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewVllmModel creates a new Vllm AI model instance
 func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	return &VllmModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &VllmModel{
-		BaseURL:   baseURL,
-		URLSuffix: v.URLSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewVllmModel(baseURL, v.baseModel.URLSuffix)
 }
 
 func (v *VllmModel) Name() string {
@@ -81,13 +70,18 @@ func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Chat)
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format
@@ -157,7 +151,7 @@ func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -227,11 +221,16 @@ func (v *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Chat)
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format (supporting multimodal content)
@@ -302,7 +301,7 @@ func (v *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -405,16 +404,21 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := v.BaseURL[region]
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = v.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -442,7 +446,7 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -479,16 +483,21 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := v.BaseURL[region]
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = v.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, v.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, v.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -513,7 +522,7 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -596,16 +605,21 @@ func (v *VllmModel) Rerank(modelName *string, query string, documents []string, 
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	baseURL := v.BaseURL[region]
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		baseURL = v.BaseURL["default"]
+		baseURL = resolvedBaseURL
 	}
 	if baseURL == "" {
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -637,7 +651,7 @@ func (v *VllmModel) Rerank(modelName *string, query string, documents []string, 
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

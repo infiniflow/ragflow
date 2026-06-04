@@ -50,9 +50,7 @@ import (
 // (embeddings, rerank, audio, OCR, models list, balance) all return
 // the standard `"<name>, no such method"` sentinel rather than guess.
 type FuturMixModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewFuturMixModel creates a new FuturMix model instance.
@@ -75,16 +73,18 @@ func NewFuturMixModel(baseURL map[string]string, urlSuffix URLSuffix) *FuturMixM
 	transport.ResponseHeaderTimeout = 60 * time.Second
 
 	return &FuturMixModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: transport,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: transport,
+			},
 		},
 	}
 }
 
 func (f *FuturMixModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewFuturMixModel(baseURL, f.URLSuffix)
+	return NewFuturMixModel(baseURL, f.baseModel.URLSuffix)
 }
 
 func (f *FuturMixModel) Name() string {
@@ -95,11 +95,12 @@ func (f *FuturMixModel) Name() string {
 // of any trailing slash so callers can append a suffix without
 // producing "//" in the path.
 func (f *FuturMixModel) baseURLForRegion(region string) (string, error) {
-	base, ok := f.BaseURL[region]
-	if !ok || base == "" {
-		return "", fmt.Errorf("futurmix: no base URL configured for region %q", region)
+	apiConfig := &APIConfig{Region: &region}
+	baseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", fmt.Errorf("futurmix: %w", err)
 	}
-	return strings.TrimRight(base, "/"), nil
+	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 func (f *FuturMixModel) endpointURL(region, suffix string) (string, error) {
@@ -117,9 +118,9 @@ func futurmixRegion(apiConfig *APIConfig) string {
 	return "default"
 }
 
-func futurmixValidateAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return "", fmt.Errorf("api key is required")
+func futurmixValidateAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
+	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
+		return "", err
 	}
 	return *apiConfig.ApiKey, nil
 }
@@ -207,7 +208,7 @@ type futurmixChatResponse struct {
 // OpenAI Chat Completions contract since FuturMix is documented as
 // "OpenAI-compatible".
 func (f *FuturMixModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := futurmixValidateAPIKey(apiConfig)
+	apiKey, err := futurmixValidateAPIKey(&f.baseModel, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +219,7 @@ func (f *FuturMixModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.URLSuffix.Chat)
+	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +237,7 @@ func (f *FuturMixModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, err
 	}
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -290,12 +291,12 @@ func (f *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	apiKey, err := futurmixValidateAPIKey(apiConfig)
+	apiKey, err := futurmixValidateAPIKey(&f.baseModel, apiConfig)
 	if err != nil {
 		return err
 	}
 
-	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.URLSuffix.Chat)
+	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -318,7 +319,7 @@ func (f *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return err
 	}
 
-	resp, err := f.httpClient.Do(req)
+	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

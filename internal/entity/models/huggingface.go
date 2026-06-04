@@ -30,25 +30,21 @@ import (
 
 // HuggingFaceModel implements ModelDriver for HuggingFace
 type HuggingFaceModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewHuggingFaceModel creates a new huggingFace model instance
 func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *HuggingFaceModel {
 	return &HuggingFaceModel{
-		BaseURL:    baseURL,
-		URLSuffix:  urlSuffix,
-		httpClient: &http.Client{},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: &http.Client{},
+		},
 	}
 }
 func (h *HuggingFaceModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &HuggingFaceModel{
-		BaseURL:    baseURL,
-		URLSuffix:  h.URLSuffix,
-		httpClient: &http.Client{},
-	}
+	return NewHuggingFaceModel(baseURL, h.baseModel.URLSuffix)
 }
 
 func (h *HuggingFaceModel) Name() string {
@@ -64,8 +60,13 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Chat)
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -136,7 +137,7 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	}
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -206,8 +207,13 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Chat)
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -277,7 +283,7 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -367,13 +373,14 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
 	reqBody := map[string]interface{}{
@@ -385,7 +392,11 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s/%s", h.BaseURL[region], h.URLSuffix.Embedding, *modelName)
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Embedding, *modelName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -398,7 +409,7 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -466,8 +477,13 @@ func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
 	}
+	_ = region
 
-	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Models)
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -488,7 +504,7 @@ func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
