@@ -26,15 +26,17 @@ import (
 
 // AgentService agent service
 type AgentService struct {
-	canvasDAO     *dao.UserCanvasDAO
-	userTenantDAO *dao.UserTenantDAO
+	canvasDAO           *dao.UserCanvasDAO
+	userTenantDAO       *dao.UserTenantDAO
+	userCanvasVersionDAO *dao.UserCanvasVersionDAO
 }
 
 // NewAgentService create agent service
 func NewAgentService() *AgentService {
 	return &AgentService{
-		canvasDAO:     dao.NewUserCanvasDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		canvasDAO:            dao.NewUserCanvasDAO(),
+		userTenantDAO:        dao.NewUserTenantDAO(),
+		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
 	}
 }
 
@@ -126,4 +128,44 @@ func (s *AgentService) ListAgents(
 		items[i] = toAgentItem(c)
 	}
 	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
+}
+
+// CheckCanvasAccess checks if a user has access to a canvas.
+// Returns true if the user is the owner or has team-level permission.
+func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) {
+	canvas, err := s.canvasDAO.GetByID(canvasID)
+	if err != nil {
+		return false, err
+	}
+	if canvas.UserID == userID {
+		return true, nil
+	}
+	// Check team membership
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	for _, tid := range tenantIDs {
+		if canvas.UserID == tid {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ListVersions returns all versions for an agent canvas, ordered by update_time DESC.
+func (s *AgentService) ListVersions(canvasID string) ([]*entity.UserCanvasVersion, error) {
+	return s.userCanvasVersionDAO.ListByCanvasID(canvasID)
+}
+
+// GetVersion returns a specific version by ID, verifying it belongs to the given canvas.
+func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanvasVersion, error) {
+	version, err := s.userCanvasVersionDAO.GetByID(versionID)
+	if err != nil {
+		return nil, err
+	}
+	if version.UserCanvasID != canvasID {
+		return nil, fmt.Errorf("version not found")
+	}
+	return version, nil
 }
