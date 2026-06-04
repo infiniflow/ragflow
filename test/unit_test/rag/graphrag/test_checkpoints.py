@@ -32,6 +32,9 @@ def test_checkpoint_keys_are_stable():
     reversed_pairs = list(reversed(pairs))
     assert checkpoints.resolution_checkpoint_key("entity", pairs) == checkpoints.resolution_checkpoint_key("entity", reversed_pairs)
 
+    internally_reversed_pairs = [("alfa", "alpha"), ("bata", "beta")]
+    assert checkpoints.resolution_checkpoint_key("entity", pairs) == checkpoints.resolution_checkpoint_key("entity", internally_reversed_pairs)
+
 
 @pytest.mark.p1
 @pytest.mark.asyncio

@@ -42,7 +42,7 @@ def community_checkpoint_key(level: str, community_id: str, nodes: list[str]) ->
 
 
 def resolution_checkpoint_key(entity_type: str, pairs: list[tuple[str, str]]) -> str:
-    normalized_pairs = sorted([[a, b] for a, b in pairs])
+    normalized_pairs = sorted([sorted([a, b]) for a, b in pairs])
     return stable_checkpoint_key("resolution", entity_type, normalized_pairs)
 
 
