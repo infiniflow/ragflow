@@ -19,11 +19,12 @@ Embedding Service Module.
 Provides [`EmbeddingService`](rag/svr/task_executor_refactor/embedding_service.py:42) for vector embedding operations.
 """
 
-import asyncio
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from common import settings
+from common.misc_utils import thread_pool_exec
+from common.token_utils import truncate
 from rag.svr.task_executor_refactor.embedding_utils import EmbeddingUtils
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
@@ -54,7 +55,7 @@ class EmbeddingService:
 
         self._embedding_batch_size = embedding_batch_size or settings.EMBEDDING_BATCH_SIZE
 
-    def embed_chunks(
+    async def embed_chunks(
         self,
         docs: List[Dict[str, Any]],
         embedding_model,
@@ -79,7 +80,8 @@ class EmbeddingService:
         # Encode titles using EmbeddingUtils for truncation
         tk_count = 0
         if len(titles) > 0 and len(titles) == len(contents):
-            vts, c = self._encode_single([titles[0]], embedding_model)
+            async with self._task_context.embed_limiter:
+                vts, c = await thread_pool_exec(embedding_model.encode, titles[0:1])
             tts = np.tile(vts[0], (len(contents), 1))
             tk_count += c
         else:
@@ -89,7 +91,12 @@ class EmbeddingService:
         vects_batches = []
         for i in range(0, len(contents), self._embedding_batch_size):
             batch = contents[i: i + self._embedding_batch_size]
-            vts, c = self._encode_batch(batch, embedding_model)
+            async with self._task_context.embed_limiter:
+                vts, c = await thread_pool_exec(
+                    self._batch_encode_wrapper,
+                    [truncate(t, embedding_model.max_length - 10) for t in batch],
+                    embedding_model,
+                )
             vects_batches.append(vts)
             tk_count += c
             if self._task_context.progress_cb:
@@ -109,19 +116,7 @@ class EmbeddingService:
 
         return tk_count, vector_size
 
-    def _encode_single(self, texts: List[str], model) -> Tuple[np.ndarray, int]:
-        """Encode a single batch of texts."""
-        return self._run_encode(texts, model)
-
-    def _encode_batch(self, texts: List[str], model) -> Tuple[np.ndarray, int]:
-        """Encode a batch of texts with rate limiting and truncation."""
-        # Use EmbeddingUtils for truncation
-        truncated = EmbeddingUtils.truncate_texts(texts, model.max_length)
-        return self._run_encode(truncated, model)
-
-    def _run_encode(self, texts: List[str], model) -> Tuple[np.ndarray, int]:
-        """Run encoding with rate limiting."""
-        async def _encode():
-            async with self._task_context.embed_limiter:
-                return model.encode(texts)
-        return asyncio.get_event_loop().run_until_complete(_encode())
+    @staticmethod
+    def _batch_encode_wrapper(txts: List[str], embedding_model) -> Tuple[np.ndarray, int]:
+        """Synchronous wrapper for batch encoding — used with thread_pool_exec."""
+        return embedding_model.encode(txts)

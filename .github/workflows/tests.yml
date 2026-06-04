@@ -280,7 +280,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -300,7 +300,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -376,7 +376,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -496,7 +496,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -516,7 +516,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then
@@ -592,7 +592,7 @@ jobs:
               svc_ready=1
               break
             fi
-            echo "Waiting for service to be available... ($i/120)"
+            echo "Waiting for service to be available... ($i/60)"
             sleep 5
           done
           if [ "$svc_ready" -ne 1 ]; then

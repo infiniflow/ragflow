@@ -114,6 +114,26 @@ run_server(){
     fi
 }
 
+ensure_db_init() {
+    echo "Initializing database tables..."
+    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Database tables initialized."
+}
+
+run_mysql_migrations() {
+    echo "Running model provider table migrations..."
+    "$PY" tools/scripts/mysql_migration.py \
+        --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
+        --config conf/service_conf.yaml \
+        --execute \
+        --database-version "v0.26.0" \
+        --mark-database-version-on-success
+    echo "Model provider table migrations completed."
+}
+
+ensure_db_init
+run_mysql_migrations
+
 # Start task executors
 for ((i=0;i<WS;i++))
 do

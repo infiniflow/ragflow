@@ -67,9 +67,10 @@ func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) er
 	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete delete document
-func (dao *DocumentDAO) Delete(id string) error {
-	return DB.Delete(&entity.Document{}, "id = ?", id).Error
+// Delete hard-deletes document by ID. Returns rows affected.
+func (dao *DocumentDAO) Delete(id string) (int64, error) {
+	result := DB.Where("id = ?", id).Delete(&entity.Document{})
+	return result.RowsAffected, result.Error
 }
 
 // List list documents
@@ -157,4 +158,46 @@ func (dao *DocumentDAO) SumSizeByDatasetID(datasetID string) (int64, error) {
 		Where("kb_id = ?", datasetID).
 		Scan(&total).Error
 	return total, err
+}
+
+// GetParsingStatusByKBID aggregates document parsing status counts for a
+// dataset, mirroring DocumentService.get_parsing_status_by_kb_ids in Python.
+func (dao *DocumentDAO) GetParsingStatusByKBID(kbID string) (map[string]int64, error) {
+	result := map[string]int64{
+		"unstart_count": 0,
+		"running_count": 0,
+		"cancel_count":  0,
+		"done_count":    0,
+		"fail_count":    0,
+	}
+
+	var rows []struct {
+		Run *string `gorm:"column:run"`
+		Cnt int64   `gorm:"column:cnt"`
+	}
+	err := DB.Model(&entity.Document{}).
+		Select("run, COUNT(id) as cnt").
+		Where("kb_id = ?", kbID).
+		Group("run").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	statusFieldMap := map[string]string{
+		string(entity.TaskStatusUnstart): "unstart_count",
+		string(entity.TaskStatusRunning): "running_count",
+		string(entity.TaskStatusCancel):  "cancel_count",
+		string(entity.TaskStatusDone):    "done_count",
+		string(entity.TaskStatusFail):    "fail_count",
+	}
+	for _, row := range rows {
+		if row.Run == nil {
+			continue
+		}
+		if field, ok := statusFieldMap[*row.Run]; ok {
+			result[field] = row.Cnt
+		}
+	}
+	return result, nil
 }

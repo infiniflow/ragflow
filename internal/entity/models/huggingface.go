@@ -1,15 +1,31 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 // HuggingFaceModel implements ModelDriver for HuggingFace
@@ -22,20 +38,16 @@ type HuggingFaceModel struct {
 // NewHuggingFaceModel creates a new huggingFace model instance
 func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *HuggingFaceModel {
 	return &HuggingFaceModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		BaseURL:    baseURL,
+		URLSuffix:  urlSuffix,
+		httpClient: &http.Client{},
 	}
 }
 func (h *HuggingFaceModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &HuggingFaceModel{
-		BaseURL:   baseURL,
-		URLSuffix: h.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		BaseURL:    baseURL,
+		URLSuffix:  h.URLSuffix,
+		httpClient: &http.Client{},
 	}
 }
 
@@ -111,7 +123,10 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -251,7 +266,10 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -369,7 +387,10 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 
 	url := fmt.Sprintf("%s/%s/%s", h.BaseURL[region], h.URLSuffix.Embedding, *modelName)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -417,8 +438,8 @@ func (h *HuggingFaceModel) TranscribeAudio(modelName *string, file *string, apiC
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (z *HuggingFaceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", h.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -426,8 +447,8 @@ func (h *HuggingFaceModel) AudioSpeech(modelName *string, audioContent *string, 
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (z *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", h.Name())
 }
 
 // OCRFile OCR file
@@ -436,8 +457,8 @@ func (h *HuggingFaceModel) OCRFile(modelName *string, content []byte, url *strin
 }
 
 // ParseFile parse file
-func (z *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
 func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -456,7 +477,10 @@ func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -504,10 +528,10 @@ func (h *HuggingFaceModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (z *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }

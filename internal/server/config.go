@@ -90,10 +90,24 @@ type ModelConfig struct {
 	Factory string `mapstructure:"factory"`
 }
 
-// OAuthConfig OAuth configuration for a channel
+// OAuthConfig OAuth configuration for a channel.
+// Mirrors api/apps/auth/__init__.py's OAUTH_CONFIG entries: a Type that
+// selects the auth client flavor (oauth2 / oidc / github), plus the
+// transport URLs and client credentials. For OIDC the URLs are derived
+// from Issuer via the .well-known/openid-configuration document, so they
+// may be left blank.
 type OAuthConfig struct {
-	DisplayName string `mapstructure:"display_name"`
-	Icon        string `mapstructure:"icon"`
+	DisplayName      string `mapstructure:"display_name"`
+	Icon             string `mapstructure:"icon"`
+	Type             string `mapstructure:"type"`
+	ClientID         string `mapstructure:"client_id"`
+	ClientSecret     string `mapstructure:"client_secret"`
+	AuthorizationURL string `mapstructure:"authorization_url"`
+	TokenURL         string `mapstructure:"token_url"`
+	UserinfoURL      string `mapstructure:"userinfo_url"`
+	RedirectURI      string `mapstructure:"redirect_uri"`
+	Scope            string `mapstructure:"scope"`
+	Issuer           string `mapstructure:"issuer"`
 }
 
 // ServerConfig server configuration

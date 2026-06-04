@@ -61,6 +61,47 @@ ERROR_PREFIX = "**ERROR**"
 LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
+# Generation parameters that are safe to forward to the underlying completion
+# call. `gen_conf` originates from a chat assistant's `llm_setting`, which can
+# also carry RAGFlow-internal metadata (e.g. `model_type`). Anything outside
+# this set is dropped so providers don't reject the request with errors like
+# "Extra inputs are not permitted" / "Unknown parameter: 'model_type'" (#15427).
+ALLOWED_GEN_CONF_KEYS = frozenset(
+    {
+        "temperature",
+        "max_completion_tokens",
+        "top_p",
+        "stream",
+        "stream_options",
+        "stop",
+        "n",
+        "presence_penalty",
+        "frequency_penalty",
+        "functions",
+        "function_call",
+        "logit_bias",
+        "user",
+        "response_format",
+        "seed",
+        "tools",
+        "tool_choice",
+        "logprobs",
+        "top_logprobs",
+        "extra_headers",
+    }
+)
+
+# LiteLLM additionally understands reasoning-control parameters that the
+# model-family policies may inject into `gen_conf` (e.g. `thinking` for
+# Anthropic / Kimi reasoning models, `reasoning_effort` for OpenAI o-series).
+LITELLM_ALLOWED_GEN_CONF_KEYS = ALLOWED_GEN_CONF_KEYS | frozenset(
+    {
+        "thinking",
+        "reasoning_effort",
+        "extra_body",
+    }
+)
+
 
 def _apply_model_family_policies(
     model_name: str,
@@ -84,6 +125,10 @@ def _apply_model_family_policies(
     if backend == "litellm":
         if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
+            for key in ("temperature", "top_p", "top_k"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
 
@@ -159,30 +204,7 @@ class Base(ABC):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
-        allowed_conf = {
-            "temperature",
-            "max_completion_tokens",
-            "top_p",
-            "stream",
-            "stream_options",
-            "stop",
-            "n",
-            "presence_penalty",
-            "frequency_penalty",
-            "functions",
-            "function_call",
-            "logit_bias",
-            "user",
-            "response_format",
-            "seed",
-            "tools",
-            "tool_choice",
-            "logprobs",
-            "top_logprobs",
-            "extra_headers",
-        }
-
-        gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
+        gen_conf = {k: v for k, v in gen_conf.items() if k in ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
@@ -1395,6 +1417,7 @@ class LiteLLMBase(ABC):
         )
 
         gen_conf.pop("max_tokens", None)
+        gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
