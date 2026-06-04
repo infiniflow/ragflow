@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
-
 	"net/http"
 	"strconv"
 	"strings"
@@ -183,6 +182,10 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 	})
 }
 
+// UploadAgentFile uploads one or more files associated with an agent.
+// @Summary Upload Agent File
+// @Description Upload one or more files for an agent canvas.
+
 // GetAgentVersion returns a specific version for an agent.
 // @Summary Get Agent Version
 // @Description Returns a specific version by ID, verifying it belongs to the given agent.
@@ -193,7 +196,6 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{agent_id}/versions/{version_id} [get]
 func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
-
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -207,7 +209,6 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 			"code":    common.CodeArgumentError,
 			"data":    nil,
 			"message": "agent_id and version_id are required",
-
 		})
 		return
 	}
@@ -238,7 +239,6 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 			"code":    common.CodeNotFound,
 			"data":    nil,
 			"message": "Version not found.",
-
 		})
 		return
 	}
@@ -246,14 +246,19 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    version,
-
 		"message": "",
 	})
 }
 
-
-// UploadAgentFile uploads one or more files associated with an agent.
+// @Tags agents
+// @Accept multipart/form-data
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Param file formData file true "File(s) to upload (multiple files supported)"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id}/upload [post]
 func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -300,10 +305,12 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		return
 	}
 
+	// Use the canvas owner's tenant ID for file ownership.
 	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,
+
 			"data":    nil,
 			"message": err.Error(),
 		})
@@ -313,6 +320,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    uploaded,
+
 		"message": "",
 	})
 }
