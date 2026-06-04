@@ -277,9 +277,10 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     if region:
         extra_fields["region"] = region
     TenantModelInstanceService.create_instance(provider_id=provider_obj.id,instance_name=instance_name,api_key=api_key, extra=json.dumps(extra_fields))
-    success, msg = add_model_to_instance(tenant_id, provider_name, instance_name, **model_info)
-    if not success:
-        return False, msg
+    if model_info:
+        success, msg = add_model_to_instance(tenant_id, provider_name, instance_name, **model_info)
+        if not success:
+            return False, msg
 
     return True, "success"
 
