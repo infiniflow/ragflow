@@ -55,6 +55,10 @@ type documentServiceIface interface {
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
 	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
+
+	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
+	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
+	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
 }
 
 // DocumentHandler document handler

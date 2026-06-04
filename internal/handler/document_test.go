@@ -86,6 +86,18 @@ func (f *fakeDocumentService) GetDocumentMetadataByID(docID string) (map[string]
 	return nil, nil
 }
 
+func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
+	return nil, nil
+}
+
+func (f *fakeDocumentService) GetDocumentPreview(docID string) (*service.DocumentPreview, error) {
+	return nil, nil
+}
+
+func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error) {
+	return nil, nil
+}
+
 func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
