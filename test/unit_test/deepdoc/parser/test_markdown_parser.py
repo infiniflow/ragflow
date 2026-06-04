@@ -21,31 +21,34 @@ from pathlib import Path
 
 import pytest
 
-try:
-    import markdown  # noqa: F401
-except ModuleNotFoundError:
-    markdown_stub = types.ModuleType("markdown")
-    markdown_stub.markdown = lambda text, extensions=None: text
-    sys.modules["markdown"] = markdown_stub
-
 _REPO = Path(__file__).parents[4]
-_spec = importlib.util.spec_from_file_location(
-    "markdown_parser",
-    _REPO / "deepdoc" / "parser" / "markdown_parser.py",
-)
-_mod = importlib.util.module_from_spec(_spec)
-sys.modules["markdown_parser"] = _mod
-_spec.loader.exec_module(_mod)
 
-MarkdownElementExtractor = _mod.MarkdownElementExtractor
+
+@pytest.fixture
+def markdown_element_extractor(monkeypatch):
+    try:
+        import markdown  # noqa: F401
+    except ModuleNotFoundError:
+        markdown_stub = types.ModuleType("markdown")
+        markdown_stub.markdown = lambda text, extensions=None: text
+        monkeypatch.setitem(sys.modules, "markdown", markdown_stub)
+
+    spec = importlib.util.spec_from_file_location(
+        "test_markdown_parser_dynamic",
+        _REPO / "deepdoc" / "parser" / "markdown_parser.py",
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.MarkdownElementExtractor
 
 
 @pytest.mark.p2
 class TestMarkdownElementExtractorFences:
-    def test_custom_delimiter_preserves_backtick_fence(self):
+    def test_custom_delimiter_preserves_backtick_fence(self, markdown_element_extractor):
         text = "# Title\n```python\nprint('a')\nprint('b')\n```\nAfter"
 
-        sections = MarkdownElementExtractor(text).extract_elements(delimiter="`\n`", include_meta=True)
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`", include_meta=True)
 
         assert [section["content"] for section in sections] == [
             "# Title",
@@ -55,10 +58,10 @@ class TestMarkdownElementExtractorFences:
         assert sections[1]["start_line"] == 1
         assert sections[1]["end_line"] == 4
 
-    def test_custom_delimiter_still_splits_outside_fences(self):
+    def test_custom_delimiter_still_splits_outside_fences(self, markdown_element_extractor):
         text = "Before\n~~~python\nprint('inside')\n~~~\nAfter"
 
-        sections = MarkdownElementExtractor(text).extract_elements(delimiter="`\n`")
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
 
         assert sections == [
             "Before",
@@ -66,10 +69,10 @@ class TestMarkdownElementExtractorFences:
             "After",
         ]
 
-    def test_tilde_fence_is_code_block_without_custom_delimiter(self):
+    def test_tilde_fence_is_code_block_without_custom_delimiter(self, markdown_element_extractor):
         text = "# Title\n~~~python\nprint('a')\n~~~\nAfter"
 
-        sections = MarkdownElementExtractor(text).extract_elements(include_meta=True)
+        sections = markdown_element_extractor(text).extract_elements(include_meta=True)
 
         assert [section["content"] for section in sections] == [
             "# Title",
@@ -80,10 +83,10 @@ class TestMarkdownElementExtractorFences:
         assert sections[1]["start_line"] == 1
         assert sections[1]["end_line"] == 3
 
-    def test_longer_outer_fence_preserves_nested_shorter_fence(self):
+    def test_longer_outer_fence_preserves_nested_shorter_fence(self, markdown_element_extractor):
         text = "````markdown\n```python\nprint('inner')\n```\n````\nAfter"
 
-        sections = MarkdownElementExtractor(text).extract_elements(include_meta=True)
+        sections = markdown_element_extractor(text).extract_elements(include_meta=True)
 
         assert [section["content"] for section in sections] == [
             "````markdown\n```python\nprint('inner')\n```\n````",
@@ -93,10 +96,10 @@ class TestMarkdownElementExtractorFences:
         assert sections[0]["start_line"] == 0
         assert sections[0]["end_line"] == 4
 
-    def test_custom_delimiter_preserves_longer_outer_fence(self):
+    def test_custom_delimiter_preserves_longer_outer_fence(self, markdown_element_extractor):
         text = "Before\n````markdown\n```python\nprint('inner')\n```\n````\nAfter"
 
-        sections = MarkdownElementExtractor(text).extract_elements(delimiter="`\n`")
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
 
         assert sections == [
             "Before",

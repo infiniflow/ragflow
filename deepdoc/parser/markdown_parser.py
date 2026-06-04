@@ -15,6 +15,7 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 
 from markdown import markdown
@@ -195,6 +196,8 @@ class MarkdownElementExtractor:
         sections = []
         pattern = re.compile(delimiters)
         protected_ranges = self._fenced_code_ranges(text)
+        if protected_ranges:
+            logging.debug("markdown_parser: detected %d fenced ranges for delimiter extraction", len(protected_ranges))
         protected_idx = 0
         last_end = 0
 
@@ -205,6 +208,12 @@ class MarkdownElementExtractor:
             if protected_idx < len(protected_ranges):
                 start, end = protected_ranges[protected_idx]
                 if start <= match.start() < end:
+                    logging.debug(
+                        "markdown_parser: skipped delimiter match at pos=%d delimiter=%r inside fenced range %s",
+                        match.start(),
+                        match.group(),
+                        (start, end),
+                    )
                     continue
 
             self._append_delimited_section(sections, text, last_end, match.start(), include_meta)
