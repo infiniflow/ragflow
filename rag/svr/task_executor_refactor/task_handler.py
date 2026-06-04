@@ -548,7 +548,7 @@ class TaskHandler:
         """
         progress_callback(msg="Start to compile wiki ...")
         
-        chat_model_config = get_model_config_by_type_and_name(
+        chat_model_config = get_model_config_from_provider_instance(
             ctx.tenant_id, LLMType.CHAT, ctx.llm_id
         )
         chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
@@ -569,7 +569,7 @@ class TaskHandler:
         settings.docStoreConn.delete({"compile_kwd": "wiki_page"}, search.index_name(ctx.tenant_id), ctx.kb_id)
         for kwd in ("wiki_map_extract", "wiki_reduce_result", "wiki_compilation_plan", "wiki_page_draft", "wiki_page"):
             settings.docStoreConn.delete({"compile_kwd": kwd}, search.index_name(ctx.tenant_id), ctx.kb_id)
-        """
+            """
 
         def _stage_cb(prefix: str):
             def _cb(*args, **kwargs):

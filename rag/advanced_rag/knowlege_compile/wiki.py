@@ -2228,20 +2228,28 @@ def _wiki_assemble_evidence(
     if not fallback_chunk_ids:
         return []
 
+    # Marker ``_synthetic`` keeps this item out of the writer prompt — it
+    # exists only to carry chunk_ids forward for provenance and source-context
+    # fetching. _wiki_format_evidence_blocks filters it out.
     return [{
-        "statement": f"(no claim-level evidence; chunks attributed to "
-                     f"{', '.join(matched_names) or raw_names[0]})",
+        "statement": "",
         "subject": matched_names[0] if matched_names else raw_names[0],
         "confidence": "inferred",
         "chunk_ids": fallback_chunk_ids,
+        "_synthetic": True,
     }]
 
 
 def _wiki_format_evidence_blocks(evidence: list[dict]) -> str:
-    if not evidence:
-        return "(no pre-extracted evidence)"
+    # Filter out synthetic stubs (entity-fallback chunk-id carriers) — they
+    # don't represent real claims and shouldn't appear in the writer's
+    # evidence checklist.
+    real_evidence = [ev for ev in (evidence or []) if not ev.get("_synthetic")]
+    if not real_evidence:
+        return ("(no pre-extracted evidence — extract facts directly from "
+                "the source document text above)")
     lines: list[str] = []
-    for i, ev in enumerate(evidence, 1):
+    for i, ev in enumerate(real_evidence, 1):
         confidence = (ev.get("confidence") or "explicit").upper()
         subject = ev.get("subject") or ""
         statement = ev.get("statement") or ""
@@ -2853,6 +2861,33 @@ async def wiki_refine_from_plan(
     has ``slug, title, page_type, action, content_md, summary,
     entity_names, related_kb_pages, source_chunk_ids``.
     """
+    # ---- Defensive embd_mdl unwrap ---------------------------------------
+    # Some callers accidentally pass the result of LLMBundle.encode() — a
+    # ``(embeddings, used_tokens)`` tuple — instead of the LLMBundle itself.
+    # Earlier phases (REDUCE, PLAN) often hit their resume cache so this
+    # surfaces here for the first time. Try a safe unwrap before bailing.
+    if not hasattr(embd_mdl, "encode"):
+        if isinstance(embd_mdl, tuple) and embd_mdl and hasattr(embd_mdl[0], "encode"):
+            logging.warning(
+                "wiki_refine: embd_mdl arrived as a %s; unwrapping to first element "
+                "(check the call site — was encode()'s return value passed instead "
+                "of the LLMBundle?)",
+                type(embd_mdl).__name__,
+            )
+            embd_mdl = embd_mdl[0]
+        else:
+            logging.error(
+                "wiki_refine: embd_mdl has no .encode method (type=%s); aborting REFINE",
+                type(embd_mdl).__name__,
+            )
+            return []
+    if not hasattr(chat_mdl, "async_chat"):
+        logging.error(
+            "wiki_refine: chat_mdl has no .async_chat method (type=%s); aborting REFINE",
+            type(chat_mdl).__name__,
+        )
+        return []
+
     if callback:
         try:
             callback(0.02, "wiki REFINE: loading plan")
@@ -2868,13 +2903,35 @@ async def wiki_refine_from_plan(
     if not pages_spec:
         logging.info("wiki_refine: plan has no pages for kb=%s", kb_id)
         return []
-    pages_spec = sorted(
+    # Sort by priority then dedupe by slug, keeping the first (highest-priority)
+    # entry. The planning LLM sometimes emits the same slug multiple times,
+    # which both wastes writer calls and bloats every prompt's "Available
+    # pages" list with duplicates.
+    sorted_spec = sorted(
         [p for p in pages_spec if isinstance(p, dict) and p.get("slug")],
         key=lambda p: p.get("priority", 99),
     )
+    seen_slugs: set[str] = set()
+    pages_spec = []
+    duplicates_dropped = 0
+    for p in sorted_spec:
+        s = p.get("slug")
+        if not s:
+            continue
+        if s in seen_slugs:
+            duplicates_dropped += 1
+            continue
+        seen_slugs.add(s)
+        pages_spec.append(p)
+    if duplicates_dropped:
+        logging.info(
+            "wiki_refine: dropped %d duplicate slug entr(ies) from plan for kb=%s",
+            duplicates_dropped, kb_id,
+        )
 
     all_claims = plan.get("_claims") or []
-    all_plan_slugs = [p.get("slug", "") for p in pages_spec if p.get("slug")]
+    # ``all_plan_slugs`` is implicitly deduped now (pages_spec is unique).
+    all_plan_slugs = [p["slug"] for p in pages_spec]
 
     # Build canonical entity/concept lookups for evidence fallback. When MAP
     # produced no claims (a real failure mode we've seen on Chinese / dense
