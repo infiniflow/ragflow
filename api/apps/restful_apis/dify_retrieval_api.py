@@ -29,7 +29,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from common.metadata_utils import meta_filter, convert_conditions
-from api.utils.api_utils import apikey_required, build_error_result, get_request_json, get_json_result
+from api.apps import current_user, login_required
+from api.utils.api_utils import build_error_result, get_request_json, get_json_result
 from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
@@ -108,8 +109,8 @@ def _parse_retrieval_options(retrieval_setting):
 
 
 @manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
-@apikey_required
-async def retrieval(tenant_id):
+@login_required
+async def retrieval():
     """
     Dify-compatible retrieval API
     ---
@@ -218,6 +219,7 @@ async def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
+    tenant_id = current_user.id
     parse_exception_types = (AttributeError, TypeError, ValueError, WerkzeugBadRequest)
     if QuartBadRequest is not None:
         parse_exception_types = parse_exception_types + (QuartBadRequest,)
