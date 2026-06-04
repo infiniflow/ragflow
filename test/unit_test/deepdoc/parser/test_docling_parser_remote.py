@@ -5,6 +5,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[4]
 
@@ -55,6 +57,7 @@ def _load_docling_parser(monkeypatch):
     return module
 
 
+@pytest.mark.p2
 def test_remote_chunked_200_standard_payload_falls_back(monkeypatch):
     module = _load_docling_parser(monkeypatch)
     calls = []
