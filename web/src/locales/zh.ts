@@ -1077,6 +1077,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       rssDescription:
         '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
+      opentextDescription:
+        '连接 OpenText Content Server，将托管文档同步到知识库。',
+      opentextBaseUrlTip:
+        'OpenText Content Server 实例的基础 URL，例如 https://content.example.com。',
+      opentextRootNodeIdsTip:
+        '要同步的根文件夹或文档节点 ID，多个用逗号分隔。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       google_cloud_storageDescription:
         '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',

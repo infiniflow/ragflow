@@ -156,6 +156,7 @@ class FileSource(StrEnum):
     DINGTALK_AI_TABLE = "dingtalk_ai_table"
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
+    OPENTEXT = "opentext"
 
 
 class PipelineTaskType(StrEnum):

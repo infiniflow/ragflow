@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { FolderArchive, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -48,6 +48,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  OPENTEXT = 'opentext',
 }
 
 type DataSourceFeatureVisibility = {
@@ -146,6 +147,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SHAREPOINT]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.OPENTEXT]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MYSQL]: {
     syncDeletedFiles: true,
   },
@@ -208,6 +212,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Confluence',
       description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
       icon: <SvgIcon name={'data-source/confluence'} width={38} />,
+    },
+    [DataSourceKey.OPENTEXT]: {
+      name: 'OpenText',
+      description: t(`setting.${DataSourceKey.OPENTEXT}Description`),
+      icon: <FolderArchive className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GOOGLE_DRIVE]: {
       name: 'Google Drive',
@@ -1568,6 +1577,48 @@ export const DataSourceFormFields = {
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  [DataSourceKey.OPENTEXT]: [
+    {
+      label: 'Base URL',
+      name: 'config.base_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://content.example.com',
+      tooltip: t('setting.opentextBaseUrlTip'),
+    },
+    {
+      label: 'Root Node IDs',
+      name: 'config.root_node_ids',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: '2000,3456',
+      tooltip: t('setting.opentextRootNodeIdsTip'),
+    },
+    {
+      label: 'OTCS Ticket',
+      name: 'config.credentials.opentext_ticket',
+      type: FormFieldType.Password,
+      required: false,
+    },
+    {
+      label: 'API Token',
+      name: 'config.credentials.opentext_api_token',
+      type: FormFieldType.Password,
+      required: false,
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.opentext_username',
+      type: FormFieldType.Text,
+      required: false,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.opentext_password',
+      type: FormFieldType.Password,
+      required: false,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1643,6 +1694,21 @@ export const DataSourceFormDefaultValues = {
         confluence_access_token: '',
       },
       index_mode: 'everything',
+    },
+  },
+  [DataSourceKey.OPENTEXT]: {
+    name: '',
+    source: DataSourceKey.OPENTEXT,
+    config: {
+      base_url: '',
+      root_node_ids: '',
+      batch_size: 2,
+      credentials: {
+        opentext_ticket: '',
+        opentext_api_token: '',
+        opentext_username: '',
+        opentext_password: '',
+      },
     },
   },
   [DataSourceKey.GOOGLE_DRIVE]: {
