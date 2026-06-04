@@ -131,29 +131,33 @@ func (s *AgentService) ListAgents(
 }
 
 // CheckCanvasAccess checks if a user has access to a canvas.
-// Returns the canvas owner's ID, true if authorized, or false with an error.
-func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (string, bool, error) {
+// Returns true if the user is the owner or has team-level permission.
+func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) {
 	canvas, err := s.canvasDAO.GetByID(canvasID)
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
 	// Owner always has access
 	if canvas.UserID == userID {
-		return canvas.UserID, true, nil
+		return true, nil
 	}
 	// Non-owner: only team-level permission grants tenant access
 	if canvas.Permission != string(entity.TenantPermissionTeam) {
-		return "", false, nil
+		return false, nil
 	}
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
-		return "", false, err
+		return false, err
 	}
 	for _, tid := range tenantIDs {
 		if canvas.UserID == tid {
-			return canvas.UserID, true, nil
+			return true, nil
 		}
 	}
-	return "", false, nil
+	return false, nil
+}
 
+// ListVersions returns all versions for an agent canvas, ordered by update_time DESC.
+func (s *AgentService) ListVersions(canvasID string) ([]*entity.UserCanvasVersion, error) {
+	return s.userCanvasVersionDAO.ListByCanvasID(canvasID)
 }

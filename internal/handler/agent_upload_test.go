@@ -57,11 +57,15 @@ func setupUploadTestDB(t *testing.T) *gorm.DB {
 
 // fakeUploadFileService implements fileUploader for tests.
 type fakeUploadFileService struct {
-	uploaded []map[string]interface{}
-	err      error
+	uploaded      []map[string]interface{}
+	err           error
+	lastTenantID  string
+	lastParentID  string
 }
 
 func (f *fakeUploadFileService) UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+	f.lastTenantID = tenantID
+	f.lastParentID = parentID
 	return f.uploaded, f.err
 }
 
@@ -225,8 +229,8 @@ func TestUploadAgentFileHandler_TeamMemberTenant(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
 	}
-	if svc.lastTenantID != "user-a" {
-		t.Errorf("expected UploadFile called with canvas owner 'user-a', got '%s'", svc.lastTenantID)
+	if svc.lastTenantID != "user-b" {
+		t.Errorf("expected UploadFile called with authenticated user 'user-a', got '%s'", svc.lastTenantID)
 	}
 }
 
