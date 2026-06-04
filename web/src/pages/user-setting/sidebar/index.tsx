@@ -1,4 +1,3 @@
-import { useIsMobile } from '@/components/hooks/use-mobile';
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import ThemeSwitch from '@/components/theme-switch';
@@ -59,7 +58,6 @@ const menuItems = (t: TFunction) => [
 ];
 
 export function SideBar() {
-  const isMobile = useIsMobile();
   const { data: userInfo } = useFetchUserInfo();
   const { handleMenuClick, active: activeItemKey } = useHandleMenuClick();
   const { version, fetchSystemVersion } = useFetchSystemVersion();
@@ -72,64 +70,42 @@ export function SideBar() {
   const { logout } = useLogout();
 
   return (
-    <aside
-      className={cn(
-        'shrink-0 bg-bg-base flex flex-col overflow-hidden',
-        isMobile ? 'w-16' : 'w-[303px]',
-      )}
-    >
+    <aside className="shrink-0 w-16 md:w-[303px] bg-bg-base flex flex-col overflow-hidden">
       <header>
-        <h1
-          className={cn(
-            'flex gap-2.5 items-center font-normal',
-            isMobile ? 'px-2 justify-center' : 'px-6 justify-start',
-          )}
-        >
+        <h1 className="px-2 md:px-6 flex gap-2.5 items-center justify-center md:justify-start font-normal">
           <RAGFlowAvatar
             avatar={userInfo?.avatar}
             name={userInfo?.nickname}
             isPerson
           />
 
-          {!isMobile && (
-            <p className="text-sm text-text-primary truncate">
-              {userInfo?.email}
-            </p>
-          )}
+          <p className="hidden md:block text-sm text-text-primary truncate">
+            {userInfo?.email}
+          </p>
         </h1>
       </header>
 
       <nav className="flex-1 overflow-auto mt-4 py-1">
-        <ul
-          className={cn(
-            'flex flex-col',
-            isMobile ? 'px-2 gap-2 items-center' : 'px-6 gap-5',
-          )}
-        >
+        <ul className="px-2 md:px-6 flex flex-col gap-2 md:gap-5 items-center md:items-stretch">
           {menuItems(t).map((item) => {
             const { key, icon, label, ...rest } = item;
 
             return (
-              <li key={key} className={isMobile ? 'w-full' : undefined}>
+              <li key={key} className="w-full md:w-auto">
                 <Button
                   {...rest}
-                  block={!isMobile}
+                  block
                   variant="ghost"
                   aria-label={label}
                   className={cn(
-                    'relative h-10 text-base',
-                    isMobile
-                      ? 'size-10 p-0 justify-center'
-                      : 'justify-start gap-2.5 px-3 w-full',
+                    'relative h-10 text-base max-md:size-10 max-md:p-0 max-md:justify-center justify-start gap-2.5 px-2 md:px-3',
                     activeItemKey === key && 'bg-bg-card text-text-primary',
                   )}
                   onClick={handleMenuClick(key)}
                 >
-                  <section
-                    className={cn('flex items-center', !isMobile && 'gap-2.5')}
-                  >
+                  <section className="flex items-center gap-2.5 max-md:gap-0">
                     {icon}
-                    {!isMobile && <span>{label}</span>}
+                    <span className="hidden md:inline">{label}</span>
                   </section>
                 </Button>
               </li>
@@ -138,28 +114,23 @@ export function SideBar() {
         </ul>
       </nav>
 
-      <footer className={cn('mt-auto', isMobile ? 'p-2' : 'p-6')}>
-        {!isMobile && (
-          <div className="flex items-center gap-2 mb-6 justify-between">
-            <span className="text-xs text-accent-primary">{version}</span>
+      <footer className="p-2 md:p-6 mt-auto">
+        <div className="hidden md:flex items-center gap-2 mb-6 justify-between">
+          <span className="text-xs text-accent-primary">{version}</span>
 
-            <ThemeSwitch />
-          </div>
-        )}
+          <ThemeSwitch />
+        </div>
 
         <Button
-          block={!isMobile}
-          size={isMobile ? 'icon-lg' : 'lg'}
+          block
+          size="lg"
           variant="transparent"
           aria-label={t('setting.logout')}
-          className={cn(isMobile ? 'mx-auto' : 'w-full')}
+          className="max-md:size-10 max-md:p-0 max-md:mx-auto max-md:justify-center"
           onClick={() => logout()}
         >
-          {isMobile ? (
-            <LucideLogOut className="size-[1em]" />
-          ) : (
-            t('setting.logout')
-          )}
+          <LucideLogOut className="size-[1em] md:hidden" />
+          <span className="hidden md:inline">{t('setting.logout')}</span>
         </Button>
       </footer>
     </aside>
