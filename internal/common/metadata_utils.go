@@ -28,62 +28,100 @@ type MetaCondition struct {
 	Value    interface{} // comparison value
 }
 
-// ConvertConditions converts API-format conditions into internal format.
-// Python equivalent: common/metadata_utils.py::convert_conditions()
-func ConvertConditions(metadataCondition map[string]interface{}) []MetaCondition {
+// MetaValueDocs maps a metadata field value to the document IDs that have that value.
+// Example: {"张三": ["doc1", "doc2"], "李四": ["doc3"]}
+type MetaValueDocs map[string][]string
+
+// MetaData maps a metadata field name to its value→documents mapping.
+// Example: {"author": {"张三": ["doc1"]}, "year": {"2024": ["doc1", "doc2"]}}
+type MetaData map[string]MetaValueDocs
+
+// MetaFilterInput groups filter conditions with their logic operator.
+type MetaFilterInput struct {
+	Conditions []MetaCondition
+	Logic      string // "and" | "or"
+}
+
+// operatorMapping translates Python-style operators to internal symbols.
+var operatorMapping = map[string]string{
+	"is":     "=",
+	"not is": "≠",
+	">=":     "≥",
+	"<=":     "≤",
+	"!=":     "≠",
+}
+
+// ParseAndConvert converts raw API conditions into MetaFilterInput.
+// Equivalent to Python: meta_filter(metas, convert_conditions(cond), cond.get("logic"))
+func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput {
 	if metadataCondition == nil {
 		return nil
 	}
-	opMapping := map[string]string{
-		"is":     "=",
-		"not is": "≠",
-		">=":     "≥",
-		"<=":     "≤",
-		"!=":     "≠",
+
+	logic, _ := metadataCondition["logic"].(string)
+	if logic == "" {
+		logic = "and"
 	}
 
 	rawConditions, ok := metadataCondition["conditions"].([]interface{})
-	if !ok {
+	if !ok || len(rawConditions) == 0 {
 		return nil
 	}
 
-	var result []MetaCondition
+	var conditions []MetaCondition
 	for _, raw := range rawConditions {
 		cond, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
 		}
 		name, _ := cond["name"].(string)
-		op, _ := cond["comparison_operator"].(string)
-		if mapped, exists := opMapping[op]; exists {
-			op = mapped
+		if name == "" {
+			continue
 		}
-		value := cond["value"]
-		result = append(result, MetaCondition{
+		op, _ := cond["comparison_operator"].(string)
+		op = convertOperator(op)
+		conditions = append(conditions, MetaCondition{
 			Operator: op,
 			Key:      name,
-			Value:    value,
+			Value:    cond["value"],
 		})
 	}
-	return result
+
+	if len(conditions) == 0 {
+		return nil
+	}
+
+	return &MetaFilterInput{
+		Conditions: conditions,
+		Logic:      logic,
+	}
+}
+
+// convertOperator translates Python-style operator to internal symbol.
+func convertOperator(op string) string {
+	if mapped, exists := operatorMapping[op]; exists {
+		return mapped
+	}
+	return op
 }
 
 // MetaFilter applies filter conditions against metadata and returns matching doc IDs.
 // Python equivalent: common/metadata_utils.py::meta_filter()
-// metas: map[fieldName]map[fieldValue][]docID
-// filters: output of ConvertConditions
-// logic: "and" | "or" (defaults to "and")
-func MetaFilter(metas map[string]map[string][]string, filters []MetaCondition, logic string) []string {
+func MetaFilter(metas MetaData, input *MetaFilterInput) []string {
+	if input == nil || len(input.Conditions) == 0 {
+		return nil
+	}
+
+	logic := input.Logic
 	if logic == "" {
 		logic = "and"
 	}
 
 	var docIDs *map[string]struct{}
 
-	for _, f := range filters {
+	for _, f := range input.Conditions {
 		v2docs, ok := metas[f.Key]
 		if !ok {
-			// Key not found: no match
 			if logic == "and" {
 				return []string{}
 			}
@@ -129,7 +167,7 @@ func MetaFilter(metas map[string]map[string][]string, filters []MetaCondition, l
 }
 
 // filterOut returns matching doc IDs for a single (value → matchedDocs) map and operator.
-func filterOut(v2docs map[string][]string, operator string, value interface{}) []string {
+func filterOut(v2docs MetaValueDocs, operator string, value interface{}) []string {
 	var ids []string
 	for input, docids := range v2docs {
 		if matchValue(input, operator, value) {
@@ -149,9 +187,6 @@ func matchValue(input string, operator string, value interface{}) bool {
 	}
 
 	valStr := toString(value)
-	if valStr == "" && value != nil {
-		valStr = ""
-	}
 
 	switch operator {
 	case "contains":
@@ -187,7 +222,6 @@ func matchValue(input string, operator string, value interface{}) bool {
 }
 
 // compareValues handles numeric/date/string comparison.
-// Matches Python's logic: try numeric → try date → fall back to string.
 func compareValues(a, b, operator string) bool {
 	// Try numeric comparison
 	af, errA := strconv.ParseFloat(a, 64)
