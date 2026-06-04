@@ -195,6 +195,73 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 		t.Errorf("expected operating error code %d, got %v", common.CodeOperatingError, code)
 	}
 }
+// TestGetAgentVersionHandler_Success verifies getting a specific version.
+func TestGetAgentVersionHandler_Success(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/canvas-1/versions/v1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "version_id", Value: "v1"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+	db.Create(&entity.UserCanvasVersion{
+		ID:           "v1",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("version-1"),
+		DSL:          entity.JSONMap{"key": "value"},
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentVersion(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", code, resp["message"])
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+	if data["title"] != "version-1" {
+		t.Errorf("expected title 'version-1', got %v", data["title"])
+	}
+	if _, ok := data["dsl"]; !ok {
+		t.Errorf("expected dsl field in version detail response")
+	}
+}
+
+// TestGetAgentVersionHandler_VersionNotFound verifies 404 for missing version.
+func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/canvas-1/versions/non-existent")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}, {Key: "version_id", Value: "non-existent"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetAgentVersion(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeNotFound) {
+		t.Errorf("expected not found code %d, got %v", common.CodeNotFound, code)
+	}
+}
+
+
+
 // sptr returns a pointer to the given string.
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
