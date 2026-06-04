@@ -57,7 +57,7 @@ func NewZhipuAIModel(baseURL map[string]string, urlSuffix URLSuffix) *ZhipuAIMod
 }
 
 func (z *ZhipuAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewZhipuAIModel(baseURL, z.baseModel.URLSuffix)
 }
 
 func (z *ZhipuAIModel) Name() string {
@@ -66,8 +66,7 @@ func (z *ZhipuAIModel) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -212,8 +211,7 @@ func (z *ZhipuAIModel) ChatWithMessages(modelName string, messages []Message, ap
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (z *ZhipuAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
@@ -401,13 +399,12 @@ type zhipuUsage struct {
 
 // Encode encodes a list of texts into embeddings
 func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
-		return nil, err
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -478,8 +475,7 @@ func (z *ZhipuAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -499,9 +495,7 @@ func (z *ZhipuAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := z.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -537,8 +531,7 @@ func (z *ZhipuAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, er
 }
 
 func (z *ZhipuAIModel) CheckConnection(apiConfig *APIConfig) error {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
@@ -614,13 +607,12 @@ type zhipuOCRResponse struct {
 // the ZhipuAI /rerank endpoint (e.g. glm-rerank). The result is one
 // score per input text, in the same order the documents were given.
 func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
-		return nil, err
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
@@ -697,8 +689,7 @@ func (z *ZhipuAIModel) Rerank(modelName *string, query string, documents []strin
 
 // TranscribeAudio transcribe audio
 func (z *ZhipuAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -829,8 +820,7 @@ func (z *ZhipuAIModel) TranscribeAudioWithSender(modelName *string, file *string
 
 // AudioSpeech convert text to audio
 func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
@@ -872,8 +862,7 @@ func (z *ZhipuAIModel) AudioSpeech(modelName *string, audioContent *string, apiC
 }
 
 func (z *ZhipuAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
@@ -971,8 +960,7 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 
 // OCRFile OCR file
 func (z *ZhipuAIModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	err := z.baseModel.APIConfigCheck(apiConfig)
-	if err != nil {
+	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 

@@ -31,28 +31,28 @@ import (
 )
 
 type QiniuModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 func NewQiniuModel(baseURL map[string]string, urlSuffix URLSuffix) *QiniuModel {
 	return &QiniuModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxConnsPerHost:     10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxConnsPerHost:     10,
+					MaxIdleConnsPerHost: 100,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (q *QiniuModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewQiniuModel(baseURL, q.URLSuffix)
+	return NewQiniuModel(baseURL, q.baseModel.URLSuffix)
 }
 
 func (q *QiniuModel) Name() string {
@@ -150,18 +150,18 @@ func applyQiniuThinkingConfig(reqBody map[string]interface{}, modelName string, 
 }
 
 func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("no messages")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", q.BaseURL[region], q.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, q.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -213,7 +213,7 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := q.httpClient.Do(req)
+	resp, err := q.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -274,22 +274,19 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return fmt.Errorf("api key is nil or empty")
+	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-	baseURL := strings.TrimSuffix(q.BaseURL[region], "/")
-	if baseURL == "" {
-		return fmt.Errorf("qiniu: no base URL configured for region %q", region)
-	}
-	url := fmt.Sprintf("%s/%s", baseURL, q.URLSuffix.Chat)
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -340,7 +337,7 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := q.httpClient.Do(req)
+	resp, err := q.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -449,19 +446,16 @@ func (q *QiniuModel) ParseFile(modelName *string, content []byte, url *string, a
 }
 
 func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-	baseURL := strings.TrimSuffix(q.BaseURL[region], "/")
-	if baseURL == "" {
-		return nil, fmt.Errorf("qiniu: no base URL configured for region %q", region)
-	}
-	url := fmt.Sprintf("%s/%s", baseURL, q.URLSuffix.Models)
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -472,7 +466,7 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := q.httpClient.Do(req)
+	resp, err := q.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}

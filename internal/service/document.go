@@ -28,12 +28,14 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/cache"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 
 	"ragflow/internal/server"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // DocumentService document service
@@ -221,21 +223,8 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 
 	// 4. Validate IDs belong to this dataset (only for explicit ids; deleteAll is already scoped)
 	if !deleteAll {
-		docs, err := s.documentDAO.GetByIDs(ids)
-		if err != nil {
-			return 0, fmt.Errorf("failed to fetch documents: %w", err)
-		}
-		if len(docs) != len(ids) {
-			return 0, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
-		}
-		var invalid []string
-		for _, d := range docs {
-			if d.KbID != datasetID {
-				invalid = append(invalid, d.ID)
-			}
-		}
-		if len(invalid) > 0 {
-			return 0, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
+		if _, err := s.validateDocsInDataset(ids, datasetID); err != nil {
+			return 0, err
 		}
 	}
 
@@ -252,94 +241,144 @@ func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetI
 	return deleted, nil
 }
 
-// deleteDocumentFull performs full document cleanup:
-//  1. Delete tasks from DB
-//  2. Delete chunks from document engine
-//  3. Delete metadata from document engine
-//  4. Hard-delete document row + decrement KB counters
-//  5. Delete file2document mapping + file record + storage blob
-//
-// Non-critical failures are tolerated (logged and continue).
+// deleteDocumentFull performs full document cleanup. Non-critical failures
+// are tolerated (logged and continue). Critical failures (e.g. document or
+// KB not found) return an error immediately.
 func (s *DocumentService) deleteDocumentFull(docID string) error {
+	doc, kb, err := s.resolveDocAndKB(docID)
+	if err != nil {
+		return err
+	}
+
+	// Delete tasks from DB
+	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("failed to delete tasks for %s: %v", docID, delErr))
+	}
+	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	if err := s.deleteDocRecordWithCounters(doc, kb.ID); err != nil {
+		return err
+	}
+	s.cleanupFileReferences(docID)
+
+	return nil
+}
+
+// resolveDocAndKB loads the document and its knowledgebase, returning both or
+// an error.
+func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {
 	doc, err := s.documentDAO.GetByID(docID)
 	if err != nil {
-		return fmt.Errorf("document not found: %w", err)
+		return nil, nil, fmt.Errorf("document not found: %w", err)
 	}
-	kbID := doc.KbID
-	tokenNum := doc.TokenNum
-	chunkIDNum := doc.ChunkNum
-
-	// Resolve tenant ID for engine index name
-	kb, err := s.kbDAO.GetByID(kbID)
+	kb, err := s.kbDAO.GetByID(doc.KbID)
 	if err != nil {
-		return fmt.Errorf("knowledgebase not found: %w", err)
+		return nil, nil, fmt.Errorf("knowledgebase not found: %w", err)
 	}
-	tenantID := kb.TenantID
+	return doc, kb, nil
+}
 
-	// 1. Delete tasks from DB
-	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete tasks for %s: %v", docID, delErr))
+// deleteDocEngineData removes chunks and metadata from the document engine.
+// No-op when the engine is nil.
+func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
+	if s.docEngine == nil {
+		return
 	}
-
-	// 2. Delete chunks from document engine
-	if s.docEngine != nil {
-		ctx := context.Background()
-		indexName := fmt.Sprintf("ragflow_%s", tenantID)
-		if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete chunks for %s: %v", docID, delErr))
-		}
+	ctx := context.Background()
+	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 	}
-
-	// 3. Delete metadata from document engine (skip if engine not available)
-	if s.docEngine != nil && s.metadataSvc != nil {
+	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(docID) // logs internally
 	}
+}
 
-	// 4. Hard-delete document + decrement KB counters
-	if delErr := s.documentDAO.Delete(docID); delErr != nil {
-		return fmt.Errorf("failed to delete document %s: %w", docID, delErr)
-	}
-	if decErr := s.kbDAO.DecreaseDocumentNum(kbID, 1, chunkIDNum, tokenNum); decErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to decrement KB counters for %s: %v", kbID, decErr))
-	}
+// deleteDocRecordWithCounters hard-deletes the document row and decrements the
+// KB counters in a single transaction. Counters are only decremented when a
+// document row was actually removed (RowsAffected > 0), guarding against
+// double-decrement on retries or concurrent deletes.
+func (s *DocumentService) deleteDocRecordWithCounters(doc *entity.Document, kbID string) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ?", doc.ID).Delete(&entity.Document{})
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete document %s: %w", doc.ID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil // already deleted by a concurrent request — skip counters
+		}
 
-	// 5. Clean up file2document mapping, file record, and storage blob
+		decErr := tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", kbID).
+			Updates(map[string]interface{}{
+				"doc_num":   gorm.Expr("doc_num - 1"),
+				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
+				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
+			}).Error
+		if decErr != nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDocRecordWithCounters: failed to decrement KB %s: %v", kbID, decErr))
+		}
+		return nil
+	})
+}
+
+// cleanupFileReferences deletes file2document mappings for docID, and for each
+// referenced file, only hard-deletes the file record and its storage blob when
+// no other document still references the same file_id.
+func (s *DocumentService) cleanupFileReferences(docID string) {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
 	if mapErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to get file2document mappings for %s: %v", docID, mapErr))
+		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
 	}
+	if len(mappings) == 0 {
+		return
+	}
+
+	// Collect unique file_ids
+	seen := make(map[string]bool)
+	var fileIDs []string
 	for _, m := range mappings {
-		if m.FileID == nil {
+		if m.FileID == nil || seen[*m.FileID] {
 			continue
 		}
-		fileID := *m.FileID
-		// Delete the mapping
-		if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete f2d mapping for %s: %v", docID, delErr))
+		seen[*m.FileID] = true
+		fileIDs = append(fileIDs, *m.FileID)
+	}
+
+	// Delete all file2document rows for this document
+	if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
+	}
+
+	// For each file, only delete the record and blob when no other doc references it
+	for _, fileID := range fileIDs {
+		remaining, remErr := s.file2DocumentDAO.GetByFileID(fileID)
+		if remErr != nil {
+			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
+			continue
 		}
-		// Get file to remove storage blob
+		if len(remaining) > 0 {
+			continue
+		}
+
 		fileDAO := dao.NewFileDAO()
 		file, fErr := fileDAO.GetByID(fileID)
 		if fErr != nil || file == nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: file not found %s: %v", fileID, fErr))
+			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
 			continue
 		}
-		// Delete file record
 		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete file %s: %v", fileID, delErr))
+			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
+			continue // keep the blob so the live file row still has its object
 		}
-		// Delete storage blob
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
 				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
-					common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+					common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
 				}
 			}
 		}
 	}
-
-	return nil
 }
 
 // ListDocuments list documents
@@ -476,6 +515,104 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
 	return responses, nil
+}
+
+// StopParseDocuments stops parsing for the given documents in a dataset.
+// It sets Redis cancel signals for associated tasks and updates doc.run to CANCEL.
+// Returns a map with success_count and optionally errors.
+func (s *DocumentService) StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error) {
+	deduped := common.Deduplicate(docIDs)
+	if len(deduped) == 0 {
+		return nil, fmt.Errorf("no document IDs provided")
+	}
+
+	docs, err := s.validateDocsInDataset(deduped, datasetID)
+	if err != nil {
+		return nil, err
+	}
+
+	var errors []string
+	successCount := 0
+	for _, doc := range docs {
+		if cancelErr := s.cancelDocParse(doc); cancelErr != nil {
+			errors = append(errors, cancelErr.Error())
+			continue
+		}
+		successCount++
+	}
+
+	result := map[string]interface{}{"success_count": successCount}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	return result, nil
+}
+
+// validateDocsInDataset deduplicates IDs, fetches the documents, and ensures
+// every document exists and belongs to the given dataset. Returns the resolved
+// documents.
+func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID string) ([]*entity.Document, error) {
+	docs, err := s.documentDAO.GetByIDs(docIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch documents: %w", err)
+	}
+	if len(docs) != len(docIDs) {
+		return nil, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
+	}
+	var invalid []string
+	for _, d := range docs {
+		if d.KbID != datasetID {
+			invalid = append(invalid, d.ID)
+		}
+	}
+	if len(invalid) > 0 {
+		return nil, fmt.Errorf("these documents do not belong to dataset %s: %v", datasetID, invalid)
+	}
+	return docs, nil
+}
+
+// cancelDocParse sets Redis cancel signals for the document's active tasks and
+// marks the document run status as CANCEL. Returns an error if the document is
+// not in a cancellable state or the status update fails.
+func (s *DocumentService) cancelDocParse(doc *entity.Document) error {
+	tasks, taskErr := s.taskDAO.GetByDocID(doc.ID)
+	if taskErr != nil {
+		return fmt.Errorf("failed to get tasks for %s: %v", doc.ID, taskErr)
+	}
+
+	hasUnfinishedTask := false
+	for _, t := range tasks {
+		if t.Progress < 1 {
+			hasUnfinishedTask = true
+			break
+		}
+	}
+
+	canCancel := false
+	if doc.Run != nil {
+		if *doc.Run == string(entity.TaskStatusRunning) || *doc.Run == string(entity.TaskStatusCancel) {
+			canCancel = true
+		}
+	}
+	if hasUnfinishedTask {
+		canCancel = true
+	}
+	if !canCancel {
+		return fmt.Errorf("can't stop parsing document that has not started or already completed")
+	}
+
+	// Set Redis cancel signal for each task (best-effort)
+	redisClient := cache.Get()
+	for _, t := range tasks {
+		if redisClient != nil {
+			redisClient.Set(fmt.Sprintf("%s-cancel", t.ID), "x", 0)
+		}
+	}
+
+	if upErr := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
+		return fmt.Errorf("failed to update document %s: %v", doc.ID, upErr)
+	}
+	return nil
 }
 
 // toResponse convert model.Document to DocumentResponse
