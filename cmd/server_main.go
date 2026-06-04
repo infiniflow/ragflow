@@ -91,12 +91,6 @@ func main() {
 		common.Fatal("Server port is not configured. Please specify via --port flag or config file.")
 	}
 
-	// Load model providers configuration
-	if err := server.LoadModelProviders(""); err != nil {
-		common.Fatal("Failed to load model providers", zap.Error(err))
-	}
-	common.Info("Model providers loaded", zap.Int("count", len(server.GetModelProviders())))
-
 	// Reinitialize logger with configured level if different
 	if config.Log.Level != "" && config.Log.Level != "info" {
 		if err := common.Init(config.Log.Level); err != nil {
@@ -116,13 +110,6 @@ func main() {
 	// Initialize database
 	if err := dao.InitDB(); err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
-	}
-
-	// Initialize LLM factory data models from configuration file
-	if err := dao.InitLLMFactory(); err != nil {
-		common.Error("Failed to initialize LLM factory", err)
-	} else {
-		common.Info("LLM factory initialized successfully")
 	}
 
 	// Initialize doc engine
@@ -151,8 +138,12 @@ func main() {
 	local.InitAdminStatus(1, "admin server not connected")
 
 	// Initialize tokenizer (rag_analyzer)
+	dictPath := os.Getenv("RAGFLOW_DICT_PATH")
+	if dictPath == "" {
+		dictPath = "/usr/share/infinity/resource"
+	}
 	tokenizerCfg := &tokenizer.PoolConfig{
-		DictPath: "/usr/share/infinity/resource",
+		DictPath: dictPath,
 	}
 	if err := tokenizer.Init(tokenizerCfg); err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
@@ -220,7 +211,7 @@ func startServer(config *server.Config) {
 	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	agentHandler := handler.NewAgentHandler(service.NewAgentService())
+	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
 
 	// Initialize router
 	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler)
