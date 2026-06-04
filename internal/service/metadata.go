@@ -241,6 +241,89 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 	return flattedMeta, nil
 }
 
+// EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
+// Equivalent to Python: enrich_chunks_with_document_metadata()
+func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
+	if len(chunks) == 0 || s.docEngine == nil {
+		return
+	}
+
+	// 1. Collect unique (kb_id, doc_id) pairs
+	type kbDocPair struct{ kbID, docID string }
+	seen := make(map[kbDocPair]struct{})
+	docIDsByKB := make(map[string][]string)
+
+	for _, chunk := range chunks {
+		kbID, _ := chunk["kb_id"].(string)
+		docID, _ := chunk["doc_id"].(string)
+		if kbID == "" || docID == "" {
+			continue
+		}
+		pair := kbDocPair{kbID, docID}
+		if _, ok := seen[pair]; ok {
+			continue
+		}
+		seen[pair] = struct{}{}
+		docIDsByKB[kbID] = append(docIDsByKB[kbID], docID)
+	}
+
+	if len(docIDsByKB) == 0 {
+		return
+	}
+
+	// 2. Fetch metadata from ES per KB
+	metaByDoc := make(map[string]map[string]interface{})
+	for kbID, docIDs := range docIDsByKB {
+		result, err := s.SearchMetadata(kbID, tenantID, docIDs, len(docIDs))
+		if err != nil {
+			continue
+		}
+		for _, metaChunk := range result.Chunks {
+			docID, _ := metaChunk["doc_id"].(string)
+			if docID == "" {
+				continue
+			}
+			metaFields, err := ExtractMetaFields(metaChunk)
+			if err != nil || len(metaFields) == 0 {
+				continue
+			}
+			metaByDoc[docID] = metaFields
+		}
+	}
+
+	if len(metaByDoc) == 0 {
+		return
+	}
+
+	// 3. Build field filter set
+	filter := make(map[string]struct{}, len(metadataFields))
+	for _, f := range metadataFields {
+		filter[f] = struct{}{}
+	}
+
+	// 4. Attach metadata to matching chunks
+	for _, chunk := range chunks {
+		docID, _ := chunk["doc_id"].(string)
+		meta, ok := metaByDoc[docID]
+		if !ok {
+			continue
+		}
+		if len(filter) > 0 {
+			filtered := make(map[string]interface{}, len(filter))
+			for k, v := range meta {
+				if _, ok := filter[k]; ok {
+					filtered[k] = v
+				}
+			}
+			if len(filtered) > 0 {
+				chunk["document_metadata"] = filtered
+			}
+		} else {
+			chunk["document_metadata"] = meta
+		}
+	}
+}
+
 // ExtractDocumentID extracts the document ID from a chunk
 func ExtractDocumentID(chunk map[string]interface{}) (string, bool) {
 	docID, ok := chunk["id"].(string)
