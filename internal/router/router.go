@@ -260,10 +260,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
+				datasets.GET("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.ListChunksREST)
+				datasets.POST("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.AddChunk)
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
+				datasets.PATCH("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.UpdateChunkREST)
+				datasets.PATCH("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.SwitchChunks)
+				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
 				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
-				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}
 
 			// Search routes

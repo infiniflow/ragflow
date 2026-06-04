@@ -19,12 +19,13 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
-	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
@@ -35,6 +36,10 @@ type chunkService interface {
 	List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
+	ListChunksREST(datasetID, documentID, userID string, page, pageSize int, keywords string, available *bool) (*service.ListChunksResponse, error)
+	AddChunk(datasetID, documentID, userID string, req *service.AddChunkRequest) (map[string]interface{}, error)
+	UpdateChunkREST(datasetID, documentID, chunkID, userID string, req *service.UpdateChunkRESTRequest) error
+	SwitchChunks(datasetID, documentID, userID string, chunkIDs []string, available bool) error
 }
 
 // ChunkHandler chunk handler
@@ -385,6 +390,197 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"code":    0,
 		"message": "chunk updated successfully",
 	})
+}
+
+// ListChunksREST lists chunks for a document inside a dataset.
+// @Summary List Chunks
+// @Description List chunks for a document (dataset_id and document_id from path).
+// @Tags chunks
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Param document_id path string true "Document ID"
+// @Param page query int false "Page number (default 1)"
+// @Param page_size query int false "Items per page (default 30)"
+// @Param keywords query string false "Keyword filter"
+// @Param available query bool false "Filter by available status"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [get]
+func (h *ChunkHandler) ListChunksREST(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
+	if datasetID == "" || documentID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "dataset_id and document_id are required"})
+		return
+	}
+
+	page := 1
+	if v := c.Query("page"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			page = p
+		}
+	}
+	pageSize := 30
+	if v := c.Query("page_size"); v != "" {
+		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
+			if ps > 100 {
+				ps = 100
+			}
+			pageSize = ps
+		}
+	}
+	keywords := c.Query("keywords")
+
+	var available *bool
+	if v := c.Query("available"); v != "" {
+		b := v == "true" || v == "1"
+		available = &b
+	}
+
+	resp, err := h.chunkService.ListChunksREST(datasetID, documentID, user.ID, page, pageSize, keywords, available)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": resp, "message": "success"})
+}
+
+// AddChunk adds a manually created chunk to a document.
+// @Summary Add Chunk
+// @Description Create a new chunk for a document with content, keywords, and questions.
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Param document_id path string true "Document ID"
+// @Param request body service.AddChunkRequest true "chunk content"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [post]
+func (h *ChunkHandler) AddChunk(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
+	if datasetID == "" || documentID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "dataset_id and document_id are required"})
+		return
+	}
+
+	var req service.AddChunkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	data, err := h.chunkService.AddChunk(datasetID, documentID, user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": data, "message": "success"})
+}
+
+// UpdateChunkREST updates a chunk's content, keywords, and availability.
+// Re-embeds the chunk when content or questions change.
+// @Summary Update Chunk (REST)
+// @Description Partially update a chunk by ID, re-embedding on content/question changes.
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Param document_id path string true "Document ID"
+// @Param chunk_id path string true "Chunk ID"
+// @Param request body service.UpdateChunkRESTRequest true "fields to update"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [patch]
+func (h *ChunkHandler) UpdateChunkREST(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
+	chunkID := c.Param("chunk_id")
+	if datasetID == "" || documentID == "" || chunkID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "dataset_id, document_id and chunk_id are required"})
+		return
+	}
+
+	var req service.UpdateChunkRESTRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	if err := h.chunkService.UpdateChunkREST(datasetID, documentID, chunkID, user.ID, &req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+}
+
+// SwitchChunks bulk-toggles the available status for a list of chunks.
+// @Summary Switch Chunks Availability
+// @Description Toggle available_int for a set of chunk IDs.
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Param document_id path string true "Document ID"
+// @Param request body object true "chunk_ids + available"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [patch]
+func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	datasetID := c.Param("dataset_id")
+	documentID := c.Param("document_id")
+	if datasetID == "" || documentID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "dataset_id and document_id are required"})
+		return
+	}
+
+	var body struct {
+		ChunkIDs  []string `json:"chunk_ids"`
+		Available *bool    `json:"available"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+	if len(body.ChunkIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "`chunk_ids` is required."})
+		return
+	}
+	if body.Available == nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "`available` is required."})
+		return
+	}
+
+	if err := h.chunkService.SwitchChunks(datasetID, documentID, user.ID, body.ChunkIDs, *body.Available); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
 }
 
 // RemoveChunks handles chunk removal requests

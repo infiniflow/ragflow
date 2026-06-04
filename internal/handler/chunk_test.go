@@ -42,6 +42,18 @@ func (m *mockChunkSvc) UpdateChunk(*service.UpdateChunkRequest, string) error {
 func (m *mockChunkSvc) RemoveChunks(*service.RemoveChunksRequest, string) (int64, error) {
 	panic("not implemented")
 }
+func (m *mockChunkSvc) ListChunksREST(datasetID, documentID, userID string, page, pageSize int, keywords string, available *bool) (*service.ListChunksResponse, error) {
+	panic("not implemented")
+}
+func (m *mockChunkSvc) AddChunk(datasetID, documentID, userID string, req *service.AddChunkRequest) (map[string]interface{}, error) {
+	panic("not implemented")
+}
+func (m *mockChunkSvc) UpdateChunkREST(datasetID, documentID, chunkID, userID string, req *service.UpdateChunkRESTRequest) error {
+	panic("not implemented")
+}
+func (m *mockChunkSvc) SwitchChunks(datasetID, documentID, userID string, chunkIDs []string, available bool) error {
+	panic("not implemented")
+}
 
 func setupChunkRetrievalTest(userID string) (*gin.Engine, *mockChunkSvc) {
 	mock := &mockChunkSvc{}
