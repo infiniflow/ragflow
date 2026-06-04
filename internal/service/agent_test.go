@@ -29,7 +29,8 @@ func TestCheckCanvasAccess_Owner(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
+				&entity.User{},entity.User{},
+				&entity.User{},entity.UserCanvas{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
@@ -62,7 +63,8 @@ func TestCheckCanvasAccess_NotOwner(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
+				&entity.User{},entity.User{},
+				&entity.User{},entity.UserCanvas{},
 		&entity.UserCanvas{},
 		&entity.UserTenant{},
 	); err != nil {
@@ -98,7 +100,8 @@ func TestCheckCanvasAccess_PrivateCanvas_Denied(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
+				&entity.User{},entity.User{},
+				&entity.User{},entity.UserCanvas{},
 		&entity.UserCanvas{},
 		&entity.UserTenant{},
 	); err != nil {
@@ -130,7 +133,8 @@ func TestCheckCanvasAccess_NotFound(t *testing.T) {
 	t.Helper()
 
 	if err := testDB.AutoMigrate(
-		&entity.User{},
+				&entity.User{},entity.User{},
+				&entity.User{},entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
