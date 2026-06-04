@@ -10,7 +10,6 @@ import {
   currentReg,
   parseCitationIndex,
   preprocessLaTeX,
-  replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
@@ -36,7 +35,8 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
 import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
@@ -46,6 +46,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const getChunkIndex = (match: string) =>
   parseCitationIndex(match.replace(/\[|\]/g, ''));
+
+const emitChatLinkClick = (url: string) => {
+  const target = window.self !== window.top ? window.parent : window;
+
+  target.postMessage(
+    {
+      type: 'CHAT_LINK_CLICK',
+      url,
+    },
+    '*',
+  );
+};
 
 const FloatingChatWidgetMarkdown = ({
   reference,
@@ -66,7 +78,7 @@ const FloatingChatWidgetMarkdown = ({
   const contentWithCursor = useMemo(() => {
     const text = content === '' ? t('chat.searching') : content;
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, replaceRetrievingToSection, preprocessLaTeX)(nextText);
+    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -291,15 +303,32 @@ const FloatingChatWidgetMarkdown = ({
     <div className="floating-chat-widget" dir={dir}>
       <Markdown
         rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-        remarkPlugins={MarkdownRemarkPlugins}
+        remarkPlugins={[remarkGfm, remarkMath]}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
           {
-            p: (props: any) => {
-              const { children, node, ...rest } = props;
-              void node;
-              return <p {...rest}>{children}</p>;
-            },
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+            a: ({ href, onClick, children, ...props }: any) => (
+              <a
+                {...props}
+                href={href}
+                onClick={(event) => {
+                  onClick?.(event);
+
+                  const clickedUrl =
+                    event.currentTarget.href ||
+                    href ||
+                    event.currentTarget.getAttribute('href') ||
+                    '';
+
+                  if (clickedUrl) {
+                    emitChatLinkClick(clickedUrl);
+                  }
+                }}
+              >
+                {children}
+              </a>
+            ),
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
