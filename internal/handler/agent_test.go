@@ -196,7 +196,5 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	}
 }
 // sptr returns a pointer to the given string.
-func sptr(s string) *string { return &s }
-
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }

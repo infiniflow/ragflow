@@ -42,7 +42,7 @@ type Router struct {
 	skillSearchHandler   *handler.SkillSearchHandler
 	providerHandler           *handler.ProviderHandler
 	agentHandler              *handler.AgentHandler
-	relatedQuestionsHandler   *handler.RelatedQuestionsHandler
+	relatedQuestionsHandler   *handler.SearchbotHandler
 }
 
 // NewRouter create router
@@ -66,7 +66,7 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
-	relatedQuestionsHandler *handler.RelatedQuestionsHandler,
+	relatedQuestionsHandler *handler.SearchbotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,

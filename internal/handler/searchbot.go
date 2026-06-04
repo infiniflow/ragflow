@@ -24,21 +24,24 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
+
+	"go.uber.org/zap"
 )
 
-// relatedQuestionLLM is the interface for LLM calls used by RelatedQuestionsHandler.
-type relatedQuestionLLM interface {
+// searchbotLLM is the interface for LLM calls used by SearchbotHandler.
+type searchbotLLM interface {
 	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
 }
 
-// RelatedQuestionsRealLLM wraps ModelProviderService to implement relatedQuestionLLM.
-type RelatedQuestionsRealLLM struct {
+// SearchbotRealLLM wraps ModelProviderService to implement searchbotLLM.
+type SearchbotRealLLM struct {
 	Svc *service.ModelProviderService
 }
 
-func (r *RelatedQuestionsRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (r *SearchbotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
 	if err != nil {
 		return nil, err
@@ -46,21 +49,22 @@ func (r *RelatedQuestionsRealLLM) Chat(tenantID, modelID string, messages []mode
 	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
 }
 
-// RelatedQuestionsRequest is the request body for POST /api/v1/searchbots/related_questions.
-type RelatedQuestionsRequest struct {
+// SearchbotRequest is the request body for POST /api/v1/searchbots/related_questions.
+type SearchbotRequest struct {
 	Question string `json:"question" binding:"required"`
 	SearchID string `json:"search_id,omitempty"`
 }
 
-// RelatedQuestionsHandler handles POST /api/v1/searchbots/related_questions.
-type RelatedQuestionsHandler struct {
+// SearchbotHandler handles POST /api/v1/searchbots/related_questions.
+type SearchbotHandler struct {
 	searchSvc *service.SearchService
-	llm       relatedQuestionLLM
+	tenantSvc *service.TenantService
+	llm       searchbotLLM
 }
 
-// NewRelatedQuestionsHandler creates a new RelatedQuestionsHandler.
-func NewRelatedQuestionsHandler(searchSvc *service.SearchService, llm relatedQuestionLLM) *RelatedQuestionsHandler {
-	return &RelatedQuestionsHandler{searchSvc: searchSvc, llm: llm}
+// NewSearchbotHandler creates a new SearchbotHandler.
+func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM) *SearchbotHandler {
+	return &SearchbotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm}
 }
 
 // Handle generates related search questions based on a user query.
@@ -69,17 +73,17 @@ func NewRelatedQuestionsHandler(searchSvc *service.SearchService, llm relatedQue
 // @Tags searchbots
 // @Accept json
 // @Produce json
-// @Param request body RelatedQuestionsRequest true "Request body"
+// @Param request body SearchbotRequest true "Request body"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/related_questions [post]
-func (h *RelatedQuestionsHandler) Handle(c *gin.Context) {
+func (h *SearchbotHandler) Handle(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	var req RelatedQuestionsRequest
+	var req SearchbotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeArgumentError,
@@ -109,8 +113,11 @@ func (h *RelatedQuestionsHandler) Handle(c *gin.Context) {
 			}
 		}
 	}
-	if modelID == "" {
-		modelID = user.ID
+	if modelID == "" && h.tenantSvc != nil {
+		defaultModel, err := h.tenantSvc.GetDefaultModelName(user.ID, entity.ModelTypeChat)
+		if err == nil && defaultModel != "" {
+			modelID = defaultModel
+		}
 	}
 
 	messages := []modelModule.Message{
@@ -124,15 +131,19 @@ func (h *RelatedQuestionsHandler) Handle(c *gin.Context) {
 
 	response, err := h.llm.Chat(user.ID, modelID, messages, genConf)
 	if err != nil {
+		common.Warn("searchbot LLM call failed", zap.String("error", err.Error()))
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,
 			"data":    nil,
-			"message": "LLM call failed: " + err.Error(),
+			"message": "LLM call failed",
 		})
 		return
 	}
 
-	questions := parseRelatedQuestions(*response.Answer)
+	var questions []string
+	if response != nil && response.Answer != nil {
+		questions = parseRelatedQuestions(*response.Answer)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    questions,

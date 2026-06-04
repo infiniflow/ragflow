@@ -29,20 +29,20 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// fakeRelatedQuestionsLLM implements relatedQuestionLLM for testing.
-type fakeRelatedQuestionsLLM struct {
+// fakeSearchbotLLM implements searchbotLLM for testing.
+type fakeSearchbotLLM struct {
 	response string
 	err      error
 }
 
-func (f *fakeRelatedQuestionsLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+func (f *fakeSearchbotLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return &modelModule.ChatResponse{Answer: &f.response}, nil
 }
 
-func setupRelatedQuestionsRequest(body string) (*gin.Context, *httptest.ResponseRecorder) {
+func setupSearchbotRequest(body string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -54,17 +54,17 @@ func setupRelatedQuestionsRequest(body string) (*gin.Context, *httptest.Response
 	return c, w
 }
 
-// TestRelatedQuestionsHandler_Success verifies the happy path.
-func TestRelatedQuestionsHandler_Success(t *testing.T) {
-	llm := &fakeRelatedQuestionsLLM{
+// TestSearchbotHandler_Success verifies the happy path.
+func TestSearchbotHandler_Success(t *testing.T) {
+	llm := &fakeSearchbotLLM{
 		response: `Here are some related questions:
 1. How do EV impact environment?
 2. What are advantages of EV?
 3. Cost of EV?`,
 	}
-	h := NewRelatedQuestionsHandler(nil, llm)
+	h := NewSearchbotHandler(nil, nil, llm)
 
-	c, w := setupRelatedQuestionsRequest(`{"question": "EV benefits"}`)
+	c, w := setupSearchbotRequest(`{"question": "EV benefits"}`)
 	h.Handle(c)
 
 	var resp map[string]interface{}
@@ -85,14 +85,14 @@ func TestRelatedQuestionsHandler_Success(t *testing.T) {
 	}
 }
 
-// TestRelatedQuestionsHandler_EmptyResponse verifies empty LLM response returns empty list.
-func TestRelatedQuestionsHandler_EmptyResponse(t *testing.T) {
-	llm := &fakeRelatedQuestionsLLM{
+// TestSearchbotHandler_EmptyResponse verifies empty LLM response returns empty list.
+func TestSearchbotHandler_EmptyResponse(t *testing.T) {
+	llm := &fakeSearchbotLLM{
 		response: "No related questions found.",
 	}
-	h := NewRelatedQuestionsHandler(nil, llm)
+	h := NewSearchbotHandler(nil, nil, llm)
 
-	c, w := setupRelatedQuestionsRequest(`{"question": "EV benefits"}`)
+	c, w := setupSearchbotRequest(`{"question": "EV benefits"}`)
 	h.Handle(c)
 
 	var resp map[string]interface{}
@@ -109,14 +109,14 @@ func TestRelatedQuestionsHandler_EmptyResponse(t *testing.T) {
 	}
 }
 
-// TestRelatedQuestionsHandler_LLMFailure verifies error handling on LLM failure.
-func TestRelatedQuestionsHandler_LLMFailure(t *testing.T) {
-	llm := &fakeRelatedQuestionsLLM{
+// TestSearchbotHandler_LLMFailure verifies error handling on LLM failure.
+func TestSearchbotHandler_LLMFailure(t *testing.T) {
+	llm := &fakeSearchbotLLM{
 		err: errFake{msg: "LLM unavailable"},
 	}
-	h := NewRelatedQuestionsHandler(nil, llm)
+	h := NewSearchbotHandler(nil, nil, llm)
 
-	c, w := setupRelatedQuestionsRequest(`{"question": "EV benefits"}`)
+	c, w := setupSearchbotRequest(`{"question": "EV benefits"}`)
 	h.Handle(c)
 
 	var resp map[string]interface{}
@@ -127,12 +127,12 @@ func TestRelatedQuestionsHandler_LLMFailure(t *testing.T) {
 	}
 }
 
-// TestRelatedQuestionsHandler_MissingQuestion verifies validation.
-func TestRelatedQuestionsHandler_MissingQuestion(t *testing.T) {
-	llm := &fakeRelatedQuestionsLLM{response: "dummy"}
-	h := NewRelatedQuestionsHandler(nil, llm)
+// TestSearchbotHandler_MissingQuestion verifies validation.
+func TestSearchbotHandler_MissingQuestion(t *testing.T) {
+	llm := &fakeSearchbotLLM{response: "dummy"}
+	h := NewSearchbotHandler(nil, nil, llm)
 
-	c, w := setupRelatedQuestionsRequest(`{}`)
+	c, w := setupSearchbotRequest(`{}`)
 	h.Handle(c)
 
 	var resp map[string]interface{}

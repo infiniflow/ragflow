@@ -212,9 +212,10 @@ func startServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService())
-	relatedQuestionsHandler := handler.NewRelatedQuestionsHandler(
+	relatedQuestionsHandler := handler.NewSearchbotHandler(
 		searchService,
-		&handler.RelatedQuestionsRealLLM{Svc: modelProviderService},
+		tenantService,
+		&handler.SearchbotRealLLM{Svc: modelProviderService},
 	)
 
 	// Initialize router
