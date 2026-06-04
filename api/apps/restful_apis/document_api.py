@@ -1919,20 +1919,11 @@ async def get(doc_id):
     enumeration.
     """
     try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Document not found!")
+
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
-            return get_data_error_result(message="Document not found!")
-        if not DocumentService.accessible(doc_id, current_user.id):
-            # Issue #15501: PR #15146 dropped this check, letting any
-            # authenticated caller download any tenant's document bytes by
-            # guessing/knowing the doc_id. Return the same "Document not
-            # found!" shape used for missing docs so the response is
-            # indistinguishable to a cross-tenant probe (avoids ID
-            # enumeration).
-            logging.warning(
-                "Rejected /documents/<doc_id>/preview cross-tenant access: "
-                "caller_user=%s doc_id=%s", current_user.id, doc_id,
-            )
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)

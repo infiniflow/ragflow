@@ -91,6 +91,15 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	// Mark all responses from Go with a header for debugging.
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-API-Source", "go")
+		c.Next()
+	})
+
+	// Log all HTTP requests.
+	engine.Use(gin.Logger())
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
@@ -234,6 +243,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}
 
@@ -358,6 +368,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 			}
 
 			connector := v1.Group("/connectors")
