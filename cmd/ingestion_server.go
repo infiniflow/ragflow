@@ -110,13 +110,6 @@ func main() {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 
-	// Initialize LLM factory data models from configuration file
-	if err := dao.InitLLMFactory(); err != nil {
-		common.Error("Failed to initialize LLM factory", err)
-	} else {
-		common.Info("LLM factory initialized successfully")
-	}
-
 	// Initialize doc engine
 	if err := engine.Init(&config.DocEngine); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))

@@ -84,7 +84,7 @@ func (s *SystemService) CreateAPIToken(tenantID string, req *CreateAPITokenReque
 	// token: "ragflow-" + secrets.token_urlsafe(32)
 	APIToken := utility.GenerateAPIToken()
 	// beta: generate_confirmation_token().replace("ragflow-", "")[:32]
-	betaAPIKey := utility.GenerateBetaAPIToken(APIToken)
+	betaAPIKey := utility.GenerateBetaAPIToken(utility.GenerateAPIToken())
 
 	APITokenData := &entity.APIToken{
 		TenantID: tenantID,

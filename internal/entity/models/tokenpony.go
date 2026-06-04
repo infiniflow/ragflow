@@ -73,16 +73,16 @@ func NewTokenPonyModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenPon
 	}
 }
 
-func (a *TokenPonyModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewTokenPonyModel(baseURL, a.URLSuffix)
+func (t *TokenPonyModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewTokenPonyModel(baseURL, t.URLSuffix)
 }
 
-func (a *TokenPonyModel) Name() string {
+func (t *TokenPonyModel) Name() string {
 	return "tokenpony"
 }
 
-func (a *TokenPonyModel) baseURLForRegion(region string) (string, error) {
-	base, ok := a.BaseURL[region]
+func (t *TokenPonyModel) baseURLForRegion(region string) (string, error) {
+	base, ok := t.BaseURL[region]
 	if !ok || base == "" {
 		return "", fmt.Errorf("tokenpony: no base URL configured for region %q", region)
 	}
@@ -93,7 +93,7 @@ func (a *TokenPonyModel) baseURLForRegion(region string) (string, error) {
 // full response. Forwards documented OpenAI-shaped parameters when the
 // caller supplies them; reasoning_content is surfaced separately so the
 // visible Answer is never polluted by chain-of-thought.
-func (a *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (t *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -106,11 +106,11 @@ func (a *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, 
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -156,7 +156,7 @@ func (a *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := t.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -214,7 +214,7 @@ func (a *TokenPonyModel) ChatWithMessages(modelName string, messages []Message, 
 // forwards each delta through the supplied sender. Reasoning chunks go
 // to the sender's second argument, content chunks to the first; the
 // stream is terminated by either `[DONE]` or a delta with finish_reason.
-func (a *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (t *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -230,11 +230,11 @@ func (a *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -285,7 +285,7 @@ func (a *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := t.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -374,7 +374,7 @@ func (a *TokenPonyModel) ChatStreamlyWithSender(modelName string, messages []Mes
 // ListModels returns the model ids visible to the API key by calling
 // /v1/models. Used by Add-Provider's connection check and by the UI's
 // model picker.
-func (a *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (t *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -384,11 +384,11 @@ func (a *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := a.baseURLForRegion(region)
+	baseURL, err := t.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, a.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", baseURL, t.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -399,7 +399,7 @@ func (a *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := a.httpClient.Do(req)
+	resp, err := t.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -441,8 +441,8 @@ func (a *TokenPonyModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 // CheckConnection verifies the API key by calling ListModels. The /v1/models
 // endpoint is the documented lightweight way to validate credentials on
 // OpenAI-compatible gateways without burning chat-completion quota.
-func (a *TokenPonyModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := a.ListModels(apiConfig)
+func (t *TokenPonyModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := t.ListModels(apiConfig)
 	return err
 }
 
@@ -568,42 +568,42 @@ func (a *TokenPonyModel) Embed(
 	return embeddings, nil
 }
 
-func (a *TokenPonyModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
 
-func (a *TokenPonyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+func (t *TokenPonyModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }
