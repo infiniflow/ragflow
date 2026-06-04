@@ -72,6 +72,7 @@ class DocumentSource(str, Enum):
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
     HIGHSPOT = "highspot"
+    AZURE_BLOB = "azure_blob"
 
 
 class FileOrigin(str, Enum):
