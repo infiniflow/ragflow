@@ -108,7 +108,7 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		},
 	})
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.ListAgentVersions(c)
 
 	if w.Code != http.StatusOK {
@@ -158,7 +158,7 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	// Canvas owned by user-b
 	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", Title: sptr("Not Yours")})
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.ListAgentVersions(c)
 
 	var resp map[string]interface{}
@@ -185,7 +185,7 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "agent_id", Value: "non-existent"}}
 
-	h := NewAgentHandler(service.NewAgentService())
+	h := NewAgentHandler(service.NewAgentService(), nil)
 	h.ListAgentVersions(c)
 
 	var resp map[string]interface{}
@@ -196,7 +196,5 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	}
 }
 // sptr returns a pointer to the given string.
-func sptr(s string) *string { return &s }
-
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
