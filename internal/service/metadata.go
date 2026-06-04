@@ -249,8 +249,6 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 	return flattedMeta, nil
 }
 
-// EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
-// Equivalent to Python: enrich_chunks_with_document_metadata()
 // CollectDocIDsByKB collects unique (kb_id, doc_id) pairs from chunks.
 func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	seen := make(map[string]struct{})
@@ -323,6 +321,7 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 }
 
 // EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
+// Combines CollectDocIDsByKB, FetchDocMetaByKB, and AttachDocMetaToChunks.
 func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
 	if len(chunks) == 0 || s.docEngine == nil {
 		return
