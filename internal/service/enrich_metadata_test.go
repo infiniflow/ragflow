@@ -20,6 +20,29 @@ import (
 	"testing"
 )
 
+// --- extractDocID ---
+
+func TestExtractDocID_FromID(t *testing.T) {
+	chunk := map[string]interface{}{"id": "doc1", "doc_id": "doc2"}
+	if got := extractDocID(chunk); got != "doc1" {
+		t.Errorf("expected doc1, got %q", got)
+	}
+}
+
+func TestExtractDocID_FromDocID(t *testing.T) {
+	chunk := map[string]interface{}{"doc_id": "doc2"}
+	if got := extractDocID(chunk); got != "doc2" {
+		t.Errorf("expected doc2, got %q", got)
+	}
+}
+
+func TestExtractDocID_Empty(t *testing.T) {
+	chunk := map[string]interface{}{"title": "no id"}
+	if got := extractDocID(chunk); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
 // --- CollectDocIDsByKB ---
 
 func TestCollectDocIDsByKB_Empty(t *testing.T) {
@@ -65,6 +88,26 @@ func TestCollectDocIDsByKB_MultipleKBs(t *testing.T) {
 	}
 	if len(result["kb2"]) != 1 || result["kb2"][0] != "doc2" {
 		t.Errorf("unexpected kb2: %v", result["kb2"])
+	}
+}
+
+func TestCollectDocIDsByKB_UsesIDField(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"id": "doc1", "kb_id": "kb1"},
+	}
+	result := CollectDocIDsByKB(chunks)
+	if len(result["kb1"]) != 1 || result["kb1"][0] != "doc1" {
+		t.Errorf("expected doc1 from id field, got %v", result["kb1"])
+	}
+}
+
+func TestCollectDocIDsByKB_PrefersIDOverDocID(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"id": "doc-from-id", "doc_id": "doc-from-doc-id", "kb_id": "kb1"},
+	}
+	result := CollectDocIDsByKB(chunks)
+	if result["kb1"][0] != "doc-from-id" {
+		t.Errorf("expected doc-from-id (id takes precedence), got %v", result["kb1"])
 	}
 }
 
@@ -120,6 +163,19 @@ func TestAttachDocMetaToChunks_FilterFields(t *testing.T) {
 	}
 	if _, ok := meta["category"]; ok {
 		t.Error("category should be filtered out")
+	}
+}
+
+func TestAttachDocMetaToChunks_UsesIDField(t *testing.T) {
+	chunks := []map[string]interface{}{{"id": "doc1"}}
+	metaByDoc := DocMetaMap{"doc1": {"author": "Zhang San"}}
+	AttachDocMetaToChunks(chunks, metaByDoc, nil)
+	meta, ok := chunks[0]["document_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected document_metadata when chunk uses id field")
+	}
+	if meta["author"] != "Zhang San" {
+		t.Errorf("expected 'Zhang San', got %v", meta["author"])
 	}
 }
 
