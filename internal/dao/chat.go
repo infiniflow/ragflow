@@ -238,3 +238,16 @@ func (dao *ChatDAO) QueryByTenantIDAndID(tenantID string, chatID string, status 
 	err := DB.Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, status).Find(&chats).Error
 	return chats, err
 }
+
+// NameConflictExists returns true when a *different* chat in the same tenant already uses the given name.
+// excludeID may be empty (create path) or the ID of the chat being updated (patch path).
+func (dao *ChatDAO) NameConflictExists(tenantID, name, excludeID, status string) (bool, error) {
+	query := DB.Model(&entity.Chat{}).
+		Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND status = ?", tenantID, name, status)
+	if excludeID != "" {
+		query = query.Where("id <> ?", excludeID)
+	}
+	var count int64
+	err := query.Count(&count).Error
+	return count > 0, err
+}

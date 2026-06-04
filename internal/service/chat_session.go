@@ -239,7 +239,9 @@ func (s *ChatSessionService) ListChatSessions(userID string, chatID string) (*Li
 	}
 
 	if !isOwner {
-		return nil, errors.New("only owner of dialog authorized for this operation")
+		// Parity with Python _ensure_owned_chat: a non-owned/invalid chat is an
+		// authorization failure (code 109), not a 500.
+		return nil, ErrChatNoAuth
 	}
 
 	// List chat sessions

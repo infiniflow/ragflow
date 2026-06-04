@@ -17,12 +17,14 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
@@ -373,4 +375,170 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"data":    result,
 		"message": "success",
 	})
+}
+
+// CreateChat creates a new chat dialog.
+// @Summary Create Chat
+// @Description Create a new chat dialog for the current user.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param request body service.CreateChatRequest true "chat configuration"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chats [post]
+func (h *ChatHandler) CreateChat(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.CreateChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	data, err := h.chatService.CreateChat(user.ID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": data, "message": "success"})
+}
+
+// PatchChat partially updates an existing chat dialog (owner only).
+// @Summary Patch Chat
+// @Description Partially update a chat dialog. Prompt config and LLM settings are merged with existing values.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param chat_id path string true "Chat ID"
+// @Param request body service.PatchChatRequest true "fields to update"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chats/{chat_id} [patch]
+func (h *ChatHandler) PatchChat(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "chat_id is required"})
+		return
+	}
+
+	// Authorize before reading the body (parity with Python, which calls
+	// _ensure_owned_chat first) so malformed input cannot bypass the ownership
+	// check or leak a raw Go unmarshal error.
+	if err := h.chatService.EnsureOwnedChat(user.ID, chatID); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": err.Error()})
+		return
+	}
+
+	var req service.PatchChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "Invalid request body."})
+		return
+	}
+
+	data, err := h.chatService.PatchChat(user.ID, chatID, &req)
+	if err != nil {
+		if errors.Is(err, service.ErrChatNoAuth) {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": data, "message": "success"})
+}
+
+// DeleteChatByID soft-deletes a single chat (status → "0"). Owner only.
+// @Summary Delete Chat
+// @Description Soft-delete a chat dialog by ID.
+// @Tags chat
+// @Produce json
+// @Param chat_id path string true "Chat ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chats/{chat_id} [delete]
+func (h *ChatHandler) DeleteChatByID(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "chat_id is required"})
+		return
+	}
+
+	if err := h.chatService.DeleteChatByID(user.ID, chatID); err != nil {
+		if errors.Is(err, service.ErrChatNoAuth) {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": true, "message": "success"})
+}
+
+// CreateChatSession creates a new conversation session for a chat. Owner only.
+// @Summary Create Chat Session
+// @Description Create a new conversation session for the given chat.
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Param chat_id path string true "Chat ID"
+// @Param request body object false "session name"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chats/{chat_id}/sessions [post]
+func (h *ChatHandler) CreateChatSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": nil, "message": "chat_id is required"})
+		return
+	}
+
+	var body struct {
+		Name string `json:"name"`
+	}
+	// The body is optional (an empty body falls back to the default name), but a
+	// non-empty malformed body should fail fast with a sanitized message rather
+	// than be silently ignored.
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "Invalid request body."})
+		return
+	}
+
+	name := body.Name
+	if name == "" {
+		name = "New session"
+	}
+
+	data, err := h.chatService.CreateChatSession(user.ID, chatID, name)
+	if err != nil {
+		if errors.Is(err, service.ErrChatNoAuth) {
+			c.JSON(http.StatusOK, gin.H{"code": common.CodeAuthenticationError, "data": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": data, "message": "success"})
 }

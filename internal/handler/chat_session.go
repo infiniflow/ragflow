@@ -17,13 +17,14 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 )
 
@@ -172,10 +173,11 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	// Call service to list chat sessions
 	result, err := h.chatSessionService.ListChatSessions(userID, chatID)
 	if err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "Only owner of dialog authorized for this operation" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
+		// Parity with Python _ensure_owned_chat: a non-owned or invalid chat is an
+		// authorization failure (code 109, HTTP 200) — never a 500.
+		if errors.Is(err, service.ErrChatNoAuth) {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeAuthenticationError,
 				"data":    false,
 				"message": err.Error(),
 			})
