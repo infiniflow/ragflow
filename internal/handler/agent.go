@@ -169,3 +169,57 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 		"message": "",
 	})
 }
+
+// GetAgentVersion returns a specific version for an agent.
+// @Summary Get Agent Version
+// @Description Returns a specific version by ID, verifying it belongs to the given agent.
+// @Tags agents
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Param version_id path string true "Version ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id}/versions/{version_id} [get]
+func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	versionID := c.Param("version_id")
+	if agentID == "" || versionID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "agent_id and version_id are required",
+		})
+		return
+	}
+
+	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+	if err != nil || !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "Agent not found or no permission.",
+		})
+		return
+	}
+
+	version, err := h.agentService.GetVersion(agentID, versionID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"data":    nil,
+			"message": "Version not found.",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    version,
+		"message": "",
+	})
+}
