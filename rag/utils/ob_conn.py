@@ -1021,9 +1021,11 @@ class OBConnection(OBConnectionBase):
                 if order_by:
                     for field, order in order_by.fields:
                         if field not in column_types:
+                            logger.debug("OBConnection.search skipping ORDER BY field '%s': not in column_types", field)
                             continue
                         if isinstance(column_types[field], ARRAY):
                             if isinstance(column_types[field].item_type, ARRAY):
+                                logger.debug("OBConnection.search skipping ORDER BY field '%s': nested ARRAY not supported", field)
                                 continue
                             f = field + "_sort"
                             fields_expr += f", array_avg({field}) AS {f}"
@@ -1305,6 +1307,7 @@ class OBConnection(OBConnectionBase):
         return [row["id"] for row in res.chunks]
 
     def get_scores(self, res) -> dict[str, float]:
+        """Extract chunk ID to relevance score mapping from search results."""
         out = {}
         for chunk in res.chunks:
             chunk_id = chunk.get("id")

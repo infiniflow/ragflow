@@ -569,6 +569,7 @@ class OBConnection(OBConnectionBase):
         return []
 
     def get_scores(self, res) -> dict[str, float]:
+        """Extract message ID to relevance score mapping from search results."""
         out = {}
         if isinstance(res, tuple):
             res = res[0]
