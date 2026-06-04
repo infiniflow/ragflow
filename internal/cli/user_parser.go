@@ -841,6 +841,31 @@ func (p *Parser) parseAddProvider() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseModelNames(raw string) ([]string, error) {
+	modelNames := strings.Fields(raw)
+
+	if len(modelNames) == 0 {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	seen := make(map[string]struct{}, len(modelNames))
+	for _, modelName := range modelNames {
+		if _, ok := seen[modelName]; ok {
+			return nil, fmt.Errorf("duplicate model name: %s", modelName)
+		}
+		seen[modelName] = struct{}{}
+	}
+
+	return modelNames, nil
+}
+
+type AddModelConfig struct {
+	ModelName  string
+	ModelTypes []string
+	MaxTokens  int
+	Thinking   *bool
+}
+
 // syntax: add model 'xxx' to provider 'vllm' instance 'test' with tokens 1024 chat think vision;
 func (p *Parser) parseAddModel() (*Command, error) {
 	p.nextToken() // consume MODEL
@@ -849,7 +874,11 @@ func (p *Parser) parseAddModel() (*Command, error) {
 		return nil, fmt.Errorf("expected model name")
 	}
 
-	modelName, err := p.parseQuotedString()
+	rawModelNames, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	modelNames, err := p.parseModelNames(rawModelNames)
 	if err != nil {
 		return nil, err
 	}
@@ -890,77 +919,145 @@ func (p *Parser) parseAddModel() (*Command, error) {
 	}
 	p.nextToken()
 
+	i := 0
 	var modelTypes []string
 	var supportThink *bool = nil
 	maxTokens := 0
-	if p.curToken.Type == TokenWith {
-		p.nextToken() // pass WITH
-	optionsLoop:
-		for {
-			switch p.curToken.Type {
-			case TokenThink:
-				if supportThink != nil {
-					return nil, fmt.Errorf("think model is already set")
-				}
-				supportThink = new(bool)
-				p.nextToken()
-				*supportThink = true
-			case TokenVision:
-				p.nextToken()
-				modelTypes = append(modelTypes, "vision")
-			case TokenChat:
-				p.nextToken()
-				modelTypes = append(modelTypes, "chat")
-			case TokenEmbedding:
-				p.nextToken()
-				modelTypes = append(modelTypes, "embedding")
-			case TokenRerank:
-				p.nextToken()
-				modelTypes = append(modelTypes, "rerank")
-			case TokenOCR:
-				p.nextToken()
-				modelTypes = append(modelTypes, "ocr")
-			case TokenDocParse:
-				p.nextToken()
-				modelTypes = append(modelTypes, "doc_parse")
-			case TokenTTS:
-				p.nextToken()
-				modelTypes = append(modelTypes, "tts")
-			case TokenASR:
-				p.nextToken()
-				modelTypes = append(modelTypes, "asr")
-			case TokenTokens:
-				p.nextToken() // pass TOKENS
-				if maxTokens != 0 {
-					return nil, fmt.Errorf("max tokens is already given %d", maxTokens)
-				}
-				if p.curToken.Type != TokenInteger {
-					return nil, fmt.Errorf("expected integer")
-				}
-				maxTokens, err = p.parseNumber()
-				if err != nil {
-					return nil, err
-				}
-				p.nextToken() // consume
-			case TokenSemicolon:
-				p.nextToken()
-				break optionsLoop // done
-			default:
-				// No more options to process
-				break optionsLoop
-			}
+
+	models := make([]map[string]any, 0, len(modelNames))
+	if p.curToken.Type != TokenWith {
+		return nil, fmt.Errorf("expected with")
+	}
+	p.nextToken()
+
+A:
+	for {
+		if i >= len(modelNames) {
+			return nil, fmt.Errorf("too many model configs: got more configs than model names")
 		}
+		switch p.curToken.Type {
+		case TokenThink:
+			if supportThink != nil {
+				return nil, fmt.Errorf("think model is already set for model %s", modelNames[i])
+			}
+			value := true
+			supportThink = &value
+			p.nextToken()
+
+		case TokenVision:
+			modelTypes = append(modelTypes, "vision")
+			p.nextToken()
+
+		case TokenChat:
+			modelTypes = append(modelTypes, "chat")
+			p.nextToken()
+
+		case TokenEmbedding:
+			modelTypes = append(modelTypes, "embedding")
+			p.nextToken()
+
+		case TokenRerank:
+			modelTypes = append(modelTypes, "rerank")
+			p.nextToken()
+
+		case TokenOCR:
+			modelTypes = append(modelTypes, "ocr")
+			p.nextToken()
+
+		case TokenDocParse:
+			modelTypes = append(modelTypes, "doc_parse")
+			p.nextToken()
+
+		case TokenTTS:
+			modelTypes = append(modelTypes, "tts")
+			p.nextToken()
+
+		case TokenASR:
+			modelTypes = append(modelTypes, "asr")
+			p.nextToken()
+
+		case TokenToken, TokenTokens:
+			p.nextToken()
+			if maxTokens != 0 {
+				return nil, fmt.Errorf("max tokens is already given %d for model %s", maxTokens, modelNames[i])
+			}
+			if p.curToken.Type != TokenInteger {
+				return nil, fmt.Errorf("expected integer")
+			}
+			var err error
+			maxTokens, err = p.parseNumber()
+			if err != nil {
+				return nil, err
+			}
+			p.nextToken() // consume number
+
+		case TokenComma, TokenSemicolon, TokenEOF:
+			if len(modelTypes) == 0 {
+				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+			}
+
+			seenTypes := make(map[string]struct{}, len(modelTypes))
+			dedupedModelTypes := make([]string, 0, len(modelTypes))
+
+			for _, modelType := range modelTypes {
+				modelType = strings.TrimSpace(modelType)
+				if modelType == "" {
+					continue
+				}
+
+				if _, ok := seenTypes[modelType]; ok {
+					continue
+				}
+
+				seenTypes[modelType] = struct{}{}
+				dedupedModelTypes = append(dedupedModelTypes, modelType)
+			}
+
+			modelTypes = dedupedModelTypes
+			if len(modelTypes) == 0 {
+				return nil, fmt.Errorf("model type is required for model %s", modelNames[i])
+			}
+
+			model := map[string]any{
+				"model_name":  modelNames[i],
+				"model_types": modelTypes,
+				"max_tokens":  maxTokens,
+			}
+			if supportThink != nil {
+				model["thinking"] = *supportThink
+			}
+
+			models = append(models, model)
+
+			i++
+			modelTypes = nil
+			supportThink = nil
+			maxTokens = 0
+
+			if p.curToken.Type == TokenComma {
+				p.nextToken()
+				continue
+			}
+
+			if p.curToken.Type == TokenSemicolon {
+				p.nextToken()
+			}
+			break A
+
+		default:
+			return nil, fmt.Errorf("unexpected token type: %s", p.curToken.Value)
+		}
+
+	}
+	if len(models) != len(modelNames) {
+		return nil, fmt.Errorf("model config count %d does not match model name count %d", len(models), len(modelNames))
 	}
 
 	cmd := NewCommand("add_custom_model")
-	cmd.Params["model_name"] = modelName
-	cmd.Params["model_types"] = modelTypes
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
-	if supportThink != nil {
-		cmd.Params["support_think"] = *supportThink
-	}
-	cmd.Params["max_tokens"] = maxTokens
+
+	cmd.Params["models"] = models
 
 	return cmd, nil
 }

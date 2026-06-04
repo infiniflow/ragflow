@@ -2681,20 +2681,9 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("instance name not provided")
 	}
 
-	modelName, ok := cmd.Params["model_name"].(string)
+	models, ok := cmd.Params["models"].([]map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("model name not provided")
-	}
-
-	// chat, vision, embedding, rerank, tts, asr, ocr
-	modelTypes, ok := cmd.Params["model_types"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("model type not provided")
-	}
-
-	maxTokens, ok := cmd.Params["max_tokens"].(int)
-	if !ok {
-		return nil, fmt.Errorf("max tokens not provided")
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
@@ -2702,14 +2691,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_types":   modelTypes,
-		"max_tokens":    maxTokens,
-	}
-
-	supportThink, ok := cmd.Params["support_think"].(bool)
-	if ok {
-		payload["thinking"] = supportThink
+		"models":        models,
 	}
 
 	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
