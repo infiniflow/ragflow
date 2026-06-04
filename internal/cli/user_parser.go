@@ -1182,6 +1182,8 @@ func (p *Parser) parseRemoveCommand() (*Command, error) {
 		return p.parseRemoveTags()
 	case TokenChunks, TokenAll:
 		return p.parseRemoveChunk()
+	case TokenModel:
+		return p.parseRemoveInstanceModel()
 	default:
 		return nil, fmt.Errorf("unknown REMOVE target: %s", p.curToken.Value)
 	}
@@ -1808,16 +1810,24 @@ func (p *Parser) parseDropInstance() (*Command, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseRemoveInstanceModel() (*Command, error) {
+	return p.parseDropInstanceModel()
+}
+
 // parseDropInstanceModel parses DROP MODEL <name> FROM <provider_name> <instance_name> command
 // Only works for local deployed model
 func (p *Parser) parseDropInstanceModel() (*Command, error) {
 	p.nextToken() // consume MODEL
 
-	modelName, err := p.parseQuotedString()
+	rawModelNames, err := p.parseQuotedString()
 	if err != nil {
-		return nil, fmt.Errorf("expected instance name: %w", err)
+		return nil, err
 	}
-	p.nextToken()
+	modelNames, err := p.parseModelNames(rawModelNames)
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume model name
 
 	if p.curToken.Type != TokenFrom {
 		return nil, fmt.Errorf("expected FROM")
@@ -1839,7 +1849,7 @@ func (p *Parser) parseDropInstanceModel() (*Command, error) {
 	cmd := NewCommand("drop_instance_model")
 	cmd.Params["instance_name"] = instanceName
 	cmd.Params["provider_name"] = providerName
-	cmd.Params["model_name"] = modelName
+	cmd.Params["model_names"] = modelNames
 
 	p.nextToken()
 	// Semicolon is optional

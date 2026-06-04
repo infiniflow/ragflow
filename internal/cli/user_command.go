@@ -1442,7 +1442,8 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 }
 
 // DropInstanceModel deletes a provider instance, only works for local deployed model
-// DROP MODEL <name> FROM <provider_name> <instance_name>
+// DROP MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
+// Remove MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
 func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1458,13 +1459,13 @@ func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	modelName, ok := cmd.Params["model_name"].(string)
+	modelNames, ok := cmd.Params["model_names"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("model name not provided")
 	}
 
 	payload := map[string]interface{}{
-		"models": []string{modelName},
+		"models": modelNames,
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
