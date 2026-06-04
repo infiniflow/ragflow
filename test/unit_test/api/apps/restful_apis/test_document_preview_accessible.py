@@ -60,7 +60,12 @@ def _load_document_api(
     _stub(
         monkeypatch, "api.apps",
         current_user=SimpleNamespace(id="caller-tenant"),
-        login_required=lambda func: func,
+        # `login_required` is used both bare (`@login_required`) and as a factory
+        # (`@login_required(auth_types=[...])`); support both call forms.
+        login_required=lambda *a, **k: (a[0] if a and callable(a[0]) else (lambda func: func)),
+        AUTH_JWT="JWT",
+        AUTH_API="API",
+        AUTH_BETA="BETA",
     )
     _stub(monkeypatch, "api.constants", FILE_NAME_LEN_LIMIT=128, IMG_BASE64_PREFIX="data:image/")
     _stub(
