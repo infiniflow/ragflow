@@ -1,8 +1,25 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,7 +30,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // 208cc2d0e4594ca896a600c43c9497aa
@@ -26,21 +42,17 @@ type FishAudioModel struct {
 
 func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudioModel {
 	return &FishAudioModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		BaseURL:    baseURL,
+		URLSuffix:  urlSuffix,
+		httpClient: &http.Client{},
 	}
 }
 
 func (f *FishAudioModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return &FishAudioModel{
-		BaseURL:   baseURL,
-		URLSuffix: f.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		BaseURL:    baseURL,
+		URLSuffix:  f.URLSuffix,
+		httpClient: &http.Client{},
 	}
 }
 
@@ -130,7 +142,10 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	}
 
 	// request
-	req, err := http.NewRequest("POST", url, &body)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -206,7 +221,10 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -268,7 +286,10 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 	}
 
 	// Build Request
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -336,8 +357,8 @@ func (f *FishAudioModel) OCRFile(modelName *string, content []byte, url *string,
 }
 
 // ParseFile parse file
-func (z *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
@@ -348,7 +369,10 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	url := fmt.Sprintf("%s/%s", f.BaseURL[region], f.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -406,7 +430,10 @@ func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 
 	url := fmt.Sprintf("%s/wallet/self/api-credit", strings.TrimSuffix(baseURL, "/"))
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -441,10 +468,10 @@ func (f *FishAudioModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (z *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (f *FishAudioModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }

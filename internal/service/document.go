@@ -17,12 +17,15 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"ragflow/internal/dao"
@@ -35,13 +38,15 @@ import (
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO      *dao.DocumentDAO
-	kbDAO            *dao.KnowledgebaseDAO
-	ingestionTaskDAO *dao.IngestionDAO
-	ingestionLogDAO  *dao.IngestionLogDAO
-	docEngine        engine.DocEngine
-	engineType       server.EngineType
-	metadataSvc      *MetadataService
+	documentDAO       *dao.DocumentDAO
+	kbDAO             *dao.KnowledgebaseDAO
+	ingestionTaskDAO  *dao.IngestionDAO
+	ingestionLogDAO   *dao.IngestionLogDAO
+	docEngine         engine.DocEngine
+	engineType        server.EngineType
+	metadataSvc       *MetadataService
+	taskDAO           *dao.TaskDAO
+	file2DocumentDAO  *dao.File2DocumentDAO
 }
 
 // NewDocumentService create document service
@@ -55,6 +60,8 @@ func NewDocumentService() *DocumentService {
 		docEngine:        engine.Get(),
 		engineType:       cfg.DocEngine.Type,
 		metadataSvc:      NewMetadataService(),
+		taskDAO:          dao.NewTaskDAO(),
+		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 	}
 }
 
@@ -100,6 +107,27 @@ type DocumentResponse struct {
 	Status          *string `json:"status,omitempty"`
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
+}
+
+type ThumbnailResponse struct {
+	ID        string  `json:"id"`
+	Thumbnail *string `json:"thumbnail,omitempty"`
+	KbID      string  `json:"kb_id"`
+}
+
+// GetDocumentImage retrieves an image object from storage.
+func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
+	parts := strings.Split(imageID, "-")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("Image not found.")
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	return storageImpl.Get(parts[0], parts[1])
 }
 
 // CreateDocument create document
@@ -161,9 +189,157 @@ func (s *DocumentService) UpdateDocument(id string, req *UpdateDocumentRequest) 
 	return s.documentDAO.Update(document)
 }
 
-// DeleteDocument delete document
+// DeleteDocument delete document — delegates to full cleanup logic.
 func (s *DocumentService) DeleteDocument(id string) error {
-	return s.documentDAO.Delete(id)
+	return s.deleteDocumentFull(id)
+}
+
+// DeleteDocuments deletes multiple documents under a dataset.
+//
+//	ids: specific document IDs; deleteAll: delete all docs in the dataset.
+//	Returns the number of successfully deleted documents.
+func (s *DocumentService) DeleteDocuments(ids []string, deleteAll bool, datasetID, userID string) (int, error) {
+	// 1. Check dataset is accessible by the user
+	if !s.kbDAO.Accessible(datasetID, userID) {
+		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
+	}
+
+	// 2. Resolve document IDs
+	if deleteAll {
+		if err := dao.DB.Model(&entity.Document{}).
+			Where("kb_id = ?", datasetID).
+			Pluck("id", &ids).Error; err != nil {
+			return 0, fmt.Errorf("failed to query documents: %w", err)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	// 3. Deduplicate (before validation so dup count doesn't matter)
+	ids = common.Deduplicate(ids)
+
+	// 4. Validate IDs belong to this dataset (only for explicit ids; deleteAll is already scoped)
+	if !deleteAll {
+		docs, err := s.documentDAO.GetByIDs(ids)
+		if err != nil {
+			return 0, fmt.Errorf("failed to fetch documents: %w", err)
+		}
+		if len(docs) != len(ids) {
+			return 0, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
+		}
+		var invalid []string
+		for _, d := range docs {
+			if d.KbID != datasetID {
+				invalid = append(invalid, d.ID)
+			}
+		}
+		if len(invalid) > 0 {
+			return 0, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
+		}
+	}
+
+	// 5. Delete each document (non-critical failures are tolerated per doc)
+	deleted := 0
+	for _, docID := range ids {
+		if err := s.deleteDocumentFull(docID); err != nil {
+			common.Logger.Warn(fmt.Sprintf("DeleteDocuments: failed to delete %s: %v", docID, err))
+			continue
+		}
+		deleted++
+	}
+
+	return deleted, nil
+}
+
+// deleteDocumentFull performs full document cleanup:
+//  1. Delete tasks from DB
+//  2. Delete chunks from document engine
+//  3. Delete metadata from document engine
+//  4. Hard-delete document row + decrement KB counters
+//  5. Delete file2document mapping + file record + storage blob
+//
+// Non-critical failures are tolerated (logged and continue).
+func (s *DocumentService) deleteDocumentFull(docID string) error {
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return fmt.Errorf("document not found: %w", err)
+	}
+	kbID := doc.KbID
+	tokenNum := doc.TokenNum
+	chunkIDNum := doc.ChunkNum
+
+	// Resolve tenant ID for engine index name
+	kb, err := s.kbDAO.GetByID(kbID)
+	if err != nil {
+		return fmt.Errorf("knowledgebase not found: %w", err)
+	}
+	tenantID := kb.TenantID
+
+	// 1. Delete tasks from DB
+	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete tasks for %s: %v", docID, delErr))
+	}
+
+	// 2. Delete chunks from document engine
+	if s.docEngine != nil {
+		ctx := context.Background()
+		indexName := fmt.Sprintf("ragflow_%s", tenantID)
+		if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete chunks for %s: %v", docID, delErr))
+		}
+	}
+
+	// 3. Delete metadata from document engine (skip if engine not available)
+	if s.docEngine != nil && s.metadataSvc != nil {
+		_ = s.DeleteDocumentAllMetadata(docID) // logs internally
+	}
+
+	// 4. Hard-delete document + decrement KB counters
+	if delErr := s.documentDAO.Delete(docID); delErr != nil {
+		return fmt.Errorf("failed to delete document %s: %w", docID, delErr)
+	}
+	if decErr := s.kbDAO.DecreaseDocumentNum(kbID, 1, chunkIDNum, tokenNum); decErr != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to decrement KB counters for %s: %v", kbID, decErr))
+	}
+
+	// 5. Clean up file2document mapping, file record, and storage blob
+	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(docID)
+	if mapErr != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to get file2document mappings for %s: %v", docID, mapErr))
+	}
+	for _, m := range mappings {
+		if m.FileID == nil {
+			continue
+		}
+		fileID := *m.FileID
+		// Delete the mapping
+		if delErr := s.file2DocumentDAO.DeleteByDocumentID(docID); delErr != nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete f2d mapping for %s: %v", docID, delErr))
+		}
+		// Get file to remove storage blob
+		fileDAO := dao.NewFileDAO()
+		file, fErr := fileDAO.GetByID(fileID)
+		if fErr != nil || file == nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: file not found %s: %v", fileID, fErr))
+			continue
+		}
+		// Delete file record
+		if _, delErr := fileDAO.DeleteByIDs([]string{fileID}); delErr != nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to delete file %s: %v", fileID, delErr))
+		}
+		// Delete storage blob
+		if file.Location != nil && *file.Location != "" {
+			storageImpl := storage.GetStorageFactory().GetStorage()
+			if storageImpl != nil {
+				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
+					common.Logger.Warn(fmt.Sprintf("deleteDocumentFull: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // ListDocuments list documents
@@ -180,6 +356,19 @@ func (s *DocumentService) ListDocuments(page, pageSize int) ([]*DocumentResponse
 	}
 
 	return responses, total, nil
+}
+
+func (s *DocumentService) GetThumbnail(docID string) (*ThumbnailResponse, error) {
+	document, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ThumbnailResponse
+	result.ID = document.ID
+	result.Thumbnail = document.Thumbnail
+	result.KbID = document.KbID
+	return &result, nil
 }
 
 // ListDocumentsByDatasetID list documents by knowledge base ID
@@ -282,7 +471,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 		}
 
 		// Send task to message queue
-		
+
 	}
 
 	common.Info(fmt.Sprintf("parse documents, dataset: %s, documents: %v", datasetID, docIDs))
@@ -425,7 +614,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(docID string) error {
 
 	// Build condition to match the document
 	condition := map[string]interface{}{
-		"id":   docID,
+		"id":    docID,
 		"kb_id": doc.KbID,
 	}
 

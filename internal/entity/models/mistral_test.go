@@ -390,6 +390,49 @@ func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
 	}
 }
 
+func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
+	m := newMistralForTest("http://unused")
+	modelName := "mistral-large-latest"
+
+	checks := []struct {
+		name string
+		call func() error
+	}{
+		{"TranscribeAudio", func() error {
+			_, err := m.TranscribeAudio(&modelName, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"TranscribeAudioWithSender", func() error {
+			return m.TranscribeAudioWithSender(&modelName, nil, &APIConfig{}, nil, nil)
+		}},
+		{"AudioSpeech", func() error {
+			_, err := m.AudioSpeech(&modelName, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"AudioSpeechWithSender", func() error {
+			return m.AudioSpeechWithSender(&modelName, nil, &APIConfig{}, nil, nil)
+		}},
+		{"ParseFile", func() error {
+			_, err := m.ParseFile(&modelName, nil, nil, &APIConfig{}, nil)
+			return err
+		}},
+		{"ListTasks", func() error {
+			_, err := m.ListTasks(&APIConfig{})
+			return err
+		}},
+		{"ShowTask", func() error {
+			_, err := m.ShowTask("task-id", &APIConfig{})
+			return err
+		}},
+	}
+
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			requireNoSuchMethod(t, check.name, check.call())
+		})
+	}
+}
+
 func TestMistralEmbedHappyPath(t *testing.T) {
 	srv := newMistralServer(t, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "mistral-embed" {
