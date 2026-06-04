@@ -103,10 +103,10 @@ export function SideBar() {
                   )}
                   onClick={handleMenuClick(key)}
                 >
-                  <section className="flex items-center gap-2.5 max-md:gap-0">
+                  <span className="flex items-center gap-2.5 max-md:gap-0">
                     {icon}
                     <span className="hidden md:inline">{label}</span>
-                  </section>
+                  </span>
                 </Button>
               </li>
             );
