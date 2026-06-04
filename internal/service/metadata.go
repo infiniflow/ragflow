@@ -27,6 +27,14 @@ import (
 	"ragflow/internal/engine/types"
 )
 
+// KBDocIDsMap maps a KB ID to its document IDs.
+// Example: {"kb1": ["doc1", "doc2"], "kb2": ["doc3"]}
+type KBDocIDsMap map[string][]string
+
+// DocMetaMap maps a document ID to its metadata fields.
+// Example: {"doc1": {"author": "Zhang San", "date": "2024-01-01"}}
+type DocMetaMap map[string]map[string]interface{}
+
 // MetadataService provides common metadata operations
 type MetadataService struct {
 	kbDAO     *dao.KnowledgebaseDAO
@@ -243,36 +251,29 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (map[string]interf
 
 // EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
 // Equivalent to Python: enrich_chunks_with_document_metadata()
-func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
-	if len(chunks) == 0 || s.docEngine == nil {
-		return
-	}
-
-	// 1. Collect unique (kb_id, doc_id) pairs
-	type kbDocPair struct{ kbID, docID string }
-	seen := make(map[kbDocPair]struct{})
-	docIDsByKB := make(map[string][]string)
-
+// CollectDocIDsByKB collects unique (kb_id, doc_id) pairs from chunks.
+func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
+	seen := make(map[string]struct{})
+	result := make(KBDocIDsMap)
 	for _, chunk := range chunks {
 		kbID, _ := chunk["kb_id"].(string)
 		docID, _ := chunk["doc_id"].(string)
 		if kbID == "" || docID == "" {
 			continue
 		}
-		pair := kbDocPair{kbID, docID}
-		if _, ok := seen[pair]; ok {
+		key := kbID + ":" + docID
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[pair] = struct{}{}
-		docIDsByKB[kbID] = append(docIDsByKB[kbID], docID)
+		seen[key] = struct{}{}
+		result[kbID] = append(result[kbID], docID)
 	}
+	return result
+}
 
-	if len(docIDsByKB) == 0 {
-		return
-	}
-
-	// 2. Fetch metadata from ES per KB
-	metaByDoc := make(map[string]map[string]interface{})
+// FetchDocMetaByKB fetches document metadata from ES for each KB.
+func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
+	metaByDoc := make(DocMetaMap)
 	for kbID, docIDs := range docIDsByKB {
 		result, err := s.SearchMetadata(kbID, tenantID, docIDs, len(docIDs))
 		if err != nil {
@@ -290,18 +291,15 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 			metaByDoc[docID] = metaFields
 		}
 	}
+	return metaByDoc
+}
 
-	if len(metaByDoc) == 0 {
-		return
-	}
-
-	// 3. Build field filter set
+// AttachDocMetaToChunks attaches document metadata to matching chunks in-place.
+func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap, metadataFields []string) {
 	filter := make(map[string]struct{}, len(metadataFields))
 	for _, f := range metadataFields {
 		filter[f] = struct{}{}
 	}
-
-	// 4. Attach metadata to matching chunks
 	for _, chunk := range chunks {
 		docID, _ := chunk["doc_id"].(string)
 		meta, ok := metaByDoc[docID]
@@ -322,6 +320,22 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 			chunk["document_metadata"] = meta
 		}
 	}
+}
+
+// EnrichChunksWithDocMetadata attaches document metadata to each chunk in-place.
+func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interface{}, tenantID string, metadataFields []string) {
+	if len(chunks) == 0 || s.docEngine == nil {
+		return
+	}
+	docIDsByKB := CollectDocIDsByKB(chunks)
+	if len(docIDsByKB) == 0 {
+		return
+	}
+	metaByDoc := s.FetchDocMetaByKB(docIDsByKB, tenantID)
+	if len(metaByDoc) == 0 {
+		return
+	}
+	AttachDocMetaToChunks(chunks, metaByDoc, metadataFields)
 }
 
 // ExtractDocumentID extracts the document ID from a chunk
