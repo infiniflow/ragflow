@@ -83,27 +83,27 @@ func NewFuturMixModel(baseURL map[string]string, urlSuffix URLSuffix) *FuturMixM
 	}
 }
 
-func (m *FuturMixModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewFuturMixModel(baseURL, m.URLSuffix)
+func (f *FuturMixModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewFuturMixModel(baseURL, f.URLSuffix)
 }
 
-func (m *FuturMixModel) Name() string {
+func (f *FuturMixModel) Name() string {
 	return "futurmix"
 }
 
 // baseURLForRegion returns the base URL for the given region, trimmed
 // of any trailing slash so callers can append a suffix without
 // producing "//" in the path.
-func (m *FuturMixModel) baseURLForRegion(region string) (string, error) {
-	base, ok := m.BaseURL[region]
+func (f *FuturMixModel) baseURLForRegion(region string) (string, error) {
+	base, ok := f.BaseURL[region]
 	if !ok || base == "" {
 		return "", fmt.Errorf("futurmix: no base URL configured for region %q", region)
 	}
 	return strings.TrimRight(base, "/"), nil
 }
 
-func (m *FuturMixModel) endpointURL(region, suffix string) (string, error) {
-	baseURL, err := m.baseURLForRegion(region)
+func (f *FuturMixModel) endpointURL(region, suffix string) (string, error) {
+	baseURL, err := f.baseURLForRegion(region)
 	if err != nil {
 		return "", err
 	}
@@ -206,7 +206,7 @@ type futurmixChatResponse struct {
 // FuturMix's /v1/chat/completions endpoint. Wire shape follows the
 // OpenAI Chat Completions contract since FuturMix is documented as
 // "OpenAI-compatible".
-func (m *FuturMixModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (f *FuturMixModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	apiKey, err := futurmixValidateAPIKey(apiConfig)
 	if err != nil {
 		return nil, err
@@ -218,7 +218,7 @@ func (m *FuturMixModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	endpoint, err := m.endpointURL(futurmixRegion(apiConfig), m.URLSuffix.Chat)
+	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func (m *FuturMixModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -280,7 +280,7 @@ func (m *FuturMixModel) ChatWithMessages(modelName string, messages []Message, a
 // reveals divergence (e.g. routed Claude responses surfacing in
 // /v1/messages-style chunks) the SSE event parser is where to
 // intervene.
-func (m *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (f *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -295,7 +295,7 @@ func (m *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return err
 	}
 
-	endpoint, err := m.endpointURL(futurmixRegion(apiConfig), m.URLSuffix.Chat)
+	endpoint, err := f.endpointURL(futurmixRegion(apiConfig), f.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -318,7 +318,7 @@ func (m *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -436,70 +436,70 @@ func (m *FuturMixModel) ChatStreamlyWithSender(modelName string, messages []Mess
 }
 
 // Embed is not exposed by the FuturMix API per the public docs.
-func (m *FuturMixModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // Rerank is not exposed by the FuturMix API per the public docs.
-func (m *FuturMixModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // ListModels is not documented as a public endpoint by FuturMix.
 // The shipped catalog in conf/models/futurmix.json is the source of
 // truth for which models RAGFlow knows about; this method does not
 // invent a fake live listing.
-func (m *FuturMixModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // CheckConnection is not exposed by the FuturMix API. With no
 // documented /models or /health endpoint, the only way to verify
 // credentials would be to burn a real chat completion against
 // tenant quota — return the documented sentinel rather than pretend.
-func (m *FuturMixModel) CheckConnection(apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) CheckConnection(apiConfig *APIConfig) error {
+	return fmt.Errorf("%s, no such method", f.Name())
 }
 
 // Balance is not exposed by the FuturMix public API.
-func (m *FuturMixModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // TranscribeAudio is not exposed by the FuturMix API per the docs.
-func (m *FuturMixModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (m *FuturMixModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", f.Name())
 }
 
 // AudioSpeech is not exposed by the FuturMix API per the docs.
-func (m *FuturMixModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
-func (m *FuturMixModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", f.Name())
 }
 
 // OCRFile is not exposed by the FuturMix API per the docs.
-func (m *FuturMixModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // ParseFile is not exposed by the FuturMix API per the docs.
-func (m *FuturMixModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // ListTasks is not exposed by the FuturMix API per the docs.
-func (m *FuturMixModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
 
 // ShowTask is not exposed by the FuturMix API per the docs.
-func (m *FuturMixModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (f *FuturMixModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }

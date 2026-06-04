@@ -34,7 +34,7 @@ import (
 type GiteeModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	httpClient *http.Client
 }
 
 // NewGiteeModel creates a new Gitee model instance
@@ -605,8 +605,8 @@ func (g *GiteeModel) TranscribeAudio(modelName *string, file *string, apiConfig 
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (z *GiteeModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (g *GiteeModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", g.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -614,8 +614,8 @@ func (g *GiteeModel) AudioSpeech(modelName *string, audioContent *string, apiCon
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (z *GiteeModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (g *GiteeModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", g.Name())
 }
 
 type giteeOCRResponse struct {
@@ -910,7 +910,6 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := g.httpClient.Do(req)
 	if err != nil {
@@ -946,12 +945,21 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+
+	var baseURL = ""
+	if apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
+		baseURL = *apiConfig.BaseURL
 	}
 
-	url := fmt.Sprintf("%s/%s", g.BaseURL[region], g.URLSuffix.Balance)
+	if baseURL == "" {
+		var region = "default"
+		if apiConfig.Region != nil && *apiConfig.Region != "" {
+			region = *apiConfig.Region
+		}
+		baseURL = g.BaseURL[region]
+	}
+
+	url := fmt.Sprintf("%s/%s", baseURL, g.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
