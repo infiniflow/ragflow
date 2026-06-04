@@ -157,6 +157,7 @@ class FileSource(StrEnum):
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
     AXERO = "axero"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
