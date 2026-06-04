@@ -71,7 +71,7 @@ func newTokenPonySSEServer(t *testing.T, expectedPath, ssePayload string) *httpt
 func newTokenPonyForTest(baseURL string) *TokenPonyModel {
 	return NewTokenPonyModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "chat/completions", Models: "models"},
+		URLSuffix{Chat: "chat/completions", Models: "models", Embedding: "embeddings"},
 	)
 }
 
@@ -424,11 +424,213 @@ func TestTokenPonyBaseURLForRegionUnknown(t *testing.T) {
 	}
 }
 
-func TestTokenPonyEmbedReturnsNoSuchMethod(t *testing.T) {
-	model := "x"
+// TestTokenPonyEmbedHappyPath verifies request shape and dimensions on /v1/embeddings.
+func TestTokenPonyEmbedHappyPath(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "text-embedding-3-small" {
+			t.Errorf("model=%v", body["model"])
+		}
+		if body["dimensions"] != float64(256) {
+			t.Errorf("dimensions=%v, want 256", body["dimensions"])
+		}
+		inputs, ok := body["input"].([]interface{})
+		if !ok || len(inputs) != 2 {
+			t.Errorf("input=%v, want 2-element array", body["input"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1, 0.2}, "index": 0},
+				{"embedding": []float64{0.3, 0.4}, "index": 1},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	vecs, err := newTokenPonyForTest(srv.URL).Embed(
+		&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 256})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(vecs) != 2 || vecs[1].Embedding[0] != 0.3 || vecs[1].Index != 1 {
+		t.Errorf("vecs=%+v", vecs)
+	}
+}
+
+// TestTokenPonyEmbedReordersByIndex verifies out-of-order response indices are mapped correctly.
+func TestTokenPonyEmbedReordersByIndex(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{2}, "index": 2},
+				{"embedding": []float64{0}, "index": 0},
+				{"embedding": []float64{1}, "index": 1},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	vecs, err := newTokenPonyForTest(srv.URL).Embed(
+		&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	for i, v := range vecs {
+		if v.Index != i || v.Embedding[0] != float64(i) {
+			t.Errorf("slot %d = %+v, want Embedding=[%d] Index=%d", i, v, i, i)
+		}
+	}
+}
+
+// TestTokenPonyEmbedEmptyInputShortCircuits avoids HTTP when texts is empty.
+func TestTokenPonyEmbedEmptyInputShortCircuits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("Embed([]) made an unexpected HTTP call")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	vecs, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("Embed([]): %v", err)
+	}
+	if len(vecs) != 0 {
+		t.Errorf("len(vecs)=%d, want 0", len(vecs))
+	}
+}
+
+// TestTokenPonyEmbedRequiresAPIKey rejects requests without an API key.
+func TestTokenPonyEmbedRequiresAPIKey(t *testing.T) {
+	model := "text-embedding-3-small"
 	_, err := newTokenPonyForTest("http://unused").Embed(&model, []string{"a"}, &APIConfig{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Embed: want 'no such method', got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Errorf("expected api-key error, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRequiresModelName rejects requests without a model name.
+func TestTokenPonyEmbedRequiresModelName(t *testing.T) {
+	apiKey := "test-key"
+	_, err := newTokenPonyForTest("http://unused").Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "model name is required") {
+		t.Errorf("expected model-name error, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRejectsHTTPError surfaces non-200 responses from the API.
+func TestTokenPonyEmbedRejectsHTTPError(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"bad key"}`))
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	_, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected 401 propagated, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRejectsDuplicateIndex errors on duplicate response indices.
+func TestTokenPonyEmbedRejectsDuplicateIndex(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0}, "index": 0},
+				{"embedding": []float64{1}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	_, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("expected duplicate-index error, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRejectsOutOfRangeIndex errors when index exceeds input length.
+func TestTokenPonyEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0}, "index": 2},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	_, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("expected out-of-range error, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRejectsMissingIndex errors when index is omitted from response.
+func TestTokenPonyEmbedRejectsMissingIndex(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	_, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding index") {
+		t.Errorf("expected missing-index error, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRejectsMissingSlot errors when a response index is never returned.
+func TestTokenPonyEmbedRejectsMissingSlot(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{0.1}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	_, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index") {
+		t.Errorf("expected missing-slot error, got %v", err)
+	}
+}
+
+// TestTokenPonyEmbedRejectsEmptyVector errors when the API returns a zero-length vector.
+func TestTokenPonyEmbedRejectsEmptyVector(t *testing.T) {
+	srv := newTokenPonyServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"embedding": []float64{}, "index": 0},
+			},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	model := "text-embedding-3-small"
+	_, err := newTokenPonyForTest(srv.URL).Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "empty embedding vector") {
+		t.Errorf("expected empty-vector error, got %v", err)
 	}
 }
 
