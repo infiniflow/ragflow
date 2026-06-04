@@ -50,15 +50,14 @@ type documentServiceIface interface {
 	GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error)
 	GetThumbnail(docID string) (*service.ThumbnailResponse, error)
 	GetDocumentImage(imageID string) ([]byte, error)
+	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
+	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
+	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
 	GetMetadataSummary(kbID string, docIDs []string) (map[string]interface{}, error)
 	SetDocumentMetadata(docID string, meta map[string]interface{}) error
 	DeleteDocumentMetadata(docID string, keys []string) error
 	DeleteDocumentAllMetadata(docID string) error
 	GetDocumentMetadataByID(docID string) (map[string]interface{}, error)
-
-	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
-	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
-	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
 }
 
 // DocumentHandler document handler
@@ -235,10 +234,25 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
 	docID := c.Param("id")
 
 	if docID == "" {
 		jsonError(c, common.CodeParamError, "id is required")
+		return
+	}
+
+	doc, err := h.documentService.GetDocumentByID(docID)
+	if err != nil || !h.datasetService.Accessible(doc.KbID, user.ID) {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Document not found!",
+		})
 		return
 	}
 

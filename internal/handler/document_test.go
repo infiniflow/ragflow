@@ -67,6 +67,15 @@ func (f *fakeDocumentService) GetThumbnail(docID string) (*service.ThumbnailResp
 func (f *fakeDocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	return nil, nil
 }
+func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
+	return nil, nil
+}
+func (f *fakeDocumentService) GetDocumentPreview(docID string) (*service.DocumentPreview, error) {
+	return nil, nil
+}
+func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error) {
+	return nil, nil
+}
 func (f *fakeDocumentService) GetDocumentsByAuthorID(authorID, page, pageSize int) ([]*service.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
@@ -83,18 +92,6 @@ func (f *fakeDocumentService) DeleteDocumentAllMetadata(docID string) error {
 	return nil
 }
 func (f *fakeDocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
-	return nil, nil
-}
-
-func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
-	return nil, nil
-}
-
-func (f *fakeDocumentService) GetDocumentPreview(docID string) (*service.DocumentPreview, error) {
-	return nil, nil
-}
-
-func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error) {
 	return nil, nil
 }
 
