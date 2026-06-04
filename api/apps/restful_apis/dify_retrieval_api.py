@@ -110,7 +110,8 @@ def _parse_retrieval_options(retrieval_setting):
 
 @manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
 @login_required
-async def retrieval():
+@@add_tenant_id_to_kwargs
+async def retrieval(tenant_id):
     """
     Dify-compatible retrieval API
     ---
@@ -219,7 +220,6 @@ async def retrieval():
       404:
         description: Knowledge base or document not found
     """
-    tenant_id = current_user.id
     parse_exception_types = (AttributeError, TypeError, ValueError, WerkzeugBadRequest)
     if QuartBadRequest is not None:
         parse_exception_types = parse_exception_types + (QuartBadRequest,)
