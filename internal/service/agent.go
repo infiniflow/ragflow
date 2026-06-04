@@ -161,3 +161,15 @@ func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) 
 func (s *AgentService) ListVersions(canvasID string) ([]*entity.UserCanvasVersion, error) {
 	return s.userCanvasVersionDAO.ListByCanvasID(canvasID)
 }
+
+// GetVersion returns a specific version by ID, verifying it belongs to the given canvas.
+func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanvasVersion, error) {
+	version, err := s.userCanvasVersionDAO.GetByID(versionID)
+	if err != nil {
+		return nil, err
+	}
+	if version.UserCanvasID != canvasID {
+		return nil, fmt.Errorf("version not found")
+	}
+	return version, nil
+}
