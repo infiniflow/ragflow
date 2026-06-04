@@ -25,9 +25,13 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
+	"ragflow/internal/cache"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/storage"
 )
 
 const (
@@ -42,6 +46,7 @@ type AgentService struct {
 	userCanvasVersionDAO *dao.UserCanvasVersionDAO
 	canvasTemplateDAO    *dao.CanvasTemplateDAO
 	api4ConversationDAO  *dao.API4ConversationDAO
+	fileDAO              *dao.FileDAO
 }
 
 // NewAgentService create agent service
@@ -52,6 +57,7 @@ func NewAgentService() *AgentService {
 		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
 		api4ConversationDAO:  dao.NewAPI4ConversationDAO(),
 		canvasTemplateDAO:    dao.NewCanvasTemplateDAO(),
+		fileDAO:              dao.NewFileDAO(),
 	}
 }
 
@@ -610,4 +616,90 @@ func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanva
 		return nil, fmt.Errorf("version not found")
 	}
 	return version, nil
+}
+
+// GetAgent returns a single agent canvas after verifying the caller has access.
+func (s *AgentService) GetAgent(userID, agentID string) (*entity.UserCanvas, error) {
+	canvas, err := s.canvasDAO.GetByID(agentID)
+	if err != nil {
+		return nil, err
+	}
+	// Verify access: owner always OK; team permission requires joined-tenant check.
+	if canvas.UserID != userID {
+		if canvas.Permission != string(entity.TenantPermissionTeam) {
+			return nil, fmt.Errorf("canvas not found")
+		}
+		tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for _, tid := range tenantIDs {
+			if canvas.UserID == tid {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("canvas not found")
+		}
+	}
+	return canvas, nil
+}
+
+// GetAgentLogs retrieves execution logs for a given message from Redis.
+// Key format mirrors Python: "{agent_id}-{message_id}-logs".
+func (s *AgentService) GetAgentLogs(agentID, messageID string) (interface{}, error) {
+	redisClient := cache.Get()
+	if redisClient == nil {
+		return map[string]interface{}{}, nil
+	}
+	key := fmt.Sprintf("%s-%s-logs", agentID, messageID)
+	raw, err := redisClient.Get(key)
+	if err != nil || raw == "" {
+		return map[string]interface{}{}, nil
+	}
+	var payload interface{}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return map[string]interface{}{}, nil
+	}
+	return payload, nil
+}
+
+// DownloadAgentFile retrieves the raw bytes for a file owned by the given tenant.
+// Returns the blob and the file name (for content-type inference).
+func (s *AgentService) DownloadAgentFile(tenantID, fileID string) ([]byte, string, error) {
+	file, err := s.fileDAO.GetByID(fileID)
+	if err != nil {
+		return nil, "", fmt.Errorf("file not found")
+	}
+	if file.TenantID != tenantID {
+		return nil, "", fmt.Errorf("file not found")
+	}
+	if file.Location == nil || *file.Location == "" {
+		return nil, "", fmt.Errorf("file has no storage location")
+	}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, "", fmt.Errorf("storage not initialized")
+	}
+	blob, err := storageImpl.Get(file.ParentID, *file.Location)
+	if err != nil {
+		return nil, "", err
+	}
+	return blob, file.Name, nil
+}
+
+// DownloadAttachment retrieves raw bytes for an attachment stored under the tenant's bucket.
+// attachmentID is the object name (storage key), tenantID is the bucket.
+func (s *AgentService) DownloadAttachment(tenantID, attachmentID string) ([]byte, error) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+	blob, err := storageImpl.Get(tenantID, attachmentID)
+	if err != nil {
+		return nil, err
+	}
+	return blob, nil
 }
