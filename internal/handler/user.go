@@ -635,20 +635,20 @@ func joinStrings(values []string) string {
 // Contract divergence from Python: the Python endpoint returns a
 // rendered image (Content-Type: image/JPEG) from the python-captcha
 // library and stores the captcha under captcha:<email>. This Go port
-// returns a server-issued captcha_id plus an SVG captcha image (as a
-// data URL the FE can drop straight into <img src>), and stores
-// captcha:<captcha_id>. The plaintext text is only ever transmitted
-// embedded in the rendered SVG — the OTP step reuses the captcha_id
-// to look the expected text up server-side.
+// returns a server-issued captcha_id plus a PNG captcha image (as a
+// data URL the FE drops straight into <img src>), and stores
+// captcha:<captcha_id>. The plaintext text only ever appears as
+// raster pixels — the OTP step reuses the captcha_id to look the
+// expected text up server-side.
 //
-// SVG was chosen because no Go raster-captcha library is vendored in
-// go.mod and the build has no network for `go get`. Browsers render
-// SVG via standard <img> tags, so the contract satisfies the
-// "captcha image tied to the server-side key" requirement from the
-// PR review. SVG is XML and a determined scraper can grep the text,
-// so this is a real step up from no challenge but weaker than a
-// raster captcha — when a raster library lands the swap is one
-// helper function (utility.RenderCaptcha*).
+// The PNG is rendered using stdlib `image/png` + a hand-rolled 5x7
+// bitmap font in internal/utility/captcha_png.go, because no Go
+// captcha library is vendored in go.mod (no network during build).
+// PR #15290 review (Hz-186) explicitly asked for a raster after the
+// earlier SVG implementation: the SVG embedded the answer in <text>
+// nodes, so a scripted client could base64-decode the response and
+// grep the captcha directly. PNG closes that attack — the response
+// bytes never reference the original text.
 
 type forgotCaptchaRequest struct {
 	Email string `form:"email" json:"email"`
@@ -658,8 +658,10 @@ type forgotCaptchaRequest struct {
 // @Summary Issue forgot-password captcha
 // @Description Generates a captcha for the email and stores it in Redis
 // for 60 seconds keyed by a server-issued captcha_id. Returns the id
-// and an SVG image (data URL) the FE renders inside <img src>. The
-// plaintext code is never returned outside the rendered image.
+// and a PNG image (data URL) the FE renders inside <img src>. The
+// plaintext code never appears in the response — only as raster
+// pixels — so a scripted client can't regex it out (fixes the
+// SVG-text leak from the previous iteration, per PR #15290 review).
 // @Tags auth
 // @Accept json
 // @Produce json

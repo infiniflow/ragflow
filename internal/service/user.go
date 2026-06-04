@@ -1215,7 +1215,7 @@ func (s *UserService) ForgotIssueCaptcha(email string) (captchaID, imageDataURL 
 	if ok := cache.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
-	imageDataURL = utility.RenderCaptchaSVGDataURL(text)
+	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
 	return captchaID, imageDataURL, common.CodeSuccess, nil
 }
 
