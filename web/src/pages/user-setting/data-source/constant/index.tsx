@@ -2,7 +2,7 @@ import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
-import { Mail, Rss } from 'lucide-react';
+import { BarChart3, Mail, Rss } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -48,6 +48,7 @@ export enum DataSourceKey {
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
+  TABLEAU = 'tableau',
 }
 
 type DataSourceFeatureVisibility = {
@@ -146,6 +147,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.SHAREPOINT]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.TABLEAU]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.MYSQL]: {
     syncDeletedFiles: true,
   },
@@ -208,6 +212,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Confluence',
       description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
       icon: <SvgIcon name={'data-source/confluence'} width={38} />,
+    },
+    [DataSourceKey.TABLEAU]: {
+      name: 'Tableau',
+      description: t(`setting.${DataSourceKey.TABLEAU}Description`),
+      icon: <BarChart3 className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GOOGLE_DRIVE]: {
       name: 'Google Drive',
@@ -1568,6 +1577,51 @@ export const DataSourceFormFields = {
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  [DataSourceKey.TABLEAU]: [
+    {
+      label: 'Server URL',
+      name: 'config.server_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://prod-useast-a.online.tableau.com',
+      tooltip: t('setting.tableauServerUrlTip'),
+    },
+    {
+      label: 'Site Content URL',
+      name: 'config.site_content_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'my-site',
+      tooltip: t('setting.tableauSiteContentUrlTip'),
+    },
+    {
+      label: 'API Version',
+      name: 'config.api_version',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '3.24',
+    },
+    {
+      label: 'Project Names',
+      name: 'config.project_names',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Finance,Sales',
+      tooltip: t('setting.tableauProjectNamesTip'),
+    },
+    {
+      label: 'PAT Name',
+      name: 'config.credentials.tableau_pat_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'PAT Secret',
+      name: 'config.credentials.tableau_pat_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1643,6 +1697,21 @@ export const DataSourceFormDefaultValues = {
         confluence_access_token: '',
       },
       index_mode: 'everything',
+    },
+  },
+  [DataSourceKey.TABLEAU]: {
+    name: '',
+    source: DataSourceKey.TABLEAU,
+    config: {
+      server_url: '',
+      site_content_url: '',
+      api_version: '3.24',
+      project_names: '',
+      batch_size: 2,
+      credentials: {
+        tableau_pat_name: '',
+        tableau_pat_secret: '',
+      },
     },
   },
   [DataSourceKey.GOOGLE_DRIVE]: {

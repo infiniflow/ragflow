@@ -1204,6 +1204,14 @@ Example: Virtual Hosted Style`,
         'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
+      tableauDescription:
+        'Connect Tableau to sync workbook and view metadata into your knowledge base.',
+      tableauServerUrlTip:
+        'The Tableau Cloud or Tableau Server URL, e.g. https://prod-useast-a.online.tableau.com.',
+      tableauSiteContentUrlTip:
+        'The Tableau site content URL. Leave empty for the default site.',
+      tableauProjectNamesTip:
+        'Optional comma-separated project names to sync. Leave empty to sync all accessible projects.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
       google_cloud_storageDescription:
