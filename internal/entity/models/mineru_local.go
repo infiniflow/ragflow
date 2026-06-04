@@ -105,15 +105,13 @@ func (m *MinerULocalModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 func (m *MinerULocalModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(content) == 0 {
 		return nil, fmt.Errorf("local MinerU API requires file content byte array, but content is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -153,9 +151,7 @@ func (m *MinerULocalModel) ParseFile(modelName *string, content []byte, document
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -200,15 +196,13 @@ func (m *MinerULocalModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, er
 }
 
 func (m *MinerULocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if taskID == "" {
 		return nil, fmt.Errorf("taskID is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -223,9 +217,7 @@ func (m *MinerULocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskR
 		return nil, fmt.Errorf("failed to create status request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {

@@ -60,15 +60,13 @@ func (n NvidiaModel) Name() string {
 }
 
 func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -133,9 +131,7 @@ func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, api
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -197,15 +193,13 @@ func (n *NvidiaModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -273,9 +267,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -358,23 +350,17 @@ type nvidiaEmbeddingResponse struct {
 }
 
 func (n NvidiaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -383,9 +369,6 @@ func (n NvidiaModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		baseURL = resolvedBaseURL
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.baseModel.URLSuffix.Embedding)
@@ -484,21 +467,16 @@ type nvidiaRerankResponse struct {
 // need original-input order should sort by Index. Same return-shape
 // contract as the Aliyun and ZhipuAI Rerank drivers.
 func (n NvidiaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -507,9 +485,6 @@ func (n NvidiaModel) Rerank(modelName *string, query string, documents []string,
 	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		baseURL = resolvedBaseURL
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
 	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.baseModel.URLSuffix.Rerank)
@@ -615,11 +590,9 @@ func (n *NvidiaModel) ParseFile(modelName *string, content []byte, url *string, 
 // OpenAI-compatible, so the parsing follows the same shape used by
 // the moonshot, xai, and openai drivers.
 func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -628,9 +601,6 @@ func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		baseURL = resolvedBaseURL
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("nvidia: no base URL configured for region %q", region)
 	}
 
 	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
@@ -643,9 +613,7 @@ func (n NvidiaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {

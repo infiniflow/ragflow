@@ -64,12 +64,6 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("message is nil")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -200,12 +194,6 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -344,6 +332,10 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 }
 
 func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -351,12 +343,6 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -394,9 +380,7 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -475,12 +459,6 @@ func (o *OllamaModel) ParseFile(modelName *string, content []byte, url *string, 
 }
 
 func (o *OllamaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

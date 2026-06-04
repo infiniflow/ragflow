@@ -29,15 +29,6 @@ import (
 )
 
 // GPUStackModel implements ModelDriver for GPUStack
-// (https://docs.gpustack.ai/), a self-hosted OpenAI-compatible model
-// serving layer. The base URL is supplied by the tenant at instance
-// creation time, matching the LM Studio / vLLM / Ollama pattern.
-//
-// Chat is served at <base>/v1/chat/completions with the standard
-// OpenAI wire shape and Bearer auth (the GPUStack server always
-// requires an API key; see rag/llm/chat_model.py GPUStack route).
-// Chat uses /v1 (see #13236). Embeddings use the v1-openai route per GPUStack
-// API docs and maintainer review (v1-openai/embeddings, not v1/embeddings).
 type GPUStackModel struct {
 	baseModel BaseModel
 }
@@ -69,19 +60,6 @@ func (g *GPUStackModel) Name() string {
 	return "gpustack"
 }
 
-// baseURLForRegion returns the base URL for the given region. GPUStack
-// is self-hosted: the base URL is supplied by the tenant per instance,
-// so a missing entry is a configuration error rather than something
-// we can paper over with a default host.
-func (g *GPUStackModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("gpustack: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 // ChatWithMessages sends multiple messages and returns the response.
 func (g *GPUStackModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -94,16 +72,11 @@ func (g *GPUStackModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := g.baseURLForRegion(region)
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -197,16 +170,14 @@ func (g *GPUStackModel) ChatWithMessages(modelName string, messages []Message, a
 	}, nil
 }
 
-// ChatStreamlyWithSender streams the response via the sender. GPUStack
-// proxies through OpenAI-compatible upstream engines (vLLM, SGLang)
-// that emit standard "data:" SSE frames with delta.content (and
-// delta.reasoning_content for thinking models), terminated by [DONE].
+// ChatStreamlyWithSender streams the response via the sender.
 func (g *GPUStackModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -215,16 +186,11 @@ func (g *GPUStackModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := g.baseURLForRegion(region)
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -364,24 +330,16 @@ type gpustackModelsResponse struct {
 	Data []gpustackModelInfo `json:"data"`
 }
 
-// ListModels returns the catalog served by the GPUStack instance at
-// <base>/v1/models. Note: GPUStack's /v1-openai alias does NOT cover
-// /models — only /v1/models works.
 func (g *GPUStackModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := g.baseURLForRegion(region)
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -445,25 +403,22 @@ func (g *GPUStackModel) Embed(
 	apiConfig *APIConfig,
 	embeddingConfig *EmbeddingConfig,
 ) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-	baseURL, err := g.baseURLForRegion(region)
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	if g.baseModel.URLSuffix.Embedding == "" {
 		return nil, fmt.Errorf("gpustack: embedding URL suffix is not configured")
 	}

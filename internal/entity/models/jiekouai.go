@@ -57,13 +57,6 @@ func (j *JieKouAIModel) Name() string {
 	return "jiekouai"
 }
 
-func validateJieKouAIAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
-	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(*apiConfig.ApiKey), nil
-}
-
 func validateJieKouAIModelName(modelName *string) (string, error) {
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return "", fmt.Errorf("model name is required")
@@ -72,22 +65,16 @@ func validateJieKouAIModelName(modelName *string) (string, error) {
 }
 
 func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
-	if err != nil {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if modelName = strings.TrimSpace(modelName); modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -213,10 +200,10 @@ func (j *JieKouAIModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
-	if err != nil {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if modelName = strings.TrimSpace(modelName); modelName == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -226,12 +213,6 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -378,6 +359,10 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 }
 
 func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
@@ -385,16 +370,7 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -462,6 +438,10 @@ func (j *JieKouAIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -472,16 +452,7 @@ func (j *JieKouAIModel) Rerank(modelName *string, query string, documents []stri
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -574,15 +545,10 @@ func (j *JieKouAIModel) ParseFile(modelName *string, content []byte, url *string
 }
 
 func (j *JieKouAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := validateJieKouAIAPIKey(&j.baseModel, apiConfig)
-	if err != nil {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

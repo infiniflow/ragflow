@@ -62,15 +62,6 @@ func (a *AnthropicModel) Name() string {
 	return "anthropic"
 }
 
-func (a *AnthropicModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("anthropic: %w", err)
-	}
-	return strings.TrimSpace(strings.TrimSuffix(baseURL, "/")), nil
-}
-
 func (a *AnthropicModel) region(apiConfig *APIConfig) string {
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		return *apiConfig.Region
@@ -79,10 +70,10 @@ func (a *AnthropicModel) region(apiConfig *APIConfig) string {
 }
 
 func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := anthropicAPIKey(&a.baseModel, apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
@@ -92,10 +83,16 @@ func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, 
 		return nil, err
 	}
 
-	baseURL, err := a.baseURLForRegion(a.region(apiConfig))
+	baseURLRegion := a.region(apiConfig)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
@@ -144,13 +141,6 @@ func (a *AnthropicModel) ChatWithMessages(modelName string, messages []Message, 
 		Answer:        &answer,
 		ReasonContent: &reasoning,
 	}, nil
-}
-
-func anthropicAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
-	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(*apiConfig.ApiKey), nil
 }
 
 func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) {
@@ -387,15 +377,21 @@ func parseAnthropicChatResponse(body []byte) (string, string, error) {
 }
 
 func (a *AnthropicModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := anthropicAPIKey(&a.baseModel, apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	baseURL, err := a.baseURLForRegion(a.region(apiConfig))
+	baseURLRegion := a.region(apiConfig)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Models, "/"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)

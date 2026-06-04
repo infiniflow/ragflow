@@ -70,12 +70,6 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -212,16 +206,13 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -386,11 +377,9 @@ func (m *MinimaxModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -454,11 +443,9 @@ func (m *MinimaxModel) Balance(apiConfig *APIConfig) (map[string]interface{}, er
 }
 
 func (m *MinimaxModel) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -517,12 +504,6 @@ func (m *MinimaxModel) AudioSpeech(modelName *string, audioContent *string, apiC
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -613,12 +594,6 @@ func (m *MinimaxModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

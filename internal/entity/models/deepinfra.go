@@ -65,15 +65,13 @@ func (d *DeepInfraModel) Name() string {
 }
 
 func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -200,15 +198,13 @@ func (d *DeepInfraModel) ChatWithMessages(modelName string, messages []Message, 
 }
 
 func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -371,15 +367,13 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(modelName string, messages []Mes
 }
 
 func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -438,7 +432,6 @@ func (d *DeepInfraModel) Embed(modelName *string, texts []string, apiConfig *API
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// 组装 RAGFlow 需要的返回格式
 	var embeddings []EmbeddingData
 	for _, data := range parsed.Data {
 		embeddings = append(embeddings, EmbeddingData{
@@ -456,39 +449,23 @@ type deepinfraRerankResponse struct {
 }
 
 // Rerank scores documents against a query using DeepInfra's inference endpoint.
-// The model id is part of the URL path (e.g. Qwen/Qwen3-Reranker-4B). The API
-// returns one score per input document; RerankConfig.TopN is enforced client-side
-// by keeping the highest-scoring entries when TopN is less than len(documents).
-func (d *DeepInfraModel) Rerank(
-	modelName *string,
-	query string,
-	documents []string,
-	apiConfig *APIConfig,
-	rerankConfig *RerankConfig,
-) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
+func (d *DeepInfraModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("deepinfra: no base URL configured for region %q", region)
-	}
 
 	// Reranker model ids may contain slashes (e.g. Qwen/Qwen3-Reranker-4B).
 	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Rerank, *modelName)
@@ -573,12 +550,6 @@ func (d *DeepInfraModel) TranscribeAudio(modelName *string, file *string, apiCon
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is missing")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -695,12 +666,6 @@ func (d *DeepInfraModel) AudioSpeech(modelName *string, audioContent *string, ap
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
 	}
@@ -777,12 +742,6 @@ func (d *DeepInfraModel) AudioSpeechWithSender(modelName *string, audioContent *
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is missing")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	voiceID := ""
 
@@ -882,11 +841,6 @@ func (d *DeepInfraModel) ParseFile(modelName *string, content []byte, url *strin
 }
 
 func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -948,12 +902,6 @@ func (d *DeepInfraModel) Balance(apiConfig *APIConfig) (map[string]interface{}, 
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

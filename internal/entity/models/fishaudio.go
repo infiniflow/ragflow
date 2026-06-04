@@ -32,8 +32,6 @@ import (
 	"strings"
 )
 
-// 208cc2d0e4594ca896a600c43c9497aa
-
 type FishAudioModel struct {
 	baseModel BaseModel
 }
@@ -81,12 +79,6 @@ func (f *FishAudioModel) TranscribeAudio(modelName *string, file *string, apiCon
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -197,12 +189,6 @@ func (f *FishAudioModel) AudioSpeech(modelName *string, audioContent *string, ap
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -265,12 +251,6 @@ func (f *FishAudioModel) AudioSpeechWithSender(modelName *string, audioContent *
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is missing")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -373,11 +353,9 @@ func (f *FishAudioModel) ParseFile(modelName *string, content []byte, url *strin
 }
 
 func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -393,11 +371,7 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	} else {
-		return nil, fmt.Errorf("Fish Audio API key is missing")
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := f.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -434,11 +408,9 @@ func (f *FishAudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (f *FishAudioModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	baseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

@@ -61,15 +61,13 @@ func (m *MoonshotModel) Name() string {
 }
 
 func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -142,9 +140,7 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -206,15 +202,13 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -379,11 +373,9 @@ func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -446,12 +438,6 @@ func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

@@ -85,11 +85,6 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -220,15 +215,13 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (s *SiliconflowModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -408,11 +401,14 @@ type siliconflowUsage struct {
 }
 
 // siliconflowMaxBatchSize is the per-request input limit documented at
-// https://docs.siliconflow.cn/en/api-reference/embeddings/create-embeddings.
 const siliconflowMaxBatchSize = 32
 
 // Embed embeds a list of texts into embeddings
 func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -424,22 +420,13 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Embedding)
 
-	apiKey := ""
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		apiKey = *apiConfig.ApiKey
-	}
+	apiKey := *apiConfig.ApiKey
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
@@ -497,11 +484,9 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 }
 
 func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -575,12 +560,6 @@ func (s *SiliconflowModel) Balance(apiConfig *APIConfig) (map[string]interface{}
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -682,20 +661,15 @@ type SiliconflowRerankResponse struct {
 
 // Rerank calculates similarity scores between query and documents
 func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	apiKey := ""
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		apiKey = *apiConfig.ApiKey
-	}
+	apiKey := *apiConfig.ApiKey
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -766,15 +740,13 @@ func (s *SiliconflowModel) Rerank(modelName *string, query string, documents []s
 
 // TranscribeAudio transcribe audio
 func (s *SiliconflowModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -892,15 +864,13 @@ func (s *SiliconflowModel) TranscribeAudioWithSender(modelName *string, file *st
 
 // AudioSpeech convert text to audio
 func (s *SiliconflowModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -965,12 +935,6 @@ func (s *SiliconflowModel) AudioSpeechWithSender(modelName *string, audioContent
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

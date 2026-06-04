@@ -58,15 +58,6 @@ func (h *HuaweiCloudModel) Name() string {
 	return "huaweicloud"
 }
 
-func (h *HuaweiCloudModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("huaweicloud: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 func huaweiCloudRegion(api *APIConfig) string {
 	region := "default"
 	if api != nil && api.Region != nil && *api.Region != "" {
@@ -202,10 +193,16 @@ func (h *HuaweiCloudModel) ChatWithMessages(modelName string, messages []Message
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := h.baseURLForRegion(huaweiCloudRegionForModel(apiConfig, modelName))
+	baseURLRegion := huaweiCloudRegionForModel(apiConfig, modelName)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	url := h.chatURL(baseURL, modelName)
 
@@ -284,11 +281,12 @@ func (h *HuaweiCloudModel) ChatWithMessages(modelName string, messages []Message
 }
 
 func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 	if modelName == "" {
 		return fmt.Errorf("model name is required")
@@ -297,10 +295,16 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(modelName string, messages []M
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := h.baseURLForRegion(huaweiCloudRegionForModel(apiConfig, modelName))
+	baseURLRegion := huaweiCloudRegionForModel(apiConfig, modelName)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := h.chatURL(baseURL, modelName)
 
 	reqBody := map[string]interface{}{
@@ -423,10 +427,16 @@ func (h *HuaweiCloudModel) Embed(modelName *string, texts []string, apiConfig *A
 		return []EmbeddingData{}, nil
 	}
 
-	baseURL, err := h.baseURLForRegion(huaweiCloudRegion(apiConfig))
+	baseURLRegion := huaweiCloudRegion(apiConfig)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Embedding, "/"))
 
 	reqBody := map[string]interface{}{
@@ -518,10 +528,16 @@ func (h *HuaweiCloudModel) Rerank(modelName *string, query string, documents []s
 		return &RerankResponse{}, nil
 	}
 
-	baseURL, err := h.baseURLForRegion(huaweiCloudRegion(apiConfig))
+	baseURLRegion := huaweiCloudRegion(apiConfig)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Rerank, "/"))
 
 	reqBody := map[string]interface{}{
@@ -620,10 +636,16 @@ func (h *HuaweiCloudModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	baseURL, err := h.baseURLForRegion(huaweiCloudRegion(apiConfig))
+	baseURLRegion := huaweiCloudRegion(apiConfig)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Models, "/"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)

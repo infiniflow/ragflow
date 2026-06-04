@@ -70,25 +70,12 @@ func (p *PPIOModel) Name() string {
 	return "ppio"
 }
 
-func (p *PPIOModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("ppio: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 func (p *PPIOModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := p.baseURLForRegion(region)
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
@@ -212,11 +199,12 @@ func (p *PPIOModel) ChatWithMessages(modelName string, messages []Message, apiCo
 }
 
 func (p *PPIOModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")

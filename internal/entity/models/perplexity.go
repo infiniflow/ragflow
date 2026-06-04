@@ -59,15 +59,6 @@ func (p *PerplexityModel) Name() string {
 	return "perplexity"
 }
 
-func (p *PerplexityModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("perplexity: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 func (p *PerplexityModel) chatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
@@ -106,16 +97,12 @@ func (p *PerplexityModel) chatPayload(modelName string, messages []Message, stre
 }
 
 func (p *PerplexityModel) chatURL(apiConfig *APIConfig) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
-	baseURL, err := p.baseURLForRegion(region)
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Chat), nil
 }
 
@@ -205,11 +192,12 @@ func (p *PerplexityModel) ChatWithMessages(modelName string, messages []Message,
 }
 
 func (p *PerplexityModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -241,9 +229,10 @@ func (p *PerplexityModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -327,16 +316,11 @@ func (p *PerplexityModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := p.baseURLForRegion(region)
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -406,26 +390,22 @@ type perplexityEmbeddingResponse struct {
 }
 
 func (p *PerplexityModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := p.baseURLForRegion(region)
+	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{

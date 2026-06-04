@@ -71,12 +71,6 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -205,15 +199,13 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 }
 
 func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -396,18 +388,16 @@ type openrouterUsage struct {
 }
 
 func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -438,9 +428,7 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -495,15 +483,13 @@ type OpenRouterRerankResponse struct {
 }
 
 func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -610,12 +596,6 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 		return nil, fmt.Errorf("failed to read audio file: %w", err)
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	reqBody := map[string]interface{}{
 		"model": *modelName,
 		"input_audio": map[string]interface{}{
@@ -691,12 +671,6 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 		return nil, fmt.Errorf("text content is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -767,11 +741,9 @@ func (o *OpenRouterModel) ParseFile(modelName *string, content []byte, url *stri
 }
 
 func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -834,12 +806,6 @@ func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

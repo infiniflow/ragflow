@@ -30,26 +30,11 @@ import (
 )
 
 // StepFunModel implements ModelDriver for StepFun (阶跃星辰).
-//
-// StepFun exposes an OpenAI-compatible REST API at https://api.stepfun.com/v1
-// (chat completions at /chat/completions, list models at /models). The wire
-// shape matches OpenAI closely enough that the chat path here is a direct
-// port of the OpenAI driver.
 type StepFunModel struct {
 	baseModel BaseModel
 }
 
 // NewStepFunModel creates a new StepFun model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
@@ -69,34 +54,12 @@ func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunMod
 	}
 }
 
-/*
-
-RAGFlow(user)> tts with 'fnlp/MOSS-TTSD-v0.5@test@siliconflow' text 'He who desires but acts not, breeds pestilence.' play format 'wav' param '{"voice": "fnlp/MOSS-TTSD-v0.5:alex"}'
-SUCCESS
-RAGFlow(user)> stream tts with 'fnlp/MOSS-TTSD-v0.5@test@siliconflow' text 'He who desires but acts not, breeds pestilence.' play format 'wav' param '{"voice": "fnlp/MOSS-TTSD-v0.5:claire"}'
-SUCCESS
-
-*/
-
 func (s *StepFunModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewStepFunModel(baseURL, s.baseModel.URLSuffix)
 }
 
 func (s *StepFunModel) Name() string {
 	return "stepfun"
-}
-
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (s *StepFunModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("stepfun: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
@@ -109,16 +72,11 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := s.baseURLForRegion(region)
+	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -135,9 +93,6 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 		"stream":   false,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -216,10 +171,12 @@ func (s *StepFunModel) ChatWithMessages(modelName string, messages []Message, ap
 	}, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. The StepFun SSE stream uses the same shape as OpenAI:
-// "data:" lines carrying JSON events, with a final "[DONE]" line.
+// ChatStreamlyWithSender sends messages and streams the response
 func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -228,20 +185,11 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := s.baseURLForRegion(region)
+	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -259,10 +207,6 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a
-		// non-SSE JSON response would be parsed as if it were a stream
-		// and produce no chunks. Better to fail clearly.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -286,9 +230,6 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// SSE streams are long-lived. We rely on the transport's
-	// ResponseHeaderTimeout to cap the connection-establishment phase
-	// instead of attaching a hard deadline here.
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -308,8 +249,6 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: bump the scanner buffer from the 64KB default to 1MB
-	// so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
@@ -376,9 +315,7 @@ func (s *StepFunModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	return nil
 }
 
-// Embed is left as a stub. StepFun has not advertised a public embeddings
-// endpoint in the API reference linked from the umbrella issue, so any real
-// implementation belongs in a follow-up only after the endpoint is verified.
+// Embed is left as a stub.
 func (s *StepFunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -389,16 +326,11 @@ func (s *StepFunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := s.baseURLForRegion(region)
+	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -483,16 +415,14 @@ func (s *StepFunModel) TranscribeAudioWithSender(modelName *string, file *string
 
 // AudioSpeech convert text to audio
 func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	// TODO Test it
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -547,7 +477,6 @@ func (s *StepFunModel) AudioSpeech(modelName *string, audioContent *string, apiC
 
 // AudioSpeechWithSender for Streaming TTS
 func (s *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	// TODO Test it
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -555,12 +484,6 @@ func (s *StepFunModel) AudioSpeechWithSender(modelName *string, audioContent *st
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

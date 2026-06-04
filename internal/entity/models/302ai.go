@@ -64,13 +64,6 @@ func (a *AI302Model) Name() string {
 	return "302ai"
 }
 
-func validateAI302APIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
-	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(*apiConfig.ApiKey), nil
-}
-
 func validateAI302ModelName(modelName *string) (string, error) {
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return "", fmt.Errorf("model name is required")
@@ -88,22 +81,16 @@ func validateAI302DocumentURL(rawURL string) (string, error) {
 }
 
 func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if strings.TrimSpace(modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -179,7 +166,6 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "application/json")
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -243,10 +229,10 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -256,12 +242,6 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -424,6 +404,9 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 }
 
 func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -431,16 +414,7 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -511,6 +485,10 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 }
 
 func (a *AI302Model) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -521,16 +499,7 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -605,6 +574,10 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 }
 
 func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || strings.TrimSpace(*file) == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
@@ -612,16 +585,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -747,6 +711,10 @@ func (a *AI302Model) AudioSpeechWithSender(modelName *string, audioContent *stri
 }
 
 func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if (urls == nil || strings.TrimSpace(*urls) == "") && (content == nil || len(content) == 0) {
 		return nil, fmt.Errorf("file url or content is required")
 	}
@@ -754,16 +722,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	if err != nil {
 		return nil, err
 	}
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -847,6 +806,10 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 }
 
 func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if documentURL == nil || strings.TrimSpace(*documentURL) == "" {
 		return nil, fmt.Errorf("302.ai API requires a valid public document URL; direct file upload is not supported")
 	}
@@ -854,16 +817,6 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 	if err != nil {
 		return nil, err
 	}
-
-	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return nil, err
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -925,15 +878,10 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 }
 
 func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := validateAI302APIKey(&a.baseModel, apiConfig)
-	if err != nil {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -1004,18 +952,13 @@ func (a *AI302Model) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 }
 
 func (a *AI302Model) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	if strings.TrimSpace(taskID) == "" {
-		return nil, fmt.Errorf("task id is required")
-	}
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("task id is required")
 	}
-	_ = region
 
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)

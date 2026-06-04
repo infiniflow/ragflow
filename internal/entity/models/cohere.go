@@ -61,12 +61,6 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -193,15 +187,13 @@ func (c *CoHereModel) ChatWithMessages(modelName string, messages []Message, api
 }
 
 func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -358,15 +350,13 @@ func (c *CoHereModel) ChatStreamlyWithSender(modelName string, messages []Messag
 }
 
 func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -440,15 +430,13 @@ func (c *CoHereModel) Embed(modelName *string, texts []string, apiConfig *APICon
 }
 
 func (c *CoHereModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -527,15 +515,13 @@ func (c *CoHereModel) Rerank(modelName *string, query string, documents []string
 
 // TranscribeAudio transcribe audio
 func (c *CoHereModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -665,11 +651,9 @@ func (c *CoHereModel) ParseFile(modelName *string, content []byte, url *string, 
 }
 
 func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -686,9 +670,7 @@ func (c *CoHereModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("accept", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)
 	if err != nil {

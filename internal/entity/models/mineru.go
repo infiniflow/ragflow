@@ -113,6 +113,10 @@ type mineruTaskSubmitResponse struct {
 }
 
 func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if documentURL == nil || *documentURL == "" {
 		return nil, fmt.Errorf("MinerU API requires a valid public document URL; direct file upload is not supported")
 	}
@@ -120,12 +124,6 @@ func (m *MinerUModel) ParseFile(modelName *string, content []byte, documentURL *
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -209,12 +207,6 @@ func (m *MinerUModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespon
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)

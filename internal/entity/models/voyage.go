@@ -28,31 +28,11 @@ import (
 )
 
 // VoyageModel implements ModelDriver for Voyage AI.
-//
-// Voyage AI exposes a focused REST API at https://api.voyageai.com/v1
-// with embedding (/embeddings) and reranking (/rerank) only — no chat,
-// no streaming, no /v1/models, no balance. This driver covers Embed
-// and Rerank with real implementations and returns "no such method"
-// for every other ModelDriver method.
-//
-// Wire shape, captured live:
-//
-//	Embed response:  {object, data:[{object,embedding,index,text}], model, usage}
-//	Rerank response: {object, data:[{relevance_score,index}], model, usage}
-//
-// Rerank uses top_k as the request param name (not top_n like
-// Aliyun/SiliconFlow); the driver translates RerankConfig.TopN to
-// top_k on the wire.
 type VoyageModel struct {
 	baseModel BaseModel
 }
 
 // NewVoyageModel creates a new Voyage AI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
 func NewVoyageModel(baseURL map[string]string, urlSuffix URLSuffix) *VoyageModel {
 	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
 	var transport *http.Transport
@@ -88,18 +68,6 @@ func (v *VoyageModel) Name() string {
 	return "voyage"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. Single-region for Voyage but kept here
-// for consistency with other drivers.
-func (v *VoyageModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("voyage: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 type voyageEmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Object    string    `json:"object"`
@@ -112,45 +80,30 @@ type voyageEmbeddingResponse struct {
 	Model  string                `json:"model"`
 }
 
-// Embed turns a list of texts into embedding vectors using the
-// Voyage AI /v1/embeddings endpoint. Output is one vector per input,
-// in the same order the inputs were given.
 func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := v.baseURLForRegion(region)
+	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
 		"input": texts,
 	}
-
-	// Voyage's Matryoshka models (voyage-3.5, voyage-3.5-lite,
-	// voyage-3-large, voyage-code-3) accept output_dimension to
-	// truncate the vector. The wire param is output_dimension
-	// (singular) per https://docs.voyageai.com/reference/embeddings-api;
-	// passing "dimensions" or "output_dimensions" gets rejected with
-	// HTTP 400, so it's worth matching the docs spelling exactly.
 	if embeddingConfig != nil && embeddingConfig.Dimension > 0 {
 		reqBody["output_dimension"] = embeddingConfig.Dimension
 	}
@@ -191,10 +144,6 @@ func (v *VoyageModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Reorder by the reported index so the output always lines up with
-	// the input texts. Reject duplicates (silent overwrite would hide
-	// a malformed response) and out-of-range indices (silent panic on
-	// slice growth would mask the bug).
 	embeddings := make([]EmbeddingData, len(texts))
 	filled := make([]bool, len(texts))
 	for _, item := range parsed.Data {
@@ -235,31 +184,23 @@ type voyageRerankResponse struct {
 	Model string `json:"model"`
 }
 
-// Rerank calculates similarity scores between a query and a list of
-// documents using Voyage AI's /v1/rerank endpoint. Unlike many other
-// rerank APIs that use `top_n`, Voyage uses `top_k` as the request
-// parameter; the driver translates RerankConfig.TopN -> top_k.
 func (v *VoyageModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
 	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := v.baseURLForRegion(region)
+	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
 
 	topK := len(documents)
@@ -310,9 +251,6 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Match Embed's defensive posture: rerank only returns top_k of
-	// len(documents) results, but a duplicate index would still be
-	// a malformed response and should fail loudly.
 	rerankResponse := &RerankResponse{}
 	seen := make(map[int]bool, len(parsed.Data))
 	for _, r := range parsed.Data {
@@ -332,20 +270,10 @@ func (v *VoyageModel) Rerank(modelName *string, query string, documents []string
 	return rerankResponse, nil
 }
 
-// ListModels is not exposed by the Voyage AI API. The docs at
-// https://docs.voyageai.com publish embeddings and rerank endpoints
-// only; /v1/models is not documented (live-confirmed: 404). The
-// shipped catalog lives in conf/models/voyage.json; this driver
-// method does not invent a fake one.
 func (v *VoyageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
 
-// CheckConnection is not exposed by the Voyage AI API. With no
-// documented /models or /health endpoint, the only way to verify
-// credentials is to burn an embedding or rerank call against the
-// tenant's quota — which is what this method exists to avoid.
-// Return the documented sentinel rather than pretend.
 func (v *VoyageModel) CheckConnection(apiConfig *APIConfig) error {
 	return fmt.Errorf("%s, no such method", v.Name())
 }

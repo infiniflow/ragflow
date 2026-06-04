@@ -62,15 +62,13 @@ func (v *VolcEngine) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -164,9 +162,7 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -230,16 +226,13 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -450,15 +443,13 @@ type volcenginePromptTokensDetails struct {
 
 // Embed embeds a list of texts into embeddings
 func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -573,11 +564,9 @@ func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, a
 }
 
 func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -586,9 +575,6 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 	baseURL := resolvedBaseURL
 	if baseURL == "" {
 		baseURL = resolvedBaseURL
-	}
-	if baseURL == "" {
-		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
 	}
 	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
@@ -605,9 +591,7 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -646,11 +630,9 @@ func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 }
 
 func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

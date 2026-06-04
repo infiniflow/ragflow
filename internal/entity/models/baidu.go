@@ -67,12 +67,6 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -237,15 +231,13 @@ func (b *BaiduModel) ChatWithMessages(modelName string, messages []Message, apiC
 }
 
 func (b *BaiduModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -465,12 +457,6 @@ func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return []EmbeddingData{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -558,15 +544,13 @@ func (b *BaiduModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 }
 
 func (b *BaiduModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -671,21 +655,16 @@ type qianfanOCRResponse struct {
 }
 
 func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	if (fileURL == nil || *fileURL == "") && (content == nil || len(content) == 0) {
-		return nil, fmt.Errorf("image url or content is required")
-	}
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if (fileURL == nil || *fileURL == "") && (content == nil || len(content) == 0) {
+		return nil, fmt.Errorf("image url or content is required")
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -766,11 +745,9 @@ func (b *BaiduModel) OCRFile(modelName *string, content []byte, fileURL *string,
 }
 
 func (b *BaiduModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

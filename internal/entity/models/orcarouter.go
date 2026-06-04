@@ -66,12 +66,6 @@ func (o *OrcaRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -185,15 +179,13 @@ func (o *OrcaRouterModel) ChatWithMessages(modelName string, messages []Message,
 }
 
 func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -346,15 +338,13 @@ func (o *OrcaRouterModel) TranscribeAudioWithSender(modelName *string, file *str
 }
 
 func (o *OrcaRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -424,11 +414,9 @@ func (o *OrcaRouterModel) ParseFile(modelName *string, content []byte, url *stri
 }
 
 func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

@@ -57,10 +57,7 @@ func (t *TokenHubModel) Name() string {
 	return "tokenhub"
 }
 
-func validateTokenHubChatRequest(baseModel *BaseModel, modelName string, messages []Message, apiConfig *APIConfig) error {
-	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
+func validateTokenHubChatRequest(modelName string, messages []Message) error {
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
 	}
@@ -71,15 +68,12 @@ func validateTokenHubChatRequest(baseModel *BaseModel, modelName string, message
 }
 
 func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if err := validateTokenHubChatRequest(&t.baseModel, modelName, messages, apiConfig); err != nil {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := validateTokenHubChatRequest(modelName, messages); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -136,9 +130,7 @@ func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := t.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -201,18 +193,16 @@ func (t *TokenHubModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
-	if err := validateTokenHubChatRequest(&t.baseModel, modelName, messages, apiConfig); err != nil {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
-	_ = region
+	if err := validateTokenHubChatRequest(modelName, messages); err != nil {
+		return err
+	}
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -363,21 +353,16 @@ func (t *TokenHubModel) ChatStreamlyWithSender(modelName string, messages []Mess
 }
 
 func (t *TokenHubModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return nil, err
-	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -479,12 +464,6 @@ func (t *TokenHubModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

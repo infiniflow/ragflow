@@ -30,21 +30,9 @@ import (
 )
 
 // modelscopeStreamIdleTimeout bounds how long a stream can go without
-// receiving any SSE line. Self-hosted ModelScope deployments can be slow,
-// but a stream that stays silent for a full minute is more useful as a
-// surfaced error than as a stuck goroutine.
 var modelscopeStreamIdleTimeout = 60 * time.Second
 
 // ModelScopeModel implements ModelDriver for ModelScope chat models.
-//
-// ModelScope exposes an OpenAI-compatible API under <endpoint>/v1.
-// The tenant supplies the deployment endpoint (no default — matches the
-// Python ModelScopeChat at rag/llm/chat_model.py which raises on a
-// missing base URL). Both the root endpoint and the OpenAI-compatible
-// endpoint (.../v1) are accepted; the driver normalizes both to the root
-// before appending URLSuffix values like v1/chat/completions.
-// Authentication is optional: deployments without auth ignore API keys,
-// while auth-enabled deployments require Authorization: Bearer <api_key>.
 type ModelScopeModel struct {
 	baseModel BaseModel
 }
@@ -104,15 +92,6 @@ func (m *ModelScopeModel) Name() string {
 	return "modelscope"
 }
 
-func (m *ModelScopeModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("modelscope: %w", err)
-	}
-	return normalizeModelScopeBaseURL(baseURL), nil
-}
-
 func normalizeModelScopeBaseURL(base string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(base), "/")
 	if trimmed == "" {
@@ -122,20 +101,6 @@ func normalizeModelScopeBaseURL(base string) string {
 		return strings.TrimSuffix(trimmed, "/v1")
 	}
 	return trimmed
-}
-
-func setModelScopeAuth(req *http.Request, apiConfig *APIConfig) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-}
-
-func modelscopeRegion(apiConfig *APIConfig) string {
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		return *apiConfig.Region
-	}
-	return "default"
 }
 
 func modelscopeReasoningFromStrings(reasoningContent string, reasoning string, thinking string) string {
@@ -195,14 +160,19 @@ func buildModelScopeChatBody(modelName string, messages []Message, stream bool, 
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := m.baseURLForRegion(modelscopeRegion(apiConfig))
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = normalizeModelScopeBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildModelScopeChatBody(modelName, messages, false, chatModelConfig)
@@ -219,7 +189,7 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setModelScopeAuth(req, apiConfig)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -258,6 +228,10 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 
 // ChatStreamlyWithSender sends messages and streams response via sender.
 func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -268,10 +242,11 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	baseURL, err := m.baseURLForRegion(modelscopeRegion(apiConfig))
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = normalizeModelScopeBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildModelScopeChatBody(modelName, messages, true, chatModelConfig)
@@ -288,7 +263,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setModelScopeAuth(req, apiConfig)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -423,10 +398,15 @@ func (m *ModelScopeModel) ParseFile(modelName *string, content []byte, url *stri
 // ListModels returns the model IDs exposed by ModelScope's OpenAI-compatible
 // /v1/models endpoint.
 func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	baseURL, err := m.baseURLForRegion(modelscopeRegion(apiConfig))
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = normalizeModelScopeBaseURL(baseURL)
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -436,7 +416,9 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setModelScopeAuth(req, apiConfig)
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {

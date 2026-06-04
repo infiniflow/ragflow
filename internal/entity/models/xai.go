@@ -32,24 +32,6 @@ import (
 	"time"
 )
 
-// Per-call context deadlines shared by every provider in this package.
-//
-// The shared httpClient sets no Client.Timeout: that field also bounds the time
-// spent reading the response body, which would sever long-lived SSE streams in
-// ChatStreamlyWithSender once a generation outlasts the limit. Each call wraps
-// its request in a context.WithTimeout sized to the operation instead:
-//
-//   - nonStreamCallTimeout for interactive non-streaming calls
-//     (chat, embed, rerank, list models, check connection, balance).
-//   - streamCallTimeout for streaming chat, bounded generously so slow or
-//     reasoning-heavy generations are not truncated mid-stream.
-//   - longOpCallTimeout for heavy synchronous file work (OCR, document
-//     parsing, audio transcription/synthesis) that legitimately runs for
-//     minutes. Kept distinct from streamCallTimeout so the two can be tuned
-//     independently even though they currently share a value.
-//
-// They are vars rather than consts so tests can shrink them to milliseconds
-// and exercise the deadline behaviour without real-time waits.
 var (
 	nonStreamCallTimeout = 120 * time.Second
 	streamCallTimeout    = 10 * time.Minute
@@ -62,16 +44,6 @@ type XAIModel struct {
 }
 
 // NewXAIModel creates a new xAI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the few connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
@@ -98,19 +70,6 @@ func (x *XAIModel) Name() string {
 	return "xai"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (x *XAIModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("xai: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response
 func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -121,15 +80,11 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := x.baseURLForRegion(region)
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
@@ -149,9 +104,6 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		"temperature": 1,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so SSE/stream
-	// must always be off for this code path.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -245,27 +197,21 @@ func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	return chatResponse, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. Used for streaming chat responses with no extra channel.
+// ChatStreamlyWithSender sends messages and streams the response
 func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if len(messages) == 0 {
-		return fmt.Errorf("messages is empty")
-	}
-
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
 	}
-	_ = region
 
-	baseURL, err := x.baseURLForRegion(region)
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
@@ -285,11 +231,6 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a non-SSE
-		// JSON response would be parsed as if it were a stream and produce
-		// no chunks. Better to fail clearly. Leave reqBody["stream"] as
-		// the default (true) when Stream is nil or true.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -338,16 +279,8 @@ func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line. The default bufio.Scanner buffer
-	// is 64KB, which can be too small for long SSE chunks. Bump it to
-	// 1MB so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	// sawTerminal flips to true when the upstream actually told us the
-	// stream is over (either a "[DONE]" marker or a non-empty
-	// finish_reason). If the body closes before either of those, we
-	// must not emit a synthetic "[DONE]" because that would hide a
-	// truncated response from the caller.
 	sawTerminal := false
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -436,16 +369,11 @@ func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := x.baseURLForRegion(region)
+	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xai: models URL suffix is not configured")
@@ -519,23 +447,20 @@ func (x *XAIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and documents. xAI does not
-// expose a rerank API, so this is left unimplemented.
+// Rerank calculates similarity scores between query and documents
 func (x *XAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", x.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -668,12 +593,6 @@ func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is missing")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

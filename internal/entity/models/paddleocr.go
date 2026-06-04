@@ -117,19 +117,13 @@ type paddleJsonlLine struct {
 }
 
 func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	if (content == nil || len(content) == 0) && (fileURL == nil || *fileURL == "") {
-		return nil, fmt.Errorf("content and fileURL cannot be both empty")
-	}
-
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if (content == nil || len(content) == 0) && (fileURL == nil || *fileURL == "") {
+		return nil, fmt.Errorf("content and fileURL cannot be both empty")
 	}
-	_ = region
 
 	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -208,8 +202,6 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 	var jsonlUrl string
 
 	for {
-		// Wait between polls but bail out immediately if the overall
-		// deadline fires instead of sleeping through it.
 		select {
 		case <-time.After(3 * time.Second):
 		case <-ctx.Done():

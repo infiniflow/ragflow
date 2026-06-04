@@ -98,7 +98,14 @@ func (g *GoogleModel) clientConfig(apiKey string, apiConfig *APIConfig) *genai.C
 func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
-		return ""
+		defaultConfig := &APIConfig{}
+		if apiConfig != nil {
+			defaultConfig.BaseURL = apiConfig.BaseURL
+		}
+		baseURL, err = g.baseModel.GetBaseURL(defaultConfig)
+		if err != nil {
+			return ""
+		}
 	}
 	return strings.TrimSpace(baseURL)
 }
@@ -178,11 +185,12 @@ func (g *GoogleModel) ChatWithMessages(modelName string, messages []Message, api
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (g *GoogleModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if len(messages) == 0 {
-		return fmt.Errorf("messages is empty")
-	}
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is empty")

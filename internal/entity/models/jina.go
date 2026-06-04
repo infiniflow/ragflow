@@ -51,15 +51,6 @@ func (j *JinaModel) Name() string {
 	return "jina"
 }
 
-func (j *JinaModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := j.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("jina: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -71,16 +62,11 @@ func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiCo
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := j.baseURLForRegion(region)
+	baseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -181,15 +167,13 @@ func (j *JinaModel) ChatStreamlyWithSender(modelName string, messages []Message,
 }
 
 func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -257,15 +241,13 @@ func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 }
 
 func (j *JinaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -337,11 +319,6 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 }
 
 func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

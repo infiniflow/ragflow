@@ -110,12 +110,6 @@ func (p *PaddleOCRLocalModel) OCRFile(modelName *string, content []byte, fileURL
 		return nil, fmt.Errorf("local PaddleOCR requires file content, but content is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err

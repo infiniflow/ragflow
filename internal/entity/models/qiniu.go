@@ -157,11 +157,6 @@ func (q *QiniuModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("no messages")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -286,19 +281,11 @@ func (q *QiniuModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	if baseURL == "" {
-		return fmt.Errorf("qiniu: no base URL configured for region %q", region)
-	}
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -463,19 +450,11 @@ func (q *QiniuModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	if baseURL == "" {
-		return nil, fmt.Errorf("qiniu: no base URL configured for region %q", region)
-	}
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)

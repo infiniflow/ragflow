@@ -29,7 +29,6 @@ import (
 	"time"
 )
 
-// sk-6e16f0a6bfaa7fc58e30a50962665d1d
 type BaichuanModel struct {
 	baseModel BaseModel
 }
@@ -66,12 +65,6 @@ func (b *BaichuanModel) ChatWithMessages(modelName string, messages []Message, a
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -182,15 +175,13 @@ func (b *BaichuanModel) ChatWithMessages(modelName string, messages []Message, a
 }
 
 func (b *BaichuanModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -327,15 +318,13 @@ func (b *BaichuanModel) ChatStreamlyWithSender(modelName string, messages []Mess
 }
 
 func (b *BaichuanModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

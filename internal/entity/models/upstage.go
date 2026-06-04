@@ -29,28 +29,11 @@ import (
 )
 
 // UpstageModel implements ModelDriver for Upstage (Solar models).
-//
-// Upstage exposes an OpenAI-compatible REST API at
-// https://api.upstage.ai/v1 (chat completions at /chat/completions, list
-// models at /models, embeddings at /embeddings). The wire shape matches
-// OpenAI closely enough that the chat path here is a direct port of the
-// OpenAI driver. The legacy /v1/solar/* paths still work but the canonical
-// base is /v1.
 type UpstageModel struct {
 	baseModel BaseModel
 }
 
 // NewUpstageModel creates a new Upstage model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewUpstageModel(baseURL map[string]string, urlSuffix URLSuffix) *UpstageModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
@@ -78,19 +61,6 @@ func (u *UpstageModel) Name() string {
 	return "upstage"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (u *UpstageModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("upstage: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -101,16 +71,11 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := u.baseURLForRegion(region)
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -127,9 +92,6 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		"stream":   false,
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
 	if chatModelConfig != nil {
 		if chatModelConfig.MaxTokens != nil {
 			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -143,10 +105,6 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
-		// Upstage Solar reasoning models (solar-pro2 and the upcoming
-		// solar-pro3) accept reasoning_effort=low|medium|high to trade
-		// latency for chain-of-thought depth, matching the OpenAI
-		// o-series shape. ChatConfig.Effort is the canonical carrier.
 		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
 			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
@@ -208,11 +166,6 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("invalid content format")
 	}
 
-	// Upstage Solar reasoning models (solar-pro3, solar-pro2 with
-	// reasoning_effort >= medium) return the chain-of-thought in a
-	// `reasoning` field on the message. Pass it through when present
-	// so callers that opted into reasoning can show it. Absent or
-	// non-string means no reasoning was emitted — leave it empty.
 	reasonContent := ""
 	if r, ok := messageMap["reasoning"].(string); ok {
 		reasonContent = r
@@ -224,10 +177,12 @@ func (u *UpstageModel) ChatWithMessages(modelName string, messages []Message, ap
 	}, nil
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. The Upstage SSE stream uses the same shape as OpenAI:
-// "data:" lines carrying JSON events, with a final "[DONE]" line.
+// ChatStreamlyWithSender sends messages and streams the response
 func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -236,20 +191,11 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("messages is empty")
 	}
 
-	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := u.baseURLForRegion(region)
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -267,10 +213,6 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	if chatModelConfig != nil {
-		// Refuse to run if the caller explicitly asked for stream=false.
-		// The body of this method only knows how to read SSE, so a
-		// non-SSE JSON response would be parsed as if it were a stream
-		// and produce no chunks. Better to fail clearly.
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
@@ -298,9 +240,6 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// SSE streams are long-lived. We rely on the transport's
-	// ResponseHeaderTimeout to cap the connection-establishment phase
-	// instead of attaching a hard deadline here.
 	req, err := http.NewRequestWithContext(context.Background(), "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -319,9 +258,6 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
-
-	// SSE parsing: bump the scanner buffer from the 64KB default to 1MB
-	// so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
@@ -359,13 +295,6 @@ func (u *UpstageModel) ChatStreamlyWithSender(modelName string, messages []Messa
 			continue
 		}
 
-		// Reasoning chunks first, content second. Upstage's solar-pro3
-		// stream interleaves both fields within the same SSE event when
-		// reasoning_effort is medium or high; emit reasoning before the
-		// visible answer so callers that pipe both into a UI see the
-		// chain-of-thought start before the answer, matching the wire
-		// ordering. solar-pro2 inlines reasoning into delta.content and
-		// never sets delta.reasoning, so this block is a no-op for it.
 		if r, ok := delta["reasoning"].(string); ok && r != "" {
 			if err := sender(nil, &r); err != nil {
 				return err
@@ -413,33 +342,25 @@ type upstageEmbeddingResponse struct {
 	Object string                 `json:"object"`
 }
 
-// Embed turns a list of texts into embedding vectors using the Upstage
-// /v1/solar/embeddings endpoint (solar-embedding-1-large-query for queries,
-// solar-embedding-1-large-passage for passages). The output has one vector
-// per input, in the same order the inputs were given.
+// Embed turns a list of texts into embedding vectors
 func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := u.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := u.baseURLForRegion(region)
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
@@ -483,10 +404,6 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Reorder by the reported index so the output always lines up with
-	// the input texts, even if the upstream API ever returns items out
-	// of order. A nil slot at the end indicates the upstream did not
-	// return an embedding for that input.
 	embeddings := make([]EmbeddingData, len(texts))
 	filled := make([]bool, len(texts))
 	for _, item := range parsed.Data {
@@ -494,9 +411,6 @@ func (u *UpstageModel) Embed(modelName *string, texts []string, apiConfig *APICo
 			return nil, fmt.Errorf("upstage: response index %d out of range for %d inputs", item.Index, len(texts))
 		}
 		if filled[item.Index] {
-			// A malformed response that repeats the same index would
-			// silently overwrite the earlier vector. Fail loudly so
-			// the caller never uses ambiguous output.
 			return nil, fmt.Errorf("upstage: duplicate embedding index %d in response", item.Index)
 		}
 		embeddings[item.Index] = EmbeddingData{
@@ -520,16 +434,11 @@ func (u *UpstageModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := u.baseURLForRegion(region)
+	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)

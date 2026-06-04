@@ -515,9 +515,10 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 // driver contract; Bedrock surfaces no reasoning channel today, so it
 // is left empty rather than nil.
 func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return nil, fmt.Errorf("api key is required")
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
+
 	if modelName == "" {
 		return nil, fmt.Errorf("bedrock: model id is required")
 	}
@@ -594,9 +595,10 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 // messageStop, and (for error propagation) exception frames; other
 // events are ignored.
 func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return fmt.Errorf("api key is required")
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
+
 	if modelName == "" {
 		return fmt.Errorf("bedrock: model id is required")
 	}
@@ -767,9 +769,10 @@ type bedrockListModelsResponse struct {
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
 func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return nil, fmt.Errorf("api key is required")
+	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
+
 	key, err := parseBedrockKey(*apiConfig.ApiKey)
 	if err != nil {
 		return nil, err

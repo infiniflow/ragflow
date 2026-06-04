@@ -34,26 +34,11 @@ import (
 )
 
 // CometAPIModel implements ModelDriver for CometAPI AI.
-//
-// CometAPI exposes OpenAI-compatible chat and embeddings under
-// https://api.cometapi.com/v1, a public model catalog under
-// https://api.cometapi.com/api/models, and account quota data through the
-// separate query service at https://query.cometapi.com/user/quota.
 type CometAPIModel struct {
 	baseModel BaseModel
 }
 
 // NewCometAPIModel creates a new CometAPI model instance.
-//
-// We clone http.DefaultTransport so we keep Go's defaults for
-// ProxyFromEnvironment, DialContext (with KeepAlive), HTTP/2,
-// TLSHandshakeTimeout, and ExpectContinueTimeout, and only override
-// the connection-pool fields we care about.
-//
-// The Client itself has no Timeout. http.Client.Timeout would also
-// cap the time spent reading the response body, which would cut off
-// long-lived SSE streams in ChatStreamlyWithSender. Non-streaming
-// callers wrap each request with context.WithTimeout instead.
 func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIModel {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConns = 100
@@ -81,13 +66,6 @@ func (c *CometAPIModel) Name() string {
 	return "cometapi"
 }
 
-func validateCometAPIAPIKey(baseModel *BaseModel, apiConfig *APIConfig) (string, error) {
-	if err := baseModel.APIConfigCheck(apiConfig); err != nil {
-		return "", err
-	}
-	return *apiConfig.ApiKey, nil
-}
-
 func validateCometAPIModelName(modelName string) error {
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -102,24 +80,12 @@ func cometapiRegion(apiConfig *APIConfig) string {
 	return "default"
 }
 
-// baseURLForRegion returns the base URL for the given region, or an
-// error if no entry exists. This makes a misconfigured region fail
-// fast with a clear message, instead of silently producing a relative
-// URL that the HTTP transport then rejects.
-func (c *CometAPIModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := c.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("cometapi: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 func (c *CometAPIModel) endpointURL(region, suffix string) (string, error) {
-	baseURL, err := c.baseURLForRegion(region)
+	baseURL, err := c.baseModel.GetBaseURL(&APIConfig{Region: &region})
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
 }
 
@@ -295,10 +261,10 @@ func parseCometAPIModelCatalog(body []byte) ([]string, error) {
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateCometAPIAPIKey(&c.baseModel, apiConfig)
-	if err != nil {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := *apiConfig.ApiKey
 	if err := validateCometAPIModelName(modelName); err != nil {
 		return nil, err
 	}
@@ -312,9 +278,6 @@ func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, err
 	}
 
-	// Note: do NOT propagate chatModelConfig.Stream into the request body
-	// here. ChatWithMessages parses a single JSON response, so stream must
-	// always be off for this code path.
 	reqBody := buildCometAPIChatRequest(modelName, messages, false, chatModelConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -335,10 +298,12 @@ func (c *CometAPIModel) ChatWithMessages(modelName string, messages []Message, a
 	return parseCometAPIChatResponse(resp.Body)
 }
 
-// ChatStreamlyWithSender sends messages and streams the response via the
-// sender function. The CometAPI SSE stream uses the same shape as OpenAI:
-// "data:" lines carrying JSON events, with a final "[DONE]" line.
+// ChatStreamlyWithSender sends messages and streams the response
 func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -351,10 +316,7 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("messages is empty")
 	}
 
-	apiKey, err := validateCometAPIAPIKey(&c.baseModel, apiConfig)
-	if err != nil {
-		return err
-	}
+	apiKey := *apiConfig.ApiKey
 
 	url, err := c.endpointURL(cometapiRegion(apiConfig), c.baseModel.URLSuffix.Chat)
 	if err != nil {
@@ -372,9 +334,6 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 	reqBody := buildCometAPIChatRequest(modelName, messages, true, chatModelConfig)
 
-	// Use an explicit background context. SSE streams are long-lived
-	// so we do not attach a hard deadline here; the transport's
-	// ResponseHeaderTimeout caps the connection-establishment phase.
 	req, err := newCometAPIJSONRequest(context.Background(), "POST", url, reqBody, apiKey)
 	if err != nil {
 		return err
@@ -390,8 +349,6 @@ func (c *CometAPIModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: bump the scanner buffer from the 64KB default to 1MB
-	// so we never silently truncate a long data: line.
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	sawTerminal := false
@@ -465,18 +422,17 @@ type cometapiEmbeddingRequest struct {
 	Dimensions int      `json:"dimensions,omitempty"`
 }
 
-// Embed turns a list of texts into embedding vectors using the
-// CometAPI /v1/embeddings endpoint. The output has one vector per input,
-// in the same order the inputs were given.
+// Embed turns a list of texts into embedding vectors
 func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	apiKey, err := validateCometAPIAPIKey(&c.baseModel, apiConfig)
-	if err != nil {
-		return nil, err
-	}
+	apiKey := *apiConfig.ApiKey
 
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -517,10 +473,6 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Reorder the returned vectors by their reported index so the output
-	// always lines up with the input texts, even if the upstream API ever
-	// returns items out of order. A nil slot at the end indicates the
-	// upstream did not return an embedding for that input.
 	embeddings := make([]EmbeddingData, len(texts))
 	filled := make([]bool, len(texts))
 	for _, item := range parsed.Data {
@@ -528,9 +480,6 @@ func (c *CometAPIModel) Embed(modelName *string, texts []string, apiConfig *APIC
 			return nil, fmt.Errorf("cometapi: response index %d out of range for %d inputs", item.Index, len(texts))
 		}
 		if filled[item.Index] {
-			// A malformed response that repeats the same index would
-			// silently overwrite the earlier vector. Fail loudly so
-			// the caller never uses ambiguous output.
 			return nil, fmt.Errorf("cometapi: duplicate embedding index %d in response", item.Index)
 		}
 		embeddings[item.Index] = EmbeddingData{
@@ -574,8 +523,7 @@ func (c *CometAPIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return parseCometAPIModelCatalog(resp.Body)
 }
 
-// Balance queries CometAPI's quota service. Unlike model requests, this
-// endpoint authenticates with the key query parameter on query.cometapi.coc.
+// Balance queries CometAPI's quota service.
 func (c *CometAPIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -618,23 +566,20 @@ func (c *CometAPIModel) CheckConnection(apiConfig *APIConfig) error {
 	return nil
 }
 
-// Rerank calculates similarity scores between query and documents. CometAPI
-// does not expose a public rerank API, so this returns "no such method".
+// Rerank calculates similarity scores between query and documents.
 func (c *CometAPIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // TranscribeAudio transcribe audio
 func (c *CometAPIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -746,15 +691,13 @@ func (c *CometAPIModel) TranscribeAudioWithSender(modelName *string, file *strin
 
 // AudioSpeech synthesizes speech audio from text.
 func (c *CometAPIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

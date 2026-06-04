@@ -33,10 +33,6 @@ import (
 )
 
 // GroqModel implements ModelDriver for Groq.
-//
-// Groq exposes an OpenAI-compatible chat-completions endpoint at
-// https://api.groq.com/openai/v1/chat/completions and lists models at
-// https://api.groq.com/openai/v1/models.
 type GroqModel struct {
 	baseModel BaseModel
 }
@@ -76,25 +72,12 @@ func (g *GroqModel) Name() string {
 	return "groq"
 }
 
-func (g *GroqModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("groq: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 func (g *GroqModel) endpoint(apiConfig *APIConfig, suffix string) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil {
-		region = *apiConfig.Region
-	}
-
-	baseURL, err := g.baseURLForRegion(region)
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
 }
 
@@ -229,11 +212,12 @@ func (g *GroqModel) ChatWithMessages(modelName string, messages []Message, apiCo
 }
 
 func (g *GroqModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -412,15 +396,13 @@ func (g *GroqModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error
 }
 
 func (g *GroqModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -533,15 +515,13 @@ func (g *GroqModel) TranscribeAudioWithSender(modelName *string, file *string, a
 }
 
 func (g *GroqModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("audio content is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

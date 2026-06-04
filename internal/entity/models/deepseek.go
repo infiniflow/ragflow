@@ -62,15 +62,13 @@ func (d *DeepSeekModel) Name() string {
 }
 
 func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -171,9 +169,7 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := d.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -238,15 +234,13 @@ func (d *DeepSeekModel) ChatWithMessages(modelName string, messages []Message, a
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (d *DeepSeekModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -449,11 +443,9 @@ type DSModelList struct {
 }
 
 func (d *DeepSeekModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -530,12 +522,6 @@ func (d *DeepSeekModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

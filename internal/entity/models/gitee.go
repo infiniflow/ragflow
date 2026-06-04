@@ -71,11 +71,6 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -222,15 +217,13 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -435,32 +428,23 @@ type giteeUsage struct {
 
 // Embed embeds a list of texts into embeddings
 func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("gitee: no base URL configured for default region")
-	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Embedding)
 
@@ -529,32 +513,23 @@ type giteeRerankRequest struct {
 
 // Rerank calculates similarity scores between query and documents
 func (g *GiteeModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
-
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("gitee: no base URL configured for default region")
-	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Rerank)
 
@@ -635,32 +610,23 @@ type giteeOCRResponse struct {
 
 // OCRFile OCR file
 func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	if imageURL == nil && content == nil {
-		return nil, fmt.Errorf("url or content is required")
-	}
-
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if imageURL == nil && content == nil {
+		return nil, fmt.Errorf("url or content is required")
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("gitee: no base URL configured for default region")
-	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.OCR)
 
@@ -741,32 +707,23 @@ type giteeURLs struct {
 
 // ParseFile parse file
 func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	if documentURL == nil && content == nil {
-		return nil, fmt.Errorf("url or content is required")
-	}
-
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if documentURL == nil && content == nil {
+		return nil, fmt.Errorf("url or content is required")
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("gitee: no base URL configured for default region")
-	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.DocumentParse)
 
@@ -896,11 +853,6 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 }
 
 func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -1021,11 +973,9 @@ func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 }
 
 func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -1101,11 +1051,9 @@ type giteeTaskURLs struct {
 }
 
 func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -1164,11 +1112,9 @@ func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 }
 
 func (g *GiteeModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

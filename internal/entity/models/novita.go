@@ -30,30 +30,11 @@ import (
 )
 
 // NovitaModel implements ModelDriver for Novita.ai
-// (https://novita.ai/docs/api-reference/).
-//
-// Novita exposes an OpenAI-compatible REST API at
-// https://api.novita.ai/v3/openai (chat completions at
-// /chat/completions, list models at /models). It serves a large
-// catalog of third-party models (DeepSeek, Llama, Qwen3, Kimi,
-// Gemma, Mistral, etc.) behind a single OpenAI-shaped surface.
-//
-// The wire shape matches OpenAI standard with ONE notable
-// difference: reasoning models like qwen3-* embed their
-// chain-of-thought INLINE inside content as <think>...</think>
-// tags, rather than in a separate reasoning_content field. The
-// driver detects those tags and routes the inner text to
-// ChatResponse.ReasonContent (non-stream) or the sender's second
-// arg (stream), keeping the answer clean of tag clutter.
 type NovitaModel struct {
 	baseModel BaseModel
 }
 
 // NewNovitaModel creates a new Novita model instance.
-//
-// Same transport convention as other Go drivers in this package:
-// clone http.DefaultTransport, override the connection-pool fields,
-// no client-level Timeout so SSE streams are not capped.
 func NewNovitaModel(baseURL map[string]string, urlSuffix URLSuffix) *NovitaModel {
 	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
 	var transport *http.Transport
@@ -87,15 +68,6 @@ func (n *NovitaModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (n *NovitaModel) Name() string {
 	return "novita"
-}
-
-func (n *NovitaModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("novita: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
 }
 
 const (
@@ -242,16 +214,11 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -384,26 +351,22 @@ func (n *NovitaModel) ChatWithMessages(modelName string, messages []Message, api
 //     across SSE chunk boundaries, then routes content/reasoning to
 //     the first/second sender arg respectively.
 func (n *NovitaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return err
-	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -568,16 +531,11 @@ func (n *NovitaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -651,28 +609,23 @@ type novitaEmbeddingResponse struct {
 // /v3/embeddings endpoint. The output has one vector per input, in the
 // same order the inputs were given.
 func (n *NovitaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
@@ -760,26 +713,22 @@ type novitaRerankResponse struct {
 // document in the API's ranking order. Caller may sort by Index to
 // recover original input order.
 func (n *NovitaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := n.baseURLForRegion(region)
+	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	if n.baseModel.URLSuffix.Rerank == "" {
 		return nil, fmt.Errorf("novita: no rerank URL suffix configured")
 	}
@@ -857,12 +806,6 @@ func (n *NovitaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, err
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

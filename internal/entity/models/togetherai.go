@@ -64,15 +64,6 @@ func (t *TogetherAIModel) Name() string {
 	return "togetherai"
 }
 
-func (t *TogetherAIModel) baseURLForRegion(region string) (string, error) {
-	apiConfig := &APIConfig{Region: &region}
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", fmt.Errorf("togetherai: %w", err)
-	}
-	return strings.TrimSuffix(baseURL, "/"), nil
-}
-
 type togetherAIReasoningOptions struct {
 	Enabled bool `json:"enabled"`
 }
@@ -119,16 +110,12 @@ func (t *TogetherAIModel) chatPayload(modelName string, messages []Message, stre
 }
 
 func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
-	baseURL, err := t.baseURLForRegion(region)
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return "", err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	return fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat), nil
 }
 
@@ -218,11 +205,12 @@ func (t *TogetherAIModel) ChatWithMessages(modelName string, messages []Message,
 }
 
 func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
+	}
+
+	if sender == nil {
+		return fmt.Errorf("sender is required")
 	}
 	if strings.TrimSpace(modelName) == "" {
 		return fmt.Errorf("model name is required")
@@ -243,10 +231,7 @@ func (t *TogetherAIModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
-
-	// ResponseHeaderTimeout caps the initial header wait. This context
-	// also caps the body-read phase so a stalled SSE stream cannot hold
-	// the caller's goroutine and connection indefinitely.
+	
 	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
 	defer cancel()
 
@@ -336,16 +321,11 @@ func (t *TogetherAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := t.baseURLForRegion(region)
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
@@ -404,28 +384,23 @@ type togetherAIEmbeddingResponse struct {
 }
 
 func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
-	baseURL, err := t.baseURLForRegion(region)
+	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
@@ -497,15 +472,13 @@ func (t *TogetherAIModel) Embed(modelName *string, texts []string, apiConfig *AP
 }
 
 func (t *TogetherAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := t.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -588,12 +561,6 @@ func (t *TogetherAIModel) TranscribeAudio(modelName *string, file *string, apiCo
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -700,12 +667,6 @@ func (t *TogetherAIModel) AudioSpeech(modelName *string, audioContent *string, a
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -765,12 +726,6 @@ func (t *TogetherAIModel) AudioSpeechWithSender(modelName *string, audioContent 
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is missing")
 	}
-
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

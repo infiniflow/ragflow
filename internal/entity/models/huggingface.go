@@ -52,15 +52,13 @@ func (h *HuggingFaceModel) Name() string {
 }
 
 func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -133,9 +131,7 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -199,15 +195,13 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 }
 
 func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -365,22 +359,16 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 }
 
 func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
-	}
-
-	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return nil, err
 	}
 
 	reqBody := map[string]interface{}{
@@ -473,11 +461,9 @@ func (h *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *str
 }
 
 func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

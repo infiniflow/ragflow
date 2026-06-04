@@ -61,15 +61,13 @@ func (a *AliyunModel) Name() string {
 }
 
 func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -140,9 +138,7 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -207,15 +203,13 @@ func (a *AliyunModel) ChatWithMessages(modelName string, messages []Message, api
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (a *AliyunModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -392,32 +386,23 @@ type aliyunUsage struct {
 
 // Embed embeds a list of texts into embeddings
 func (a *AliyunModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
-	if len(texts) == 0 {
-		return []EmbeddingData{}, nil
-	}
-
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(texts) == 0 {
+		return []EmbeddingData{}, nil
 	}
 
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
-
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
-	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Embedding)
 
@@ -489,30 +474,22 @@ type aliyunRerankResponse struct {
 }
 
 func (a *AliyunModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
-	}
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		return nil, fmt.Errorf("aliyun: no base URL configured for default region")
-	}
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Rerank)
 
@@ -614,11 +591,9 @@ type AliyunModelList struct {
 }
 
 func (a *AliyunModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil {
-		region = *apiConfig.Region
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
 	if err != nil {

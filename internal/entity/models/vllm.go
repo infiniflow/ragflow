@@ -62,15 +62,13 @@ func (v *VllmModel) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -213,15 +211,13 @@ func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (v *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
-
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -392,6 +388,10 @@ type vllmEmbeddingResponse struct {
 
 // Embed embeds a list of texts into embeddings
 func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -399,12 +399,6 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -442,9 +436,7 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -478,12 +470,9 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 }
 
 func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -515,12 +504,7 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	// vLLM is a local provider and the API key is optional. Only set
-	// the Authorization header when a non-empty key was supplied. This
-	// also avoids a nil-pointer dereference on apiConfig or ApiKey.
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -594,18 +578,16 @@ type vllmRerankResponse struct {
 // matching the existing Embed/ListModels behaviour for this local
 // driver.
 func (v *VllmModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
 	}
-
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-	_ = region
 
 	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -647,9 +629,7 @@ func (v *VllmModel) Rerank(modelName *string, query string, documents []string, 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
