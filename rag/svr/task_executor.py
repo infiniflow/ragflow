@@ -15,13 +15,6 @@
 import argparse
 import time
 
-from rag.advanced_rag.knowlege_compile.structure import compile_structure_from_text, merge_compiled_structures
-from rag.advanced_rag.knowlege_compile.wiki import (
-    wiki_map_from_chunks,
-    wiki_plan_from_reduction,
-    wiki_reduce_from_extracts,
-    wiki_refine_from_plan,
-)
 from rag.svr.task_executor_refactor.task_manager import TaskManager
 from rag.svr.task_executor_refactor.recording_context import timed_with_recording, get_recording_context, \
     RecordingContext, set_recording_context, NullRecordingContext
@@ -690,26 +683,6 @@ def build_TOC(task, docs, progress_callback):
         d["id"] = xxhash.xxh64(
             (d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
-    return None
-
-
-def knowledge_compilation(task, docs, embedding_model, progress_callback):
-    progress_callback(msg="Start to compile knowledge ...")
-    chat_model_config = get_model_config_by_type_and_name(task["tenant_id"], LLMType.CHAT, task["llm_id"])
-    chat_mdl = LLMBundle(task["tenant_id"], chat_model_config, lang=task["language"])
-    docs = sorted(docs, key=lambda d: (
-        d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
-        d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
-    ))
-    struts: list[dict] = asyncio.run(
-        compile_structure_from_text(docs,
-                                    task["parser_config"].get("knowledge_compilation"),
-                                    chat_mdl, embedding_model,
-                                    task["doc_id"],
-                                    callback=progress_callback))
-    logging.info("------------ Knowledge Compilation -------------\n")
-    merge_compiled_structures(struts, chat_mdl, embedding_model, task["tenant_id"], task["kb_id"])
-    logging.info("------------ Knowledge Compilation -------------\n" + json.dumps(struts, ensure_ascii=False, indent='  '))
     return None
 
 
@@ -1597,7 +1570,7 @@ async def do_handle_task(task):
         progress_callback(msg=progress_message)
         
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
-            toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, embedding_model, progress_callback))
+            toc_thread = asyncio.create_task(asyncio.to_thread(build_TOC, task, chunks, progress_callback))
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
