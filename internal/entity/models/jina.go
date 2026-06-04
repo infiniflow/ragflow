@@ -26,37 +26,63 @@ import (
 	"time"
 )
 
+// JinaModel implements ModelDriver for Jina (https://jina.ai).
+//
+// Jina exposes OpenAI-compatible non-streaming chat, embedding, and rerank
+// endpoints. Streaming chat is not supported by the upstream API (verified
+// May 2026: stream requests return HTTP 500). Non-stream calls use per-request
+// context deadlines.
 type JinaModel struct {
 	BaseURL    map[string]string
 	URLSuffix  URLSuffix
 	httpClient *http.Client
 }
 
-func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
+// NewJinaModel constructs a Jina driver with a pooled HTTP transport for JSON API calls.
+func NewJinaModel(
+	baseURL map[string]string,
+	urlSuffix URLSuffix,
+) *JinaModel {
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	var transport *http.Transport
+	if ok {
+		transport = defaultTransport.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
+	}
+	transport.MaxIdleConns = 100
+	transport.MaxIdleConnsPerHost = 10
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.DisableCompression = false
+	transport.ResponseHeaderTimeout = 60 * time.Second
+
 	return &JinaModel{
 		BaseURL:   baseURL,
 		URLSuffix: urlSuffix,
 		httpClient: &http.Client{
-			Timeout: time.Second * 90,
+			Transport: transport,
 		},
 	}
 }
 
-func (j *JinaModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &JinaModel{
-		BaseURL:   baseURL,
-		URLSuffix: j.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: time.Second * 90,
-		},
-	}
+// NewInstance clones the driver with new base URLs while keeping URL suffixes.
+func (j *JinaModel) NewInstance(
+	baseURL map[string]string,
+) ModelDriver {
+	return NewJinaModel(baseURL, j.URLSuffix)
 }
 
+// Name reports the factory class name ("jina").
 func (j *JinaModel) Name() string {
 	return "jina"
 }
 
-func (j *JinaModel) baseURLForRegion(region string) (string, error) {
+// baseURLForRegion resolves the configured API host for a region key.
+func (j *JinaModel) baseURLForRegion(
+	region string,
+) (string, error) {
 	base, ok := j.BaseURL[region]
 	if !ok || base == "" {
 		return "", fmt.Errorf("jina: no base URL configured for region %q", region)
@@ -64,7 +90,13 @@ func (j *JinaModel) baseURLForRegion(region string) (string, error) {
 	return base, nil
 }
 
-func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+// ChatWithMessages performs a non-streaming chat completion against Jina.
+func (j *JinaModel) ChatWithMessages(
+	modelName string,
+	messages []Message,
+	apiConfig *APIConfig,
+	chatModelConfig *ChatConfig,
+) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -178,12 +210,37 @@ func (j *JinaModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}, nil
 }
 
-func (j *JinaModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	//TODO implement me: https://api.jina.ai/docs#/Search%20Foundation%20Models/chat_completions_v1_chat_completions_post
-	return fmt.Errorf("jina does not implement ChatStreamlyWithSender(not available for now)")
+// ChatStreamlyWithSender is not supported: Jina's chat API accepts non-streaming
+// requests only. Maintainer CLI verification (May 2026) shows stream=true returns
+// HTTP 500 Internal Server Error while non-stream chat succeeds.
+func (j *JinaModel) ChatStreamlyWithSender(
+	modelName string,
+	messages []Message,
+	apiConfig *APIConfig,
+	chatModelConfig *ChatConfig,
+	sender func(*string, *string) error,
+) error {
+	_ = modelName
+	_ = messages
+	_ = apiConfig
+	_ = chatModelConfig
+	_ = sender
+	return fmt.Errorf("jina: ChatStreamlyWithSender is not supported (upstream returns HTTP 500 for stream=true)")
 }
 
-func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+// Embed requests embedding vectors for the supplied texts from Jina.
+func (j *JinaModel) Embed(
+	modelName *string,
+	texts []string,
+	apiConfig *APIConfig,
+	embeddingConfig *EmbeddingConfig,
+) ([]EmbeddingData, error) {
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -205,7 +262,10 @@ func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -254,7 +314,20 @@ func (j *JinaModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	return embeddings, nil
 }
 
-func (j *JinaModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+// Rerank scores documents against a query using Jina's rerank API.
+func (j *JinaModel) Rerank(
+	modelName *string,
+	query string,
+	documents []string,
+	apiConfig *APIConfig,
+	rerankConfig *RerankConfig,
+) (*RerankResponse, error) {
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
+		return nil, fmt.Errorf("api key is required")
+	}
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -266,8 +339,8 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 
 	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Rerank)
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN != 0 {
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
 		topN = rerankConfig.TopN
 	}
 
@@ -283,7 +356,10 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -329,7 +405,10 @@ func (j *JinaModel) Rerank(modelName *string, query string, documents []string, 
 	return &rerankResponse, nil
 }
 
-func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+// ListModels fetches model identifiers from the Jina API.
+func (j *JinaModel) ListModels(
+	apiConfig *APIConfig,
+) ([]string, error) {
 	var region = "default"
 	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
 		region = *apiConfig.Region
@@ -337,12 +416,18 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 
 	url := fmt.Sprintf("%s/%s", j.BaseURL[region], j.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	}
 
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -359,7 +444,6 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
 	var result map[string]interface{}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -376,11 +460,17 @@ func (j *JinaModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	return models, nil
 }
 
-func (j *JinaModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+// Balance is unsupported because Jina does not expose a balance endpoint.
+func (j *JinaModel) Balance(
+	apiConfig *APIConfig,
+) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
-func (j *JinaModel) CheckConnection(apiConfig *APIConfig) error {
+// CheckConnection validates credentials by listing models with the API key.
+func (j *JinaModel) CheckConnection(
+	apiConfig *APIConfig,
+) error {
 	_, err := j.ListModels(apiConfig)
 	return err
 }
@@ -390,8 +480,15 @@ func (j *JinaModel) TranscribeAudio(modelName *string, file *string, apiConfig *
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", j.Name())
+// TranscribeAudioWithSender is not supported by the Jina driver.
+func (z *JinaModel) TranscribeAudioWithSender(
+	modelName *string,
+	file *string,
+	apiConfig *APIConfig,
+	asrConfig *ASRConfig,
+	sender func(*string, *string) error,
+) error {
+	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -399,8 +496,15 @@ func (j *JinaModel) AudioSpeech(modelName *string, audioContent *string, apiConf
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", j.Name())
+// AudioSpeechWithSender is not supported by the Jina driver.
+func (z *JinaModel) AudioSpeechWithSender(
+	modelName *string,
+	audioContent *string,
+	apiConfig *APIConfig,
+	ttsConfig *TTSConfig,
+	sender func(*string, *string) error,
+) error {
+	return fmt.Errorf("%s, no such method", z.Name())
 }
 
 // OCRFile OCR file
@@ -413,10 +517,17 @@ func (j *JinaModel) ParseFile(modelName *string, content []byte, url *string, ap
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
 
-func (j *JinaModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+// ListTasks is not supported by the Jina driver.
+func (z *JinaModel) ListTasks(
+	apiConfig *APIConfig,
+) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
 
-func (j *JinaModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", j.Name())
+// ShowTask is not supported by the Jina driver.
+func (z *JinaModel) ShowTask(
+	taskID string,
+	apiConfig *APIConfig,
+) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
 }
