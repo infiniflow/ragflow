@@ -40,8 +40,9 @@ type Router struct {
 	memoryHandler        *handler.MemoryHandler
 	mcpHandler           *handler.MCPHandler
 	skillSearchHandler   *handler.SkillSearchHandler
-	providerHandler      *handler.ProviderHandler
-	agentHandler         *handler.AgentHandler
+	providerHandler           *handler.ProviderHandler
+	agentHandler              *handler.AgentHandler
+	relatedQuestionsHandler   *handler.SearchbotHandler
 }
 
 // NewRouter create router
@@ -65,6 +66,7 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
+	relatedQuestionsHandler *handler.SearchbotHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -86,11 +88,21 @@ func NewRouter(
 		skillSearchHandler:   skillSearchHandler,
 		providerHandler:      providerHandler,
 		agentHandler:         agentHandler,
+		relatedQuestionsHandler: relatedQuestionsHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	// Mark all responses from Go with a header for debugging.
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-API-Source", "go")
+		c.Next()
+	})
+
+	// Log all HTTP requests.
+	engine.Use(gin.Logger())
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
@@ -204,6 +216,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chats.GET("/:chat_id", r.chatHandler.GetChat)
 				chats.GET("/:chat_id/sessions", r.chatSessionHandler.ListChatSessions)
 			}
+
+			// Searchbot routes
+			v1.POST("/searchbots/related_questions", r.relatedQuestionsHandler.Handle)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -359,6 +374,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
+				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
+				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
+
 			}
 
 			connector := v1.Group("/connectors")

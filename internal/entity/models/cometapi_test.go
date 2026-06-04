@@ -335,9 +335,9 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			defer srv.Close()
 
 			m := newCometAPIForTest(srv.URL + "/")
-			m.URLSuffix.Chat = "/v1/chat/completions"
-			m.URLSuffix.Models = "/api/models"
-			m.URLSuffix.Embedding = "/v1/embeddings"
+			m.baseModel.URLSuffix.Chat = "/v1/chat/completions"
+			m.baseModel.URLSuffix.Models = "/api/models"
+			m.baseModel.URLSuffix.Embedding = "/v1/embeddings"
 			apiKey := "test-key"
 			if err := tt.run(m, &APIConfig{ApiKey: &apiKey}); err != nil {
 				t.Fatalf("%s: %v", tt.name, err)
@@ -487,12 +487,12 @@ func TestCometAPICheckConnectionDelegatesToBalance(t *testing.T) {
 
 	apiKey := "test-key"
 	mOK := newCometAPIForTest(okSrv.URL)
-	mOK.URLSuffix.Balance = okSrv.URL + "/user/quota"
+	mOK.baseModel.URLSuffix.Balance = okSrv.URL + "/user/quota"
 	if err := mOK.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection(ok): %v", err)
 	}
 	mFail := newCometAPIForTest(failSrv.URL)
-	mFail.URLSuffix.Balance = failSrv.URL + "/user/quota"
+	mFail.baseModel.URLSuffix.Balance = failSrv.URL + "/user/quota"
 	if err := mFail.CheckConnection(&APIConfig{ApiKey: &apiKey}); err == nil {
 		t.Error("CheckConnection(fail): expected error, got nil")
 	}
@@ -519,7 +519,7 @@ func TestCometAPIBalanceHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	m := newCometAPIForTest("http://unused")
-	m.URLSuffix.Balance = srv.URL + "/user/quota"
+	m.baseModel.URLSuffix.Balance = srv.URL + "/user/quota"
 	apiKey := "test-key"
 	balance, err := m.Balance(&APIConfig{ApiKey: &apiKey})
 	if err != nil {
@@ -540,7 +540,7 @@ func TestCometAPIBalanceRequiresAPIKey(t *testing.T) {
 
 func TestCometAPIBalanceRequiresConfiguredURL(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
-	m.URLSuffix.Balance = ""
+	m.baseModel.URLSuffix.Balance = ""
 	apiKey := "test-key"
 	_, err := m.Balance(&APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "balance URL is required") {

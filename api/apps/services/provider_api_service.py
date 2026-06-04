@@ -420,7 +420,8 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
             msg = ""
             break
 
-    return any([embd_passed, chat_passed, rerank_passed]), msg or "success"
+    success = any([embd_passed, chat_passed, rerank_passed])
+    return success, "success" if success else msg
 
 
 def show_provider_instance(tenant_id: str, provider_name: str, instance_name: str):
