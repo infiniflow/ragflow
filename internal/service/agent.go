@@ -145,7 +145,6 @@ func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) 
 	if canvas.Permission != string(entity.TenantPermissionTeam) {
 		return false, nil
 	}
-	// Check team membership
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
 	if err != nil {
 		return false, err

@@ -375,6 +375,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				agents.GET("", r.agentHandler.ListAgents)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
+				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
+
 			}
 
 			connector := v1.Group("/connectors")
