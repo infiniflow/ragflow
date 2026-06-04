@@ -32,11 +32,14 @@ check_cpp_deps() {
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
     command -v g++ >/dev/null 2>&1 || { echo -e "${RED}Error: g++ is required but not installed.${NC}"; exit 1; }
 
-    # Check for pcre2 library
-    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] || [ -f "/usr/local/lib/libpcre2-8.a" ]; then
+    # Check for pcre2 library (static .a or shared .so; -lpcre2-8 finds either)
+    if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
+       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so" ] \
+       || [ -f "/usr/local/lib/libpcre2-8.a" ] \
+       || [ -f "/usr/local/lib/libpcre2-8.so" ]; then
         echo "✓ pcre2 library found"
     else
-        echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
+        echo -e "${YELLOW}Warning: libpcre2-8 not found. You may need to install libpcre2-dev:${NC}"
         echo "  sudo apt-get install libpcre2-dev"
     fi
 
@@ -85,17 +88,19 @@ build_go() {
     fi
 
     # Check for pcre2 library — known Linux paths + macOS Homebrew (Apple Silicon
-    # at /opt/homebrew, Intel Macs at /usr/local).
+    # at /opt/homebrew, Intel Macs at /usr/local). Checks both .a and .so.
     if [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.a" ] \
+       || [ -f "/usr/lib/x86_64-linux-gnu/libpcre2-8.so" ] \
        || [ -f "/usr/local/lib/libpcre2-8.a" ] \
+       || [ -f "/usr/local/lib/libpcre2-8.so" ] \
        || [ -f "/opt/homebrew/lib/libpcre2-8.a" ]; then
         echo "✓ pcre2 library found"
     else
         if [ "$(uname)" = "Darwin" ]; then
-            echo -e "${RED}Error: libpcre2-8.a not found. Install with: brew install pcre2${NC}"
+            echo -e "${RED}Error: libpcre2-8 not found. Install with: brew install pcre2${NC}"
             exit 1
         fi
-        echo -e "${YELLOW}Warning: libpcre2-8.a not found. You may need to install libpcre2-dev:${NC}"
+        echo -e "${YELLOW}Warning: libpcre2-8 not found. You may need to install libpcre2-dev:${NC}"
         sudo apt -y install libpcre2-dev
     fi
     

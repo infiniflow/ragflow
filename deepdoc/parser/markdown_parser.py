@@ -15,6 +15,7 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 
 from markdown import markdown
@@ -132,6 +133,95 @@ class MarkdownElementExtractor:
         toks = sorted(set(toks), key=lambda x: -len(x))
         return "|".join(re.escape(t) for t in toks if t)
 
+    def _get_fence_marker(self, line):
+        match = re.match(r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})(?:.*)$", line)
+        if not match:
+            return None
+        fence = match.group("fence")
+        return fence[0], len(fence)
+
+    def _is_closing_fence(self, line, fence_char, fence_len):
+        pattern = r"^[ \t]{0,3}" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$"
+        return re.match(pattern, line) is not None
+
+    def _line_start_offsets(self, text):
+        offsets = []
+        offset = 0
+        for line in self.lines:
+            offsets.append(offset)
+            offset += len(line) + 1
+        return offsets
+
+    def _fenced_code_ranges(self, text):
+        ranges = []
+        line_offsets = self._line_start_offsets(text)
+
+        i = 0
+        while i < len(self.lines):
+            marker = self._get_fence_marker(self.lines[i])
+            if not marker:
+                i += 1
+                continue
+
+            fence_char, fence_len = marker
+            start_pos = line_offsets[i]
+            end_line = len(self.lines) - 1
+            for j in range(i + 1, len(self.lines)):
+                if self._is_closing_fence(self.lines[j], fence_char, fence_len):
+                    end_line = j
+                    break
+
+            end_pos = min(len(text), line_offsets[end_line] + len(self.lines[end_line]))
+            ranges.append((start_pos, end_pos))
+            i = end_line + 1
+
+        return ranges
+
+    def _append_delimited_section(self, sections, text, start, end, include_meta):
+        part = text[start:end]
+        if not part or not part.strip():
+            return
+        if include_meta:
+            sections.append(
+                {
+                    "content": part.strip(),
+                    "start_line": text.count("\n", 0, start),
+                    "end_line": text.count("\n", 0, end),
+                }
+            )
+        else:
+            sections.append(part.strip())
+
+    def _extract_delimited_elements(self, text, delimiters, include_meta=False):
+        sections = []
+        pattern = re.compile(delimiters)
+        protected_ranges = self._fenced_code_ranges(text)
+        if protected_ranges:
+            logging.debug("markdown_parser: detected %d fenced ranges for delimiter extraction", len(protected_ranges))
+        protected_idx = 0
+        last_end = 0
+
+        for match in pattern.finditer(text):
+            while protected_idx < len(protected_ranges) and protected_ranges[protected_idx][1] <= match.start():
+                protected_idx += 1
+
+            if protected_idx < len(protected_ranges):
+                start, end = protected_ranges[protected_idx]
+                if start <= match.start() < end:
+                    logging.debug(
+                        "markdown_parser: skipped delimiter match at pos=%d delimiter=%r inside fenced range %s",
+                        match.start(),
+                        match.group(),
+                        (start, end),
+                    )
+                    continue
+
+            self._append_delimited_section(sections, text, last_end, match.start(), include_meta)
+            last_end = match.end()
+
+        self._append_delimited_section(sections, text, last_end, len(text), include_meta)
+        return sections
+
     def extract_elements(self, delimiter=None, include_meta=False):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
@@ -142,34 +232,7 @@ class MarkdownElementExtractor:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            if include_meta:
-                pattern = re.compile(dels)
-                last_end = 0
-                for m in pattern.finditer(text):
-                    part = text[last_end : m.start()]
-                    if part and part.strip():
-                        sections.append(
-                            {
-                                "content": part.strip(),
-                                "start_line": text.count("\n", 0, last_end),
-                                "end_line": text.count("\n", 0, m.start()),
-                            }
-                        )
-                    last_end = m.end()
-
-                part = text[last_end:]
-                if part and part.strip():
-                    sections.append(
-                        {
-                            "content": part.strip(),
-                            "start_line": text.count("\n", 0, last_end),
-                            "end_line": text.count("\n", 0, len(text)),
-                        }
-                    )
-            else:
-                parts = re.split(dels, text)
-                sections = [p.strip() for p in parts if p and p.strip()]
-            return sections
+            return self._extract_delimited_elements(text, dels, include_meta)
         while i < len(self.lines):
             line = self.lines[i]
 
@@ -178,7 +241,7 @@ class MarkdownElementExtractor:
                 element = self._extract_header(i)
                 sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
-            elif line.strip().startswith("```"):
+            elif self._get_fence_marker(line):
                 # code block
                 element = self._extract_code_block(i)
                 sections.append(element if include_meta else element["content"])
@@ -218,12 +281,13 @@ class MarkdownElementExtractor:
     def _extract_code_block(self, start_pos):
         end_pos = start_pos
         content_lines = [self.lines[start_pos]]
+        fence_char, fence_len = self._get_fence_marker(self.lines[start_pos])
 
         # Find the end of the code block
         for i in range(start_pos + 1, len(self.lines)):
             content_lines.append(self.lines[i])
             end_pos = i
-            if self.lines[i].strip().startswith("```"):
+            if self._is_closing_fence(self.lines[i], fence_char, fence_len):
                 break
 
         return {
@@ -292,13 +356,13 @@ class MarkdownElementExtractor:
         while i < len(self.lines):
             line = self.lines[i]
             # stop if we encounter a block element
-            if re.match(r"^#{1,6}\s+.*$", line) or line.strip().startswith("```") or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
+            if re.match(r"^#{1,6}\s+.*$", line) or self._get_fence_marker(line) or re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line) or line.strip().startswith(">"):
                 break
             elif not line.strip():
                 # check if the next line is a block element
                 if i + 1 < len(self.lines) and (
                     re.match(r"^#{1,6}\s+.*$", self.lines[i + 1])
-                    or self.lines[i + 1].strip().startswith("```")
+                    or self._get_fence_marker(self.lines[i + 1])
                     or re.match(r"^\s*[-*+]\s+.*$", self.lines[i + 1])
                     or re.match(r"^\s*\d+\.\s+.*$", self.lines[i + 1])
                     or self.lines[i + 1].strip().startswith(">")

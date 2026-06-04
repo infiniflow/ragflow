@@ -18,6 +18,8 @@ package dao
 
 import (
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantModelDAO tenant model data access object
@@ -30,6 +32,21 @@ func NewTenantModelDAO() *TenantModelDAO {
 
 func (dao *TenantModelDAO) Create(instance *entity.TenantModel) error {
 	return DB.Create(instance).Error
+}
+
+func (dao *TenantModelDAO) CreateBatch(models []*entity.TenantModel) error {
+	if len(models) == 0 {
+		return nil
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, model := range models {
+			if err := tx.Create(model).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (dao *TenantModelDAO) DeleteByModelID(modelID string) (int64, error) {
