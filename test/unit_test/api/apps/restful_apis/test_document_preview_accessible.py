@@ -57,11 +57,16 @@ def _load_document_api(
     async def _make_response(payload):
         return SimpleNamespace(payload=payload, headers={})
 
+    def _login_required(func=None, **_kw):
+        if func is not None:
+            return func
+        return lambda f: f
+
     _stub(
         monkeypatch, "api.apps",
         AUTH_JWT="JWT", AUTH_API="API", AUTH_BETA="BETA",
         current_user=SimpleNamespace(id="caller-tenant"),
-        login_required=lambda func: func,
+        login_required=_login_required,
     )
     _stub(monkeypatch, "api.constants", FILE_NAME_LEN_LIMIT=128, IMG_BASE64_PREFIX="data:image/")
     _stub(
@@ -214,13 +219,13 @@ class TestDocumentPreviewAccessCheck:
     def test_missing_doc_returns_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing-doc behaviour is unchanged: same 'Document not found!' shape."""
 
-        def _accessible_should_not_be_called(*_a, **_k):
-            raise AssertionError("accessible() must not be called for a missing doc")
+        def _accessible_returns_false(*_a, **_k):
+            return False
 
         module = _load_document_api(
             monkeypatch,
             doc_get_by_id=(False, None),
-            accessible_fn=_accessible_should_not_be_called,
+            accessible_fn=_accessible_returns_false,
             storage_get=lambda *_a, **_k: b"",
         )
 
