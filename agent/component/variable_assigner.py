@@ -13,11 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 from abc import ABC
 import os
 import numbers
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.utils.api_utils import timeout
+
+logger = logging.getLogger(__name__)
 
 class VariableAssignerParam(ComponentParamBase):
     """
@@ -40,6 +43,10 @@ class VariableAssignerParam(ComponentParamBase):
 
 class VariableAssigner(ComponentBase,ABC):
     component_name = "VariableAssigner"
+    _SUPPORTED_OPERATORS = {
+        "overwrite", "clear", "set", "append", "extend",
+        "remove_first", "remove_last", "+=", "-=", "*=", "/="
+    }
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
@@ -49,12 +56,20 @@ class VariableAssigner(ComponentBase,ABC):
             for item in self._param.variables:
                 if not item.get("variable") or not item.get("operator"):
                     raise ValueError("Variable is not complete.")
+                operator = item.get("operator")
+                if operator not in self._SUPPORTED_OPERATORS:
+                    raise ValueError(f"Unsupported operator: {operator}")
                 # parameter can be 0 or empty string, so check explicitly for None
-                if item.get("parameter") is None and item.get("operator") not in ["clear", "remove_first", "remove_last"]:
+                if item.get("parameter") is None and operator not in ["clear", "remove_first", "remove_last"]:
                     raise ValueError("Variable is not complete.")
                 variable=item["variable"]
-                operator=item["operator"]
                 parameter=item.get("parameter")
+                if parameter is None and operator in ["clear", "remove_first", "remove_last"]:
+                    logger.debug(
+                        "Executing parameterless operator '%s' on variable '%s'.",
+                        operator,
+                        variable,
+                    )
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
                 self._canvas.set_variable_value(variable, new_variable)
