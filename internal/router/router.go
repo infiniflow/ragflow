@@ -101,6 +101,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
 
+	// OAuth callbacks are invoked by third-party providers and cannot rely on
+	// the RAGFlow auth middleware.
+	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
+	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
@@ -126,6 +131,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		// Document images are embedded directly in pages and match Python's public route.
 		apiNoAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
+
+		// Google redirects here after Gmail / Google Drive web OAuth completes.
+		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
+		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
 	}
 
 	// Protected routes
@@ -223,6 +232,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
 				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
+				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
@@ -322,14 +332,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_name/instances", r.providerHandler.ListProviderInstances)
 				provider.GET("/:provider_name/instances/:instance_name", r.providerHandler.ShowProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/balance", r.providerHandler.ShowInstanceBalance)
-				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckProviderConnection)
+				provider.GET("/:provider_name/instances/:instance_name/connection", r.providerHandler.CheckInstanceConnection)
+				provider.GET("/:provider_name/connection", r.providerHandler.CheckConnection)
 				provider.GET("/:provider_name/instances/:instance_name/tasks", r.providerHandler.ListTasks)
 				provider.GET("/:provider_name/instances/:instance_name/tasks/:task_id", r.providerHandler.ShowTask)
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
 				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
-				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddCustomModel)
+				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/completions", r.providerHandler.ChatToModel)
 				v1.POST("/embeddings", r.providerHandler.EmbedText)
@@ -356,6 +367,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connector.GET("/", r.connectorHandler.ListConnectors)
 				connector.POST("/", r.connectorHandler.CreateConnector)
+				connector.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
+				connector.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
 				connector.GET("/:connector_id/logs", r.connectorHandler.ListLogs)
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
@@ -442,15 +455,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		{
 			chunk.POST("/list", r.chunkHandler.List)
 			chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
-		}
-
-		// LLM routes
-		llm := authorized.Group("/v1/llm")
-		{
-			llm.GET("/my_llms", r.llmHandler.GetMyLLMs)
-			llm.GET("/factories", r.llmHandler.Factories)
-			llm.GET("/list", r.llmHandler.ListApp)
-			llm.POST("/set_api_key", r.llmHandler.SetAPIKey)
 		}
 
 		// Chat routes

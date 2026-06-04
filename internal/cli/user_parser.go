@@ -1435,7 +1435,7 @@ func (p *Parser) parseAlterProvider() (*Command, error) {
 	return cmd, nil
 }
 
-// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> command
+// parseCreateProviderInstance parses CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region> command
 // instance_name cannot be "default"
 func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1444,8 +1444,8 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected provider name: %w", err)
 	}
-
 	p.nextToken()
+
 	if p.curToken.Type != TokenInstance {
 		return nil, fmt.Errorf("expected INSTANCE after provider name")
 	}
@@ -1455,7 +1455,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected instance name: %w", err)
 	}
-
 	p.nextToken()
 
 	if p.curToken.Type != TokenKey {
@@ -1470,23 +1469,27 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	p.nextToken()
 
 	baseURL := ""
-	if p.curToken.Type == TokenURL {
-		p.nextToken()
-		baseURL, err = p.parseQuotedString()
-		if err != nil {
-			return nil, fmt.Errorf("expected base URL: %w", err)
-		}
-		p.nextToken()
-	}
-
 	region := ""
-	if p.curToken.Type == TokenRegion {
-		p.nextToken()
-		region, err = p.parseQuotedString()
-		if err != nil {
-			return nil, fmt.Errorf("expected base URL: %w", err)
+optionsLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenRegion:
+			p.nextToken()
+			region, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected region: %w", err)
+			}
+			p.nextToken()
+		case TokenURL:
+			p.nextToken()
+			baseURL, err = p.parseQuotedString()
+			if err != nil {
+				return nil, fmt.Errorf("expected base URL: %w", err)
+			}
+			p.nextToken()
+		default:
+			break optionsLoop
 		}
-		p.nextToken()
 	}
 
 	cmd := NewCommand("create_provider_instance")
@@ -1496,9 +1499,6 @@ func (p *Parser) parseCreateProviderInstance() (*Command, error) {
 	if baseURL != "" {
 		// Only local model provider need to set URL
 		cmd.Params["base_url"] = baseURL
-		if region == "" {
-			region = instanceName
-		}
 	}
 
 	if region != "" {
@@ -3118,6 +3118,17 @@ func (p *Parser) parseModelParseCommand() (*Command, error) {
 func (p *Parser) parseCheckCommand() (*Command, error) {
 	p.nextToken() // consume CHECK
 
+	switch p.curToken.Type {
+	case TokenInstance:
+		return p.parseCheckInstanceCommand()
+	case TokenProvider:
+		return p.parseCheckProviderByKeyCommand()
+	default:
+		return nil, fmt.Errorf("expected INSTANCE or PROVIDER after CHECK")
+	}
+}
+
+func (p *Parser) parseCheckInstanceCommand() (*Command, error) {
 	if p.curToken.Type != TokenInstance {
 		return nil, fmt.Errorf("expected INSTANCE after CHECK")
 	}
@@ -3148,6 +3159,68 @@ func (p *Parser) parseCheckCommand() (*Command, error) {
 	cmd := NewCommand("check_provider_connection")
 	cmd.Params["provider_name"] = providerName
 	cmd.Params["instance_name"] = instanceName
+	return cmd, nil
+}
+
+func (p *Parser) parseCheckProviderByKeyCommand() (*Command, error) {
+	if p.curToken.Type != TokenProvider {
+		return nil, fmt.Errorf("expected PROVIDER after CHECK")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected provider name after PROVIDER")
+	}
+	providerName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type != TokenRegion {
+		return nil, fmt.Errorf("expected REGION after provider name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected region name after REGION")
+	}
+	regionName := p.curToken.Value
+	p.nextToken()
+
+	if p.curToken.Type != TokenKey {
+		return nil, fmt.Errorf("expected KEY after region name")
+	}
+	p.nextToken()
+
+	if p.curToken.Type != TokenQuotedString {
+		return nil, fmt.Errorf("expected API key after KEY")
+	}
+	apiKey := p.curToken.Value
+	p.nextToken()
+
+	baseURL := ""
+	if p.curToken.Type == TokenURL {
+		p.nextToken()
+		if p.curToken.Type != TokenQuotedString {
+			return nil, fmt.Errorf("expected base URL after URL")
+		}
+		baseURL = p.curToken.Value
+		p.nextToken()
+	}
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("unexpected token: %s", p.curToken.Value)
+	}
+
+	cmd := NewCommand("check_provider_with_key")
+	cmd.Params["provider_name"] = providerName
+	cmd.Params["region"] = regionName
+	cmd.Params["api_key"] = apiKey
+	if baseURL != "" {
+		cmd.Params["base_url"] = baseURL
+	}
+
 	return cmd, nil
 }
 

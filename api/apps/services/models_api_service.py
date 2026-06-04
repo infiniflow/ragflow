@@ -45,6 +45,13 @@ MODEL_TAG_TO_TYPE = {
 }
 
 
+def _to_int(v, default=500):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _get_model_info(tenant_id: str, default_model: str, model_type: str):
     """
     Parse a composite model string (modelName@instanceName@providerName or modelName@providerName)
@@ -307,6 +314,7 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
     added_models = []
     model_key_in_factory = []
     provider_names = [provider.provider_name for provider in providers]
+    factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
     for factory in FACTORY_LLM_INFOS:
         if factory["name"] not in provider_names:
             continue
@@ -357,6 +365,6 @@ def list_tenant_added_models(tenant_id: str, model_type_filter: str=None):
                 "instance_name": instance_info_map[instance_id].instance_name if instance_info_map.get(instance_id) else ""
             })
 
-    added_models.sort(key=lambda x: (x["provider_name"], x["instance_name"], x["name"]))
+    added_models.sort(key=lambda x: (factory_rank_mapping.get(x["provider_name"]), x["provider_name"], x["instance_name"]))
 
     return True, added_models

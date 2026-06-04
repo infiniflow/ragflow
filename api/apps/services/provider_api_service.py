@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import os
+import aiohttp
 import json
 import logging
 import asyncio
@@ -26,6 +27,13 @@ from api.db.services.tenant_model_provider_service import TenantModelProviderSer
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
 from rag.llm import EmbeddingModel, ChatModel, RerankModel
+
+
+def _to_int(v, default=500):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
 
 
 def list_providers(tenant_id: str, all_available: bool = False):
@@ -42,22 +50,29 @@ def list_providers(tenant_id: str, all_available: bool = False):
     if not FACTORY_LLM_INFOS:
         return False, []
 
+    factory_rank_mapping = {factory["name"]: -_to_int(factory.get("rank", "500")) for factory in FACTORY_LLM_INFOS}
+    factory_info_map = {f["name"]: f for f in FACTORY_LLM_INFOS}
     if all_available:
         providers = []
         for factory_info in FACTORY_LLM_INFOS:
+            if factory_info["name"] in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"]:
+                continue
             model_types = sorted(set(
                 llm["model_type"]
                 for llm in factory_info.get("llm", [])
                 if llm.get("model_type")
             ))
-            providers.append({
+            provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
                 "url": {
                     "default": factory_info.get("url", "")
                 }
-            })
-        providers.sort(key=lambda x: x["name"])
+            }
+            if factory_info["name"].lower() == "siliconflow":
+                provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            providers.append(provider)
+        providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
         return True, providers
 
     # List tenant-configured providers
@@ -66,21 +81,24 @@ def list_providers(tenant_id: str, all_available: bool = False):
     providers = []
     factory_info_mapping = {f["name"]: f for f in FACTORY_LLM_INFOS}
     for name in factory_names:
-        if factory_info_mapping.get(name):
+        if name not in ["Youdao", "FastEmbed", "BAAI", "Builtin", "siliconflow_intl"] and factory_info_mapping.get(name):
             factory_info = factory_info_mapping[name]
             model_types = sorted(set(
                 llm["model_type"]
                 for llm in factory_info.get("llm", [])
                 if llm.get("model_type")
             ))
-            providers.append({
+            provider = {
                 "model_types": model_types,
                 "name": factory_info["name"],
                 "url": {
                     "default": factory_info.get("url", "")
                 }
-            })
-    providers.sort(key=lambda x: x["name"])
+            }
+            if factory_info["name"].lower() == "siliconflow":
+                provider["url"]["intl"] = factory_info_map.get("siliconflow_intl", {}).get("url", "https://api.siliconflow.com/v1")
+            providers.append(provider)
+    providers.sort(key=lambda x: (factory_rank_mapping.get(x["name"]), x["name"]))
     return True, providers
 
 
@@ -207,7 +225,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str, verify: bool):
+async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str, base_url: str, region: str):
     """
     Create a provider instance.
 
@@ -220,7 +238,6 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     :param api_key: API key
     :param base_url: base url
     :param region: region
-    :param verify: verify
     :return: (success, result_or_error_message)
     """
     if not provider_name:
@@ -242,10 +259,9 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         same_key_instance = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
         if same_key_instance:
             return False, f"Already exist instance: {same_key_instance.instance_name} with api_key {api_key}"
-        if verify:
-            success, msg = await verify_api_key(provider_name, api_key, base_url)
-            if not success:
-                return False, msg
+    success, msg = await verify_api_key(provider_name, api_key, base_url, region)
+    if not success:
+        return False, msg
 
     import json
     extra_fields = {}
@@ -293,25 +309,48 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     return True, active_instances + inactive_instances
 
 
-async def verify_api_key(provider_name: str, api_key: str, base_url: str=None):
+async def verify_api_key(provider_name: str, api_key: str, base_url: str=None, region: str=None):
     """
     Verify API key for a provider.
 
     :param provider_name: provider/factory name
     :param api_key: API key
     :param base_url: base url
+    :param region: region
     :return: (success, result_or_error_message)
     """
     if not provider_name:
         return False, "Provider name is required"
 
-    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_name]
+    if region and region == "intl" and provider_name.lower() == "siliconflow":
+        target_factory_name = "siliconflow_intl"
+    else:
+        target_factory_name = provider_name
+
+    factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
     if not factory_info:
         return False, f"Provider '{provider_name}' not found"
 
     factory_llms = factory_info[0]["llm"]
     if not factory_llms:
-        return False, f"No models found for provider '{provider_name}'"
+        url = base_url or factory_info[0].get("url")
+        if not url:
+            return False, f"No models found for provider '{provider_name}'"
+        v1_index = url.find("/v1")
+        if v1_index >= 0:
+            models_url = url[: v1_index + 3] + "/models"
+        else:
+            models_url = url.rstrip("/") + "/v1/models"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(models_url, headers={"Authorization": f"Bearer {api_key}"}) as resp:
+                    if resp.status == 200:
+                        return True, "success"
+                    else:
+                        return False, f"Fail to access {models_url} using this api key."
+        except Exception as e:
+            logging.error(f"Fail to access {models_url} using this api key.", exc_info=e)
+            return False, f"Fail to access {models_url} using this api key."
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False

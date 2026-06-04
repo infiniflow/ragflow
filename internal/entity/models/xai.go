@@ -90,11 +90,11 @@ func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
 	}
 }
 
-func (z *XAIModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewXAIModel(baseURL, z.URLSuffix)
+func (x *XAIModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewXAIModel(baseURL, x.URLSuffix)
 }
 
-func (z *XAIModel) Name() string {
+func (x *XAIModel) Name() string {
 	return "xai"
 }
 
@@ -102,8 +102,8 @@ func (z *XAIModel) Name() string {
 // error if no entry exists. This makes a misconfigured region fail
 // fast with a clear message, instead of silently producing a relative
 // URL that the HTTP transport then rejects.
-func (z *XAIModel) baseURLForRegion(region string) (string, error) {
-	base, ok := z.BaseURL[region]
+func (x *XAIModel) baseURLForRegion(region string) (string, error) {
+	base, ok := x.BaseURL[region]
 	if !ok || base == "" {
 		return "", fmt.Errorf("xai: no base URL configured for region %q", region)
 	}
@@ -111,7 +111,7 @@ func (z *XAIModel) baseURLForRegion(region string) (string, error) {
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response
-func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (x *XAIModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -125,11 +125,11 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := x.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
 
 	// Convert messages to the format expected by the API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -185,7 +185,7 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := x.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -246,7 +246,7 @@ func (z *XAIModel) ChatWithMessages(modelName string, messages []Message, apiCon
 
 // ChatStreamlyWithSender sends messages and streams the response via the
 // sender function. Used for streaming chat responses with no extra channel.
-func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (x *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -260,11 +260,11 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := x.baseURLForRegion(region)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, z.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", baseURL, x.URLSuffix.Chat)
 
 	// Convert messages to API format (supports multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -325,7 +325,7 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := x.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -424,12 +424,12 @@ func (z *XAIModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 
 // Embed embeds a list of texts into embeddings. xAI does not expose a
 // public embedding API yet, so this is left unimplemented.
-func (z *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (x *XAIModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // ListModels returns the list of model ids visible to the API key.
-func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
@@ -439,11 +439,11 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		region = *apiConfig.Region
 	}
 
-	baseURL, err := z.baseURLForRegion(region)
+	baseURL, err := x.baseURLForRegion(region)
 	if err != nil {
 		return nil, err
 	}
-	modelsSuffix := strings.Trim(strings.TrimSpace(z.URLSuffix.Models), "/")
+	modelsSuffix := strings.Trim(strings.TrimSpace(x.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xai: models URL suffix is not configured")
 	}
@@ -460,7 +460,7 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := z.httpClient.Do(req)
+	resp, err := x.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -503,13 +503,13 @@ func (z *XAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 // Balance is not exposed by the xAI API, so this returns "no such method".
-func (z *XAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (x *XAIModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("no such method")
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
-func (z *XAIModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := z.ListModels(apiConfig)
+func (x *XAIModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := x.ListModels(apiConfig)
 	if err != nil {
 		return err
 	}
@@ -518,12 +518,12 @@ func (z *XAIModel) CheckConnection(apiConfig *APIConfig) error {
 
 // Rerank calculates similarity scores between query and documents. xAI does not
 // expose a rerank API, so this is left unimplemented.
-func (z *XAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, Rerank not implemented", z.Name())
+func (x *XAIModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, Rerank not implemented", x.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (o *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (x *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
@@ -533,7 +533,7 @@ func (o *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.ASR)
+	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -620,7 +620,7 @@ func (o *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// send request
-	resp, err := o.httpClient.Do(req)
+	resp, err := x.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -647,12 +647,12 @@ func (o *XAIModel) TranscribeAudio(modelName *string, file *string, apiConfig *A
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (z *XAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (x *XAIModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", x.Name())
 }
 
 // AudioSpeech convert text to audio
-func (o *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (x *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
 	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("xai API key is missing")
 	}
@@ -666,7 +666,7 @@ func (o *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 		region = *apiConfig.Region
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", x.BaseURL[region], x.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text":     *audioContent,
@@ -697,7 +697,7 @@ func (o *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := x.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -715,24 +715,24 @@ func (o *XAIModel) AudioSpeech(modelName *string, audioContent *string, apiConfi
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *XAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (x *XAIModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", x.Name())
 }
 
 // OCRFile OCR file
-func (m *XAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (x *XAIModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
 // ParseFile parse file
-func (z *XAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (x *XAIModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (z *XAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (x *XAIModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
 
-func (z *XAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (x *XAIModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
