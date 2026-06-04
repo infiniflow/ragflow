@@ -43,12 +43,15 @@ func TestCheckCanvasAccess_Owner(t *testing.T) {
 	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sp("My Agent")})
 
 	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-1", "c-1")
+	ownerID, ok, err := svc.CheckCanvasAccess("user-1", "c-1")
 	if err != nil {
 		t.Fatalf("CheckCanvasAccess failed: %v", err)
 	}
 	if !ok {
 		t.Error("expected owner to have access")
+	}
+	if ownerID != "user-1" {
+		t.Errorf("expected ownerID 'user-1', got '%s'", ownerID)
 	}
 }
 
@@ -76,12 +79,15 @@ func TestCheckCanvasAccess_NotOwner(t *testing.T) {
 	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Permission: "team", Title: sp("Team Agent")})
 
 	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
+	ownerID, ok, err := svc.CheckCanvasAccess("user-2", "c-1")
 	if err != nil {
 		t.Fatalf("CheckCanvasAccess failed: %v", err)
 	}
 	if !ok {
 		t.Error("expected tenant member to have access to team canvas")
+	}
+	if ownerID != "user-1" {
+		t.Errorf("expected ownerID 'user-1', got '%s'", ownerID)
 	}
 }
 
@@ -109,7 +115,7 @@ func TestCheckCanvasAccess_PrivateCanvas_Denied(t *testing.T) {
 	testDB.Create(&entity.UserCanvas{ID: "c-1", UserID: "user-1", Title: sp("Private Agent")})
 
 	svc := NewAgentService()
-	ok, err := svc.CheckCanvasAccess("user-2", "c-1")
+	_, ok, err := svc.CheckCanvasAccess("user-2", "c-1")
 	if err != nil {
 		t.Fatalf("CheckCanvasAccess failed: %v", err)
 	}
@@ -136,7 +142,7 @@ func TestCheckCanvasAccess_NotFound(t *testing.T) {
 	testDB.Create(&entity.User{ID: "user-1", Nickname: "tester", Email: "a@b.com"})
 
 	svc := NewAgentService()
-	_, err := svc.CheckCanvasAccess("user-1", "non-existent")
+	_, _, err := svc.CheckCanvasAccess("user-1", "non-existent")
 	if err == nil {
 		t.Error("expected error for non-existent canvas")
 	}

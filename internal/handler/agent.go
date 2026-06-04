@@ -154,7 +154,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		return
 	}
 
-	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+	canvasOwnerID, ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
 	if err != nil || !ok {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,
@@ -184,10 +184,8 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		return
 	}
 
-	// Use the existing FileService to handle the actual upload.
-	// The agent_id is not stored as a file reference — the Python endpoint
-	// simply validates canvas access and delegates to FileService.
-	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
+	// Use the canvas owner's tenant ID for file ownership.
+	uploaded, err := h.fileService.UploadFile(canvasOwnerID, "", files)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,

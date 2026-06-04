@@ -47,6 +47,7 @@ func setupUploadTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&entity.User{},
 		&entity.UserCanvas{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -173,6 +174,59 @@ func TestUploadAgentFileHandler_NoFiles(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code != float64(common.CodeArgumentError) {
 		t.Errorf("expected argument error, got code %v", code)
+	}
+}
+
+// TestUploadAgentFileHandler_TeamMemberTenant verifies that when a team
+// member uploads to a shared canvas, the file is written into the canvas
+// owner's file tree, not the caller's.
+func TestUploadAgentFileHandler_TeamMemberTenant(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupUploadTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	// user-b is a team member of user-a's tenant
+	db.Create(&entity.User{ID: "user-a", Nickname: "owner", Email: "a@test.com"})
+	db.Create(&entity.User{ID: "user-b", Nickname: "member", Email: "b@test.com"})
+	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-b", TenantID: "user-a", Role: "member", Status: sp("1")})
+	db.Create(&entity.UserCanvas{
+		ID:         "canvas-1",
+		UserID:     "user-a",
+		Permission: "team",
+		Title:      sp("Shared Agent"),
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := strings.NewReader("--boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"shared.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--boundary--")
+	req := httptest.NewRequest("POST", "/api/v1/agents/canvas-1/upload", body)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=boundary")
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-b"})
+	c.Set("user_id", "user-b")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	svc := &fakeUploadFileService{
+		uploaded: []map[string]interface{}{
+			{"id": "file-1", "name": "shared.txt"},
+		},
+	}
+	h := &AgentHandler{
+		agentService: service.NewAgentService(),
+		fileService:  svc,
+	}
+	h.UploadAgentFile(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
+	}
+	if svc.lastTenantID != "user-a" {
+		t.Errorf("expected UploadFile called with canvas owner 'user-a', got '%s'", svc.lastTenantID)
 	}
 }
 
