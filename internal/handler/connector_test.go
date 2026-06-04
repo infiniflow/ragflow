@@ -70,6 +70,24 @@ func (s fakeConnectorService) PollGoogleWebOAuthResult(string, string, *service.
 	return &service.PollGoogleWebOAuthResultResponse{}, common.CodeSuccess, nil
 }
 
+func (s fakeConnectorService) StartBoxWebOAuth(string, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.StartBoxWebOAuthResponse{}, common.CodeSuccess, nil
+}
+
+func (s fakeConnectorService) BoxWebOAuthCallback(string, string, string, string) string {
+	return ""
+}
+
+func (s fakeConnectorService) PollBoxWebOAuthResult(string, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+	if s.err != nil {
+		return nil, s.code, s.err
+	}
+	return &service.PollBoxWebOAuthResultResponse{}, common.CodeSuccess, nil
+}
+
 func (s fakeConnectorService) ListLog(string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err

@@ -42,6 +42,9 @@ type connectorServiceIface interface {
 	StartGoogleWebOAuth(userID, source string, req *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error)
 	GoogleWebOAuthCallback(source, stateID, oauthError, errorDescription, code string) string
 	PollGoogleWebOAuthResult(userID, source string, req *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error)
+	StartBoxWebOAuth(userID string, req *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error)
+	BoxWebOAuthCallback(stateID, oauthError, errorDescription, code string) string
+	PollBoxWebOAuthResult(userID string, req *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error)
 }
 
 // ConnectorHandler connector handler
@@ -503,4 +506,108 @@ func (h *ConnectorHandler) googleWebOAuthCallback(c *gin.Context, source string)
 		c.Query("code"),
 	)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+}
+
+// StartBoxWebOAuth initiates the Box OAuth web flow for the authenticated user.
+// It returns the authorization URL the frontend should open along with the flow
+// ID and expiry, and writes the initial flow state to Redis.
+// @Summary Start Box OAuth Web Flow
+// @Description Begin the Box OAuth web flow: generate a flow ID, build the Box
+// authorization URL, and persist the initial state in Redis.
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Param request body service.StartBoxWebOAuthRequest true "Box client credentials"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/box/oauth/web/start [post]
+func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.StartBoxWebOAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.connectorService.StartBoxWebOAuth(user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+// BoxWebOAuthCallback handles the redirect from Box after the user grants access.
+// This endpoint is public (no auth middleware) — Box redirects the user's browser here.
+// @Summary Box OAuth Web Callback
+// @Description Receives the authorization code from Box, exchanges it for tokens,
+// stores the result in Redis, and renders a self-closing popup page.
+// @Tags connector
+// @Produce text/html
+// @Param state query string true "OAuth state (flow ID)"
+// @Param code query string false "Authorization code"
+// @Param error query string false "Error code from Box"
+// @Param error_description query string false "Human-readable error from Box"
+// @Router /api/v1/connectors/box/oauth/web/callback [get]
+func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
+	htmlPage := h.connectorService.BoxWebOAuthCallback(
+		c.Query("state"),
+		c.Query("error"),
+		c.Query("error_description"),
+		c.Query("code"),
+	)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(htmlPage))
+}
+
+// PollBoxWebOAuthResult polls for the result of a Box OAuth web flow.
+// @Summary Poll Box OAuth Result
+// @Description Check whether the Box OAuth callback has completed and retrieve the credentials.
+// Returns code 106 (RUNNING) while authorization is still pending.
+// @Tags connector
+// @Accept json
+// @Produce json
+// @Param body body service.PollBoxWebOAuthResultRequest true "Flow ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/connectors/box/oauth/web/result [post]
+func (h *ConnectorHandler) PollBoxWebOAuthResult(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.PollBoxWebOAuthResultRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.connectorService.PollBoxWebOAuthResult(user.ID, &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
 }
