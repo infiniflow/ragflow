@@ -211,7 +211,7 @@ func startServer(config *server.Config) {
 	mcpHandler := handler.NewMCPHandler(mcpService)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
-	agentHandler := handler.NewAgentHandler(service.NewAgentService())
+	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
 
 	// Initialize router
 	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler)

@@ -17,6 +17,8 @@
 package handler
 
 import (
+	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,13 +30,20 @@ import (
 )
 
 // AgentHandler agent handler
+// fileUploader is the subset of FileService used by agent handlers.
+type fileUploader interface {
+	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+}
+
+// AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
+	fileService  fileUploader
 }
 
 // NewAgentHandler create agent handler
-func NewAgentHandler(agentService *service.AgentService) *AgentHandler {
-	return &AgentHandler{agentService: agentService}
+func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
+	return &AgentHandler{agentService: agentService, fileService: fileService}
 }
 
 // ListAgents lists agent canvases for the current user.
@@ -115,5 +124,82 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"data":    result,
 		"message": "success",
+	})
+}
+
+// UploadAgentFile uploads one or more files associated with an agent.
+// @Summary Upload Agent File
+// @Description Upload one or more files for an agent canvas.
+// @Tags agents
+// @Accept multipart/form-data
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Param file formData file true "File(s) to upload (multiple files supported)"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id}/upload [post]
+func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+	if err != nil || !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "Agent not found or no permission.",
+		})
+		return
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": fmt.Sprintf("invalid form data: %v", err),
+		})
+		return
+	}
+
+	files := form.File["file"]
+	if len(files) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "You have to upload at least one file.",
+		})
+		return
+	}
+
+	// Use the existing FileService to handle the actual upload.
+	// The agent_id is not stored as a file reference — the Python endpoint
+	// simply validates canvas access and delegates to FileService.
+	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    uploaded,
+		"message": "",
 	})
 }

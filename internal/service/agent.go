@@ -127,3 +127,30 @@ func (s *AgentService) ListAgents(
 	}
 	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
 }
+
+// CheckCanvasAccess checks if a user has access to a canvas.
+// Returns true if the user is the owner or has team-level permission.
+func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) {
+	canvas, err := s.canvasDAO.GetByID(canvasID)
+	if err != nil {
+		return false, err
+	}
+	// Owner always has access
+	if canvas.UserID == userID {
+		return true, nil
+	}
+	// Non-owner: only team-level permission grants tenant access
+	if canvas.Permission != string(entity.TenantPermissionTeam) {
+		return false, nil
+	}
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	for _, tid := range tenantIDs {
+		if canvas.UserID == tid {
+			return true, nil
+		}
+	}
+	return false, nil
+}
