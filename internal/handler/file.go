@@ -32,15 +32,17 @@ import (
 
 // FileHandler file handler
 type FileHandler struct {
-	fileService *service.FileService
-	userService *service.UserService
+	fileService          *service.FileService
+	userService          *service.UserService
+	file2DocumentService *service.File2DocumentService
 }
 
 // NewFileHandler create file handler
 func NewFileHandler(fileService *service.FileService, userService *service.UserService) *FileHandler {
 	return &FileHandler{
-		fileService: fileService,
-		userService: userService,
+		fileService:          fileService,
+		userService:          userService,
+		file2DocumentService: service.NewFile2DocumentService(),
 	}
 }
 
@@ -551,4 +553,66 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	// Send file data
 	c.Data(http.StatusOK, contentType, blob)
+}
+
+// LinkToDatasets links files (or folder trees) to one or more datasets.
+// Mirrors Python POST /api/v1/files/link-to-datasets (convert).
+// @Summary Link files to datasets
+// @Description Associate files with target knowledge-base datasets, re-indexing
+// as needed. Folder inputs are expanded to their innermost files.
+// The heavy DB work runs in a goroutine; the endpoint returns immediately.
+// @Tags file
+// @Accept json
+// @Produce json
+// @Param request body service.LinkToDatasetsRequest true "file_ids and kb_ids"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/files/link-to-datasets [post]
+func (h *FileHandler) LinkToDatasets(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.LinkToDatasetsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if len(req.FileIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    false,
+			"message": "required argument is missing: file_ids",
+		})
+		return
+	}
+	if len(req.KbIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    false,
+			"message": "required argument is missing: kb_ids",
+		})
+		return
+	}
+
+	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": "success",
+	})
 }

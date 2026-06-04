@@ -269,6 +269,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				file.GET("", r.fileHandler.ListFiles)
 				file.DELETE("", r.fileHandler.DeleteFiles)
 				file.POST("/move", r.fileHandler.MoveFiles)
+				file.POST("/link-to-datasets", r.fileHandler.LinkToDatasets)
 				file.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				file.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				file.GET("/:id", r.fileHandler.Download)
