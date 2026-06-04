@@ -91,6 +91,15 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	// Mark all responses from Go with a header for debugging.
+	engine.Use(func(c *gin.Context) {
+		c.Header("X-API-Source", "go")
+		c.Next()
+	})
+
+	// Log all HTTP requests.
+	engine.Use(gin.Logger())
+
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 

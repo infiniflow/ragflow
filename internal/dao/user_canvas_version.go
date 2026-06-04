@@ -29,7 +29,8 @@ func NewUserCanvasVersionDAO() *UserCanvasVersionDAO {
 // ListByCanvasID returns all versions for a canvas, ordered by update_time DESC.
 func (d *UserCanvasVersionDAO) ListByCanvasID(canvasID string) ([]*entity.UserCanvasVersion, error) {
 	var versions []*entity.UserCanvasVersion
-	err := DB.Where("user_canvas_id = ?", canvasID).
+	err := DB.Select("id", "user_canvas_id", "title", "create_time", "update_time", "create_date", "update_date").
+		Where("user_canvas_id = ?", canvasID).
 		Order("update_time DESC").
 		Find(&versions).Error
 	return versions, err

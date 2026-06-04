@@ -187,3 +187,5 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 		t.Errorf("expected operating error code %d, got %v", common.CodeOperatingError, code)
 	}
 }
+// sptr returns a pointer to the given string.
+func sptr(s string) *string { return &s }
