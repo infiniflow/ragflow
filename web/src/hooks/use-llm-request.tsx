@@ -32,6 +32,7 @@ export const enum LLMApiAction {
   AddedProviders = 'addedProviders',
   AddProvider = 'addProvider',
   AddProviderInstance = 'addProviderInstance',
+  VerifyProviderConnection = 'verifyProviderConnection',
   AddInstanceModel = 'addInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
   ListDefaultModels = 'listDefaultModels',
@@ -227,12 +228,36 @@ export const useAddProviderInstance = () => {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
         });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
+        });
       }
       return data;
     },
   });
 
   return { data, loading, addProviderInstance: mutateAsync };
+};
+
+export const useVerifyProviderConnection = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [LLMApiAction.VerifyProviderConnection],
+    mutationFn: async (params: {
+      provider_name: string;
+      api_key: string;
+      base_url?: string;
+      region?: string;
+    }) => {
+      const { data } = await llmService.verifyProviderConnection(params);
+      return data;
+    },
+  });
+
+  return { data, loading, verifyProviderConnection: mutateAsync };
 };
 
 export const useAddInstanceModel = () => {
@@ -253,6 +278,9 @@ export const useAddInstanceModel = () => {
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
       }
       return data;
@@ -280,6 +308,9 @@ export const useDeleteProviderInstance = () => {
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.provider_name),
+        });
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.allModels(),
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.defaultModels(),
