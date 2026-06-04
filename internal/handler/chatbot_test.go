@@ -44,6 +44,7 @@ func setupChatbotTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&entity.User{},
 		&entity.Chat{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -169,6 +170,57 @@ func TestGetChatbotInfo_WrongTenant(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == 0 {
 		t.Errorf("expected error code, got 0")
+	}
+}
+
+// TestGetChatbotInfo_TenantMember verifies that a user who is a member
+// of the dialog's tenant (via user_tenant) can access the info.
+func TestGetChatbotInfo_TenantMember(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupChatbotTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	// owner-user owns the tenant, member-user is a tenant member
+	db.Create(&entity.User{ID: "owner-user", Nickname: "owner", Email: "owner@test.com"})
+	db.Create(&entity.User{ID: "member-user", Nickname: "member", Email: "member@test.com"})
+	db.Create(&entity.UserTenant{
+		ID: "ut-1", UserID: "member-user", TenantID: "owner-user",
+		Role: "member", Status: sp("1"),
+	})
+	db.Create(&entity.Chat{
+		ID:           "dialog-1",
+		TenantID:     "owner-user",
+		Name:         sp("Team Chatbot"),
+		Status:       sp("1"),
+		LLMID:        "model-1",
+		LLMSetting:   entity.JSONMap{},
+		KBIDs:        entity.JSONSlice{},
+		PromptConfig: entity.JSONMap{},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/chatbots/dialog-1/info", nil)
+	c.Set("user", &entity.User{ID: "member-user"})
+	c.Set("user_id", "member-user")
+	c.Params = gin.Params{{Key: "dialog_id", Value: "dialog-1"}}
+
+	GetChatbotInfo(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
+	}
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", resp["data"])
+	}
+	if data["title"] != "Team Chatbot" {
+		t.Errorf("expected title 'Team Chatbot', got %v", data["title"])
 	}
 }
 

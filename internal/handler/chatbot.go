@@ -73,7 +73,7 @@ func GetChatbotInfo(c *gin.Context) {
 		return
 	}
 
-	if dialog.TenantID != user.ID {
+	if !hasTenantAccess(dialog.TenantID, user.ID) {
 		common.Warn("chatbot info denied: tenant mismatch",
 			zap.String("dialog_tenant", dialog.TenantID),
 			zap.String("user", user.ID))
@@ -106,4 +106,23 @@ func GetChatbotInfo(c *gin.Context) {
 		},
 		"message": "",
 	})
+}
+
+// hasTenantAccess checks whether userID has access to the given tenantID.
+// Returns true if userID == tenantID or if userID is a member of that tenant.
+func hasTenantAccess(tenantID, userID string) bool {
+	if tenantID == userID {
+		return true
+	}
+	tenantDAO := dao.NewUserTenantDAO()
+	tenantIDs, err := tenantDAO.GetTenantIDsByUserID(userID)
+	if err != nil {
+		return false
+	}
+	for _, tid := range tenantIDs {
+		if tid == tenantID {
+			return true
+		}
+	}
+	return false
 }
