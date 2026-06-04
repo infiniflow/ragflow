@@ -2924,21 +2924,35 @@ textLoop:
 	}
 	p.nextToken()
 
-	if p.curToken.Type != TokenDimension {
-		return nil, fmt.Errorf("expected DIMENSION")
-	}
-	p.nextToken() // consume WITH
+	dimension := 0
+	if p.curToken.Type == TokenDimension {
+		p.nextToken() // consume DIMENSION
 
-	dimension, err := p.parseNumber()
-	if err != nil {
-		return nil, err
+		if p.curToken.Type != TokenInteger {
+			return nil, fmt.Errorf("expected integer after DIMENSION")
+		}
+
+		var err error
+		dimension, err = p.parseNumber()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken()
 	}
-	p.nextToken()
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("unexpected token after embed command: %s", p.curToken.Value)
+	}
 
 	cmd := NewCommand("embed_user_text")
 	cmd.Params["composite_model_name"] = compositeModelName
 	cmd.Params["texts"] = texts
-	cmd.Params["dimension"] = dimension
+	if dimension > 0 {
+		cmd.Params["dimension"] = dimension
+	}
 	return cmd, nil
 }
 
