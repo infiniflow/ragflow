@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -54,6 +55,12 @@ var (
 	datasetAllowedOrderByFields = map[string]struct{}{
 		"create_time": {},
 		"update_time": {},
+	}
+	datasetAllowedMetadataTypes = map[string]struct{}{
+		"string": {},
+		"list":   {},
+		"time":   {},
+		"number": {},
 	}
 	datasetChunkMethodErrorMessage = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'resume', 'table' or 'tag'"
 )
@@ -93,6 +100,20 @@ type AutoMetadataField struct {
 type AutoMetadataConfig struct {
 	Enabled *bool               `json:"enabled,omitempty"`
 	Fields  []AutoMetadataField `json:"fields,omitempty"`
+}
+
+// MetadataConfigField mirrors one field in the dataset metadata config API.
+type MetadataConfigField struct {
+	Key         string   `json:"key"`
+	Type        string   `json:"type"`
+	Description *string  `json:"description"`
+	Enum        []string `json:"enum"`
+}
+
+// MetadataConfigRequest mirrors PUT /datasets/:dataset_id/metadata/config.
+type MetadataConfigRequest struct {
+	Metadata        []MetadataConfigField `json:"metadata"`
+	BuiltInMetadata []MetadataConfigField `json:"built_in_metadata"`
 }
 
 // CreateDatasetRequest represents the request for creating a dataset.
@@ -393,7 +414,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		embdID = embeddingModel
 	}
 
-	kbID, err := generateUUID1Hex()
+	kbID, err := utility.GenerateUUID1()
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
@@ -560,6 +581,71 @@ func (s *DatasetService) GetDataset(datasetID, userID string) (map[string]interf
 	data["connectors"] = connectors
 
 	return data, common.CodeSuccess, nil
+}
+
+// GetMetadataConfig gets the auto-metadata configuration for a dataset.
+func (s *DatasetService) GetMetadataConfig(datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	if kb == nil {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	}
+
+	return map[string]interface{}{
+		"metadata":          parserConfigValueOrEmptyList(kb.ParserConfig, "metadata"),
+		"built_in_metadata": parserConfigValueOrEmptyList(kb.ParserConfig, "built_in_metadata"),
+	}, common.CodeSuccess, nil
+}
+
+// UpdateMetadataConfig updates the auto-metadata configuration for a dataset.
+func (s *DatasetService) UpdateMetadataConfig(datasetID, tenantID string, req *MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	tenantID = strings.TrimSpace(tenantID)
+
+	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		}
+		return nil, common.CodeServerError, errors.New("Database operation failed")
+	}
+	if kb == nil {
+		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	}
+
+	if req == nil {
+		req = &MetadataConfigRequest{}
+	}
+
+	metadata, err := normalizeMetadataConfigFields(req.Metadata, "metadata")
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	builtInMetadata, err := normalizeMetadataConfigFields(req.BuiltInMetadata, "built_in_metadata")
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+
+	parserConfig := kb.ParserConfig
+	if parserConfig == nil {
+		parserConfig = entity.JSONMap{}
+	}
+	parserConfig["metadata"] = metadata
+	parserConfig["built_in_metadata"] = builtInMetadata
+
+	if err := s.kbDAO.UpdateByID(kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
+		return nil, common.CodeServerError, errors.New("Update auto-metadata error.(Database error)")
+	}
+
+	return map[string]interface{}{
+		"metadata":          metadata,
+		"built_in_metadata": builtInMetadata,
+	}, common.CodeSuccess, nil
 }
 
 // Accessible checks if a knowledge base is accessible by a user
@@ -923,14 +1009,6 @@ func (s *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID str
 	return false, fmt.Sprintf("Unauthorized model: <%s>", embdID)
 }
 
-func generateUUID1Hex() (string, error) {
-	generatedUUID, err := uuid.NewUUID()
-	if err != nil {
-		return "", err
-	}
-	return strings.ReplaceAll(generatedUUID.String(), "-", ""), nil
-}
-
 func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMetadataConfig) map[string]interface{} {
 	if parserConfig == nil {
 		parserConfig = make(map[string]interface{})
@@ -953,6 +1031,50 @@ func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMe
 	}
 	parserConfig["enable_metadata"] = enableMetadata
 	return parserConfig
+}
+
+func parserConfigValueOrEmptyList(parserConfig map[string]interface{}, key string) interface{} {
+	if parserConfig == nil {
+		return []interface{}{}
+	}
+
+	value, ok := parserConfig[key]
+	if !ok || value == nil {
+		return []interface{}{}
+	}
+
+	return value
+}
+
+func normalizeMetadataConfigFields(fields []MetadataConfigField, fieldName string) ([]map[string]interface{}, error) {
+	normalizedFields := make([]map[string]interface{}, 0, len(fields))
+	for i, field := range fields {
+		key := strings.TrimSpace(field.Key)
+		if key == "" {
+			return nil, fmt.Errorf("%s[%d].key is required", fieldName, i)
+		}
+		if len(key) > 255 {
+			return nil, fmt.Errorf("%s[%d].key should have at most 255 characters", fieldName, i)
+		}
+
+		fieldType := strings.TrimSpace(field.Type)
+		if _, ok := datasetAllowedMetadataTypes[fieldType]; !ok {
+			return nil, fmt.Errorf("%s[%d].type should be one of 'string', 'list', 'time' or 'number'", fieldName, i)
+		}
+
+		if field.Description != nil && len(*field.Description) > 65535 {
+			return nil, fmt.Errorf("%s[%d].description should have at most 65535 characters", fieldName, i)
+		}
+
+		normalizedFields = append(normalizedFields, map[string]interface{}{
+			"key":         key,
+			"type":        fieldType,
+			"description": field.Description,
+			"enum":        field.Enum,
+		})
+	}
+
+	return normalizedFields, nil
 }
 
 func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface{} {
