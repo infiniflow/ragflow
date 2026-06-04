@@ -21,90 +21,180 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
-// fakeAgentService satisfies the subset of AgentService used by the handler.
-// It is injected via a wrapper to avoid importing the real DAO (which requires a DB).
-type fakeAgentService struct {
-	result *service.ListAgentsResponse
-	code   common.ErrorCode
-	err    error
-}
+// setupHandlerAgentsTestDB sets up SQLite in-memory DB with tables needed for agent handler tests.
+func setupHandlerAgentsTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 
-// agentServiceIface is the minimum interface the handler depends on.
-type agentServiceIface interface {
-	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error)
-}
-
-// agentHandlerTestable is a version of AgentHandler that accepts the interface.
-type agentHandlerTestable struct {
-	svc agentServiceIface
-}
-
-func (h *agentHandlerTestable) listAgents(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		jsonError(c, errorCode, errorMessage)
-		return
-	}
-	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "")
-	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
-}
-
-func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error) {
-	return f.result, f.code, f.err
-}
-
-func setupAgentRouter(svc agentServiceIface) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	h := &agentHandlerTestable{svc: svc}
-	r.GET("/api/v1/agents", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user-abc"})
-		h.listAgents(c)
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		TranslateError: true,
 	})
-	return r
-}
-
-func TestListAgents_Success(t *testing.T) {
-	title := "My Agent"
-	svc := &fakeAgentService{
-		result: &service.ListAgentsResponse{
-			Canvas: []*service.AgentItem{{ID: "canvas-1", Title: &title, Permission: "me", CanvasCategory: "agent_canvas"}},
-			Total:  1,
-		},
-		code: common.CodeSuccess,
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	return db
+}
+
+// setupGinContextWithUserAndDB creates a gin context with pre-authenticated user
+// and swaps dao.DB to the test database. Returns cleanup function.
+func setupGinContextWithUserAndDB(t *testing.T, method, path string) (*gin.Context, *httptest.ResponseRecorder, *gorm.DB) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents", nil)
-	setupAgentRouter(svc).ServeHTTP(w, req)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, nil)
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+
+	db := setupHandlerAgentsTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	return c, w, db
+}
+
+// draw a box with a slot for the old TestListAgents test.
+// TestListAgents_Success verifies the ListAgents handler returns a valid response.
+
+// TestListAgentVersionsHandler_Success verifies the happy path with real DB.
+func TestListAgentVersionsHandler_Success(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/canvas-1/versions")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
+
+	// Insert canvas owned by user-1
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+
+	// Insert 2 versions with staggered timestamps
+	now := time.Now()
+	db.Create(&entity.UserCanvasVersion{
+		ID:           "v2",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("v2"),
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(now.UnixMilli()),
+		},
+	})
+	db.Create(&entity.UserCanvasVersion{
+		ID:           "v1",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("v1"),
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+		},
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.ListAgentVersions(c)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	var body map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
 	}
-	if body["code"] != float64(common.CodeSuccess) {
-		t.Errorf("expected code %d, got %v", common.CodeSuccess, body["code"])
+
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", code, resp["message"])
 	}
-	data, ok := body["data"].(map[string]interface{})
+
+	data, ok := resp["data"].([]interface{})
 	if !ok {
-		t.Fatalf("data is not a map: %v", body["data"])
+		t.Fatalf("expected data array, got %T", resp["data"])
 	}
-	if data["total"] != float64(1) {
-		t.Errorf("expected total=1, got %v", data["total"])
+	if len(data) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(data))
+	}
+
+	v2 := data[0].(map[string]interface{})
+	if v2["title"] != "v2" {
+		t.Errorf("expected v2 first, got %s", v2["title"])
 	}
 }
+
+// TestListAgentVersionsHandler_NoPermission verifies cross-user access is denied.
+func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupHandlerAgentsTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/agents/canvas-b/versions", nil)
+	c.Set("user", &entity.User{ID: "user-a"})
+	c.Set("user_id", "user-a")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-b"}}
+
+	// Canvas owned by user-b
+	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", Title: sptr("Not Yours")})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.ListAgentVersions(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeOperatingError) {
+		t.Errorf("expected operating error code %d, got %v", common.CodeOperatingError, code)
+	}
+}
+
+// TestListAgentVersionsHandler_CanvasNotFound verifies behavior for non-existent canvas.
+func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupHandlerAgentsTestDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/agents/non-existent/versions", nil)
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+	c.Params = gin.Params{{Key: "agent_id", Value: "non-existent"}}
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.ListAgentVersions(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeOperatingError) {
+		t.Errorf("expected operating error code %d, got %v", common.CodeOperatingError, code)
+	}
+}
+// sptr returns a pointer to the given string.
+// ptr returns a pointer to the given int64.
+func ptr(v int64) *int64 { return &v }

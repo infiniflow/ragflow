@@ -39,6 +39,9 @@ type connectorServiceIface interface {
 	RebuildConnector(connectorID, userID, kbID string) (bool, common.ErrorCode, error)
 	TestConnector(connectorID, userID string) error
 	UpdateConnector(connectorID, userID string, req *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error)
+	StartGoogleWebOAuth(userID, source string, req *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error)
+	GoogleWebOAuthCallback(source, stateID, oauthError, errorDescription, code string) string
+	PollGoogleWebOAuthResult(userID, source string, req *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error)
 }
 
 // ConnectorHandler connector handler
@@ -417,4 +420,87 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		"data":    ok,
 		"message": "success",
 	})
+}
+
+func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.StartGoogleWebOAuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.connectorService.StartGoogleWebOAuth(user.ID, c.DefaultQuery("type", "google-drive"), &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req service.PollGoogleWebOAuthResultRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.connectorService.PollGoogleWebOAuthResult(user.ID, c.Query("type"), &req)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+func (h *ConnectorHandler) GoogleWebOAuthCallback(c *gin.Context) {
+	h.googleWebOAuthCallback(c, c.Param("source"))
+}
+
+func (h *ConnectorHandler) GoogleDriveWebOAuthCallback(c *gin.Context) {
+	h.googleWebOAuthCallback(c, "google-drive")
+}
+
+func (h *ConnectorHandler) GmailWebOAuthCallback(c *gin.Context) {
+	h.googleWebOAuthCallback(c, "gmail")
+}
+
+func (h *ConnectorHandler) googleWebOAuthCallback(c *gin.Context, source string) {
+	html := h.connectorService.GoogleWebOAuthCallback(
+		source,
+		c.Query("state"),
+		c.Query("error"),
+		c.Query("error_description"),
+		c.Query("code"),
+	)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }

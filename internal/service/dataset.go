@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -413,7 +414,7 @@ func (s *DatasetService) CreateDataset(req *CreateDatasetRequest, tenantID strin
 		embdID = embeddingModel
 	}
 
-	kbID, err := generateUUID1Hex()
+	kbID, err := utility.GenerateUUID1()
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("Internal server error")
 	}
@@ -1006,14 +1007,6 @@ func (s *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID str
 	}
 
 	return false, fmt.Sprintf("Unauthorized model: <%s>", embdID)
-}
-
-func generateUUID1Hex() (string, error) {
-	generatedUUID, err := uuid.NewUUID()
-	if err != nil {
-		return "", err
-	}
-	return strings.ReplaceAll(generatedUUID.String(), "-", ""), nil
 }
 
 func applyAutoMetadataConfig(parserConfig map[string]interface{}, config *AutoMetadataConfig) map[string]interface{} {

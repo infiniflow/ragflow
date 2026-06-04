@@ -78,27 +78,27 @@ func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
 	}
 }
 
-func (m *N1NModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return NewN1NModel(baseURL, m.URLSuffix)
+func (n *N1NModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewN1NModel(baseURL, n.URLSuffix)
 }
 
-func (m *N1NModel) Name() string {
+func (n *N1NModel) Name() string {
 	return "n1n"
 }
 
 // baseURLForRegion returns the base URL for the given region, trimmed
 // of any trailing slash so callers can append a suffix without
 // producing "//" in the path.
-func (m *N1NModel) baseURLForRegion(region string) (string, error) {
-	base, ok := m.BaseURL[region]
+func (n *N1NModel) baseURLForRegion(region string) (string, error) {
+	base, ok := n.BaseURL[region]
 	if !ok || base == "" {
 		return "", fmt.Errorf("n1n: no base URL configured for region %q", region)
 	}
 	return strings.TrimRight(base, "/"), nil
 }
 
-func (m *N1NModel) endpointURL(region, suffix string) (string, error) {
-	baseURL, err := m.baseURLForRegion(region)
+func (n *N1NModel) endpointURL(region, suffix string) (string, error) {
+	baseURL, err := n.baseURLForRegion(region)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +220,7 @@ type n1nChatResponse struct {
 
 // ChatWithMessages sends a single, non-streaming chat completion
 // against n1n.ai's /v1/chat/completions endpoint.
-func (m *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (n *N1NModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	apiKey, err := n1nValidateAPIKey(apiConfig)
 	if err != nil {
 		return nil, err
@@ -232,7 +232,7 @@ func (m *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	endpoint, err := m.endpointURL(n1nRegion(apiConfig), m.URLSuffix.Chat)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (m *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 		return nil, err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -295,7 +295,7 @@ func (m *N1NModel) ChatWithMessages(modelName string, messages []Message, apiCon
 // SSE stream uses the standard OpenAI shape: "data:" lines carrying
 // JSON events with delta.content (and delta.reasoning_content for
 // reasoning-capable models), terminated by a "[DONE]" line.
-func (m *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (n *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -310,7 +310,7 @@ func (m *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return err
 	}
 
-	endpoint, err := m.endpointURL(n1nRegion(apiConfig), m.URLSuffix.Chat)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func (m *N1NModel) ChatStreamlyWithSender(modelName string, messages []Message, 
 		return err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -425,7 +425,7 @@ type n1nEmbeddingRequest struct {
 // Embed turns a list of texts into embedding vectors using the
 // n1n.ai /v1/embeddings endpoint. Output is one vector per input, in
 // the same order the inputs were given.
-func (m *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (n *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -437,7 +437,7 @@ func (m *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	endpoint, err := m.endpointURL(n1nRegion(apiConfig), m.URLSuffix.Embedding)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +458,7 @@ func (m *N1NModel) Embed(modelName *string, texts []string, apiConfig *APIConfig
 		return nil, err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -523,7 +523,7 @@ type n1nRerankRequest struct {
 
 // Rerank scores a query against a list of documents using
 // n1n.ai's /v1/rerank endpoint (Cohere-shaped response).
-func (m *N1NModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (n *N1NModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
@@ -535,7 +535,7 @@ func (m *N1NModel) Rerank(modelName *string, query string, documents []string, a
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	endpoint, err := m.endpointURL(n1nRegion(apiConfig), m.URLSuffix.Rerank)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +557,7 @@ func (m *N1NModel) Rerank(modelName *string, query string, documents []string, a
 		return nil, err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -606,13 +606,13 @@ type n1nModelCatalogResponse struct {
 // GET /v1/models. The shipped catalog in conf/models/n1n.json is a
 // representative subset; this method surfaces the full upstream list
 // (hundreds of models routed through the aggregator).
-func (m *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (n *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	apiKey, err := n1nValidateAPIKey(apiConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	endpoint, err := m.endpointURL(n1nRegion(apiConfig), m.URLSuffix.Models)
+	endpoint, err := n.endpointURL(n1nRegion(apiConfig), n.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -625,7 +625,7 @@ func (m *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, err
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -656,8 +656,8 @@ func (m *N1NModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 // CheckConnection verifies the API key by querying the documented
 // /v1/models endpoint — the cheapest auth check on the documented
 // surface, with no per-call charge against tenant quota.
-func (m *N1NModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := m.ListModels(apiConfig)
+func (n *N1NModel) CheckConnection(apiConfig *APIConfig) error {
+	_, err := n.ListModels(apiConfig)
 	return err
 }
 
@@ -665,46 +665,46 @@ func (m *N1NModel) CheckConnection(apiConfig *APIConfig) error {
 // quota are available only via the web console at
 // https://api.n1n.ai/console; the public API surface does not
 // publish them.
-func (m *N1NModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions but the
 // driver does not currently implement the multipart upload flow.
-func (m *N1NModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (m *N1NModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // AudioSpeech: n1n.ai exposes /v1/audio/speech but the driver does
 // not currently implement the binary audio response handling.
-func (m *N1NModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (m *N1NModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", n.Name())
 }
 
 // OCRFile is not exposed by the n1n.ai API.
-func (m *N1NModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ParseFile is not exposed by the n1n.ai API.
-func (m *N1NModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
 // ListTasks: n1n.ai has /v1/contents/generations/tasks for async
 // image/video jobs, but that surface is not modeled by this driver.
-func (m *N1NModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-func (m *N1NModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (n *N1NModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
