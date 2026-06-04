@@ -260,6 +260,7 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	}
 }
 
+
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
 

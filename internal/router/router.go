@@ -243,6 +243,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset document chunk
 				datasets.GET("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.Get)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 			}
 
@@ -368,7 +369,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				agents.GET("", r.agentHandler.ListAgents)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
-agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
+				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 			}
 
 			connector := v1.Group("/connectors")
