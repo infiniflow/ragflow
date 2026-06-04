@@ -23,7 +23,7 @@ import (
 func TestParseAndConvert_OperatorMapping(t *testing.T) {
 	input := map[string]interface{}{
 		"conditions": []interface{}{
-			map[string]interface{}{"name": "author", "comparison_operator": "is", "value": "张三"},
+			map[string]interface{}{"name": "author", "comparison_operator": "is", "value": "Zhang San"},
 			map[string]interface{}{"name": "date", "comparison_operator": ">=", "value": "2024-01-01"},
 		},
 	}
@@ -48,7 +48,7 @@ func TestParseAndConvert_OperatorMapping(t *testing.T) {
 func TestParseAndConvert_WithLogic(t *testing.T) {
 	input := map[string]interface{}{
 		"conditions": []interface{}{
-			map[string]interface{}{"name": "author", "comparison_operator": "is", "value": "张三"},
+			map[string]interface{}{"name": "author", "comparison_operator": "is", "value": "Zhang San"},
 		},
 		"logic": "or",
 	}
@@ -110,10 +110,10 @@ func TestConvertOperator(t *testing.T) {
 
 func TestMetaFilter_Equals(t *testing.T) {
 	metas := MetaData{
-		"author": {"张三": {"doc1", "doc2"}, "李四": {"doc3"}},
+		"author": {"Zhang San": {"doc1", "doc2"}, "Li Si": {"doc3"}},
 	}
 	input := &MetaFilterInput{
-		Conditions: []MetaCondition{{Operator: "=", Key: "author", Value: "张三"}},
+		Conditions: []MetaCondition{{Operator: "=", Key: "author", Value: "Zhang San"}},
 	}
 	result := MetaFilter(metas, input)
 	if len(result) != 2 {
@@ -170,6 +170,19 @@ func TestMetaFilter_DateComparison(t *testing.T) {
 	result := MetaFilter(metas, input)
 	if len(result) != 1 || result[0] != "doc2" {
 		t.Errorf("expected [doc2], got %v", result)
+	}
+}
+
+func TestMetaFilter_DateVsNonDate(t *testing.T) {
+	metas := MetaData{
+		"date_field": {"xyz": {"doc1"}, "2024-06-01": {"doc2"}},
+	}
+	input := &MetaFilterInput{
+		Conditions: []MetaCondition{{Operator: ">", Key: "date_field", Value: "2024-01-01"}},
+	}
+	result := MetaFilter(metas, input)
+	if len(result) != 1 || result[0] != "doc2" {
+		t.Errorf("expected only date-match [doc2], got %v", result)
 	}
 }
 
@@ -253,12 +266,12 @@ func TestMetaFilter_NotEmpty(t *testing.T) {
 
 func TestMetaFilter_AndLogic(t *testing.T) {
 	metas := MetaData{
-		"author": {"张三": {"doc1", "doc2"}, "李四": {"doc3"}},
+		"author": {"Zhang San": {"doc1", "doc2"}, "Li Si": {"doc3"}},
 		"year":   {"2024": {"doc1"}, "2025": {"doc2", "doc3"}},
 	}
 	input := &MetaFilterInput{
 		Conditions: []MetaCondition{
-			{Operator: "=", Key: "author", Value: "张三"},
+			{Operator: "=", Key: "author", Value: "Zhang San"},
 			{Operator: "=", Key: "year", Value: "2024"},
 		},
 		Logic: "and",
@@ -271,12 +284,12 @@ func TestMetaFilter_AndLogic(t *testing.T) {
 
 func TestMetaFilter_OrLogic(t *testing.T) {
 	metas := MetaData{
-		"author": {"张三": {"doc1"}, "李四": {"doc2"}},
+		"author": {"Zhang San": {"doc1"}, "Li Si": {"doc2"}},
 	}
 	input := &MetaFilterInput{
 		Conditions: []MetaCondition{
-			{Operator: "=", Key: "author", Value: "张三"},
-			{Operator: "=", Key: "author", Value: "李四"},
+			{Operator: "=", Key: "author", Value: "Zhang San"},
+			{Operator: "=", Key: "author", Value: "Li Si"},
 		},
 		Logic: "or",
 	}
@@ -287,7 +300,7 @@ func TestMetaFilter_OrLogic(t *testing.T) {
 }
 
 func TestMetaFilter_KeyNotFound_And(t *testing.T) {
-	metas := MetaData{"author": {"张三": {"doc1"}}}
+	metas := MetaData{"author": {"Zhang San": {"doc1"}}}
 	input := &MetaFilterInput{
 		Conditions: []MetaCondition{{Operator: "=", Key: "nonexistent", Value: "x"}},
 	}
@@ -298,7 +311,7 @@ func TestMetaFilter_KeyNotFound_And(t *testing.T) {
 }
 
 func TestMetaFilter_KeyNotFound_Or(t *testing.T) {
-	metas := MetaData{"author": {"张三": {"doc1"}}}
+	metas := MetaData{"author": {"Zhang San": {"doc1"}}}
 	input := &MetaFilterInput{
 		Conditions: []MetaCondition{{Operator: "=", Key: "nonexistent", Value: "x"}},
 		Logic:      "or",
@@ -317,7 +330,7 @@ func TestMetaFilter_NilInput(t *testing.T) {
 }
 
 func TestMetaFilter_EmptyInput(t *testing.T) {
-	metas := MetaData{"author": {"张三": {"doc1"}}}
+	metas := MetaData{"author": {"Zhang San": {"doc1"}}}
 	result := MetaFilter(metas, &MetaFilterInput{})
 	if result != nil {
 		t.Errorf("expected nil, got %v", result)

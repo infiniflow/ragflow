@@ -29,11 +29,11 @@ type MetaCondition struct {
 }
 
 // MetaValueDocs maps a metadata field value to the document IDs that have that value.
-// Example: {"张三": ["doc1", "doc2"], "李四": ["doc3"]}
+// Example: {"Zhang San": ["doc1", "doc2"], "Li Si": ["doc3"]}
 type MetaValueDocs map[string][]string
 
 // MetaData maps a metadata field name to its value→documents mapping.
-// Example: {"author": {"张三": ["doc1"]}, "year": {"2024": ["doc1", "doc2"]}}
+// Example: {"author": {"Zhang San": ["doc1"]}, "year": {"2024": ["doc1", "doc2"]}}
 type MetaData map[string]MetaValueDocs
 
 // MetaFilterInput groups filter conditions with their logic operator.
@@ -223,16 +223,20 @@ func matchValue(input string, operator string, value interface{}) bool {
 
 // compareValues handles numeric/date/string comparison.
 func compareValues(a, b, operator string) bool {
+	// If filter value (b) is a date, only compare if data (a) is also a date.
+	// Non-date values should not be compared against date filters (matching Python behavior).
+	if isDate(b) {
+		if !isDate(a) {
+			return false
+		}
+		return compareString(a, b, operator)
+	}
+
 	// Try numeric comparison
 	af, errA := strconv.ParseFloat(a, 64)
 	bf, errB := strconv.ParseFloat(b, 64)
 	if errA == nil && errB == nil {
 		return compareFloat(af, bf, operator)
-	}
-
-	// Try date comparison (YYYY-MM-DD format)
-	if isDate(a) && isDate(b) {
-		return compareString(a, b, operator)
 	}
 
 	// Fall back to case-insensitive string comparison
