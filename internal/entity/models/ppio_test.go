@@ -481,11 +481,17 @@ func TestPPIOMissingRegionBaseURL(t *testing.T) {
 // TestPPIOEmbedHappyPath verifies request shape and index-based reordering of results.
 func TestPPIOEmbedHappyPath(t *testing.T) {
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s", r.Method)
+		}
 		if r.URL.Path != "/embeddings" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
 		if body["model"] != "BAAI/bge-m3" {
 			t.Errorf("model=%v", body["model"])
+		}
+		if input, ok := body["input"].([]interface{}); !ok || len(input) != 2 || input[0] != "a" || input[1] != "b" {
+			t.Errorf("input=%#v", body["input"])
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -560,11 +566,20 @@ func TestPPIOEmbedRejectsMissingIndex(t *testing.T) {
 // TestPPIORerankHappyPath verifies request shape and maps results by index.
 func TestPPIORerankHappyPath(t *testing.T) {
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s", r.Method)
+		}
 		if r.URL.Path != "/rerank" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
+		if body["model"] != "baai/bge-reranker-v2-m3" {
+			t.Errorf("model=%v", body["model"])
+		}
 		if body["query"] != "capital of France?" {
 			t.Errorf("query=%v", body["query"])
+		}
+		if docs, ok := body["documents"].([]interface{}); !ok || len(docs) != 2 {
+			t.Errorf("documents=%#v", body["documents"])
 		}
 		if body["top_n"] != float64(2) {
 			t.Errorf("top_n=%v, want 2", body["top_n"])

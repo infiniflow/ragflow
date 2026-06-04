@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -600,6 +601,11 @@ func (p *PPIOModel) Rerank(
 		})
 		seen[item.Index] = true
 	}
+	// Normalize output by input index so the mapping is deterministic
+	// regardless of the order PPIO returns scored results in.
+	sort.Slice(rerankResponse.Data, func(i, j int) bool {
+		return rerankResponse.Data[i].Index < rerankResponse.Data[j].Index
+	})
 	return &rerankResponse, nil
 }
 
