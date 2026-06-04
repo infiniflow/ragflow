@@ -38,7 +38,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.common.check_team_permission import check_kb_team_permission
-from api.db.services.task_service import TaskService, cancel_all_task_of
+from api.db.services.task_service import TaskService, cancel_all_task_of, has_canceled
 from api.utils.api_utils import construct_json_result, get_data_error_result, get_error_data_result, get_result, get_json_result, \
     server_error_response, add_tenant_id_to_kwargs, get_request_json, get_error_argument_result, check_duplicate_ids
 from api.utils.pagination_utils import validate_rest_api_page_size
@@ -1396,6 +1396,12 @@ def _run_sync(user_id:str, req):
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
             return RetCode.DATA_ERROR, "Document not found!"
+
+        if str(req["run"]) == TaskStatus.RUNNING.value:
+            tasks = list(TaskService.query(doc_id=doc_id))
+            has_active_task = any((task.progress or 0) < 1 and not has_canceled(task.id) for task in tasks)
+            if str(doc.run) in [TaskStatus.RUNNING.value, TaskStatus.SCHEDULE.value] or has_active_task:
+                return RetCode.DATA_ERROR, "Document is already running"
 
         if str(req["run"]) == TaskStatus.CANCEL.value:
             tasks = list(TaskService.query(doc_id=doc_id))
