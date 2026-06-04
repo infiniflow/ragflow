@@ -231,7 +231,7 @@ func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    common.CodeServerError,
 				"data":    nil,
-				"message": err.Error(),
+				"message": "Internal server error",
 			})
 			return
 		}
