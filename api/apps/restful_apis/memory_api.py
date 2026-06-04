@@ -23,7 +23,7 @@ from common.exceptions import ArgumentException, NotFoundException
 from api.apps import login_required, current_user
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.apps.services import memory_api_service
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import parse_pagination
 
 
 @manager.route("/memories", methods=["POST"])  # noqa: F821
@@ -126,8 +126,7 @@ async def list_memory():
         k: request.args.get(k) for k in ["memory_type", "tenant_id", "owner_ids", "storage_type"] if k in request.args
     }
     keywords = request.args.get("keywords")
-    page = int(request.args.get("page", 1))
-    page_size = validate_rest_api_page_size(int(request.args.get("page_size", 50)))
+    page, page_size = parse_pagination(request.args, default_page=1, default_page_size=50)
     try:
         res = await memory_api_service.list_memory(filter_params, keywords, page, page_size)
         return get_json_result(message=True, data=res)
@@ -159,8 +158,7 @@ async def get_memory_messages(memory_id):
         agent_ids = agent_ids[0].split(',')
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
-    page = int(args.get("page", 1))
-    page_size = validate_rest_api_page_size(int(args.get("page_size", 50)))
+    page, page_size = parse_pagination(args, default_page=1, default_page_size=50)
     try:
         res = await memory_api_service.get_memory_messages(
             memory_id, agent_ids, keywords, page, page_size
