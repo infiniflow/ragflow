@@ -73,7 +73,7 @@ func TestNewGroqModelHandlesCustomDefaultTransport(t *testing.T) {
 	})
 
 	model := NewGroqModel(map[string]string{"default": "http://unused"}, URLSuffix{})
-	if model == nil || model.httpClient == nil || model.httpClient.Transport == nil {
+	if model == nil || model.baseModel.httpClient == nil || model.baseModel.httpClient.Transport == nil {
 		t.Fatalf("NewGroqModel returned incomplete model: %#v", model)
 	}
 }
