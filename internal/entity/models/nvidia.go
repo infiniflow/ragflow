@@ -196,7 +196,9 @@ func (n *NvidiaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
