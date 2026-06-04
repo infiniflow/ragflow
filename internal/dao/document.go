@@ -135,6 +135,9 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var documents []*entity.Document
 	err := DB.Where("id IN ?", ids).Find(&documents).Error
 	if err != nil {
