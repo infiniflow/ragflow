@@ -157,6 +157,7 @@ class FileSource(StrEnum):
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
     ALFRESCO = "alfresco"
+    AZURE_BLOB = "azure_blob"
 
 
 class PipelineTaskType(StrEnum):
