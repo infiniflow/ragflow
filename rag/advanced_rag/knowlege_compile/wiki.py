@@ -53,7 +53,7 @@ from rag.prompts.generator import INPUT_UTILIZATION, gen_json, message_fit_in, s
 
 WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
 DEFAULT_WIKI_MAP_WORKERS = 6
-DEFAULT_WIKI_MAP_TIMEOUT = 120
+DEFAULT_WIKI_MAP_TIMEOUT = 600
 
 
 WIKI_MAP_SYSTEM = (
@@ -96,8 +96,8 @@ exact schema:
   ],
   "claims": [
     {{
-      "statement": "string — complete factual claim stated in source",
-      "subject": "string — entity/concept this claim is about",
+      "statement": "string — a complete factual sentence stated in the source. Any sentence of the form 'X is Y', 'X has Y', 'X does Y', 'X was founded in Y', 'X is located in Y', 'X reported Y', etc. is a claim. Aim for at least 1-3 claims per entity per chunk that mentions it.",
+      "subject": "string — entity/concept this claim is about (must match one of the entity/concept names extracted above)",
       "confidence": "explicit",
       "source_chunk_id": "string — exact value from the chunk_id list above"
     }}
@@ -140,6 +140,15 @@ Rules:
 - Be exhaustive — include all named entities, defined terms, and factual claims.
 - For ``concepts``, extract BOTH (a) named terms with definitions AND (b)
   coherent thematic sub-topics that could become their own wiki page.
+- Extract ``claims`` LIBERALLY: every factual sentence about an entity is a
+  claim. Definitions, attributes, ownership, locations, dates, actions,
+  events, financial figures, regulations cited — all qualify. If you
+  extract an entity, you should usually extract one or more claims that
+  mention it. An empty ``claims`` array is almost always wrong unless the
+  chunks are pure boilerplate.
+- ``relations`` only fire when the text states an explicit link between two
+  named entities/concepts (``A owns B``, ``A is part of B``, ``A regulates B``).
+  Otherwise leave ``relations`` empty.
 - Return empty arrays ``[]`` for categories with no findings.
 - Return ONLY the JSON object, no markdown fences, no commentary.
 """
@@ -1326,7 +1335,11 @@ WIKI_PLAN_COMPILE_KWD = "wiki_compilation_plan"
 WIKI_PAGE_COMPILE_KWD = "wiki_page"
 DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD = 0.85
 DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
-DEFAULT_WIKI_PLAN_TIMEOUT = 120
+DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
+                                 # JSON plan and reasoning models can spend a
+                                 # long time thinking before emitting tokens.
+                                 # Override via the ``timeout`` arg to
+                                 # ``wiki_plan_from_reduction``.
 DEFAULT_WIKI_PLAN_RECONCILE_BATCH = 50
 
 
@@ -2019,7 +2032,7 @@ DEFAULT_WIKI_REFINE_WORKERS = 4
 DEFAULT_WIKI_REFINE_TIMEOUT = 300
 WIKI_REFINE_SOURCE_BUDGET_CHARS = 60_000
 WIKI_MERGE_BODY_SHRINK_THRESHOLD = 0.7
-WIKI_MERGE_TIMEOUT = 120
+WIKI_MERGE_TIMEOUT = 600
 
 
 WIKI_REFINE_WRITER_SYSTEM = (
@@ -2138,12 +2151,26 @@ def _wiki_strip_think(raw: str) -> str:
     return _REFINE_THINK_PREFIX_RE.sub("", raw).strip()
 
 
-def _wiki_assemble_evidence(plan_item: dict, claims: list[dict]) -> list[dict]:
+def _wiki_assemble_evidence(
+    plan_item: dict,
+    claims: list[dict],
+    entity_by_name: dict[str, dict] | None = None,
+    concept_by_term: dict[str, dict] | None = None,
+) -> list[dict]:
     """Find claims whose `subject` matches any `entity_name` in the plan item.
 
     Match is case-insensitive: exact match on the full normalized subject, or
-    whole-word substring match for multi-word subjects. Each returned evidence
-    item carries chunk_ids[] for downstream source-context loading.
+    whole-word substring match for multi-word subjects. Each returned
+    evidence item carries chunk_ids[] for downstream source-context loading.
+
+    Fallback: if no claim attributes this page (a common case when the MAP
+    LLM extracted entities but no claims for them), synthesize a single
+    evidence stub from the canonical entity/concept records — that way
+    provenance (chunk_ids / source_doc_ids) and the source-context fetch
+    still resolve to the chunks that produced the entity/concept itself.
+    Pass ``entity_by_name`` / ``concept_by_term`` (lowercased-key lookups
+    over ``plan["_entities"]`` / ``plan["_concepts"]``) to enable the
+    fallback.
     """
     raw_names = [
         n.strip() for n in (plan_item.get("entity_names") or [])
@@ -2175,7 +2202,39 @@ def _wiki_assemble_evidence(plan_item: dict, claims: list[dict]) -> list[dict]:
             "confidence": claim.get("confidence", "explicit"),
             "chunk_ids": [c for c in chunk_ids if isinstance(c, str) and c],
         })
-    return evidence
+
+    if evidence:
+        return evidence
+
+    # ---- Fallback: derive evidence from entity/concept chunk_ids. -------
+    if not entity_by_name and not concept_by_term:
+        return []
+
+    fallback_chunk_ids: list[str] = []
+    matched_names: list[str] = []
+    for name, name_lc in zip(raw_names, names_lower):
+        hit = None
+        if entity_by_name:
+            hit = entity_by_name.get(name_lc)
+        if hit is None and concept_by_term:
+            hit = concept_by_term.get(name_lc)
+        if not hit:
+            continue
+        for cid in hit.get("chunk_ids") or []:
+            if isinstance(cid, str) and cid and cid not in fallback_chunk_ids:
+                fallback_chunk_ids.append(cid)
+        matched_names.append(name)
+
+    if not fallback_chunk_ids:
+        return []
+
+    return [{
+        "statement": f"(no claim-level evidence; chunks attributed to "
+                     f"{', '.join(matched_names) or raw_names[0]})",
+        "subject": matched_names[0] if matched_names else raw_names[0],
+        "confidence": "inferred",
+        "chunk_ids": fallback_chunk_ids,
+    }]
 
 
 def _wiki_format_evidence_blocks(evidence: list[dict]) -> str:
@@ -2324,7 +2383,13 @@ async def _wiki_collect_doc_ids(
     chunk_ids: list[str], tenant_id: str, kb_id: str,
 ) -> list[str]:
     """Look up ``doc_id`` for each chunk by id. Returns the unique list in
-    first-seen order (subset of the source chunks' parents)."""
+    first-seen order (subset of the source chunks' parents).
+
+    Defensive: handles both string and list shapes of the ``doc_id`` field
+    (different doc-store connectors normalize scalar keyword fields
+    differently). Logs when nothing comes back so the empty-source_doc_ids
+    failure mode is diagnosable.
+    """
     if not chunk_ids:
         return []
     from common import settings
@@ -2335,6 +2400,18 @@ async def _wiki_collect_doc_ids(
     select_fields = ["id", "doc_id"]
     out: list[str] = []
     seen: set[str] = set()
+    total_rows_seen = 0
+
+    def _accept(did) -> None:
+        if isinstance(did, str):
+            if did and did not in seen:
+                seen.add(did)
+                out.append(did)
+        elif isinstance(did, (list, tuple)):
+            for d in did:
+                if isinstance(d, str) and d and d not in seen:
+                    seen.add(d)
+                    out.append(d)
 
     BATCH = 500
     for i in range(0, len(chunk_ids), BATCH):
@@ -2350,11 +2427,16 @@ async def _wiki_collect_doc_ids(
         except Exception:
             logging.exception("wiki_refine: failed to fetch doc_ids for %d chunks", len(batch_ids))
             continue
+        total_rows_seen += len(field_map)
         for row in field_map.values():
-            did = row.get("doc_id")
-            if isinstance(did, str) and did and did not in seen:
-                seen.add(did)
-                out.append(did)
+            _accept(row.get("doc_id"))
+
+    if chunk_ids and not out:
+        logging.warning(
+            "wiki_refine: doc_id resolution returned 0 for %d chunk(s) (rows_found=%d, kb=%s); "
+            "first chunk_id=%s",
+            len(chunk_ids), total_rows_seen, kb_id, chunk_ids[0],
+        )
     return out
 
 
@@ -2794,6 +2876,36 @@ async def wiki_refine_from_plan(
     all_claims = plan.get("_claims") or []
     all_plan_slugs = [p.get("slug", "") for p in pages_spec if p.get("slug")]
 
+    # Build canonical entity/concept lookups for evidence fallback. When MAP
+    # produced no claims (a real failure mode we've seen on Chinese / dense
+    # technical content), provenance still resolves via the chunk_ids on
+    # the entities and concepts themselves. The lookups index every name
+    # variant (canonical + aliases) so the planner LLM picking an alias
+    # spelling still hits the right canonical record.
+    entity_by_name: dict[str, dict] = {}
+    for e in plan.get("_entities") or []:
+        if not isinstance(e, dict):
+            continue
+        canon = (e.get("name") or "").strip()
+        if canon:
+            entity_by_name.setdefault(canon.lower(), e)
+        for alias in e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                entity_by_name.setdefault(alias.strip().lower(), e)
+
+    concept_by_term: dict[str, dict] = {}
+    for c in plan.get("_concepts") or []:
+        if not isinstance(c, dict):
+            continue
+        term = (c.get("term") or "").strip()
+        if term:
+            concept_by_term.setdefault(term.lower(), c)
+        # Concepts in REDUCE output rarely carry aliases, but accept them if
+        # present so a future MAP schema change is forward-compatible.
+        for alias in c.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                concept_by_term.setdefault(alias.strip().lower(), c)
+
     # Resume cache
     cached: dict[str, dict] = {}
     if not force_rerun:
@@ -2824,7 +2936,11 @@ async def wiki_refine_from_plan(
         async def _run() -> Optional[dict]:
             nonlocal completed
             try:
-                evidence = _wiki_assemble_evidence(plan_item, all_claims)
+                evidence = _wiki_assemble_evidence(
+                    plan_item, all_claims,
+                    entity_by_name=entity_by_name,
+                    concept_by_term=concept_by_term,
+                )
                 source_chunk_ids = _wiki_collect_evidence_chunk_ids(evidence)
                 source_context = await _wiki_build_source_context(
                     evidence, tenant_id, kb_id, budget=source_budget_chars,

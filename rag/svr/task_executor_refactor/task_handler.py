@@ -574,7 +574,7 @@ class TaskHandler:
                 language=ctx.language,
                 callback=_stage_cb("[wiki MAP]"),
             )
-            logging.info("Wiki compilation PHASE【1】", json.dumps(phase1, ensure_ascii=False, indent=4))
+            logging.info("Wiki compilation PHASE【1】"+ json.dumps(phase1, ensure_ascii=False, indent=4))
             # Phase 2 — REDUCE: KB-wide dedup of every MAP extract in this KB.
             phase2 = await wiki_reduce_from_extracts(
                 chat_mdl=chat_mdl,
@@ -584,7 +584,7 @@ class TaskHandler:
                 force_rerun=True,
                 callback=_stage_cb("[wiki REDUCE]"),
             )
-            logging.info("Wiki compilation PHASE【2】", json.dumps(phase2, ensure_ascii=False, indent=4))
+            logging.info("Wiki compilation PHASE【2】"+ json.dumps(phase2, ensure_ascii=False, indent=4))
             # Phase 3 — PLAN: KB-wide compilation plan.
             phase3 = await wiki_plan_from_reduction(
                 chat_mdl=chat_mdl,
@@ -596,7 +596,7 @@ class TaskHandler:
                 force_rerun=True,
                 callback=_stage_cb("[wiki PLAN]"),
             )
-            logging.info("Wiki compilation PHASE【3】", json.dumps(phase3, ensure_ascii=False, indent=4))
+            logging.info("Wiki compilation PHASE【3】"+ json.dumps(phase3, ensure_ascii=False, indent=4))
             # Phase 4 — REFINE: write/merge every planned page to ES as wiki_page.
             phase4 = await wiki_refine_from_plan(
                 chat_mdl=chat_mdl,
@@ -606,7 +606,7 @@ class TaskHandler:
                 force_rerun=True,
                 callback=_stage_cb("[wiki REFINE]"),
             )
-            logging.info("Wiki compilation PHASE【4】", json.dumps(phase4, ensure_ascii=False, indent=4))
+            logging.info("Wiki compilation PHASE【4】"+ json.dumps(phase4, ensure_ascii=False, indent=4))
             return phase4
 
         try:
