@@ -994,4 +994,3 @@ async def multi_queries_gen(chat_mdl, question: str, query:str, missing_infos:li
         )
     except Exception as e:
         logging.exception(e)
-    return {}
