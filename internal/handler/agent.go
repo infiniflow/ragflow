@@ -138,6 +138,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{agent_id}/upload [post]
 func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
@@ -155,6 +156,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	canvasOwnerID, ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+
 	if err != nil || !ok {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,
@@ -189,6 +191,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeOperatingError,
+
 			"data":    nil,
 			"message": err.Error(),
 		})
@@ -198,6 +201,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    uploaded,
+
 		"message": "",
 	})
 }

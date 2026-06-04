@@ -26,15 +26,17 @@ import (
 
 // AgentService agent service
 type AgentService struct {
-	canvasDAO     *dao.UserCanvasDAO
-	userTenantDAO *dao.UserTenantDAO
+	canvasDAO           *dao.UserCanvasDAO
+	userTenantDAO       *dao.UserTenantDAO
+	userCanvasVersionDAO *dao.UserCanvasVersionDAO
 }
 
 // NewAgentService create agent service
 func NewAgentService() *AgentService {
 	return &AgentService{
-		canvasDAO:     dao.NewUserCanvasDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		canvasDAO:            dao.NewUserCanvasDAO(),
+		userTenantDAO:        dao.NewUserTenantDAO(),
+		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
 	}
 }
 
@@ -153,4 +155,5 @@ func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (string, bool,
 		}
 	}
 	return "", false, nil
+
 }
