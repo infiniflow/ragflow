@@ -17,7 +17,6 @@ import asyncio
 import inspect
 import importlib.util
 import sys
-from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -249,14 +248,6 @@ def _load_doc_module(monkeypatch, module_basename="chunk_api"):
         if value is not None
     }
     api_utils_mod.server_error_response = lambda e: {"code": 500, "message": str(e)}
-    def _token_required(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
-
-        return wrapper
-
-    api_utils_mod.token_required = _token_required
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     image_utils_mod = ModuleType("api.utils.image_utils")
