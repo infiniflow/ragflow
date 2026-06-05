@@ -128,7 +128,8 @@ func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize
 	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
 }
 
-func normalizeAgentTags(rawTags interface{}) string {
+// normalizeAgentTags returns an error for unsupported tag payload types
+func normalizeAgentTags(rawTags interface{}) (string, error) {
 	cleaned := make([]string, 0)
 	switch tags := rawTags.(type) {
 	case nil:
@@ -157,12 +158,7 @@ func normalizeAgentTags(rawTags interface{}) string {
 			}
 		}
 	default:
-		for _, tag := range strings.Split(fmt.Sprint(tags), ",") {
-			tag = strings.TrimSpace(tag)
-			if tag != "" {
-				cleaned = append(cleaned, tag)
-			}
-		}
+		return "", fmt.Errorf("tags must be a string or array")
 	}
 
 	seen := make(map[string]struct{}, len(cleaned))
@@ -188,7 +184,7 @@ func normalizeAgentTags(rawTags interface{}) string {
 		used += extra
 	}
 
-	return strings.Join(normalized, ",")
+	return strings.Join(normalized, ","), nil
 }
 
 func truncateRunes(value string, maxLen int) string {
@@ -208,13 +204,19 @@ func (s *AgentService) UpdateAgentTags(userID, canvasID string, tags interface{}
 		return false, common.CodeOperatingError, fmt.Errorf("Agent not found or no permission.")
 	}
 
-	normalized := normalizeAgentTags(tags)
+	normalized, nErr := normalizeAgentTags(tags)
+	if nErr != nil {
+		return false, common.CodeBadRequest, nErr
+	}
 	rows, err := s.canvasDAO.UpdateTags(canvasID, normalized)
 	if err != nil {
 		return false, common.CodeServerError, fmt.Errorf("failed to update agent tags: %w", err)
 	}
 	if rows == 0 {
-		return false, common.CodeOperatingError, fmt.Errorf("Agent not found or no permission.")
+		if _, getErr := s.canvasDAO.GetByCanvasID(canvasID); getErr != nil {
+			return false, common.CodeOperatingError, fmt.Errorf("Agent not found or no permission.")
+		}
+		return true, common.CodeSuccess, nil
 	}
 
 	return true, common.CodeSuccess, nil

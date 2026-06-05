@@ -309,7 +309,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
+			"code": common.CodeOperatingError,
 
 			"data":    nil,
 			"message": err.Error(),
@@ -318,8 +318,8 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    uploaded,
+		"code": common.CodeSuccess,
+		"data": uploaded,
 
 		"message": "",
 	})
@@ -346,7 +346,7 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.agentService.UpdateAgentTags(user.ID, c.Param("canvas_id"), req.Tags)
+	data, code, err := h.agentService.UpdateAgentTags(user.ID, c.Param("agent_id"), req.Tags)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    code,
