@@ -43,6 +43,70 @@ func TestExtractDocID_Empty(t *testing.T) {
 	}
 }
 
+// --- ConvertSearchResultToDocMeta ---
+
+func TestConvertSearchResultToDocMeta_Empty(t *testing.T) {
+	result := ConvertSearchResultToDocMeta(nil)
+	if len(result) != 0 {
+		t.Errorf("expected empty, got %d", len(result))
+	}
+}
+
+func TestConvertSearchResultToDocMeta_Single(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
+	}
+	result := ConvertSearchResultToDocMeta(chunks)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 doc, got %d", len(result))
+	}
+	if result["doc1"]["author"] != "Zhang San" {
+		t.Errorf("expected 'Zhang San', got %v", result["doc1"]["author"])
+	}
+}
+
+func TestConvertSearchResultToDocMeta_Multiple(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
+		{"id": "doc2", "meta_fields": map[string]interface{}{"author": "Li Si"}},
+	}
+	result := ConvertSearchResultToDocMeta(chunks)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 docs, got %d", len(result))
+	}
+}
+
+func TestConvertSearchResultToDocMeta_SkipEmptyDocID(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"meta_fields": map[string]interface{}{"author": "Zhang San"}},
+	}
+	result := ConvertSearchResultToDocMeta(chunks)
+	if len(result) != 0 {
+		t.Errorf("expected empty for missing doc_id, got %d", len(result))
+	}
+}
+
+func TestConvertSearchResultToDocMeta_SkipEmptyMeta(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"id": "doc1"},
+	}
+	result := ConvertSearchResultToDocMeta(chunks)
+	if len(result) != 0 {
+		t.Errorf("expected empty for missing meta_fields, got %d", len(result))
+	}
+}
+
+func TestConvertSearchResultToDocMeta_LastWins(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
+		{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Li Si"}},
+	}
+	result := ConvertSearchResultToDocMeta(chunks)
+	if result["doc1"]["author"] != "Li Si" {
+		t.Errorf("expected last value 'Li Si', got %v", result["doc1"]["author"])
+	}
+}
+
 // --- CollectDocIDsByKB ---
 
 func TestCollectDocIDsByKB_Empty(t *testing.T) {

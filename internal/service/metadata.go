@@ -269,6 +269,24 @@ func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	return result
 }
 
+// ConvertSearchResultToDocMeta converts SearchMetadataResult chunks into a DocMetaMap.
+// Pure function, no dependencies.
+func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
+	metaByDoc := make(DocMetaMap)
+	for _, metaChunk := range chunks {
+		docID := extractDocID(metaChunk)
+		if docID == "" {
+			continue
+		}
+		metaFields, err := ExtractMetaFields(metaChunk)
+		if err != nil || len(metaFields) == 0 {
+			continue
+		}
+		metaByDoc[docID] = metaFields
+	}
+	return metaByDoc
+}
+
 // FetchDocMetaByKB fetches document metadata from ES for each KB.
 func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID string) DocMetaMap {
 	metaByDoc := make(DocMetaMap)
@@ -277,16 +295,8 @@ func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID stri
 		if err != nil {
 			continue
 		}
-		for _, metaChunk := range result.Chunks {
-			docID := extractDocID(metaChunk)
-			if docID == "" {
-				continue
-			}
-			metaFields, err := ExtractMetaFields(metaChunk)
-			if err != nil || len(metaFields) == 0 {
-				continue
-			}
-			metaByDoc[docID] = metaFields
+		for docID, meta := range ConvertSearchResultToDocMeta(result.Chunks) {
+			metaByDoc[docID] = meta
 		}
 	}
 	return metaByDoc
