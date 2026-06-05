@@ -43,9 +43,9 @@ const (
 func kgEntityFromChunk(name string, chunk map[string]interface{}) KGEntity {
 	e := KGEntity{}
 	if v, ok := chunk["_score"].(float64); ok {
-		e.Sim = v
+		e.Similarity = v
 	} else if v, ok := chunk["score"].(float64); ok {
-		e.Sim = v
+		e.Similarity = v
 	}
 	if v, ok := chunk["rank_flt"].(float64); ok {
 		e.PageRank = v

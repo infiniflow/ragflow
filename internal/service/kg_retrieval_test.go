@@ -66,8 +66,8 @@ func TestKgEntityFromChunk_Basic(t *testing.T) {
 		"n_hop_with_weight":   `[{"path":["A","B"],"weights":[0.8]}]`,
 	}
 	e := kgEntityFromChunk("Elon Musk", chunk)
-	if e.Sim != 0.85 {
-		t.Errorf("expected Sim=0.85, got %f", e.Sim)
+	if e.Similarity != 0.85 {
+		t.Errorf("expected Sim=0.85, got %f", e.Similarity)
 	}
 	if e.PageRank != 0.9 {
 		t.Errorf("expected PageRank=0.9, got %f", e.PageRank)
@@ -83,15 +83,15 @@ func TestKgEntityFromChunk_Basic(t *testing.T) {
 func TestKgEntityFromChunk_ScoreFallback(t *testing.T) {
 	chunk := map[string]interface{}{"score": 0.75}
 	e := kgEntityFromChunk("Test", chunk)
-	if e.Sim != 0.75 {
-		t.Errorf("expected Sim=0.75 from score field, got %f", e.Sim)
+	if e.Similarity != 0.75 {
+		t.Errorf("expected Sim=0.75 from score field, got %f", e.Similarity)
 	}
 }
 
 func TestKgEntityFromChunk_MissingFields(t *testing.T) {
 	chunk := map[string]interface{}{}
 	e := kgEntityFromChunk("Empty", chunk)
-	if e.Sim != 0 || e.PageRank != 0 || len(e.NhopEnts) != 0 {
+	if e.Similarity != 0 || e.PageRank != 0 || len(e.NhopEnts) != 0 {
 		t.Errorf("expected zero defaults, got %+v", e)
 	}
 }

@@ -26,7 +26,7 @@ import (
 func TestAnalyzeNHopPaths_Basic(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"A": {
-			Sim: 0.9,
+Similarity: 0.9,
 			NhopEnts: []NhopEntity{
 				{Path: []string{"A", "B", "C"}, Weights: []float64{0.8, 0.5}},
 			},
@@ -49,13 +49,13 @@ func TestAnalyzeNHopPaths_Basic(t *testing.T) {
 func TestAnalyzeNHopPaths_MultipleContributors(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"A": {
-			Sim: 0.8,
+Similarity: 0.8,
 			NhopEnts: []NhopEntity{
 				{Path: []string{"A", "B"}, Weights: []float64{0.7}},
 			},
 		},
 		"X": {
-			Sim: 0.6,
+Similarity: 0.6,
 			NhopEnts: []NhopEntity{
 				{Path: []string{"X", "B"}, Weights: []float64{0.5}},
 			},
@@ -83,24 +83,24 @@ func TestAnalyzeNHopPaths_Empty(t *testing.T) {
 
 func TestDoubleHitBoost(t *testing.T) {
 	ents := map[string]*KGEntity{
-		"A": {Sim: 0.5},
-		"B": {Sim: 0.3},
+		"A": {Similarity: 0.5},
+		"B": {Similarity: 0.3},
 	}
 	types := map[string]struct{}{"A": {}}
 	DoubleHitBoost(ents, types)
-	if ents["A"].Sim != 1.0 {
-		t.Errorf("expected A sim=1.0 after boost, got %f", ents["A"].Sim)
+	if ents["A"].Similarity != 1.0 {
+		t.Errorf("expected A sim=1.0 after boost, got %f", ents["A"].Similarity)
 	}
-	if ents["B"].Sim != 0.3 {
-		t.Errorf("expected B sim unchanged at 0.3, got %f", ents["B"].Sim)
+	if ents["B"].Similarity != 0.3 {
+		t.Errorf("expected B sim unchanged at 0.3, got %f", ents["B"].Similarity)
 	}
 }
 
 func TestDoubleHitBoost_Empty(t *testing.T) {
-	ents := map[string]*KGEntity{"A": {Sim: 0.5}}
+	ents := map[string]*KGEntity{"A": {Similarity: 0.5}}
 	DoubleHitBoost(ents, map[string]struct{}{})
-	if ents["A"].Sim != 0.5 {
-		t.Errorf("expected unchanged, got %f", ents["A"].Sim)
+	if ents["A"].Similarity != 0.5 {
+		t.Errorf("expected unchanged, got %f", ents["A"].Similarity)
 	}
 }
 
@@ -153,9 +153,9 @@ func TestFuseRelationScores_NhopNewEdge(t *testing.T) {
 
 func TestSortAndTrimEntities(t *testing.T) {
 	ents := map[string]*KGEntity{
-		"A": {Sim: 0.5, PageRank: 0.9},
-		"B": {Sim: 0.8, PageRank: 0.3},
-		"C": {Sim: 0.9, PageRank: 0.1},
+		"A": {Similarity: 0.5, PageRank: 0.9},
+		"B": {Similarity: 0.8, PageRank: 0.3},
+		"C": {Similarity: 0.9, PageRank: 0.1},
 	}
 	result := SortAndTrimEntities(ents, 2)
 	if len(result) != 2 {
@@ -169,8 +169,8 @@ func TestSortAndTrimEntities(t *testing.T) {
 
 func TestSortAndTrimEntities_DefaultTopN(t *testing.T) {
 	ents := map[string]*KGEntity{
-		"A": {Sim: 0.5, PageRank: 0.9},
-		"B": {Sim: 0.8, PageRank: 0.3},
+		"A": {Similarity: 0.5, PageRank: 0.9},
+		"B": {Similarity: 0.8, PageRank: 0.3},
 	}
 	result := SortAndTrimEntities(ents, 0)
 	if len(result) != 2 {

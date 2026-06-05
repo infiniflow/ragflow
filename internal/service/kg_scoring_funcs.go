@@ -37,7 +37,7 @@ func AnalyzeNHopPaths(entsFromQuery map[string]*KGEntity) map[Edge]EdgeScore {
 				f, t := path[i], path[i+1]
 				edge := Edge{From: f, To: t}
 				es := nhopPathes[edge]
-				es.Sim += ent.Sim / (2.0 + float64(i))
+				es.Sim += ent.Similarity / (2.0 + float64(i))
 				if i < len(weights) {
 					es.PageRank = weights[i]
 				}
@@ -53,7 +53,7 @@ func AnalyzeNHopPaths(entsFromQuery map[string]*KGEntity) map[Edge]EdgeScore {
 func DoubleHitBoost(entsFromQuery map[string]*KGEntity, entsFromTypes map[string]struct{}) {
 	for ent := range entsFromQuery {
 		if _, ok := entsFromTypes[ent]; ok {
-			entsFromQuery[ent].Sim *= 2
+			entsFromQuery[ent].Similarity *= 2
 		}
 	}
 }
@@ -108,7 +108,7 @@ func SortAndTrimEntities(entsFromQuery map[string]*KGEntity, topN int) []ScoredE
 	for name, ent := range entsFromQuery {
 		scored = append(scored, ScoredEntity{
 			Entity:      name,
-			Score:       ent.Sim * ent.PageRank,
+			Score:       ent.Similarity * ent.PageRank,
 			Description: ent.Description,
 		})
 	}
