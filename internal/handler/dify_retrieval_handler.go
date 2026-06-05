@@ -256,7 +256,6 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		PageSize:               topK,
 		Top:                    &topK,
 		SimilarityThreshold:    &scoreThreshold,
-		VectorSimilarityWeight: func() *float64 { v := 0.3; return &v }(),
 		EmbeddingModel:         embModel,
 	}
 	if rankFeature != nil {
