@@ -1028,6 +1028,7 @@ def _load_agent_api_module(monkeypatch):
 
     document_service_mod = ModuleType("api.db.services.document_service")
     document_service_mod.DocumentService = SimpleNamespace(
+        accessible=lambda *_args, **_kwargs: False,
         clear_chunk_num_when_rerun=lambda *_args, **_kwargs: True,
         update_by_id=lambda *_args, **_kwargs: True,
     )
