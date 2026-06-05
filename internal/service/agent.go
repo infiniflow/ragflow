@@ -35,6 +35,7 @@ type AgentService struct {
 	canvasDAO            *dao.UserCanvasDAO
 	userTenantDAO        *dao.UserTenantDAO
 	userCanvasVersionDAO *dao.UserCanvasVersionDAO
+	canvasTemplateDAO    *dao.CanvasTemplateDAO
 }
 
 // NewAgentService create agent service
@@ -43,7 +44,15 @@ func NewAgentService() *AgentService {
 		canvasDAO:            dao.NewUserCanvasDAO(),
 		userTenantDAO:        dao.NewUserTenantDAO(),
 		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
+		canvasTemplateDAO:    dao.NewCanvasTemplateDAO(),
 	}
+}
+
+// ListTemplates returns every canvas template. Mirrors Python
+// agent_api.list_agent_template, which iterates CanvasTemplateService.get_all()
+// and serialises each row.
+func (s *AgentService) ListTemplates() ([]*entity.CanvasTemplate, error) {
+	return s.canvasTemplateDAO.GetAll()
 }
 
 // AgentItem is one entry in the list response.

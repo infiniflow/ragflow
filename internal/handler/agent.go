@@ -29,6 +29,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -179,6 +180,37 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"data":    versions,
 		"message": "",
+	})
+}
+
+// ListTemplates lists every canvas template available to authenticated users.
+// @Summary List Agent Templates
+// @Description List the catalogue of canvas templates that authenticated users can clone.
+// @Tags agents
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/templates [get]
+func (h *AgentHandler) ListTemplates(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	templates, err := h.agentService.ListTemplates()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	if templates == nil {
+		// Ensure the JSON payload is always a list, never null.
+		templates = []*entity.CanvasTemplate{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    templates,
+		"message": "success",
 	})
 }
 
