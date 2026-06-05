@@ -38,7 +38,11 @@ func AnalyzeNHopPaths(entsFromQuery map[string]*KGEntity) map[Edge]EdgeScore {
 				edge := Edge{From: f, To: t}
 				es := nhopPathes[edge]
 				es.Sim += ent.Similarity / (2.0 + float64(i))
-				if i < len(weights) {
+				// Take the max across paths that contribute the same edge.
+				// Plain assignment was last-write-wins, which is non-deterministic
+				// under Go's randomized map iteration and can clobber a stronger
+				// weight with a weaker one. See infiniflow/ragflow#15695.
+				if i < len(weights) && weights[i] > es.PageRank {
 					es.PageRank = weights[i]
 				}
 				nhopPathes[edge] = es

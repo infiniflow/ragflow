@@ -79,6 +79,35 @@ func TestAnalyzeNHopPaths_Empty(t *testing.T) {
 	}
 }
 
+// Regression: when two paths from different query entities contribute the
+// same edge, PageRank must keep the *max* weight rather than whichever
+// arrives last. The previous last-write-wins behaviour was non-deterministic
+// under Go's randomized map iteration. See infiniflow/ragflow#15695.
+func TestAnalyzeNHopPaths_PageRankTakesMaxAcrossPaths(t *testing.T) {
+	ents := map[string]*KGEntity{
+		"A": {
+			Similarity: 0.8,
+			NhopEnts: []NhopEntity{
+				{Path: []string{"A", "B"}, Weights: []float64{0.3}}, // weak
+			},
+		},
+		"X": {
+			Similarity: 0.6,
+			NhopEnts: []NhopEntity{
+				{Path: []string{"X", "B"}, Weights: []float64{0.5}},
+				{Path: []string{"A", "B"}, Weights: []float64{0.9}}, // strong, same edge as A→B
+			},
+		},
+	}
+	result := AnalyzeNHopPaths(ents)
+	if got := result[Edge{"A", "B"}].PageRank; got != 0.9 {
+		t.Errorf("expected A→B PageRank=0.9 (max), got %f", got)
+	}
+	if got := result[Edge{"X", "B"}].PageRank; got != 0.5 {
+		t.Errorf("expected X→B PageRank=0.5, got %f", got)
+	}
+}
+
 // --- DoubleHitBoost ---
 
 func TestDoubleHitBoost(t *testing.T) {

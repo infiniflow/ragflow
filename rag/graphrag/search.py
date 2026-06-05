@@ -184,7 +184,12 @@ class KGSearch(Dealer):
                         nhop_pathes[(f, t)]["sim"] += ent["sim"] / (2 + i)
                     else:
                         nhop_pathes[(f, t)]["sim"] = ent["sim"] / (2 + i)
-                    nhop_pathes[(f, t)]["pagerank"] = wts[i]
+                    # Take the max across paths that contribute the same edge —
+                    # plain assignment was last-write-wins and could clobber a
+                    # stronger weight with a weaker one. See infiniflow/ragflow#15695.
+                    nhop_pathes[(f, t)]["pagerank"] = max(
+                        nhop_pathes[(f, t)].get("pagerank", 0.0), wts[i]
+                    )
 
         logging.info("Retrieved entities: {}".format(list(ents_from_query.keys())))
         logging.info("Retrieved relations: {}".format(list(rels_from_txt.keys())))
