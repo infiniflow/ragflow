@@ -177,6 +177,80 @@ class MarkdownElementExtractor:
 
         return ranges
 
+    def _table_cells(self, line):
+        stripped = line.strip()
+        if "|" not in stripped:
+            return []
+        if stripped.startswith("|"):
+            stripped = stripped[1:]
+        if stripped.endswith("|"):
+            stripped = stripped[:-1]
+        return [cell.strip() for cell in stripped.split("|")]
+
+    def _is_table_row(self, line):
+        cells = self._table_cells(line)
+        return len(cells) >= 2 and any(cell for cell in cells)
+
+    def _is_table_separator_row(self, line):
+        cells = self._table_cells(line)
+        return len(cells) >= 2 and all(re.match(r"^:?-{3,}:?$", cell.replace(" ", "")) for cell in cells)
+
+    def _markdown_table_ranges(self, text):
+        ranges = []
+        line_offsets = self._line_start_offsets(text)
+
+        i = 0
+        while i < len(self.lines) - 1:
+            if not self._is_table_row(self.lines[i]) or not self._is_table_separator_row(self.lines[i + 1]):
+                i += 1
+                continue
+
+            end_line = i + 1
+            j = i + 2
+            while j < len(self.lines) and self._is_table_row(self.lines[j]):
+                end_line = j
+                j += 1
+
+            end_pos = min(len(text), line_offsets[end_line] + len(self.lines[end_line]))
+            ranges.append((line_offsets[i], end_pos))
+            i = end_line + 1
+
+        return ranges
+
+    def _html_table_ranges(self, text):
+        table_pattern = re.compile(
+            r"""
+            (?:
+                (?:<html[^>]*>\s*<body[^>]*>\s*<table[^>]*>.*?</table>\s*</body>\s*</html>)
+                |
+                (?:<body[^>]*>\s*<table[^>]*>.*?</table>\s*</body>)
+                |
+                (?:<table[^>]*>.*?</table>)
+            )
+            """,
+            re.VERBOSE | re.DOTALL | re.IGNORECASE,
+        )
+        return [(match.start(), match.end()) for match in table_pattern.finditer(text)]
+
+    def _merge_ranges(self, ranges):
+        if not ranges:
+            return []
+
+        merged = []
+        for start, end in sorted(ranges):
+            if not merged or start > merged[-1][1]:
+                merged.append((start, end))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        return merged
+
+    def _protected_ranges(self, text):
+        return self._merge_ranges(
+            self._fenced_code_ranges(text)
+            + self._markdown_table_ranges(text)
+            + self._html_table_ranges(text)
+        )
+
     def _append_delimited_section(self, sections, text, start, end, include_meta):
         part = text[start:end]
         if not part or not part.strip():
@@ -195,9 +269,9 @@ class MarkdownElementExtractor:
     def _extract_delimited_elements(self, text, delimiters, include_meta=False):
         sections = []
         pattern = re.compile(delimiters)
-        protected_ranges = self._fenced_code_ranges(text)
+        protected_ranges = self._protected_ranges(text)
         if protected_ranges:
-            logging.debug("markdown_parser: detected %d fenced ranges for delimiter extraction", len(protected_ranges))
+            logging.debug("markdown_parser: detected %d protected ranges for delimiter extraction", len(protected_ranges))
         protected_idx = 0
         last_end = 0
 
