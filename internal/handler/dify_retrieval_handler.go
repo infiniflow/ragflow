@@ -64,13 +64,6 @@ type DocumentDAOIface interface {
 	GetByIDs(ids []string) ([]*entity.Document, error)
 }
 
-// KGPipelineIface abstracts KGSearchPipeline for the Dify handler.
-type KGPipelineIface interface {
-	Retrieval(ctx context.Context) (map[string]interface{}, error)
-	// SetChatModel allows setting the chat model before calling Retrieval.
-	SetChatModel(chatModel *modelModule.ChatModel)
-}
-
 // --- Request / Response types ---
 
 // difyRetrievalRequest is the JSON body / query params for the Dify retrieval endpoint.
