@@ -204,6 +204,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -244,6 +246,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
