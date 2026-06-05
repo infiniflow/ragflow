@@ -263,6 +263,41 @@ func (s *DocumentService) deleteDocumentFull(docID string) error {
 	return nil
 }
 
+// RemoveDocumentKeepFile removes a document's chunks/metadata and the document
+// row, decrementing the KB counters (doc_num/chunk_num/token_num), WITHOUT
+// deleting the underlying file record, its storage blob, or its file2document
+// mappings. Mirrors Python DocumentService.remove_document — the caller is
+// responsible for cleaning up the file2document mappings separately.
+func (s *DocumentService) RemoveDocumentKeepFile(docID string) error {
+	doc, kb, err := s.resolveDocAndKB(docID)
+	if err != nil {
+		return err
+	}
+	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+	}
+	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	return s.deleteDocRecordWithCounters(doc, kb.ID)
+}
+
+// InsertDocument creates a document row and increments the owning KB's doc_num
+// counter in a single transaction. Mirrors Python DocumentService.insert, which
+// updates dataset/document counters on insert. The document's ID and timestamps
+// are populated by the caller / model hooks before insertion.
+func (s *DocumentService) InsertDocument(doc *entity.Document) error {
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(doc).Error; err != nil {
+			return fmt.Errorf("failed to create document: %w", err)
+		}
+		if err := tx.Model(&entity.Knowledgebase{}).
+			Where("id = ?", doc.KbID).
+			Update("doc_num", gorm.Expr("doc_num + 1")).Error; err != nil {
+			return fmt.Errorf("failed to increment doc_num for KB %s: %w", doc.KbID, err)
+		}
+		return nil
+	})
+}
+
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
 // an error.
 func (s *DocumentService) resolveDocAndKB(docID string) (*entity.Document, *entity.Knowledgebase, error) {

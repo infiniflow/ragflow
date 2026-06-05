@@ -17,6 +17,8 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"ragflow/internal/common"
@@ -575,38 +577,27 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	}
 
 	var req service.LinkToDatasetsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    false,
-			"message": err.Error(),
-		})
-		return
-	}
+	// Tolerate bind errors: a malformed or empty body simply leaves the fields
+	// empty, which the validate_request-style check below reports as missing
+	// arguments — matching Python's @validate_request behaviour and code.
+	_ = c.ShouldBindJSON(&req)
 
+	// Mirror Python @validate_request("file_ids", "kb_ids"): missing arguments
+	// return ARGUMENT_ERROR (101) with data=null and the aggregated message.
+	var missing []string
 	if len(req.FileIDs) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    false,
-			"message": "required argument is missing: file_ids",
-		})
-		return
+		missing = append(missing, "file_ids")
 	}
 	if len(req.KbIDs) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    false,
-			"message": "required argument is missing: kb_ids",
-		})
+		missing = append(missing, "kb_ids")
+	}
+	if len(missing) > 0 {
+		jsonError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ",")))
 		return
 	}
 
 	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeDataError,
-			"data":    false,
-			"message": err.Error(),
-		})
+		jsonError(c, linkToDatasetsErrorCode(err), err.Error())
 		return
 	}
 
@@ -615,4 +606,19 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		"data":    true,
 		"message": "success",
 	})
+}
+
+// linkToDatasetsErrorCode maps File2DocumentService sentinel errors to
+// Python-compatible response codes. File/dataset-not-found and no-authorization
+// use DATA_ERROR (102), matching Python's get_data_error_result in convert();
+// any other (internal) error is reported as a server error.
+func linkToDatasetsErrorCode(err error) common.ErrorCode {
+	switch {
+	case errors.Is(err, service.ErrLinkFileNotFound),
+		errors.Is(err, service.ErrLinkDatasetNotFound),
+		errors.Is(err, service.ErrLinkNoAuthorization):
+		return common.CodeDataError
+	default:
+		return common.CodeServerError
+	}
 }
