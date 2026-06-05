@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"ragflow/internal/engine"
@@ -196,6 +197,51 @@ func TestKGSearchRetrieval_NoEntities(t *testing.T) {
 	if content != "" {
 		t.Errorf("expected empty when no entities found, got %q", content)
 	}
+}
+
+// TestEntitySearch_MultiEntities verifies that all entities are used in search query.
+func TestEntitySearch_MultiEntities(t *testing.T) {
+	var capturedText string
+	mock := &searchCaptureEngine{}
+	mock.searchFn = func(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+		if kgType, _ := req.Filter["knowledge_graph_kwd"].(string); kgType == "entity" && len(req.MatchExprs) > 0 {
+			if expr, ok := req.MatchExprs[0].(*types.MatchTextExpr); ok {
+				capturedText = expr.MatchingText
+			}
+		}
+		return &types.SearchResult{}, nil
+	}
+	entities := []string{"Elon Musk", "SpaceX"}
+	entsReq := &types.SearchRequest{
+		KbIDs:        []string{"kb1"},
+		SelectFields: []string{"entity_kwd", "n_hop_with_weight"},
+		Limit:        50,
+		Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{
+				Fields:       []string{"entity_kwd^10", "content_ltks^2"},
+				MatchingText: strings.Join(entities, " "),
+				TopN:         50,
+			},
+		},
+	}
+	mock.Search(context.Background(), entsReq)
+	if !strings.Contains(capturedText, "Elon Musk") || !strings.Contains(capturedText, "SpaceX") {
+		t.Errorf("expected both entities in query, got %q", capturedText)
+	}
+}
+
+// searchCaptureEngine is a minimal mock for testing search requests.
+type searchCaptureEngine struct {
+	engine.DocEngine
+	searchFn func(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
+}
+
+func (e *searchCaptureEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if e.searchFn != nil {
+		return e.searchFn(ctx, req)
+	}
+	return &types.SearchResult{}, nil
 }
 
 // --- queryRewrite ---

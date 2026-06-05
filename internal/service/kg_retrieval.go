@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -102,7 +103,7 @@ func KGSearchRetrieval(
 		entsReq.MatchExprs = []interface{}{
 			&types.MatchTextExpr{
 				Fields:       []string{"entity_kwd^10", "content_ltks^2"},
-				MatchingText: entities[0],
+				MatchingText: strings.Join(entities, " "),
 				TopN:         50,
 			},
 		}
@@ -156,7 +157,7 @@ func KGSearchRetrieval(
 		relsReq.MatchExprs = []interface{}{
 			&types.MatchTextExpr{
 				Fields:       []string{"content_ltks", "from_entity_kwd", "to_entity_kwd"},
-				MatchingText: entities[0],
+				MatchingText: strings.Join(entities, " "),
 				TopN:         50,
 			},
 		}
