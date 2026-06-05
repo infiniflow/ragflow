@@ -29,7 +29,6 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
