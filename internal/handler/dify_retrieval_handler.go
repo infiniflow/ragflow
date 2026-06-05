@@ -322,10 +322,12 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	docMap := make(map[string]*entity.Document)
 	if len(allDocIDs) > 0 {
 		docs, err := h.docDAO.GetByIDs(allDocIDs)
-		if err == nil {
-			for _, d := range docs {
-				docMap[d.ID] = d
-			}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": fmt.Sprintf("failed to load documents: %v", err)})
+			return
+		}
+		for _, d := range docs {
+			docMap[d.ID] = d
 		}
 	}
 

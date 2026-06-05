@@ -355,3 +355,20 @@ func TestDifyRetrieval_KBDBError(t *testing.T) {
 		t.Errorf("expected 500 for DB error, got %d", w.Code)
 	}
 }
+
+func TestDifyRetrieval_DocLoadError(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.docDAO = &mockDocDAO{
+		getByIDsFn: func(ids []string) ([]*entity.Document, error) {
+			return nil, errors.New("db unavailable")
+		},
+	}
+	w := httptest.NewRecorder()
+	body := `{"knowledge_id": "kb1", "query": "test"}`
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for doc load error, got %d", w.Code)
+	}
+}
