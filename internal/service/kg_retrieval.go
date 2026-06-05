@@ -82,19 +82,7 @@ func KGSearchRetrieval(
 	tenantIDs []string,
 	question string,
 ) (map[string]interface{}, error) {
-	// 1. Build index names from tenant IDs
-	var idxnms []string
-	for _, tid := range tenantIDs {
-		idxnms = append(idxnms, fmt.Sprintf("ragflow_%s", tid))
-	}
-
-	// 2. Retrieve type samples (ty2ents)
-	typeSamples, err := searchKGTypeSamples(ctx, docEngine, kbIDs)
-	if err == nil && len(typeSamples) > 0 {
-		_ = typeSamples // used in query_rewrite when available
-	}
-
-	// 3. Query rewrite (simplified: use question entities directly)
+	// 1. Query rewrite (simplified: use question entities directly)
 	typeKeywords := extractTypeKeywords(question)
 	entities := extractEntities(question)
 
