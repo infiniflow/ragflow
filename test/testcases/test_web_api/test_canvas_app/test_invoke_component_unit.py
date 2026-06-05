@@ -311,3 +311,24 @@ def test_invoke_url_without_scheme_gets_scheme_then_validated(monkeypatch):
     result = invoke._invoke()
     mock_get.assert_not_called()
     assert "URL not valid" in result
+
+
+@pytest.mark.p2
+def test_invoke_blocks_loopback_proxy(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com", proxy="http://127.0.0.1:8080")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="should not run"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    result = invoke._invoke()
+    mock_get.assert_not_called()
+    assert "URL not valid" in result
+
+
+@pytest.mark.p2
+def test_invoke_disables_redirect_following(monkeypatch):
+    module = _load_invoke_module(monkeypatch)
+    invoke = _make_invoke(module, url="http://example.com")
+    mock_get = MagicMock(return_value=SimpleNamespace(text="ok"))
+    monkeypatch.setattr(module.requests, "get", mock_get)
+    invoke._invoke()
+    assert mock_get.call_args[1]["allow_redirects"] is False
