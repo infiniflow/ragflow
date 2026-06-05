@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/common"
+	"go.uber.org/zap"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -85,9 +87,37 @@ type difyRetrievalSetting struct {
 	ScoreThreshold  *float64 `json:"score_threshold" form:"score_threshold"`
 }
 
+// difyCondition is a Dify-format metadata filter condition.
+// Dify uses "name"/"comparison_operator" instead of MetaFilterCondition's "key"/"op".
+type difyCondition struct {
+	Name               string      `json:"name"`
+	ComparisonOperator string      `json:"comparison_operator"`
+	Value              interface{} `json:"value"`
+}
+
 type difyMetadataCondition struct {
-	Conditions []service.MetaFilterCondition `json:"conditions"`
-	Logic      string                        `json:"logic"`
+	Conditions []difyCondition `json:"conditions"`
+	Logic      string          `json:"logic"`
+}
+
+// toMetaFilterConditions converts Dify-format conditions to internal MetaFilterConditions.
+func (c difyMetadataCondition) toMetaFilterConditions() []service.MetaFilterCondition {
+	if len(c.Conditions) == 0 {
+		return nil
+	}
+	result := make([]service.MetaFilterCondition, len(c.Conditions))
+	for i, dc := range c.Conditions {
+		v := ""
+		if dc.Value != nil {
+			v = fmt.Sprint(dc.Value)
+		}
+		result[i] = service.MetaFilterCondition{
+			Key: dc.Name,
+			Op:  dc.ComparisonOperator,
+			Value: v,
+		}
+	}
+	return result
 }
 
 // difyRecord is one item in the response records array.
@@ -146,6 +176,23 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "invalid query parameters"})
 			return
 		}
+		// Manually extract top_k and score_threshold from query (flat params, not nested)
+		if v := c.Query("top_k"); v != "" {
+			if parsed, err := strconv.Atoi(v); err == nil {
+				if req.RetrievalSetting == nil {
+					req.RetrievalSetting = &difyRetrievalSetting{}
+				}
+				req.RetrievalSetting.TopK = &parsed
+			}
+		}
+		if v := c.Query("score_threshold"); v != "" {
+			if parsed, err := strconv.ParseFloat(v, 64); err == nil {
+				if req.RetrievalSetting == nil {
+					req.RetrievalSetting = &difyRetrievalSetting{}
+				}
+				req.RetrievalSetting.ScoreThreshold = &parsed
+			}
+		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "invalid request body"})
@@ -190,7 +237,11 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs([]string{req.KnowledgeID})
 	docIDs := make([]string, 0)
 	if metaErr == nil && req.MetadataCondition != nil {
-		filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.Conditions, req.MetadataCondition.Logic)
+			logic := req.MetadataCondition.Logic
+			if logic == "" {
+				logic = "and"
+			}
+			filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.toMetaFilterConditions(), logic)
 		docIDs = append(docIDs, filteredIDs...)
 	}
 	if len(docIDs) == 0 && req.MetadataCondition != nil {
@@ -234,7 +285,9 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	// KG retrieval (optional)
 	if req.UseKG {
 		chatModel, kgErr := h.modelSvc.GetChatModel(kb.TenantID, "")
-		if kgErr == nil && chatModel != nil {
+		if kgErr != nil {
+			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
+		} else if chatModel != nil {
 			kgPipeline := service.NewKGSearchPipeline(
 				h.docEngine,
 				[]string{req.KnowledgeID},
@@ -311,5 +364,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": true, "message": "success"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": true})
 }
