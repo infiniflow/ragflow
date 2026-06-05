@@ -282,7 +282,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {
-			kgPipeline := kg.NewKGSearchPipeline(
+			kgPipeline := kg.NewPipeline(
 				h.docEngine,
 				[]string{req.KnowledgeID},
 				[]string{kb.TenantID},

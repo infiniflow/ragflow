@@ -153,9 +153,9 @@ func TestSearchKGTypeSamples_Empty(t *testing.T) {
 	}
 }
 
-// --- KGSearchRetrieval ---
+// --- Retrieval ---
 
-func TestKGSearchRetrieval_Basic(t *testing.T) {
+func TestRetrieval_Basic(t *testing.T) {
 	mock := &mockRetrievalEngine{
 		results: map[string]*types.SearchResult{
 			"entity": {Chunks: []map[string]interface{}{
@@ -172,9 +172,9 @@ func TestKGSearchRetrieval_Basic(t *testing.T) {
 			}},
 		},
 	}
-	result, err := KGSearchRetrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	result, err := Retrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
 	if err != nil {
-		t.Fatalf("KGSearchRetrieval failed: %v", err)
+		t.Fatalf("Retrieval failed: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
@@ -194,11 +194,11 @@ func TestKGSearchRetrieval_Basic(t *testing.T) {
 	}
 }
 
-func TestKGSearchRetrieval_NoEntities(t *testing.T) {
+func TestRetrieval_NoEntities(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result, err := KGSearchRetrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "test")
+	result, err := Retrieval(context.Background(), mock, nil, nil, []string{"kb1"}, []string{"tenant1"}, "test")
 	if err != nil {
-		t.Fatalf("KGSearchRetrieval failed: %v", err)
+		t.Fatalf("Retrieval failed: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
@@ -211,7 +211,7 @@ func TestKGSearchRetrieval_NoEntities(t *testing.T) {
 
 // TestEntitySearch_MultiEntities verifies that all entities are used in search query.
 
-func TestKGSearchRetrieval_WithChatModel(t *testing.T) {
+func TestRetrieval_WithChatModel(t *testing.T) {
 	mock := &mockRetrievalEngine{
 		results: map[string]*types.SearchResult{
 			"entity": {Chunks: []map[string]interface{}{
@@ -225,9 +225,9 @@ func TestKGSearchRetrieval_WithChatModel(t *testing.T) {
 	// chatModel with nil ModelName so queryRewrite falls back to raw question,
 	// but the ty2entsJSON construction path is still exercised.
 	chatModel := &modelModule.ChatModel{ModelName: nil, APIConfig: nil}
-	result, err := KGSearchRetrieval(context.Background(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	result, err := Retrieval(context.Background(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
 	if err != nil {
-		t.Fatalf("KGSearchRetrieval failed: %v", err)
+		t.Fatalf("Retrieval failed: %v", err)
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
@@ -415,7 +415,7 @@ func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
 		MatchingText: "Elon Musk SpaceX",
 		TopN:         50,
 	}
-	exprs := buildSearchExprs(embModel, matchText, defaultKGSimThreshold, defaultKGDenseTopK)
+	exprs := buildSearchExprs(embModel, matchText, defaultSimThreshold, defaultDenseTopK)
 	// Verify Embed was called with matchText.MatchingText, not raw question
 	if len(driver.capturedTexts) != 1 || driver.capturedTexts[0] != "Elon Musk SpaceX" {
 		t.Errorf("expected Embed to receive %q, got %v", "Elon Musk SpaceX", driver.capturedTexts)
@@ -439,11 +439,11 @@ func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
 	if md.VectorColumnName != "q_3_vec" {
 		t.Errorf("expected q_3_vec, got %q", md.VectorColumnName)
 	}
-	if md.TopN != defaultKGDenseTopK {
-		t.Errorf("expected TopN=%d (Python alignment), got %d", defaultKGDenseTopK, md.TopN)
+	if md.TopN != defaultDenseTopK {
+		t.Errorf("expected TopN=%d (Python alignment), got %d", defaultDenseTopK, md.TopN)
 	}
-	if md.ExtraOptions["similarity"] != defaultKGSimThreshold {
-		t.Errorf("expected similarity=%v (Python alignment), got %v", defaultKGSimThreshold, md.ExtraOptions["similarity"])
+	if md.ExtraOptions["similarity"] != defaultSimThreshold {
+		t.Errorf("expected similarity=%v (Python alignment), got %v", defaultSimThreshold, md.ExtraOptions["similarity"])
 	}
 	// Index 2: FusionExpr
 	fu, ok := exprs[2].(*types.FusionExpr)
@@ -463,7 +463,7 @@ func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
 		MatchingText: "fallback test",
 		TopN:         10,
 	}
-	exprs := buildSearchExprs(embModel, matchText, defaultKGSimThreshold, defaultKGDenseTopK)
+	exprs := buildSearchExprs(embModel, matchText, defaultSimThreshold, defaultDenseTopK)
 	// Should fall back to text-only when Embed fails
 	if len(exprs) != 1 {
 		t.Fatalf("expected 1 expr (text-only fallback), got %d", len(exprs))
@@ -476,11 +476,11 @@ func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
 // --- Python alignment defaults ---
 
 func TestDefaultValuesMatchPython(t *testing.T) {
-	if defaultKGSimThreshold != 0.3 {
-		t.Errorf("expected 0.3 (Python ent_sim_threshold), got %f", defaultKGSimThreshold)
+	if defaultSimThreshold != 0.3 {
+		t.Errorf("expected 0.3 (Python ent_sim_threshold), got %f", defaultSimThreshold)
 	}
-	if defaultKGDenseTopK != 1024 {
-		t.Errorf("expected 1024 (Python get_vector topk), got %d", defaultKGDenseTopK)
+	if defaultDenseTopK != 1024 {
+		t.Errorf("expected 1024 (Python get_vector topk), got %d", defaultDenseTopK)
 	}
 }
 

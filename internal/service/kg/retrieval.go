@@ -11,9 +11,9 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// KGSearchRetrieval performs a full knowledge graph retrieval and returns
-// a synthetic chunk. Convenience wrapper around KGSearchPipeline.
-func KGSearchRetrieval(
+// Retrieval performs a full knowledge graph retrieval and returns
+// a synthetic chunk. Convenience wrapper around Pipeline.
+func Retrieval(
 	ctx context.Context,
 	docEngine engine.DocEngine,
 	chatModel *modelModule.ChatModel,
@@ -22,16 +22,16 @@ func KGSearchRetrieval(
 	tenantIDs []string,
 	question string,
 ) (map[string]interface{}, error) {
-	p := &KGSearchPipeline{
+	p := &Pipeline{
 		docEngine:       docEngine,
 		chatModel:       chatModel,
 		embModel:        embModel,
 		kbIDs:           kbIDs,
 		idxnms:          makeIndexNames(tenantIDs),
 		question:        question,
-		entSimThreshold: defaultKGSimThreshold,
-		relSimThreshold: defaultKGSimThreshold,
-		denseTopK:       defaultKGDenseTopK,
+		entSimThreshold: defaultSimThreshold,
+		relSimThreshold: defaultSimThreshold,
+		denseTopK:       defaultDenseTopK,
 		entTopN:         6,
 		relTopN:         6,
 		commTopN:        1,
@@ -251,6 +251,6 @@ func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON
 
 // Python alignment defaults
 const (
-	defaultKGSimThreshold = 0.3
-	defaultKGDenseTopK    = 1024
+	defaultSimThreshold = 0.3
+	defaultDenseTopK    = 1024
 )
