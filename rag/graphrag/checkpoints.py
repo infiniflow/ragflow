@@ -58,12 +58,6 @@ def _decode_redis_value(value: Any) -> Any:
     return value
 
 
-def _expire_key(key: str) -> None:
-    redis_client = getattr(REDIS_CONN, "REDIS", None)
-    if redis_client is not None and hasattr(redis_client, "expire"):
-        redis_client.expire(key, CHECKPOINT_TTL_SECONDS)
-
-
 async def load_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, page_size: int | None = None) -> dict[str, Any]:
     checkpoints: dict[str, Any] = {}
     index_key = _checkpoint_index_key(tenant_id, kb_id, checkpoint_type)
@@ -83,6 +77,7 @@ async def load_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, 
             checkpoints[checkpoint_key] = json.loads(value)
         except Exception:
             logging.exception("Failed to parse GraphRAG checkpoint type=%s kb=%s key=%s", checkpoint_type, kb_id, checkpoint_key)
+    logging.info("Loaded %d GraphRAG checkpoints type=%s kb=%s", len(checkpoints), checkpoint_type, kb_id)
     return checkpoints
 
 
@@ -90,12 +85,16 @@ async def save_checkpoint(tenant_id: str, kb_id: str, checkpoint_type: str, chec
     index_key = _checkpoint_index_key(tenant_id, kb_id, checkpoint_type)
     data_key = _checkpoint_data_key(tenant_id, kb_id, checkpoint_type, checkpoint_key)
     try:
-        saved = REDIS_CONN.set(data_key, json.dumps(payload, ensure_ascii=False), CHECKPOINT_TTL_SECONDS)
-        indexed = REDIS_CONN.sadd(index_key, checkpoint_key)
-        _expire_key(index_key)
-        if not saved or not indexed:
-            logging.warning("GraphRAG checkpoint Redis save failed type=%s kb=%s key=%s", checkpoint_type, kb_id, checkpoint_key)
+        redis_client = getattr(REDIS_CONN, "REDIS", None)
+        if redis_client is None or not hasattr(redis_client, "pipeline"):
+            logging.warning("GraphRAG checkpoint Redis client unavailable type=%s kb=%s key=%s", checkpoint_type, kb_id, checkpoint_key)
             return False
+        pipeline = redis_client.pipeline(transaction=True)
+        pipeline.set(data_key, json.dumps(payload, ensure_ascii=False), ex=CHECKPOINT_TTL_SECONDS)
+        pipeline.sadd(index_key, checkpoint_key)
+        pipeline.expire(index_key, CHECKPOINT_TTL_SECONDS)
+        pipeline.execute()
+        logging.info("Saved GraphRAG checkpoint type=%s kb=%s key=%s", checkpoint_type, kb_id, checkpoint_key)
         return True
     except Exception:
         logging.exception("Failed to save GraphRAG checkpoint type=%s kb=%s key=%s", checkpoint_type, kb_id, checkpoint_key)
@@ -110,6 +109,7 @@ async def cleanup_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str) 
             checkpoint_key = _decode_redis_value(checkpoint_key)
             REDIS_CONN.delete(_checkpoint_data_key(tenant_id, kb_id, checkpoint_type, checkpoint_key))
         REDIS_CONN.delete(index_key)
+        logging.info("Cleaned up %d GraphRAG checkpoints type=%s kb=%s", len(checkpoint_keys), checkpoint_type, kb_id)
         return True
     except Exception:
         logging.exception("Failed to cleanup GraphRAG checkpoints type=%s kb=%s", checkpoint_type, kb_id)

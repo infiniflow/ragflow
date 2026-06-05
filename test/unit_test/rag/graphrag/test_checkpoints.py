@@ -20,20 +20,59 @@ from rag.graphrag import checkpoints
 
 
 class _FakeRedisClient:
-    def __init__(self):
+    def __init__(self, conn):
+        self.conn = conn
         self.expirations = {}
 
     def expire(self, key, ttl):
         self.expirations[key] = ttl
         return True
 
+    def pipeline(self, transaction=True):
+        assert transaction is True
+        return _FakeRedisPipeline(self.conn)
+
+
+class _FakeRedisPipeline:
+    def __init__(self, conn):
+        self.conn = conn
+        self.commands = []
+
+    def set(self, key, value, ex=None):
+        self.commands.append(("set", key, value, ex))
+        return self
+
+    def sadd(self, key, member):
+        self.commands.append(("sadd", key, member))
+        return self
+
+    def expire(self, key, ttl):
+        self.commands.append(("expire", key, ttl))
+        return self
+
+    def execute(self):
+        if self.conn.fail_pipeline:
+            raise RuntimeError("redis transaction failed")
+        for command in self.commands:
+            match command:
+                case ("set", key, value, ttl):
+                    self.conn.values[key] = value
+                    if ttl is not None:
+                        self.conn.REDIS.expire(key, ttl)
+                case ("sadd", key, member):
+                    self.conn.sets.setdefault(key, set()).add(member)
+                case ("expire", key, ttl):
+                    self.conn.REDIS.expire(key, ttl)
+        return [True] * len(self.commands)
+
 
 class _FakeRedisConn:
     def __init__(self):
         self.values = {}
         self.sets = {}
-        self.REDIS = _FakeRedisClient()
+        self.REDIS = _FakeRedisClient(self)
         self.fail_set = False
+        self.fail_pipeline = False
 
     def get(self, key):
         return self.values.get(key)
@@ -94,12 +133,13 @@ async def test_load_checkpoints_reads_redis_index(fake_redis):
 @pytest.mark.p2
 @pytest.mark.asyncio
 async def test_save_checkpoint_degrades_on_redis_failure(fake_redis):
-    fake_redis.fail_set = True
+    fake_redis.fail_pipeline = True
 
     saved = await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT, "key-1", {"ok": True})
 
     assert saved is False
     assert fake_redis.values == {}
+    assert fake_redis.sets == {}
 
 
 @pytest.mark.p2
