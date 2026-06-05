@@ -245,7 +245,7 @@ func (dao *KnowledgebaseDAO) GetDetail(kbID string) (*entity.KnowledgebaseDetail
 func (dao *KnowledgebaseDAO) Accessible(kbID, userID string) bool {
 	var count int64
 	err := DB.Table("knowledgebase").
-		Joins("LEFT JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ?", userID).
+		Joins("LEFT JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ? AND user_tenant.status = ?", userID, string(entity.StatusValid)).
 		Where(`knowledgebase.id = ? AND knowledgebase.status = ? AND (
 			knowledgebase.created_by = ? OR
 			(knowledgebase.permission = ? AND user_tenant.user_id IS NOT NULL)

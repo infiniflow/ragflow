@@ -197,6 +197,35 @@ func TestKnowledgebaseDAO_AccessibleAllowsTenantMemberForTeamKnowledgebase(t *te
 	}
 }
 
+func TestKnowledgebaseDAO_AccessibleRejectsRevokedTenantMemberForTeamKnowledgebase(t *testing.T) {
+	db := setupKBTestDB(t)
+	pushDB(t, db)
+	dao := NewKnowledgebaseDAO()
+
+	kb := testKnowledgebase(t, db, "kb-team", 0, 0, 0)
+	kb.Permission = string(entity.TenantPermissionTeam)
+	if err := db.Save(kb).Error; err != nil {
+		t.Fatalf("failed to update test kb permission: %v", err)
+	}
+
+	invalidStatus := string(entity.StatusInvalid)
+	revokedMembership := &entity.UserTenant{
+		ID:        "ut-revoked",
+		UserID:    "revoked-member",
+		TenantID:  "tenant-1",
+		Role:      "normal",
+		InvitedBy: "tenant-1",
+		Status:    &invalidStatus,
+	}
+	if err := db.Create(revokedMembership).Error; err != nil {
+		t.Fatalf("failed to create revoked user_tenant: %v", err)
+	}
+
+	if dao.Accessible("kb-team", "revoked-member") {
+		t.Fatal("revoked tenant member should not access a team knowledgebase")
+	}
+}
+
 func TestKnowledgebaseDAO_AccessibleRejectsUnrelatedUserForTeamKnowledgebase(t *testing.T) {
 	db := setupKBTestDB(t)
 	pushDB(t, db)
