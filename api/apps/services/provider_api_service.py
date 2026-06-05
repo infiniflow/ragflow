@@ -25,7 +25,7 @@ from api.db.joint_services.tenant_model_service import get_model_config_from_pro
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
 from api.db.services.tenant_model_service import TenantModelService
-from rag.llm import EmbeddingModel, ChatModel, RerankModel
+from rag.llm import EmbeddingModel, ChatModel, RerankModel, ModelMeta
 
 
 def _to_int(v, default=500):
@@ -168,28 +168,38 @@ def show_provider(provider_name: str):
     }
 
 
-def list_provider_models(provider_name: str):
+async def list_provider_models(provider_name: str, api_key: str = None, base_url: str = None):
     """
     List all models for a provider from the LLM dictionary.
 
     :param provider_name: provider/factory name
+    :param api_key: api key
+    :param base_url: base url
     :return: (success, result_or_error_message)
     """
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"]==provider_name]
     if not factory_info:
         return False, f"Provider '{provider_name}' not found"
-    llms = factory_info[0]["llm"]
-    if not llms:
-        return False, f"No models found for provider '{provider_name}'"
-
-    models = []
-    for llm in llms:
-        models.append({
+    static_llms = [{
             "name": llm["name"],
             "max_tokens": llm["max_tokens"],
             "model_types": [llm["model_type"]],
             "features": None
-        })
+        } for llm in factory_info[0]["llm"]]
+
+    model_base_url = base_url or factory_info[0].get("url", "")
+    remote_models = []
+    if provider_name in ModelMeta:
+        remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+
+    if not static_llms and not remote_models:
+        return False, f"No models found for provider '{provider_name}'"
+
+    # Merge static and remote models, preferring remote_models on name conflicts
+    merged = {m["name"]: m for m in static_llms}
+    merged.update({m["name"]: m for m in remote_models})
+    models = list(merged.values())
+
     models.sort(key=lambda x: x["name"])
     return True, models
 

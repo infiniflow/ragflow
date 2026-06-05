@@ -199,7 +199,7 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
 
 @manager.route("/providers/<provider_name>/models", methods=["GET"])  # noqa: F821
 @login_required
-def list_provider_models(provider_name: str):
+async def list_provider_models(provider_name: str):
     """
     List models for a provider.
     ---
@@ -230,7 +230,9 @@ def list_provider_models(provider_name: str):
                 type: object
     """
     try:
-        success, result = provider_api_service.list_provider_models(provider_name)
+        api_key = request.args.get("api_key")
+        base_url = request.args.get("base_url")
+        success, result = await provider_api_service.list_provider_models(provider_name, api_key, base_url)
         if success:
             return get_result(data=result)
         else:
