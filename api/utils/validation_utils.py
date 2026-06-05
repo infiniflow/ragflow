@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, Validation
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
-from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
+from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT, NICKNAME_MAX_LENGTH
 from api.db import FileType
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
@@ -1085,6 +1085,30 @@ def validate_document_name(req_doc_name: str, doc, docs_from_name):
     for d in docs_from_name:
         if d.name == req_doc_name:
             return "Duplicated document name in the same dataset.", RetCode.DATA_ERROR
+    return None, None
+
+
+_NICKNAME_PATTERN = re.compile(r"^[\w\s.'-]+$", re.UNICODE)
+
+
+def validate_nickname(nickname: str) -> tuple[str | None, int | None]:
+    """
+    Validate a user nickname/display name.
+
+    Returns:
+        A tuple of (error_message, error_code) if validation fails,
+        or (None, None) if validation passes.
+    """
+    if nickname is None:
+        return "Nickname is required.", RetCode.ARGUMENT_ERROR
+
+    nickname = nickname.strip()
+    if not nickname:
+        return "Nickname cannot be empty.", RetCode.ARGUMENT_ERROR
+    if len(nickname) > NICKNAME_MAX_LENGTH:
+        return f"Nickname must be at most {NICKNAME_MAX_LENGTH} characters.", RetCode.ARGUMENT_ERROR
+    if not _NICKNAME_PATTERN.fullmatch(nickname):
+        return "Nickname contains invalid characters.", RetCode.ARGUMENT_ERROR
     return None, None
 
 
