@@ -1091,7 +1091,7 @@ def validate_document_name(req_doc_name: str, doc, docs_from_name):
 _NICKNAME_PATTERN = re.compile(r"^[\w\s.'-]+$", re.UNICODE)
 
 
-def validate_nickname(nickname: str) -> tuple[str | None, int | None]:
+def validate_nickname(nickname: str | None) -> tuple[str | None, int | None]:
     """
     Validate a user nickname/display name.
 
@@ -1099,6 +1099,8 @@ def validate_nickname(nickname: str) -> tuple[str | None, int | None]:
         A tuple of (error_message, error_code) if validation fails,
         or (None, None) if validation passes.
     """
+    if not isinstance(nickname, (str, type(None))):
+        return "Nickname must be a string.", RetCode.ARGUMENT_ERROR
     if nickname is None:
         return "Nickname is required.", RetCode.ARGUMENT_ERROR
 

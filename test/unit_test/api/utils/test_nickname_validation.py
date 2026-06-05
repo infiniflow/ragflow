@@ -40,6 +40,7 @@ def test_validate_nickname_accepts_valid_values(nickname):
 @pytest.mark.parametrize(
     "nickname, expected_message",
     [
+        (None, "Nickname is required."),
         ("", "Nickname cannot be empty."),
         ("   ", "Nickname cannot be empty."),
         ("carh!@#$%^&*()_+WFAGD", "Nickname contains invalid characters."),
@@ -49,4 +50,10 @@ def test_validate_nickname_accepts_valid_values(nickname):
 def test_validate_nickname_rejects_invalid_values(nickname, expected_message):
     message, code = validate_nickname(nickname)
     assert message == expected_message
+    assert code == RetCode.ARGUMENT_ERROR
+
+
+def test_validate_nickname_rejects_non_string_input():
+    message, code = validate_nickname(123)
+    assert message == "Nickname must be a string."
     assert code == RetCode.ARGUMENT_ERROR
