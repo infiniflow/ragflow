@@ -17,8 +17,13 @@
 package service
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -36,6 +41,7 @@ type AgentService struct {
 	userTenantDAO        *dao.UserTenantDAO
 	userCanvasVersionDAO *dao.UserCanvasVersionDAO
 	canvasTemplateDAO    *dao.CanvasTemplateDAO
+	api4ConversationDAO  *dao.API4ConversationDAO
 }
 
 // NewAgentService create agent service
@@ -44,6 +50,7 @@ func NewAgentService() *AgentService {
 		canvasDAO:            dao.NewUserCanvasDAO(),
 		userTenantDAO:        dao.NewUserTenantDAO(),
 		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
+		api4ConversationDAO:  dao.NewAPI4ConversationDAO(),
 		canvasTemplateDAO:    dao.NewCanvasTemplateDAO(),
 	}
 }
@@ -135,6 +142,336 @@ func (s *AgentService) ListAgents(userID string, keywords string, page, pageSize
 		items[i] = toAgentItem(c)
 	}
 	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
+}
+
+type ListAgentSessionsRequest struct {
+	SessionID  string
+	UserID     string
+	Page       int
+	PageSize   int
+	Keywords   string
+	FromDate   string
+	ToDate     string
+	OrderBy    string
+	Desc       bool
+	ExpUserID  string
+	IncludeDSL bool
+}
+
+type ListAgentSessionsResponse struct {
+	Data  []map[string]interface{} `json:"data"`
+	Total int64                    `json:"total"`
+}
+
+func parseAgentSessionDate(value string, isEnd bool) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+
+	if strings.Contains(value, "T") {
+		normalized := strings.ReplaceAll(value, "Z", "+00:00")
+		parsed, err := time.Parse(time.RFC3339, normalized)
+		if err != nil {
+			return nil, err
+		}
+
+		local := parsed.Local()
+		return &local, nil
+	}
+
+	if len(value) == 10 {
+		if isEnd {
+			value += " 23:59:59"
+		} else {
+			value += " 00:00:00"
+		}
+	}
+
+	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", value, time.Local)
+	if err != nil {
+		return nil, err
+	}
+
+	return &parsed, nil
+}
+
+func normalizeAgentSession(session *entity.API4Conversation, includeDSL bool) map[string]interface{} {
+	messages := parseAgentSessionMessages(session.Message)
+	references := parseAgentSessionReferences(session.Reference)
+
+	for _, message := range messages {
+		delete(message, "prompt")
+	}
+
+	if len(references) > 0 {
+		assistantMessages := make([]map[string]interface{}, 0)
+		for i, message := range messages {
+			role, _ := message["role"].(string)
+			if i != 0 && role != "user" {
+				assistantMessages = append(assistantMessages, message)
+			}
+		}
+
+		for i := 0; i < len(assistantMessages) && i < len(references); i++ {
+			rawChunks, _ := references[i]["chunks"].([]interface{})
+			assistantMessages[i]["reference"] = normalizeAgentReferenceChunks(rawChunks)
+		}
+	}
+
+	result := map[string]interface{}{
+		"id":            session.ID,
+		"name":          session.Name,
+		"agent_id":      session.DialogID,
+		"user_id":       session.UserID,
+		"exp_user_id":   session.ExpUserID,
+		"message":       messages,
+		"tokens":        session.Tokens,
+		"source":        session.Source,
+		"duration":      session.Duration,
+		"round":         session.Round,
+		"thumb_up":      session.ThumbUp,
+		"errors":        session.Errors,
+		"version_title": session.VersionTitle,
+		"create_time":   session.CreateTime,
+		"create_date":   session.CreateDate,
+		"update_time":   session.UpdateTime,
+		"update_date":   session.UpdateDate,
+	}
+
+	if includeDSL {
+		result["dsl"] = session.DSL
+	}
+
+	return result
+}
+
+func parseAgentSessionReferences(raw json.RawMessage) []map[string]interface{} {
+	if len(raw) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	var references []map[string]interface{}
+	if err := json.Unmarshal(raw, &references); err == nil {
+		for i, reference := range references {
+			references[i] = normalizeAgentReferenceEntry(reference)
+		}
+		return references
+	}
+
+	var referenceMap map[string]interface{}
+	if err := json.Unmarshal(raw, &referenceMap); err != nil {
+		return []map[string]interface{}{}
+	}
+
+	if _, ok := referenceMap["chunks"]; ok {
+		return []map[string]interface{}{referenceMap}
+	}
+
+	keys := make([]string, 0, len(referenceMap))
+	for key := range referenceMap {
+		keys = append(keys, key)
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		left, _ := strconv.Atoi(keys[i])
+		right, _ := strconv.Atoi(keys[j])
+		return left < right
+	})
+
+	result := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		reference, ok := referenceMap[key].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		result = append(result, reference)
+	}
+
+	return result
+}
+
+func parseAgentSessionMessages(raw json.RawMessage) []map[string]interface{} {
+	if len(raw) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	var messages []map[string]interface{}
+	if err := json.Unmarshal(raw, &messages); err != nil {
+		return []map[string]interface{}{}
+	}
+
+	return messages
+}
+
+func normalizeAgentReferenceEntry(reference map[string]interface{}) map[string]interface{} {
+	if reference == nil {
+		return map[string]interface{}{
+			"chunks":   []interface{}{},
+			"doc_aggs": []interface{}{},
+		}
+	}
+
+	if _, ok := reference["chunks"]; ok {
+		return map[string]interface{}{
+			"chunks":   valueOrEmptySlice(reference["chunks"]),
+			"doc_aggs": valueOrEmptySlice(reference["doc_aggs"]),
+		}
+	}
+
+	if _, ok := reference["doc_aggs"]; ok {
+		return map[string]interface{}{
+			"chunks":   valueOrEmptySlice(reference["chunks"]),
+			"doc_aggs": valueOrEmptySlice(reference["doc_aggs"]),
+		}
+	}
+
+	return map[string]interface{}{
+		"chunks":   valueOrEmptySlice(reference["reference"]),
+		"doc_aggs": valueOrEmptySlice(reference["doc_aggs"]),
+	}
+}
+
+func valueOrEmptySlice(value interface{}) interface{} {
+	if value == nil {
+		return []interface{}{}
+	}
+	return value
+}
+
+func normalizeAgentReferenceChunks(chunks []interface{}) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(chunks))
+
+	for _, rawChunk := range chunks {
+		chunk, ok := rawChunk.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		result = append(result, map[string]interface{}{
+			"id":            firstNonNil(chunk["chunk_id"], chunk["id"]),
+			"content":       firstNonNil(chunk["content_with_weight"], chunk["content"]),
+			"document_id":   firstNonNil(chunk["doc_id"], chunk["document_id"]),
+			"document_name": firstNonNil(chunk["docnm_kwd"], chunk["document_name"]),
+			"dataset_id":    firstNonNil(chunk["kb_id"], chunk["dataset_id"]),
+			"image_id":      firstNonNil(chunk["image_id"], chunk["img_id"]),
+			"positions":     firstNonNil(chunk["positions"], chunk["position_int"]),
+		})
+	}
+
+	return result
+}
+
+func firstNonNil(values ...interface{}) interface{} {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
+	if agentID == "" {
+		return nil, common.CodeArgumentError, errors.New("agent_id is required")
+	}
+
+	ok, err := s.CheckCanvasAccess(userID, agentID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
+	}
+	if !ok {
+		return nil, common.CodeOperatingError, fmt.Errorf("Agent not found or no permission.")
+	}
+
+	sessionDAO := dao.NewChatSessionDAO()
+
+	if req.ExpUserID != "" {
+		rows, err := sessionDAO.ListAgentSessionNames(agentID, req.ExpUserID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		return &ListAgentSessionsResponse{Data: rows, Total: int64(len(rows))}, common.CodeSuccess, nil
+	}
+
+	fromDate, err := parseAgentSessionDate(req.FromDate, false)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+
+	toDate, err := parseAgentSessionDate(req.ToDate, true)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+
+	total, sessions, err := sessionDAO.ListAgentSessions(dao.ListAgentSessionsParams{
+		AgentID:    agentID,
+		Page:       req.Page,
+		PageSize:   req.PageSize,
+		OrderBy:    req.OrderBy,
+		Desc:       req.Desc,
+		SessionID:  req.SessionID,
+		UserID:     req.UserID,
+		IncludeDSL: req.IncludeDSL,
+		Keywords:   req.Keywords,
+		FromDate:   fromDate,
+		ToDate:     toDate,
+		ExpUserID:  req.ExpUserID,
+	})
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	data := make([]map[string]interface{}, 0, len(sessions))
+	for _, session := range sessions {
+		data = append(data, normalizeAgentSession(session, req.IncludeDSL))
+	}
+
+	return &ListAgentSessionsResponse{Data: data, Total: total}, common.CodeSuccess, nil
+}
+
+func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*entity.API4Conversation, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	ok, err := s.CheckCanvasAccess(userID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check agent permission: %w", err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("Agent not found or no permission.")
+	}
+
+	data, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check agent permission: %w", err)
+	}
+	if data == nil {
+		return nil, fmt.Errorf("agent session not found")
+	}
+	return data, nil
+}
+
+func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string) (bool, common.ErrorCode, error) {
+	if sessionID == "" {
+		return false, common.CodeArgumentError, errors.New("session_id is required")
+	}
+	ok, err := s.CheckCanvasAccess(userID, agentID)
+	if err != nil {
+		return false, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
+	}
+	if !ok {
+		return false, common.CodeOperatingError, fmt.Errorf("Agent not found or no permission.")
+	}
+
+	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(sessionID, agentID)
+	if err != nil {
+		return false, common.CodeServerError, err
+	}
+	if row == 0 {
+		return false, common.CodeSuccess, nil
+	}
+
+	return true, common.CodeSuccess, nil
 }
 
 // normalizeAgentTags returns an error for unsupported tag payload types
