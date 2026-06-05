@@ -14,7 +14,7 @@ import {
   useHideWhenInstanceExists,
   VerifyResult,
 } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -133,6 +133,12 @@ const VolcEngineModal = ({
     },
     [verifyParamsFunc, onVerify],
   );
+
+  useEffect(() => {
+    if (!visible) {
+      formRef.current?.reset();
+    }
+  }, [visible]);
 
   return (
     <Modal
