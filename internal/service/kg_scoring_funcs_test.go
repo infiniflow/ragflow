@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package common
+package service
 
 import (
 	"strings"
@@ -203,10 +203,10 @@ func TestBuildKGContent_Basic(t *testing.T) {
 		{From: "A", To: "B", Score: 0.3, Description: `{"description": "rel A-B"}`},
 	}
 	result := BuildKGContent(entities, relations, 10000)
-	if !contains(result, "Entity A desc") {
+	if !strings.Contains(result, "Entity A desc") {
 		t.Errorf("expected entity description in output, got: %s", result)
 	}
-	if !contains(result, "rel A-B") {
+	if !strings.Contains(result, "rel A-B") {
 		t.Errorf("expected relation description in output, got: %s", result)
 	}
 }
@@ -221,8 +221,72 @@ func TestBuildKGContent_TokenBudget(t *testing.T) {
 	}
 	result := BuildKGContent(entities, relations, 50)
 	// Token budget is very small, should truncate and not include relations
-	if contains(result, "relation desc") {
+	if strings.Contains(result, "relation desc") {
 		t.Log("Note: relations included despite small budget (depending on token count)")
+	}
+}
+
+func TestFormatEntitiesToCSV_HeaderExceedsBudget(t *testing.T) {
+	entities := []ScoredEntity{
+		{Entity: "A", Score: 1.0, Description: "d"},
+	}
+	result, remaining := FormatEntitiesToCSV(entities, 3)
+	tokens := NumTokensFromString(result)
+	// Header lines (---- Entities ----\n, Entity,Score,Description\n) are written
+	// before the token budget check. They consume ~11 tokens but are not deducted
+	// from maxToken. This is a known limitation shared with Python.
+	if tokens > 3 {
+		t.Logf("output %d tokens exceeds budget of %d (header not counted, remaining=%d)", tokens, 3, remaining)
+	}
+}
+
+func TestFilterChunksByScore_AllPass(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"entity_kwd": "A", "_score": 0.5},
+		{"entity_kwd": "B", "_score": 0.8},
+	}
+	result := FilterChunksByScore(chunks, 0.3)
+	if len(result) != 2 {
+		t.Errorf("expected all 2 chunks to pass, got %d", len(result))
+	}
+}
+
+func TestFilterChunksByScore_SomeFiltered(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"entity_kwd": "A", "_score": 0.2},
+		{"entity_kwd": "B", "_score": 0.9},
+	}
+	result := FilterChunksByScore(chunks, 0.3)
+	if len(result) != 1 || result[0]["entity_kwd"] != "B" {
+		t.Errorf("expected only B to pass, got %v", result)
+	}
+}
+
+func TestFilterChunksByScore_MissingScore(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"entity_kwd": "A"}, // no _score → treated as 0
+		{"entity_kwd": "B", "score": 0.5},
+	}
+	result := FilterChunksByScore(chunks, 0.3)
+	if len(result) != 1 || result[0]["entity_kwd"] != "B" {
+		t.Errorf("expected only B (using 'score' field), got %v", result)
+	}
+}
+
+func TestFilterChunksByScore_NilInput(t *testing.T) {
+	result := FilterChunksByScore(nil, 0.3)
+	if result != nil {
+		t.Errorf("expected nil, got %v", result)
+	}
+}
+
+func TestFilterChunksByScore_ZeroThreshold(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"entity_kwd": "A", "_score": 0.0},
+	}
+	result := FilterChunksByScore(chunks, 0)
+	if len(result) != 1 {
+		t.Errorf("expected all pass when threshold=0, got %d", len(result))
 	}
 }
 
@@ -240,6 +304,60 @@ func TestExtractDescription_Plain(t *testing.T) {
 	}
 }
 
+func TestExtractDescription_EscapedQuote(t *testing.T) {
+	result := extractDescription(`{"description": "has \"quote\" inside"}`)
+	if result != `has "quote" inside` {
+		t.Errorf("expected full description with quote, got %q", result)
+	}
+}
+
+func TestExtractDescription_NonStringValue(t *testing.T) {
+	result := extractDescription(`{"description": null, "other": "val"}`)
+	if result != `{"description": null, "other": "val"}` {
+		t.Errorf("expected raw JSON when description is null, got %q", result)
+	}
+}
+
+func TestExtractDescription_EmptyString(t *testing.T) {
+	result := extractDescription("")
+	if result != "" {
+		t.Errorf("expected empty, got %q", result)
+	}
+}
+
+func TestFormatCSVLine_Normal(t *testing.T) {
+	result := formatCSVLine("Elon Musk", "0.85", "CEO of SpaceX")
+	// Normal values should not be quoted
+	if result != "Elon Musk,0.85,CEO of SpaceX\n" {
+		t.Errorf("expected unquoted CSV, got %q", result)
+	}
+}
+
+func TestFormatCSVLine_CommaInField(t *testing.T) {
+	result := formatCSVLine("Musk, Elon", "0.85", "CEO, SpaceX")
+	// Values with commas should be quoted
+	expected := `"Musk, Elon",0.85,"CEO, SpaceX"` + "\n"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestFormatCSVLine_QuoteInField(t *testing.T) {
+	result := formatCSVLine("Elon Musk", "0.85", `CEO of "SpaceX"`)
+	// Values with quotes should have quotes escaped
+	expected := `Elon Musk,0.85,"CEO of ""SpaceX"""` + "\n"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestFormatCSVLine_EmptyField(t *testing.T) {
+	result := formatCSVLine("", "", "")
+	if result != ",,\n" {
+		t.Errorf("expected empty fields, got %q", result)
+	}
+}
+
 func TestNumTokensFromString(t *testing.T) {
 	s := "This is a test string with multiple words"
 	tokens := NumTokensFromString(s)
@@ -248,16 +366,3 @@ func TestNumTokensFromString(t *testing.T) {
 	}
 }
 
-// contains checks if a string contains a substring.
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && containsStr(s, substr)
-}
-
-func containsStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

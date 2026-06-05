@@ -19,11 +19,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	modelModule "ragflow/internal/entity/models"
 )
 
 type mockRetrievalEngine struct {
@@ -32,6 +34,14 @@ type mockRetrievalEngine struct {
 }
 
 func (m *mockRetrievalEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	// --- Contract validation (matches real ES/Infinity preconditions) ---
+	if len(req.IndexNames) == 0 {
+		return nil, fmt.Errorf("mock: IndexNames cannot be empty")
+	}
+	if len(req.KbIDs) == 0 {
+		return nil, fmt.Errorf("mock: KbIDs cannot be empty")
+	}
+	// --- Original stubbing logic ---
 	kgType, _ := req.Filter["knowledge_graph_kwd"].(string)
 	key := kgType
 	if ents, ok := req.Filter["entity_kwd"].([]interface{}); ok && len(ents) > 0 {
@@ -123,7 +133,7 @@ func TestSearchKGTypeSamples_Success(t *testing.T) {
 			}},
 		},
 	}
-	result, err := searchKGTypeSamples(context.Background(), mock, []string{"kb1"})
+	result, err := searchKGTypeSamples(context.Background(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +144,7 @@ func TestSearchKGTypeSamples_Success(t *testing.T) {
 
 func TestSearchKGTypeSamples_Empty(t *testing.T) {
 	mock := &mockRetrievalEngine{}
-	result, err := searchKGTypeSamples(context.Background(), mock, []string{"kb1"})
+	result, err := searchKGTypeSamples(context.Background(), mock, []string{"ragflow_tenant1"}, []string{"kb1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +162,7 @@ func TestKGSearchRetrieval_Basic(t *testing.T) {
 				{"entity_kwd": "Elon Musk", "entity_type_kwd": "PERSON", "rank_flt": 0.9, "_score": 0.85},
 			}},
 			"relation": {Chunks: []map[string]interface{}{
-				{"from_entity_kwd": "Elon Musk", "to_entity_kwd": "SpaceX", "weight_int": float64(5)},
+				{"from_entity_kwd": "Elon Musk", "to_entity_kwd": "SpaceX", "weight_int": float64(5), "_score": 0.85},
 			}},
 			"community_report": {Chunks: []map[string]interface{}{
 				{"docnm_kwd": "Community 1", "content_with_weight": "Report text", "weight_flt": 0.95},
@@ -200,6 +210,41 @@ func TestKGSearchRetrieval_NoEntities(t *testing.T) {
 }
 
 // TestEntitySearch_MultiEntities verifies that all entities are used in search query.
+
+func TestKGSearchRetrieval_WithChatModel(t *testing.T) {
+	mock := &mockRetrievalEngine{
+		results: map[string]*types.SearchResult{
+			"entity": {Chunks: []map[string]interface{}{
+				{"entity_kwd": "Elon Musk", "entity_type_kwd": "PERSON", "rank_flt": 0.9, "_score": 0.85},
+			}},
+			"relation": {Chunks: []map[string]interface{}{
+				{"from_entity_kwd": "Elon Musk", "to_entity_kwd": "SpaceX", "weight_int": float64(5), "_score": 0.85},
+			}},
+		},
+	}
+	// chatModel with nil ModelName so queryRewrite falls back to raw question,
+	// but the ty2entsJSON construction path is still exercised.
+	chatModel := &modelModule.ChatModel{ModelName: nil, APIConfig: nil}
+	result, err := KGSearchRetrieval(context.Background(), mock, chatModel, nil, []string{"kb1"}, []string{"tenant1"}, "Elon Musk")
+	if err != nil {
+		t.Fatalf("KGSearchRetrieval failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	content, ok := result["content_with_weight"].(string)
+	if !ok {
+		t.Fatal("expected content_with_weight string")
+	}
+	if content == "" {
+		t.Error("expected non-empty KG content")
+	}
+	// Verify "null" does not appear — the ty2entsJSON fix ensures "{}" not "null"
+	if strings.Contains(content, "null") {
+		t.Error("content should not contain 'null' from ty2entsJSON")
+	}
+}
+
 func TestEntitySearch_MultiEntities(t *testing.T) {
 	var capturedText string
 	mock := &searchCaptureEngine{}
@@ -213,6 +258,7 @@ func TestEntitySearch_MultiEntities(t *testing.T) {
 	}
 	entities := []string{"Elon Musk", "SpaceX"}
 	entsReq := &types.SearchRequest{
+		IndexNames:   []string{"ragflow_tenant1"},
 		KbIDs:        []string{"kb1"},
 		SelectFields: []string{"entity_kwd", "n_hop_with_weight"},
 		Limit:        50,
@@ -238,6 +284,9 @@ type searchCaptureEngine struct {
 }
 
 func (e *searchCaptureEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if len(req.IndexNames) == 0 {
+		return nil, fmt.Errorf("mock: IndexNames cannot be empty")
+	}
 	if e.searchFn != nil {
 		return e.searchFn(ctx, req)
 	}
@@ -262,3 +311,255 @@ func TestQueryRewrite_EmptyQuestion(t *testing.T) {
 		t.Errorf("expected nil for empty question, got type=%v entities=%v", typeKeywords, entities)
 	}
 }
+
+// spyEmbedDriver captures Embed input for testing — enables assertions on what text
+// was embedded, not just that embedding succeeded.
+type spyEmbedDriver struct {
+	modelModule.ModelDriver
+	capturedTexts []string
+	vector        []float64
+	err           error
+}
+
+func (s *spyEmbedDriver) Embed(_ *string, texts []string, _ *modelModule.APIConfig, _ *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, error) {
+	s.capturedTexts = texts
+	if s.err != nil {
+		return nil, s.err
+	}
+	return []modelModule.EmbeddingData{{Embedding: s.vector}}, nil
+}
+
+// --- pure function: buildMatchDenseExpr ---
+
+func TestBuildMatchDenseExpr_Basic(t *testing.T) {
+	vector := []float64{0.1, 0.2, 0.3}
+	expr := buildMatchDenseExpr(vector, 10, 0.2)
+	if expr.VectorColumnName != "q_3_vec" {
+		t.Errorf("expected q_3_vec, got %q", expr.VectorColumnName)
+	}
+	if len(expr.EmbeddingData) != 3 || expr.EmbeddingData[0] != 0.1 {
+		t.Errorf("unexpected embedding data: %v", expr.EmbeddingData)
+	}
+	if expr.EmbeddingDataType != "float" {
+		t.Errorf("expected float, got %q", expr.EmbeddingDataType)
+	}
+	if expr.DistanceType != "cosine" {
+		t.Errorf("expected cosine, got %q", expr.DistanceType)
+	}
+	if expr.TopN != 10 {
+		t.Errorf("expected TopN=10, got %d", expr.TopN)
+	}
+	sim, ok := expr.ExtraOptions["similarity"].(float64)
+	if !ok || sim != 0.2 {
+		t.Errorf("expected similarity=0.2, got %v", expr.ExtraOptions["similarity"])
+	}
+}
+
+func TestBuildMatchDenseExpr_ZeroVector(t *testing.T) {
+	expr := buildMatchDenseExpr(nil, 5, 0.0)
+	if expr.VectorColumnName != "q_0_vec" {
+		t.Errorf("expected q_0_vec for empty vector, got %q", expr.VectorColumnName)
+	}
+}
+
+// --- pure function: buildFusionExpr ---
+
+func TestBuildFusionExpr_DefaultWeights(t *testing.T) {
+	expr := buildFusionExpr(0.5, 0.5, 20)
+	if expr.Method != "weighted_sum" {
+		t.Errorf("expected weighted_sum, got %q", expr.Method)
+	}
+	if expr.TopN != 20 {
+		t.Errorf("expected TopN=20, got %d", expr.TopN)
+	}
+	weights, ok := expr.FusionParams["weights"].(string)
+	if !ok || weights != "0.50,0.50" {
+		t.Errorf("expected weights=0.50,0.50, got %v", expr.FusionParams["weights"])
+	}
+}
+
+func TestBuildFusionExpr_AsymmetricWeights(t *testing.T) {
+	expr := buildFusionExpr(0.3, 0.7, 10)
+	weights := expr.FusionParams["weights"].(string)
+	if weights != "0.30,0.70" {
+		t.Errorf("expected 0.30,0.70, got %q", weights)
+	}
+}
+
+// --- buildSearchExprs ---
+
+func TestBuildSearchExprs_NoEmbModel(t *testing.T) {
+	matchText := &types.MatchTextExpr{
+		Fields:       []string{"entity_kwd^10"},
+		MatchingText: "test",
+		TopN:         10,
+	}
+	exprs := buildSearchExprs(nil, matchText, 0, 0)
+	if len(exprs) != 1 {
+		t.Fatalf("expected 1 expr, got %d", len(exprs))
+	}
+	mt, ok := exprs[0].(*types.MatchTextExpr)
+	if !ok {
+		t.Fatalf("expected MatchTextExpr, got %T", exprs[0])
+	}
+	if mt.MatchingText != "test" {
+		t.Errorf("expected 'test', got %q", exprs[0].(*types.MatchTextExpr).MatchingText)
+	}
+}
+
+func TestBuildSearchExprs_WithEmbModel(t *testing.T) {
+	driver := &spyEmbedDriver{vector: []float64{0.1, 0.2, 0.3}}
+	embModel := modelModule.NewEmbeddingModel(driver, strPtr("text-embedding"), &modelModule.APIConfig{}, 512)
+	matchText := &types.MatchTextExpr{
+		Fields:       []string{"entity_kwd^10"},
+		MatchingText: "Elon Musk SpaceX",
+		TopN:         50,
+	}
+	exprs := buildSearchExprs(embModel, matchText, defaultKGSimThreshold, defaultKGDenseTopK)
+	// Verify Embed was called with matchText.MatchingText, not raw question
+	if len(driver.capturedTexts) != 1 || driver.capturedTexts[0] != "Elon Musk SpaceX" {
+		t.Errorf("expected Embed to receive %q, got %v", "Elon Musk SpaceX", driver.capturedTexts)
+	}
+	if len(exprs) != 3 {
+		t.Fatalf("expected 3 exprs (text+dense+fusion), got %d", len(exprs))
+	}
+	// Index 0: MatchTextExpr
+	mt, ok := exprs[0].(*types.MatchTextExpr)
+	if !ok {
+		t.Fatalf("expected MatchTextExpr at [0], got %T", exprs[0])
+	}
+	if mt.MatchingText != "Elon Musk SpaceX" {
+		t.Errorf("expected 'Elon Musk SpaceX', got %q", mt.MatchingText)
+	}
+	// Index 1: MatchDenseExpr
+	md, ok := exprs[1].(*types.MatchDenseExpr)
+	if !ok {
+		t.Fatalf("expected MatchDenseExpr at [1], got %T", exprs[1])
+	}
+	if md.VectorColumnName != "q_3_vec" {
+		t.Errorf("expected q_3_vec, got %q", md.VectorColumnName)
+	}
+	if md.TopN != defaultKGDenseTopK {
+		t.Errorf("expected TopN=%d (Python alignment), got %d", defaultKGDenseTopK, md.TopN)
+	}
+	if md.ExtraOptions["similarity"] != defaultKGSimThreshold {
+		t.Errorf("expected similarity=%v (Python alignment), got %v", defaultKGSimThreshold, md.ExtraOptions["similarity"])
+	}
+	// Index 2: FusionExpr
+	fu, ok := exprs[2].(*types.FusionExpr)
+	if !ok {
+		t.Fatalf("expected FusionExpr at [2], got %T", exprs[2])
+	}
+	if fu.Method != "weighted_sum" {
+		t.Errorf("expected weighted_sum, got %q", fu.Method)
+	}
+}
+
+func TestBuildSearchExprs_EmbModelFallback(t *testing.T) {
+	driver := &spyEmbedDriver{err: assertError("embed failed")}
+	embModel := modelModule.NewEmbeddingModel(driver, strPtr("text-embedding"), &modelModule.APIConfig{}, 512)
+	matchText := &types.MatchTextExpr{
+		Fields:       []string{"entity_kwd^10"},
+		MatchingText: "fallback test",
+		TopN:         10,
+	}
+	exprs := buildSearchExprs(embModel, matchText, defaultKGSimThreshold, defaultKGDenseTopK)
+	// Should fall back to text-only when Embed fails
+	if len(exprs) != 1 {
+		t.Fatalf("expected 1 expr (text-only fallback), got %d", len(exprs))
+	}
+	if _, ok := exprs[0].(*types.MatchTextExpr); !ok {
+		t.Errorf("expected MatchTextExpr, got %T", exprs[0])
+	}
+}
+
+// --- Python alignment defaults ---
+
+func TestDefaultValuesMatchPython(t *testing.T) {
+	if defaultKGSimThreshold != 0.3 {
+		t.Errorf("expected 0.3 (Python ent_sim_threshold), got %f", defaultKGSimThreshold)
+	}
+	if defaultKGDenseTopK != 1024 {
+		t.Errorf("expected 1024 (Python get_vector topk), got %d", defaultKGDenseTopK)
+	}
+}
+
+// assertError is a simple error for testing fallback behaviour.
+type assertError string
+
+func (e assertError) Error() string { return string(e) }
+
+
+// --- indexName ---
+
+func TestIndexName_Normal(t *testing.T) {
+	result := indexName("tenant1")
+	if result != "ragflow_tenant1" {
+		t.Errorf("expected ragflow_tenant1, got %q", result)
+	}
+}
+
+func TestIndexName_Empty(t *testing.T) {
+	result := indexName("")
+	if result != "ragflow_" {
+		t.Errorf("expected ragflow_, got %q", result)
+	}
+}
+
+// --- searchKGCommunityContent ---
+
+func TestSearchKGCommunityContent_EmptyEntities(t *testing.T) {
+	mock := &mockRetrievalEngine{}
+	result := searchKGCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, nil, 1, intPtr(100))
+	if result != "" {
+		t.Errorf("expected empty, got %q", result)
+	}
+}
+
+func TestSearchKGCommunityContent_WithContent(t *testing.T) {
+	mock := &mockRetrievalEngine{
+		results: map[string]*types.SearchResult{
+			"community_report": {Chunks: []map[string]interface{}{
+				{
+					"docnm_kwd":           "Community Alpha",
+					"content_with_weight": `{"report": "Report text", "evidences": "Evidence text"}`,
+				},
+			}},
+		},
+	}
+	result := searchKGCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(500))
+	if result == "" {
+		t.Fatal("expected non-empty result")
+	}
+	if !strings.Contains(result, "Community Alpha") {
+		t.Errorf("expected title 'Community Alpha', got %q", result)
+	}
+	if !strings.Contains(result, "Report text") {
+		t.Errorf("expected report content, got %q", result)
+	}
+	if !strings.Contains(result, "Evidence text") {
+		t.Errorf("expected evidence, got %q", result)
+	}
+	if !strings.Contains(result, "# 1.") {
+		t.Errorf("expected numbered report (# 1.), got %q", result)
+	}
+}
+
+func TestSearchKGCommunityContent_NilMaxToken(t *testing.T) {
+	mock := &mockRetrievalEngine{}
+	result := searchKGCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, nil)
+	if result != "" {
+		t.Errorf("expected empty when maxToken is nil, got %q", result)
+	}
+}
+
+func TestSearchKGCommunityContent_ZeroMaxToken(t *testing.T) {
+	mock := &mockRetrievalEngine{}
+	result := searchKGCommunityContent(context.Background(), mock, []string{"ragflow_t1"}, []string{"kb1"}, []ScoredEntity{{Entity: "E1"}}, 1, intPtr(0))
+	if result != "" {
+		t.Errorf("expected empty when maxToken=0, got %q", result)
+	}
+}
+
+// intPtr returns a pointer to n.
+func intPtr(n int) *int { return &n }

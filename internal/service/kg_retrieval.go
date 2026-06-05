@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -28,9 +27,21 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// kgEntityFromChunk parses a single entity chunk into a common.KGEntity.
-func kgEntityFromChunk(name string, chunk map[string]interface{}) common.KGEntity {
-	e := common.KGEntity{}
+// indexName builds the search index name from a tenant ID.
+// Matches Python: rag/nlp/search.py::index_name()
+func indexName(tenantID string) string {
+	return "ragflow_" + tenantID
+}
+
+// Python alignment defaults — match rag/graphrag/search.py retrieval() params
+const (
+	defaultKGSimThreshold = 0.3  // Python: ent_sim_threshold, rel_sim_threshold
+	defaultKGDenseTopK    = 1024 // Python: get_vector() topk
+)
+
+// kgEntityFromChunk parses a single entity chunk into a KGEntity.
+func kgEntityFromChunk(name string, chunk map[string]interface{}) KGEntity {
+	e := KGEntity{}
 	if v, ok := chunk["_score"].(float64); ok {
 		e.Sim = v
 	} else if v, ok := chunk["score"].(float64); ok {
@@ -47,7 +58,7 @@ func kgEntityFromChunk(name string, chunk map[string]interface{}) common.KGEntit
 		}
 		if err := json.Unmarshal([]byte(raw), &nhopData); err == nil {
 			for _, item := range nhopData {
-				e.NhopEnts = append(e.NhopEnts, common.NhopEntity{
+				e.NhopEnts = append(e.NhopEnts, NhopEntity{
 					Path:    item.Path,
 					Weights: item.Weights,
 				})
@@ -57,9 +68,9 @@ func kgEntityFromChunk(name string, chunk map[string]interface{}) common.KGEntit
 	return e
 }
 
-// kgRelationFromChunk parses a single relation chunk into a common.KGRelation.
-func kgRelationFromChunk(chunk map[string]interface{}) (common.Edge, common.KGRelation) {
-	r := common.KGRelation{}
+// kgRelationFromChunk parses a single relation chunk into a KGRelation.
+func kgRelationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
+	r := KGRelation{}
 	r.Description, _ = chunk["content_with_weight"].(string)
 	if v, ok := chunk["weight_int"].(float64); ok {
 		r.PageRank = float64(v)
@@ -68,12 +79,14 @@ func kgRelationFromChunk(chunk map[string]interface{}) (common.Edge, common.KGRe
 	}
 	from, _ := chunk["from_entity_kwd"].(string)
 	to, _ := chunk["to_entity_kwd"].(string)
-	return common.Edge{From: from, To: to}, r
+	return Edge{From: from, To: to}, r
 }
 
 // KGSearchRetrieval performs a full knowledge graph retrieval and returns
 // a synthetic chunk to be inserted into search results.
 // Corresponds to Python: rag/graphrag/search.py::KGSearch.retrieval()
+//
+// This is a convenience wrapper around KGSearchPipeline.
 func KGSearchRetrieval(
 	ctx context.Context,
 	docEngine engine.DocEngine,
@@ -83,135 +96,37 @@ func KGSearchRetrieval(
 	tenantIDs []string,
 	question string,
 ) (map[string]interface{}, error) {
-	// 1. Query rewrite via LLM, or fall back to raw question
-	ty2entsJSON := ""
-	if chatModel != nil {
-		typeSamples, _ := searchKGTypeSamples(ctx, docEngine, kbIDs)
-		data, _ := json.Marshal(typeSamples)
-		ty2entsJSON = string(data)
+	p := &KGSearchPipeline{
+		docEngine:       docEngine,
+		chatModel:       chatModel,
+		embModel:        embModel,
+		kbIDs:           kbIDs,
+		idxnms:          makeIndexNames(tenantIDs),
+		question:        question,
+		entSimThreshold: defaultKGSimThreshold,
+		relSimThreshold: defaultKGSimThreshold,
+		denseTopK:       defaultKGDenseTopK,
+		entTopN:         6,
+		relTopN:         6,
+		commTopN:        1,
+		maxToken:        8196,
 	}
-	typeKeywords, entities := queryRewrite(chatModel, question, ty2entsJSON)
+	return p.Retrieval(ctx)
+}
 
-	// 2. Search entities by keywords
-	entsReq := &types.SearchRequest{
-		KbIDs:        kbIDs,
-		SelectFields: []string{"entity_kwd", "entity_type_kwd", "rank_flt", "content_with_weight", "n_hop_with_weight"},
-		Limit:        50,
-		Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
+// makeIndexNames converts tenant IDs to search index names.
+func makeIndexNames(tenantIDs []string) []string {
+	idxnms := make([]string, len(tenantIDs))
+	for i, tid := range tenantIDs {
+		idxnms[i] = indexName(tid)
 	}
-	if len(entities) > 0 {
-		entsReq.MatchExprs = []interface{}{
-			&types.MatchTextExpr{
-				Fields:       []string{"entity_kwd^10", "content_ltks^2"},
-				MatchingText: strings.Join(entities, " "),
-				TopN:         50,
-			},
-		}
-	}
-	entsResult, err := docEngine.Search(ctx, entsReq)
-	if err != nil {
-		return nil, fmt.Errorf("KG entity search failed: %w", err)
-	}
-	entsFromQuery := make(map[string]*common.KGEntity)
-	for _, chunk := range entsResult.Chunks {
-		name, _ := chunk["entity_kwd"].(string)
-		if name == "" {
-			continue
-		}
-		e := kgEntityFromChunk(name, chunk)
-		entsFromQuery[name] = &e
-	}
-
-	// 3. Search entities by types
-	typesReq := &types.SearchRequest{
-		KbIDs:        kbIDs,
-		SelectFields: []string{"entity_kwd", "entity_type_kwd"},
-		Limit:        10000,
-		Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
-	}
-	if len(typeKeywords) > 0 {
-		typeFilters := make([]interface{}, len(typeKeywords))
-		for i, t := range typeKeywords {
-			typeFilters[i] = t
-		}
-		typesReq.Filter["entity_type_kwd"] = typeFilters
-	}
-	typesResult, err := docEngine.Search(ctx, typesReq)
-	entsFromTypes := make(map[string]struct{})
-	if err == nil {
-		for _, chunk := range typesResult.Chunks {
-			if name, ok := chunk["entity_kwd"].(string); ok {
-				entsFromTypes[name] = struct{}{}
-			}
-		}
-	}
-
-	// 4. Search relations
-	relsReq := &types.SearchRequest{
-		KbIDs:        kbIDs,
-		SelectFields: []string{"from_entity_kwd", "to_entity_kwd", "weight_int", "content_with_weight"},
-		Limit:        50,
-		Filter:       map[string]interface{}{"knowledge_graph_kwd": "relation"},
-	}
-	if len(entities) > 0 {
-		relsReq.MatchExprs = []interface{}{
-			&types.MatchTextExpr{
-				Fields:       []string{"content_ltks", "from_entity_kwd", "to_entity_kwd"},
-				MatchingText: strings.Join(entities, " "),
-				TopN:         50,
-			},
-		}
-	}
-	relsResult, err := docEngine.Search(ctx, relsReq)
-	relsFromText := make(map[common.Edge]*common.KGRelation)
-	if err == nil {
-		for _, chunk := range relsResult.Chunks {
-			edge, rel := kgRelationFromChunk(chunk)
-			if edge.From == "" || edge.To == "" {
-				continue
-			}
-			relsFromText[edge] = &rel
-		}
-	}
-
-	// 5. N-hop analysis + score fusion (from common/kg_scoring.go)
-	nhopPathes := common.AnalyzeNHopPaths(entsFromQuery)
-	common.DoubleHitBoost(entsFromQuery, entsFromTypes)
-	common.FuseRelationScores(relsFromText, entsFromTypes, nhopPathes)
-
-	// 6. Sort and trim
-	scoredEnts := common.SortAndTrimEntities(entsFromQuery, 6)
-	scoredRels := common.SortAndTrimRelations(relsFromText, 6)
-
-	// 7. Build KG content (entities + relations) with token budget, matching Python order
-	maxToken := 8196
-	entsRelsContent := common.BuildKGContent(scoredEnts, scoredRels, maxToken)
-	used := common.NumTokensFromString(entsRelsContent)
-	remaining := maxToken - used
-	// 8. Search community reports with remaining token budget
-	communityContent := searchKGCommunityContent(ctx, docEngine, kbIDs, scoredEnts, 1, &remaining)
-
-	// 9. Build synthetic chunk
-	return map[string]interface{}{
-		"chunk_id":              "",
-		"content_ltks":          "",
-		"content_with_weight":   entsRelsContent + communityContent,
-		"doc_id":                "",
-		"docnm_kwd":             "Related content in Knowledge Graph",
-		"kb_id":                 kbIDs,
-		"important_kwd":         []string{},
-		"image_id":              "",
-		"similarity":            1.0,
-		"vector_similarity":     1.0,
-		"term_similarity":       0,
-		"vector":                []float64{},
-		"positions":             []interface{}{},
-	}, nil
+	return idxnms
 }
 
 // searchKGTypeSamples searches for ty2ents data.
-func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, kbIDs []string) (map[string][]string, error) {
+func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string) (map[string][]string, error) {
 	req := &types.SearchRequest{
+		IndexNames:   idxnms,
 		KbIDs:        kbIDs,
 		SelectFields: []string{"content_with_weight"},
 		Limit:        10000,
@@ -239,8 +154,8 @@ func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, kbIDs 
 }
 
 // searchKGCommunityContent searches for community reports and formats them.
-func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, scoredEnts []common.ScoredEntity, topN int, maxToken *int) string {
-	if len(scoredEnts) == 0 || *maxToken <= 0 {
+func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
+	if maxToken == nil || len(scoredEnts) == 0 || *maxToken <= 0 {
 		return ""
 	}
 	entityNames := make([]string, len(scoredEnts))
@@ -248,6 +163,7 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, k
 		entityNames[i] = e.Entity
 	}
 	req := &types.SearchRequest{
+		IndexNames:   idxnms,
 		KbIDs:        kbIDs,
 		SelectFields: []string{"docnm_kwd", "content_with_weight", "weight_flt", "entities_kwd"},
 		Limit:        topN,
@@ -267,14 +183,26 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, k
 	}
 
 	var bld string
-	for _, chunk := range result.Chunks {
+	for idx, chunk := range result.Chunks {
 		title, _ := chunk["docnm_kwd"].(string)
-		content, _ := chunk["content_with_weight"].(string)
-		if title == "" && content == "" {
+		raw, _ := chunk["content_with_weight"].(string)
+		if title == "" && raw == "" {
 			continue
 		}
-		section := fmt.Sprintf("\n# %s\n## Content\n%s\n", title, content)
-		tokens := common.NumTokensFromString(section)
+		// Parse JSON for nested report/evidences fields (Python: json.loads)
+		report := raw
+		evidence := ""
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
+			if r, ok := parsed["report"].(string); ok {
+				report = r
+			}
+			if e, ok := parsed["evidences"].(string); ok {
+				evidence = e
+			}
+		}
+		section := fmt.Sprintf("\n# %d. %s\n## Content\n%s\n## Evidences\n%s\n", idx+1, title, report, evidence)
+		tokens := NumTokensFromString(section)
 		if *maxToken-tokens <= 0 {
 			break
 		}
@@ -282,6 +210,50 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, k
 		*maxToken -= tokens
 	}
 	return bld
+}
+
+// buildMatchDenseExpr constructs a MatchDenseExpr from an embedding vector.
+// This is a pure function — no I/O, no external dependencies.
+func buildMatchDenseExpr(vector []float64, topN int, similarity float64) *types.MatchDenseExpr {
+	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	return &types.MatchDenseExpr{
+		VectorColumnName:  vectorColumnName,
+		EmbeddingData:     vector,
+		EmbeddingDataType: "float",
+		DistanceType:      "cosine",
+		TopN:              topN,
+		ExtraOptions:      map[string]interface{}{"similarity": similarity},
+	}
+}
+
+// buildFusionExpr constructs a FusionExpr for weighted-sum hybrid search.
+// This is a pure function — no I/O, no external dependencies.
+func buildFusionExpr(textWeight, vectorWeight float64, topN int) *types.FusionExpr {
+	return &types.FusionExpr{
+		Method: "weighted_sum",
+		TopN:   topN,
+		FusionParams: map[string]interface{}{
+			"weights": fmt.Sprintf("%.2f,%.2f", textWeight, vectorWeight),
+		},
+	}
+}
+
+// buildSearchExprs constructs MatchExprs for KG entity/relation search.
+// When embModel is nil, returns text-only match expression.
+// When embModel is non-nil, embeds the question and returns hybrid
+// (text + dense + fusion) expressions for vector+keyword search.
+func buildSearchExprs(embModel *modelModule.EmbeddingModel, matchText *types.MatchTextExpr, simThreshold float64, denseTopK int) []interface{} {
+	if embModel == nil || embModel.ModelDriver == nil {
+		return []interface{}{matchText}
+	}
+	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
+	embeddings, err := embModel.ModelDriver.Embed(embModel.ModelName, []string{matchText.MatchingText}, embModel.APIConfig, embeddingConfig)
+	if err != nil || len(embeddings) == 0 {
+		return []interface{}{matchText}
+	}
+	denseExpr := buildMatchDenseExpr(embeddings[0].Embedding, denseTopK, simThreshold)
+	fusionExpr := buildFusionExpr(0.5, 0.5, matchText.TopN)
+	return []interface{}{matchText, denseExpr, fusionExpr}
 }
 
 // queryRewrite attempts LLM-based query rewrite, falling back to raw question.
