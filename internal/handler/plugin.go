@@ -41,7 +41,7 @@ func NewPluginHandler(pluginService *service.PluginService) *PluginHandler {
 //
 // @Summary  List LLM tool plugins
 // @Description  Return the metadata of every embedded LLM tool plugin. Matches
-// @Description  the response of the Python POST /v1/plugin/tools endpoint.
+// @Description  the response of the Python GET /v1/plugin/tools endpoint.
 // @Tags     plugin
 // @Produce  json
 // @Security ApiKeyAuth
