@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -24,8 +25,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -248,6 +252,71 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 // UploadAgentFile uploads one or more files associated with an agent.
 // @Summary Upload Agent File
 // @Description Upload one or more files for an agent canvas.
+
+// GetAgentVersion returns a specific version for an agent.
+// @Summary Get Agent Version
+// @Description Returns a specific version by ID, verifying it belongs to the given agent.
+// @Tags agents
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Param version_id path string true "Version ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id}/versions/{version_id} [get]
+func (h *AgentHandler) GetAgentVersion(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	versionID := c.Param("version_id")
+	if agentID == "" || versionID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "agent_id and version_id are required",
+		})
+		return
+	}
+
+	ok, err := h.agentService.CheckCanvasAccess(user.ID, agentID)
+	if err != nil || !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "Agent not found or no permission.",
+		})
+		return
+	}
+
+	version, err := h.agentService.GetVersion(agentID, versionID)
+	if err != nil {
+		isNotFound := errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "version not found"
+		if !isNotFound {
+			common.Warn("get agent version failed", zap.String("error", err.Error()))
+			c.JSON(http.StatusOK, gin.H{
+				"code":    common.CodeServerError,
+				"data":    nil,
+				"message": "Internal server error",
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeNotFound,
+			"data":    nil,
+			"message": "Version not found.",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    version,
+		"message": "",
+	})
+}
+
 // @Tags agents
 // @Accept multipart/form-data
 // @Produce json
@@ -307,7 +376,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
+			"code": common.CodeOperatingError,
 
 			"data":    nil,
 			"message": err.Error(),
@@ -316,8 +385,8 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    uploaded,
+		"code": common.CodeSuccess,
+		"data": uploaded,
 
 		"message": "",
 	})
