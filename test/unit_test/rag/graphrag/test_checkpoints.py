@@ -23,6 +23,7 @@ class _FakeRedisClient:
     def __init__(self, conn):
         self.conn = conn
         self.expirations = {}
+        self.scan_counts = []
 
     def expire(self, key, ttl):
         self.expirations[key] = ttl
@@ -31,6 +32,10 @@ class _FakeRedisClient:
     def pipeline(self, transaction=True):
         assert transaction is True
         return _FakeRedisPipeline(self.conn)
+
+    def sscan_iter(self, key, count=None):
+        self.scan_counts.append((key, count))
+        yield from self.conn.sets.get(key, set())
 
 
 class _FakeRedisPipeline:
@@ -89,7 +94,7 @@ class _FakeRedisConn:
         return True
 
     def smembers(self, key):
-        return set(self.sets.get(key, set()))
+        raise AssertionError("checkpoint code must use sscan_iter instead of smembers")
 
     def delete(self, key):
         self.values.pop(key, None)
@@ -125,9 +130,13 @@ async def test_load_checkpoints_reads_redis_index(fake_redis):
     await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k2", {"value": 2})
     await checkpoints.save_checkpoint("tenant-1", "kb-2", checkpoints.COMMUNITY_CHECKPOINT, "k3", {"value": 3})
 
-    loaded = await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT)
+    loaded = await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, page_size=1)
 
     assert loaded == {"k1": {"value": 1}, "k2": {"value": 2}}
+    assert fake_redis.REDIS.scan_counts[-1] == (
+        "graphrag:checkpoint:tenant-1:kb-1:graphrag_checkpoint_community:keys",
+        1,
+    )
 
 
 @pytest.mark.p2
@@ -149,8 +158,12 @@ async def test_cleanup_checkpoints_deletes_redis_stage_keys(fake_redis):
     await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT, "k2", {"value": 2})
     await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k3", {"value": 3})
 
-    cleaned = await checkpoints.cleanup_checkpoints("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT)
+    cleaned = await checkpoints.cleanup_checkpoints("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT, page_size=1)
 
     assert cleaned is True
     assert await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT) == {}
     assert await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT) == {"k3": {"value": 3}}
+    assert (
+        "graphrag:checkpoint:tenant-1:kb-1:graphrag_checkpoint_resolution:keys",
+        1,
+    ) in fake_redis.REDIS.scan_counts

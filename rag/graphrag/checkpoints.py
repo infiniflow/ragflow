@@ -58,11 +58,22 @@ def _decode_redis_value(value: Any) -> Any:
     return value
 
 
+def _checkpoint_page_size(page_size: int | None) -> int:
+    return page_size if page_size and page_size > 0 else CHECKPOINT_PAGE_SIZE
+
+
+def _iter_checkpoint_keys(index_key: str, page_size: int | None):
+    redis_client = getattr(REDIS_CONN, "REDIS", None)
+    if redis_client is None or not hasattr(redis_client, "sscan_iter"):
+        raise RuntimeError("Redis SSCAN is unavailable for GraphRAG checkpoint index iteration")
+    return redis_client.sscan_iter(index_key, count=_checkpoint_page_size(page_size))
+
+
 async def load_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, page_size: int | None = None) -> dict[str, Any]:
     checkpoints: dict[str, Any] = {}
     index_key = _checkpoint_index_key(tenant_id, kb_id, checkpoint_type)
     try:
-        checkpoint_keys = REDIS_CONN.smembers(index_key) or set()
+        checkpoint_keys = _iter_checkpoint_keys(index_key, page_size)
     except Exception:
         logging.exception("Failed to load GraphRAG checkpoint index type=%s kb=%s", checkpoint_type, kb_id)
         return checkpoints
@@ -101,15 +112,17 @@ async def save_checkpoint(tenant_id: str, kb_id: str, checkpoint_type: str, chec
         return False
 
 
-async def cleanup_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str) -> bool:
+async def cleanup_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, page_size: int | None = None) -> bool:
     index_key = _checkpoint_index_key(tenant_id, kb_id, checkpoint_type)
     try:
-        checkpoint_keys = REDIS_CONN.smembers(index_key) or set()
+        cleaned_count = 0
+        checkpoint_keys = _iter_checkpoint_keys(index_key, page_size)
         for checkpoint_key in checkpoint_keys:
             checkpoint_key = _decode_redis_value(checkpoint_key)
             REDIS_CONN.delete(_checkpoint_data_key(tenant_id, kb_id, checkpoint_type, checkpoint_key))
+            cleaned_count += 1
         REDIS_CONN.delete(index_key)
-        logging.info("Cleaned up %d GraphRAG checkpoints type=%s kb=%s", len(checkpoint_keys), checkpoint_type, kb_id)
+        logging.info("Cleaned up %d GraphRAG checkpoints type=%s kb=%s", cleaned_count, checkpoint_type, kb_id)
         return True
     except Exception:
         logging.exception("Failed to cleanup GraphRAG checkpoints type=%s kb=%s", checkpoint_type, kb_id)
