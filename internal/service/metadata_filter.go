@@ -199,113 +199,54 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	return &result, nil
 }
 
-// ApplyMetaFilter applies filter conditions to metadata and returns matching doc IDs
+// ApplyMetaFilter applies filter conditions to metadata and returns matching doc IDs.
+// It converts service-layer MetaFilterCondition to common.MetaCondition, then delegates
+// all conditions and their logic to common.MetaFilter which handles multi-condition
+// AND/OR merging internally. This eliminates the duplicate merge logic that previously
+// existed between ApplyMetaFilter and common.MetaFilter.
 func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, logic string) []string {
 	if len(filters) == 0 {
 		return []string{}
 	}
 
-	docIDSet := make(map[string]bool)
-
-	for i, condition := range filters {
-		matchingIDs := applySingleCondition(metaData, condition)
-		if i == 0 {
-			for _, id := range matchingIDs {
-				docIDSet[id] = true
-			}
-		} else {
-			if logic == "or" {
-				// Union
-				for _, id := range matchingIDs {
-					docIDSet[id] = true
-				}
-			} else {
-				// AND - intersection
-				newSet := make(map[string]bool)
-				for _, id := range matchingIDs {
-					if docIDSet[id] {
-						newSet[id] = true
-					}
-				}
-				docIDSet = newSet
-			}
-		}
+	conditions := make([]common.MetaCondition, 0, len(filters))
+	for _, f := range filters {
+		conditions = append(conditions, convertToMetaCondition(f))
 	}
 
-	// Convert to list
-	result := make([]string, 0, len(docIDSet))
-	for id := range docIDSet {
-		result = append(result, id)
-	}
-	return result
+	return common.MetaFilter(metaData, &common.MetaFilterInput{
+		Conditions: conditions,
+		Logic:      logic,
+	})
 }
 
-// applySingleCondition applies a single filter condition and returns matching doc IDs
-func applySingleCondition(metaData common.MetaData, condition MetaFilterCondition) []string {
-	key := condition.Key
-	value := condition.Value
-	op := condition.Op
-
-	valueMap := metaData[key]
-
-	var result []string
-
-	switch op {
-	case "=", "==":
-		if docIDs, exists := valueMap[value]; exists {
-			result = append(result, docIDs...)
-		}
-	case "!=", "≠":
-		for val, docIDs := range valueMap {
-			if val != value {
-				result = append(result, docIDs...)
-			}
-		}
-	case "contains":
-		for val, docIDs := range valueMap {
-			if strings.Contains(strings.ToLower(val), strings.ToLower(value)) {
-				result = append(result, docIDs...)
-			}
-		}
-	case "not contains":
-		for val, docIDs := range valueMap {
-			if !strings.Contains(strings.ToLower(val), strings.ToLower(value)) {
-				result = append(result, docIDs...)
-			}
-		}
-	case "in":
-		values := strings.Split(value, ",")
-		for _, v := range values {
-			v = strings.TrimSpace(v)
-			if docIDs, exists := valueMap[v]; exists {
-				result = append(result, docIDs...)
-			}
-		}
-	case "not in":
-		excludeValues := make(map[string]bool)
-		for _, v := range strings.Split(value, ",") {
-			excludeValues[strings.TrimSpace(strings.ToLower(v))] = true
-		}
-		for val, docIDs := range valueMap {
-			if !excludeValues[strings.ToLower(val)] {
-				result = append(result, docIDs...)
-			}
-		}
-	case "start with":
-		for val, docIDs := range valueMap {
-			if strings.HasPrefix(strings.ToLower(val), strings.ToLower(value)) {
-				result = append(result, docIDs...)
-			}
-		}
-	case "end with":
-		for val, docIDs := range valueMap {
-			if strings.HasSuffix(strings.ToLower(val), strings.ToLower(value)) {
-				result = append(result, docIDs...)
-			}
-		}
+// convertToMetaCondition converts a MetaFilterCondition to common.MetaCondition,
+// normalizing operator symbols and value types for compatibility with common.MetaFilter.
+//
+// Operator normalization:
+//   - "==" = "="    "!=" = "≠"
+//   - ">=" = "≥"    "<=" = "≤"
+//   - "is" = "="    "not is" = "≠"
+//   (see common.metadata_utils.operatorMapping for the full list)
+// Value conversion:
+//   - "in" / "not in": comma-separated string → []interface{} (as expected by common.MetaFilter)
+//   - all other operators: passed through as-is (string)
+func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
+	mc := common.MetaCondition{
+		Key:      f.Key,
+		Operator: common.NormalizeOperator(f.Op),
+		Value:    f.Value,
 	}
-
-	return result
+	switch f.Op {
+	case "in", "not in":
+		parts := strings.Split(f.Value, ",")
+		arr := make([]interface{}, 0, len(parts))
+		for _, p := range parts {
+			arr = append(arr, strings.TrimSpace(p))
+		}
+		mc.Value = arr
+	}
+	return mc
 }
 
 
