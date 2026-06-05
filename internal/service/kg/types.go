@@ -20,7 +20,6 @@ type NhopEntity struct {
 type KGRelation struct {
 	From        string  // from_entity_kwd
 	To          string  // to_entity_kwd
-	Weight      int     // weight_int
 	Description string  // content_with_weight
 	Sim         float64 // score accumulated during pipeline scoring
 	PageRank    float64 // rank_flt or weight_int as float64

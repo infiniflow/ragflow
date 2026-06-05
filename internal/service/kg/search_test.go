@@ -211,14 +211,14 @@ func TestParseKGRelationChunks_Basic(t *testing.T) {
 		{"from_entity_kwd": "Elon Musk", "to_entity_kwd": "SpaceX", "weight_int": float64(5), "content_with_weight": "Founder"},
 	}
 	relations := ParseKGRelationChunks(chunks)
-	if len(relations) != 1 || relations[0].From != "Elon Musk" || relations[0].Weight != 5 {
+	if len(relations) != 1 || relations[0].From != "Elon Musk" || relations[0].PageRank != 5 {
 		t.Errorf("unexpected: %+v", relations[0])
 	}
 }
 
 func TestParseKGRelationChunks_IntWeight(t *testing.T) {
 	chunks := []map[string]interface{}{{"from_entity_kwd": "A", "to_entity_kwd": "B", "weight_int": 3}}
-	if ParseKGRelationChunks(chunks)[0].Weight != 3 {
+	if ParseKGRelationChunks(chunks)[0].PageRank != 3 {
 		t.Error("expected weight 3")
 	}
 }

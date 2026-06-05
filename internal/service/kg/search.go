@@ -251,10 +251,15 @@ func ParseKGRelationChunks(chunks []map[string]interface{}) []KGRelation {
 			continue
 		}
 		r := KGRelation{From: from, To: to}
+		if v, ok := chunk["_score"].(float64); ok {
+			r.Sim = v
+		} else if v, ok := chunk["score"].(float64); ok {
+			r.Sim = v
+		}
 		if v, ok := chunk["weight_int"].(float64); ok {
-			r.Weight = int(v)
+			r.PageRank = v
 		} else if v, ok := chunk["weight_int"].(int); ok {
-			r.Weight = v
+			r.PageRank = float64(v)
 		}
 		r.Description, _ = chunk["content_with_weight"].(string)
 		relations = append(relations, r)
