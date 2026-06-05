@@ -20,11 +20,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -195,6 +196,7 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 		t.Errorf("expected operating error code %d, got %v", common.CodeOperatingError, code)
 	}
 }
+
 // TestGetAgentVersionHandler_Success verifies getting a specific version.
 func TestGetAgentVersionHandler_Success(t *testing.T) {
 	c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/canvas-1/versions/v1")
@@ -260,7 +262,77 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentTagsHandlerSuccess(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPut, "/api/v1/agents/canvas-1/tags")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/agents/canvas-1/tags", strings.NewReader(`{"tags":["alpha","beta","alpha"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
 
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.UpdateAgentTags(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, code, resp["message"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected data true, got %v", resp["data"])
+	}
+
+	var canvas entity.UserCanvas
+	if err := db.Where("id = ?", "canvas-1").First(&canvas).Error; err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if canvas.Tags != "alpha,beta" {
+		t.Fatalf("expected normalized tags alpha,beta, got %q", canvas.Tags)
+	}
+}
+
+func TestUpdateAgentTagsHandlerNoPermission(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPut, "/api/v1/agents/canvas-b/tags")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/agents/canvas-b/tags", strings.NewReader(`{"tags":["alpha"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-b"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:         "canvas-b",
+		UserID:     "user-b",
+		Title:      sptr("Private Agent"),
+		Permission: "me",
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.UpdateAgentTags(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeOperatingError) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeOperatingError, code, resp["message"])
+	}
+	if resp["data"] != false {
+		t.Fatalf("expected data false, got %v", resp["data"])
+	}
+	if resp["message"] != "Agent not found or no permission." {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
 
 // sptr returns a pointer to the given string.
 // ptr returns a pointer to the given int64.
