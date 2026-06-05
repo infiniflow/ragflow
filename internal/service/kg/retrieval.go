@@ -175,6 +175,11 @@ func kgEntityFromChunk(name string, chunk map[string]interface{}) KGEntity {
 func kgRelationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
 	r := KGRelation{}
 	r.Description, _ = chunk["content_with_weight"].(string)
+	if v, ok := chunk["_score"].(float64); ok {
+		r.Sim = v
+	} else if v, ok := chunk["score"].(float64); ok {
+		r.Sim = v
+	}
 	if v, ok := chunk["weight_int"].(float64); ok {
 		r.PageRank = float64(v)
 	} else if v, ok := chunk["weight_int"].(int); ok {
