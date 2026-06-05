@@ -218,8 +218,20 @@ func startServer(config *server.Config) {
 		&handler.SearchbotRealLLM{Svc: modelProviderService},
 	)
 
+	// Dify retrieval handler
+	docDAO := dao.NewDocumentDAO()
+	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
+	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
+		knowledgebaseService,
+		modelProviderService,
+		metadataService,
+		retrievalService,
+		docDAO,
+		docEngine,
+	)
+
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, relatedQuestionsHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, relatedQuestionsHandler, difyRetrievalHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

@@ -1,20 +1,4 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
-package service
+package kg
 
 import (
 	"context"
@@ -27,67 +11,9 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-// indexName builds the search index name from a tenant ID.
-// Matches Python: rag/nlp/search.py::index_name()
-func indexName(tenantID string) string {
-	return "ragflow_" + tenantID
-}
-
-// Python alignment defaults — match rag/graphrag/search.py retrieval() params
-const (
-	defaultKGSimThreshold = 0.3  // Python: ent_sim_threshold, rel_sim_threshold
-	defaultKGDenseTopK    = 1024 // Python: get_vector() topk
-)
-
-// kgEntityFromChunk parses a single entity chunk into a KGEntity.
-func kgEntityFromChunk(name string, chunk map[string]interface{}) KGEntity {
-	e := KGEntity{}
-	if v, ok := chunk["_score"].(float64); ok {
-		e.Similarity = v
-	} else if v, ok := chunk["score"].(float64); ok {
-		e.Similarity = v
-	}
-	if v, ok := chunk["rank_flt"].(float64); ok {
-		e.PageRank = v
-	}
-	e.Description, _ = chunk["content_with_weight"].(string)
-	if raw, ok := chunk["n_hop_with_weight"].(string); ok && raw != "" {
-		var nhopData []struct {
-			Path    []string  `json:"path"`
-			Weights []float64 `json:"weights"`
-		}
-		if err := json.Unmarshal([]byte(raw), &nhopData); err == nil {
-			for _, item := range nhopData {
-				e.NhopEnts = append(e.NhopEnts, NhopEntity{
-					Path:    item.Path,
-					Weights: item.Weights,
-				})
-			}
-		}
-	}
-	return e
-}
-
-// kgRelationFromChunk parses a single relation chunk into a KGRelation.
-func kgRelationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
-	r := KGRelation{}
-	r.Description, _ = chunk["content_with_weight"].(string)
-	if v, ok := chunk["weight_int"].(float64); ok {
-		r.PageRank = float64(v)
-	} else if v, ok := chunk["weight_int"].(int); ok {
-		r.PageRank = float64(v)
-	}
-	from, _ := chunk["from_entity_kwd"].(string)
-	to, _ := chunk["to_entity_kwd"].(string)
-	return Edge{From: from, To: to}, r
-}
-
-// KGSearchRetrieval performs a full knowledge graph retrieval and returns
-// a synthetic chunk to be inserted into search results.
-// Corresponds to Python: rag/graphrag/search.py::KGSearch.retrieval()
-//
-// This is a convenience wrapper around KGSearchPipeline.
-func KGSearchRetrieval(
+// Retrieval performs a full knowledge graph retrieval and returns
+// a synthetic chunk. Convenience wrapper around Pipeline.
+func Retrieval(
 	ctx context.Context,
 	docEngine engine.DocEngine,
 	chatModel *modelModule.ChatModel,
@@ -96,16 +22,16 @@ func KGSearchRetrieval(
 	tenantIDs []string,
 	question string,
 ) (map[string]interface{}, error) {
-	p := &KGSearchPipeline{
+	p := &Pipeline{
 		docEngine:       docEngine,
 		chatModel:       chatModel,
 		embModel:        embModel,
 		kbIDs:           kbIDs,
 		idxnms:          makeIndexNames(tenantIDs),
 		question:        question,
-		entSimThreshold: defaultKGSimThreshold,
-		relSimThreshold: defaultKGSimThreshold,
-		denseTopK:       defaultKGDenseTopK,
+		entSimThreshold: defaultSimThreshold,
+		relSimThreshold: defaultSimThreshold,
+		denseTopK:       defaultDenseTopK,
 		entTopN:         6,
 		relTopN:         6,
 		commTopN:        1,
@@ -123,8 +49,13 @@ func makeIndexNames(tenantIDs []string) []string {
 	return idxnms
 }
 
-// searchKGTypeSamples searches for ty2ents data.
-func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string) (map[string][]string, error) {
+// indexName builds the search index name from a tenant ID.
+func indexName(tenantID string) string {
+	return "ragflow_" + tenantID
+}
+
+// searchTypeSamples searches for ty2ents data.
+func searchTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string) (map[string][]string, error) {
 	req := &types.SearchRequest{
 		IndexNames:   idxnms,
 		KbIDs:        kbIDs,
@@ -153,8 +84,8 @@ func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms
 	return typeMap, nil
 }
 
-// searchKGCommunityContent searches for community reports and formats them.
-func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
+// searchCommunityContent searches for community reports and formats them.
+func searchCommunityContent(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
 	if maxToken == nil || len(scoredEnts) == 0 || *maxToken <= 0 {
 		return ""
 	}
@@ -189,7 +120,6 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, i
 		if title == "" && raw == "" {
 			continue
 		}
-		// Parse JSON for nested report/evidences fields (Python: json.loads)
 		report := raw
 		evidence := ""
 		var parsed map[string]interface{}
@@ -212,30 +142,52 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, i
 	return bld
 }
 
-// buildMatchDenseExpr constructs a MatchDenseExpr from an embedding vector.
-// This is a pure function — no I/O, no external dependencies.
-func buildMatchDenseExpr(vector []float64, topN int, similarity float64) *types.MatchDenseExpr {
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
-	return &types.MatchDenseExpr{
-		VectorColumnName:  vectorColumnName,
-		EmbeddingData:     vector,
-		EmbeddingDataType: "float",
-		DistanceType:      "cosine",
-		TopN:              topN,
-		ExtraOptions:      map[string]interface{}{"similarity": similarity},
+// entityFromChunk parses a single entity chunk into a KGEntity.
+func entityFromChunk(name string, chunk map[string]interface{}) KGEntity {
+	e := KGEntity{}
+	if v, ok := chunk["_score"].(float64); ok {
+		e.Similarity = v
+	} else if v, ok := chunk["score"].(float64); ok {
+		e.Similarity = v
 	}
+	if v, ok := chunk["rank_flt"].(float64); ok {
+		e.PageRank = v
+	}
+	e.Description, _ = chunk["content_with_weight"].(string)
+	if raw, ok := chunk["n_hop_with_weight"].(string); ok && raw != "" {
+		var nhopData []struct {
+			Path    []string  `json:"path"`
+			Weights []float64 `json:"weights"`
+		}
+		if err := json.Unmarshal([]byte(raw), &nhopData); err == nil {
+			for _, item := range nhopData {
+				e.NhopEnts = append(e.NhopEnts, NhopEntity{
+					Path:    item.Path,
+					Weights: item.Weights,
+				})
+			}
+		}
+	}
+	return e
 }
 
-// buildFusionExpr constructs a FusionExpr for weighted-sum hybrid search.
-// This is a pure function — no I/O, no external dependencies.
-func buildFusionExpr(textWeight, vectorWeight float64, topN int) *types.FusionExpr {
-	return &types.FusionExpr{
-		Method: "weighted_sum",
-		TopN:   topN,
-		FusionParams: map[string]interface{}{
-			"weights": fmt.Sprintf("%.2f,%.2f", textWeight, vectorWeight),
-		},
+// relationFromChunk parses a single relation chunk into a KGRelation.
+func relationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
+	r := KGRelation{}
+	r.Description, _ = chunk["content_with_weight"].(string)
+	if v, ok := chunk["_score"].(float64); ok {
+		r.Sim = v
+	} else if v, ok := chunk["score"].(float64); ok {
+		r.Sim = v
 	}
+	if v, ok := chunk["weight_int"].(float64); ok {
+		r.PageRank = float64(v)
+	} else if v, ok := chunk["weight_int"].(int); ok {
+		r.PageRank = float64(v)
+	}
+	from, _ := chunk["from_entity_kwd"].(string)
+	to, _ := chunk["to_entity_kwd"].(string)
+	return Edge{From: from, To: to}, r
 }
 
 // buildSearchExprs constructs MatchExprs for KG entity/relation search.
@@ -252,12 +204,35 @@ func buildSearchExprs(embModel *modelModule.EmbeddingModel, matchText *types.Mat
 		return []interface{}{matchText}
 	}
 	denseExpr := buildMatchDenseExpr(embeddings[0].Embedding, denseTopK, simThreshold)
-	fusionExpr := buildFusionExpr(0.5, 0.5, matchText.TopN)
+	fusionExpr := buildFusionExpr(defaultTextWeight, defaultVectorWeight, matchText.TopN)
 	return []interface{}{matchText, denseExpr, fusionExpr}
 }
 
+// buildMatchDenseExpr constructs a MatchDenseExpr from an embedding vector.
+func buildMatchDenseExpr(vector []float64, topN int, similarity float64) *types.MatchDenseExpr {
+	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	return &types.MatchDenseExpr{
+		VectorColumnName:  vectorColumnName,
+		EmbeddingData:     vector,
+		EmbeddingDataType: "float",
+		DistanceType:      "cosine",
+		TopN:              topN,
+		ExtraOptions:      map[string]interface{}{"similarity": similarity},
+	}
+}
+
+// buildFusionExpr constructs a FusionExpr for weighted-sum hybrid search.
+func buildFusionExpr(textWeight, vectorWeight float64, topN int) *types.FusionExpr {
+	return &types.FusionExpr{
+		Method: "weighted_sum",
+		TopN:   topN,
+		FusionParams: map[string]interface{}{
+			"weights": fmt.Sprintf("%.2f,%.2f", textWeight, vectorWeight),
+		},
+	}
+}
+
 // queryRewrite attempts LLM-based query rewrite, falling back to raw question.
-// ty2entsJSON is the JSON-encoded type→entities mapping for prompt context.
 func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON string) (typeKeywords, entities []string) {
 	if question == "" {
 		return nil, nil
@@ -276,6 +251,14 @@ func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON
 			}
 		}
 	}
-	// Fallback: use raw question as single entity
 	return nil, []string{question}
 }
+
+// Python alignment defaults
+const (
+	defaultSimThreshold = 0.3
+	defaultDenseTopK    = 1024
+	// defaultTextWeight / defaultVectorWeight are fusion weights for hybrid search (equal by default).
+	defaultTextWeight   = 0.5
+	defaultVectorWeight = 0.5
+)

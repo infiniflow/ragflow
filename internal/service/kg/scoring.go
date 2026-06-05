@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package service
+package kg
 
 import (
 	"bytes"
@@ -227,9 +227,9 @@ func FormatRelationsToCSV(relations []ScoredRelation, maxToken int) (csv string,
 	return b.String(), maxToken
 }
 
-// BuildKGContent assembles the final knowledge graph content string.
+// BuildContent assembles the final knowledge graph content string.
 // Python equivalent: lines 267-291
-func BuildKGContent(
+func BuildContent(
 	entities []ScoredEntity,
 	relations []ScoredRelation,
 	maxToken int,

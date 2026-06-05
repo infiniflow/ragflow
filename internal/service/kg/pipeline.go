@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package service
+package kg
 
 import (
 	"context"
@@ -30,9 +30,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// KGSearchPipeline encapsulates the knowledge graph retrieval pipeline.
+// Pipeline encapsulates the knowledge graph retrieval pipeline.
 // Matches Python: rag/graphrag/search.py::KGSearch
-type KGSearchPipeline struct {
+type Pipeline struct {
 	docEngine engine.DocEngine
 	chatModel *modelModule.ChatModel
 	embModel  *modelModule.EmbeddingModel
@@ -50,51 +50,51 @@ type KGSearchPipeline struct {
 	maxToken        int
 }
 
-// KGSearchOption configures a KGSearchPipeline.
-type KGSearchOption func(*KGSearchPipeline)
+// Option configures a Pipeline.
+type Option func(*Pipeline)
 
-// WithKGSimThreshold sets the similarity threshold for entity and relation search.
+// WithSimThreshold sets the similarity threshold for entity and relation search.
 // Default: 0.3 (matches Python ent_sim_threshold, rel_sim_threshold).
-func WithKGSimThreshold(v float64) KGSearchOption {
-	return func(p *KGSearchPipeline) { p.entSimThreshold = v; p.relSimThreshold = v }
+func WithSimThreshold(v float64) Option {
+	return func(p *Pipeline) { p.entSimThreshold = v; p.relSimThreshold = v }
 }
 
-// WithKGDenseTopK sets the TopK for dense vector search.
+// WithDenseTopK sets the TopK for dense vector search.
 // Default: 1024 (matches Python get_vector topk).
-func WithKGDenseTopK(v int) KGSearchOption {
-	return func(p *KGSearchPipeline) { p.denseTopK = v }
+func WithDenseTopK(v int) Option {
+	return func(p *Pipeline) { p.denseTopK = v }
 }
 
-// NewKGSearchPipeline creates a KG search pipeline with the given dependencies.
+// NewPipeline creates a KG search pipeline with the given dependencies.
 //
 //	docEngine: search engine backend
 //	kbIDs:     knowledge base IDs to search
 //	tenantIDs: tenant IDs (converted to index names internally)
 //	question:  user query string
-//	opts:      optional configuration (WithKGSimThreshold, WithKGDenseTopK)
+//	opts:      optional configuration (WithSimThreshold, WithDenseTopK)
 //
 // chatModel and embModel should be set via WithChatModel/WithEmbModel setters
 // or passed directly after construction.
-func NewKGSearchPipeline(
+func NewPipeline(
 	docEngine engine.DocEngine,
 	kbIDs []string,
 	tenantIDs []string,
 	question string,
-	opts ...KGSearchOption,
-) *KGSearchPipeline {
+	opts ...Option,
+) *Pipeline {
 	idxnms := make([]string, len(tenantIDs))
 	for i, tid := range tenantIDs {
 		idxnms[i] = indexName(tid)
 	}
-	p := &KGSearchPipeline{
+	p := &Pipeline{
 		docEngine: docEngine,
 		kbIDs:     kbIDs,
 		idxnms:    idxnms,
 		question:  question,
 
-		entSimThreshold: defaultKGSimThreshold,
-		relSimThreshold: defaultKGSimThreshold,
-		denseTopK:       defaultKGDenseTopK,
+		entSimThreshold: defaultSimThreshold,
+		relSimThreshold: defaultSimThreshold,
+		denseTopK:       defaultDenseTopK,
 		entTopN:         6,
 		relTopN:         6,
 		commTopN:        1,
@@ -106,12 +106,22 @@ func NewKGSearchPipeline(
 	return p
 }
 
+// SetChatModel sets the chat model for LLM-based query rewrite.
+func (p *Pipeline) SetChatModel(chatModel *modelModule.ChatModel) {
+	p.chatModel = chatModel
+}
+
+// SetEmbModel sets the embedding model for dense/hybrid search.
+func (p *Pipeline) SetEmbModel(embModel *modelModule.EmbeddingModel) {
+	p.embModel = embModel
+}
+
 // Retrieval runs the full KG retrieval pipeline and returns a synthetic chunk.
-func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{}, error) {
+func (p *Pipeline) Retrieval(ctx context.Context) (map[string]interface{}, error) {
 	// 1. Query rewrite via LLM, or fall back to raw question
 	ty2entsJSON := ""
 	if p.chatModel != nil {
-		typeSamples, err := searchKGTypeSamples(ctx, p.docEngine, p.idxnms, p.kbIDs)
+		typeSamples, err := searchTypeSamples(ctx, p.docEngine, p.idxnms, p.kbIDs)
 		if err != nil {
 			common.Warn("KG type samples search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
 		}
@@ -157,11 +167,11 @@ func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{
 	scoredRels := SortAndTrimRelations(relsFromText, p.relTopN)
 
 	// 7. Build KG content with token budget
-	entsRelsContent := BuildKGContent(scoredEnts, scoredRels, p.maxToken)
+	entsRelsContent := BuildContent(scoredEnts, scoredRels, p.maxToken)
 	used := NumTokensFromString(entsRelsContent)
 	remaining := p.maxToken - used
 	// 8. Search community reports with remaining token budget
-	communityContent := searchKGCommunityContent(ctx, p.docEngine, p.idxnms, p.kbIDs, scoredEnts, p.commTopN, &remaining)
+	communityContent := searchCommunityContent(ctx, p.docEngine, p.idxnms, p.kbIDs, scoredEnts, p.commTopN, &remaining)
 
 	// 9. Build synthetic chunk
 	return map[string]interface{}{
@@ -182,7 +192,7 @@ func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{
 }
 
 // searchEntities searches KG entities by keyword text and optional dense vector.
-func (p *KGSearchPipeline) searchEntities(ctx context.Context, entities []string) (map[string]*KGEntity, error) {
+func (p *Pipeline) searchEntities(ctx context.Context, entities []string) (map[string]*KGEntity, error) {
 	entsReq := &types.SearchRequest{
 		IndexNames:   p.idxnms,
 		KbIDs:        p.kbIDs,
@@ -207,14 +217,14 @@ func (p *KGSearchPipeline) searchEntities(ctx context.Context, entities []string
 		if name == "" {
 			continue
 		}
-		e := kgEntityFromChunk(name, chunk)
+		e := entityFromChunk(name, chunk)
 		result[name] = &e
 	}
 	return result, nil
 }
 
 // searchEntityTypes searches KG entities by type keywords.
-func (p *KGSearchPipeline) searchEntityTypes(ctx context.Context, typeKeywords []string) map[string]struct{} {
+func (p *Pipeline) searchEntityTypes(ctx context.Context, typeKeywords []string) map[string]struct{} {
 	typesReq := &types.SearchRequest{
 		IndexNames:   p.idxnms,
 		KbIDs:        p.kbIDs,
@@ -244,7 +254,7 @@ func (p *KGSearchPipeline) searchEntityTypes(ctx context.Context, typeKeywords [
 }
 
 // searchRelations searches KG relations by entity text and optional dense vector.
-func (p *KGSearchPipeline) searchRelations(ctx context.Context, entities []string) map[Edge]*KGRelation {
+func (p *Pipeline) searchRelations(ctx context.Context, entities []string) map[Edge]*KGRelation {
 	relsReq := &types.SearchRequest{
 		IndexNames:   p.idxnms,
 		KbIDs:        p.kbIDs,
@@ -265,7 +275,7 @@ func (p *KGSearchPipeline) searchRelations(ctx context.Context, entities []strin
 		common.Warn("KG relations search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
 	} else {
 		for _, chunk := range FilterChunksByScore(relsResult.Chunks, p.relSimThreshold) {
-			edge, rel := kgRelationFromChunk(chunk)
+			edge, rel := relationFromChunk(chunk)
 			if edge.From == "" || edge.To == "" {
 				continue
 			}
