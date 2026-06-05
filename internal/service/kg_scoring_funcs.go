@@ -14,60 +14,16 @@
 //  limitations under the License.
 //
 
-package common
+package service
 
 import (
+	"bytes"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 )
-
-// KGEntity represents a knowledge graph entity with its scores.
-type KGEntity struct {
-	Sim         float64
-	PageRank    float64
-	Description string
-	NhopEnts    []NhopEntity
-}
-
-// NhopEntity represents an N-hop neighbor path.
-type NhopEntity struct {
-	Path    []string  // entity names along the path
-	Weights []float64 // pagerank weights per hop
-}
-
-// KGRelation represents a knowledge graph relation with its scores.
-type KGRelation struct {
-	Sim         float64
-	PageRank    float64
-	Description string
-}
-
-// Edge represents a directed (from_entity, to_entity) pair.
-type Edge struct {
-	From, To string
-}
-
-// EdgeScore represents the accumulated score for an edge from N-hop analysis.
-type EdgeScore struct {
-	Sim      float64
-	PageRank float64
-}
-
-// ScoredEntity is a scored entity ready for output.
-type ScoredEntity struct {
-	Entity      string
-	Score       float64
-	Description string
-}
-
-// ScoredRelation is a scored relation ready for output.
-type ScoredRelation struct {
-	From        string
-	To          string
-	Score       float64
-	Description string
-}
 
 // AnalyzeNHopPaths decomposes N-hop paths into edges with distance-decayed scores.
 // Python equivalent: rag/graphrag/search.py lines 172-187
@@ -81,7 +37,7 @@ func AnalyzeNHopPaths(entsFromQuery map[string]*KGEntity) map[Edge]EdgeScore {
 				f, t := path[i], path[i+1]
 				edge := Edge{From: f, To: t}
 				es := nhopPathes[edge]
-				es.Sim += ent.Sim / (2.0 + float64(i))
+				es.Sim += ent.Similarity / (2.0 + float64(i))
 				if i < len(weights) {
 					es.PageRank = weights[i]
 				}
@@ -97,7 +53,7 @@ func AnalyzeNHopPaths(entsFromQuery map[string]*KGEntity) map[Edge]EdgeScore {
 func DoubleHitBoost(entsFromQuery map[string]*KGEntity, entsFromTypes map[string]struct{}) {
 	for ent := range entsFromQuery {
 		if _, ok := entsFromTypes[ent]; ok {
-			entsFromQuery[ent].Sim *= 2
+			entsFromQuery[ent].Similarity *= 2
 		}
 	}
 }
@@ -152,7 +108,7 @@ func SortAndTrimEntities(entsFromQuery map[string]*KGEntity, topN int) []ScoredE
 	for name, ent := range entsFromQuery {
 		scored = append(scored, ScoredEntity{
 			Entity:      name,
-			Score:       ent.Sim * ent.PageRank,
+			Score:       ent.Similarity * ent.PageRank,
 			Description: ent.Description,
 		})
 	}
@@ -195,6 +151,40 @@ func NumTokensFromString(s string) int {
 	return len(s) / 4
 }
 
+// formatCSVLine formats fields as a single CSV record with trailing newline.
+// Handles commas, quotes, and newlines in field values correctly — unlike fmt.Sprintf.
+// Matches Python: pd.DataFrame(...).to_csv() quoting behavior.
+func formatCSVLine(fields ...string) string {
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write(fields)
+	w.Flush()
+	return buf.String()
+}
+
+// FilterChunksByScore filters chunks where _score >= threshold.
+// Chunks missing _score are treated as score=0.
+// Pure function — no I/O, no external dependencies.
+// Matches Python: _ent_info_from_ and _relation_info_from_ sim_thr filtering.
+func FilterChunksByScore(chunks []map[string]interface{}, threshold float64) []map[string]interface{} {
+	if threshold <= 0 || len(chunks) == 0 {
+		return chunks
+	}
+	result := make([]map[string]interface{}, 0, len(chunks))
+	for _, chunk := range chunks {
+		score := 0.0
+		if v, ok := chunk["_score"].(float64); ok {
+			score = v
+		} else if v, ok := chunk["score"].(float64); ok {
+			score = v
+		}
+		if score >= threshold {
+			result = append(result, chunk)
+		}
+	}
+	return result
+}
+
 // FormatEntitiesToCSV formats scored entities as a CSV string and tracks token count.
 func FormatEntitiesToCSV(entities []ScoredEntity, maxToken int) (csv string, remainingToken int) {
 	if len(entities) == 0 {
@@ -203,12 +193,11 @@ func FormatEntitiesToCSV(entities []ScoredEntity, maxToken int) (csv string, rem
 	var b strings.Builder
 	b.WriteString("---- Entities ----\n")
 	b.WriteString("Entity,Score,Description\n")
-	for i, ent := range entities {
+	for _, ent := range entities {
 		desc := extractDescription(ent.Description)
-		line := fmt.Sprintf("%s,%.2f,%s\n", ent.Entity, ent.Score, desc)
+		line := formatCSVLine(ent.Entity, fmt.Sprintf("%.2f", ent.Score), desc)
 		tokens := NumTokensFromString(line)
 		if maxToken-tokens <= 0 {
-			entities = entities[:i]
 			break
 		}
 		b.WriteString(line)
@@ -225,12 +214,11 @@ func FormatRelationsToCSV(relations []ScoredRelation, maxToken int) (csv string,
 	var b strings.Builder
 	b.WriteString("---- Relations ----\n")
 	b.WriteString("From Entity,To Entity,Score,Description\n")
-	for i, rel := range relations {
+	for _, rel := range relations {
 		desc := extractDescription(rel.Description)
-		line := fmt.Sprintf("%s,%s,%.2f,%s\n", rel.From, rel.To, rel.Score, desc)
+		line := formatCSVLine(rel.From, rel.To, fmt.Sprintf("%.2f", rel.Score), desc)
 		tokens := NumTokensFromString(line)
 		if maxToken-tokens <= 0 {
-			relations = relations[:i]
 			break
 		}
 		b.WriteString(line)
@@ -257,24 +245,12 @@ func extractDescription(desc string) string {
 	if desc == "" {
 		return ""
 	}
-	// If the description looks like JSON, try to extract the "description" field
-	desc = strings.TrimSpace(desc)
-	if strings.HasPrefix(desc, "{") && strings.HasSuffix(desc, "}") {
-		// Simple extraction: find "description" key value
-		// This matches Python's json.loads(desc).get("description", "") behavior
-		idx := strings.Index(desc, `"description"`)
-		if idx >= 0 {
-			remain := desc[idx+len(`"description"`):]
-			colonIdx := strings.Index(remain, ":")
-			if colonIdx >= 0 {
-				valPart := strings.TrimSpace(remain[colonIdx+1:])
-				if strings.HasPrefix(valPart, `"`) {
-					valPart = strings.TrimPrefix(valPart, `"`)
-					endQuote := strings.Index(valPart, `"`)
-					if endQuote >= 0 {
-						return valPart[:endQuote]
-					}
-				}
+	// Try to parse as JSON and extract the "description" field.
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(desc), &data); err == nil {
+		if v, ok := data["description"]; ok {
+			if s, ok := v.(string); ok {
+				return s
 			}
 		}
 	}
