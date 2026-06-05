@@ -19,7 +19,7 @@
 from types import SimpleNamespace
 
 import pytest
-from testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
+from test.testcases.test_http_api.test_session_management.test_session_sdk_routes_unit import (
     _load_agent_api_module,
     _run,
 )

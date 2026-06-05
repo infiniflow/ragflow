@@ -587,6 +587,9 @@ def _load_session_module(monkeypatch):
         def __and__(self, other):
             return self
 
+        def contains(self, _value):
+            return self
+
     class _FakeField:
         def __eq__(self, other):
             return _FakeExpr()
@@ -597,13 +600,38 @@ def _load_session_module(monkeypatch):
         def is_null(self, value=True):
             return _FakeExpr()
 
+    class _FakeQuery:
+        def where(self, *_args, **_kwargs):
+            return self
+
+        def exists(self):
+            return False
+
+    class _StubAPI4Conversation:
+        id = _FakeField()
+        user_id = _FakeField()
+        exp_user_id = _FakeField()
+        message = _FakeField()
+
+        @classmethod
+        def select(cls, *_args, **_kwargs):
+            return _FakeQuery()
+
     class _StubTaskModel:
         id = _FakeField()
         doc_id = _FakeField()
 
+    def _connection_context():
+        def decorator(func):
+            return func
+
+        return decorator
+
     db_models_mod = ModuleType("api.db.db_models")
     db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
     db_models_mod.Task = _StubTaskModel
+    db_models_mod.API4Conversation = _StubAPI4Conversation
+    db_models_mod.DB = SimpleNamespace(connection_context=_connection_context)
     monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
 
     services_pkg = ModuleType("api.db.services")
