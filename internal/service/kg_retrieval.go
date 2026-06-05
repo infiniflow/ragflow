@@ -83,11 +83,13 @@ func KGSearchRetrieval(
 	question string,
 ) (map[string]interface{}, error) {
 	// 1. Query rewrite via LLM, or fall back to raw question
-	typeKeywords, entities := queryRewrite(chatModel, question, func() string {
+	ty2entsJSON := ""
+	if chatModel != nil {
 		typeSamples, _ := searchKGTypeSamples(ctx, docEngine, kbIDs)
 		data, _ := json.Marshal(typeSamples)
-		return string(data)
-	})
+		ty2entsJSON = string(data)
+	}
+	typeKeywords, entities := queryRewrite(chatModel, question, ty2entsJSON)
 
 	// 2. Search entities by keywords
 	entsReq := &types.SearchRequest{
@@ -119,7 +121,7 @@ func KGSearchRetrieval(
 		entsFromQuery[name] = &e
 	}
 
-	// 5. Search entities by types
+	// 3. Search entities by types
 	typesReq := &types.SearchRequest{
 		KbIDs:        kbIDs,
 		SelectFields: []string{"entity_kwd", "entity_type_kwd"},
@@ -143,7 +145,7 @@ func KGSearchRetrieval(
 		}
 	}
 
-	// 6. Search relations
+	// 4. Search relations
 	relsReq := &types.SearchRequest{
 		KbIDs:        kbIDs,
 		SelectFields: []string{"from_entity_kwd", "to_entity_kwd", "weight_int", "content_with_weight"},
@@ -171,24 +173,24 @@ func KGSearchRetrieval(
 		}
 	}
 
-	// 7. N-hop analysis + score fusion (from common/kg_scoring.go)
+	// 5. N-hop analysis + score fusion (from common/kg_scoring.go)
 	nhopPathes := common.AnalyzeNHopPaths(entsFromQuery)
 	common.DoubleHitBoost(entsFromQuery, entsFromTypes)
 	common.FuseRelationScores(relsFromText, entsFromTypes, nhopPathes)
 
-	// 8. Sort and trim
+	// 6. Sort and trim
 	scoredEnts := common.SortAndTrimEntities(entsFromQuery, 6)
 	scoredRels := common.SortAndTrimRelations(relsFromText, 6)
 
-	// 9. Build KG content (entities + relations) with token budget, matching Python order
+	// 7. Build KG content (entities + relations) with token budget, matching Python order
 	maxToken := 8196
 	entsRelsContent := common.BuildKGContent(scoredEnts, scoredRels, maxToken)
 	used := common.NumTokensFromString(entsRelsContent)
 	remaining := maxToken - used
-	// 10. Search community reports with remaining token budget
+	// 8. Search community reports with remaining token budget
 	communityContent := searchKGCommunityContent(ctx, docEngine, kbIDs, scoredEnts, 1, &remaining)
 
-	// 11. Build synthetic chunk
+	// 9. Build synthetic chunk
 	return map[string]interface{}{
 		"chunk_id":              "",
 		"content_ltks":          "",
@@ -282,12 +284,12 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, k
 }
 
 // queryRewrite attempts LLM-based query rewrite, falling back to raw question.
-func queryRewrite(chatModel *modelModule.ChatModel, question string, getTypeSamples func() string) (typeKeywords, entities []string) {
+// ty2entsJSON is the JSON-encoded type→entities mapping for prompt context.
+func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON string) (typeKeywords, entities []string) {
 	if question == "" {
 		return nil, nil
 	}
-	if chatModel != nil {
-		ty2entsJSON := getTypeSamples()
+	if chatModel != nil && chatModel.ModelName != nil && chatModel.APIConfig != nil {
 		prompt := common.BuildQueryRewritePrompt(question, ty2entsJSON)
 		messages := []modelModule.Message{
 			{Role: "system", Content: prompt},

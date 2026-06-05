@@ -201,7 +201,7 @@ func TestKGSearchRetrieval_NoEntities(t *testing.T) {
 // --- queryRewrite ---
 
 func TestQueryRewrite_Fallback(t *testing.T) {
-	typeKeywords, entities := queryRewrite(nil, "What is SpaceX?", func() string { return "{}" })
+	typeKeywords, entities := queryRewrite(nil, "What is SpaceX?", "{}")
 	if typeKeywords != nil {
 		t.Errorf("expected nil typeKeywords when no LLM, got %v", typeKeywords)
 	}
@@ -211,7 +211,7 @@ func TestQueryRewrite_Fallback(t *testing.T) {
 }
 
 func TestQueryRewrite_EmptyQuestion(t *testing.T) {
-	typeKeywords, entities := queryRewrite(nil, "", nil)
+	typeKeywords, entities := queryRewrite(nil, "", "")
 	if typeKeywords != nil || entities != nil {
 		t.Errorf("expected nil for empty question, got type=%v entities=%v", typeKeywords, entities)
 	}
