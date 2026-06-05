@@ -654,6 +654,11 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		outputColumns = convertSelectFields(outputColumns)
 	}
 
+	// Allow caller to override output columns (used by KG search, etc.)
+	if len(req.SelectFields) > 0 {
+		outputColumns = convertSelectFields(req.SelectFields)
+	}
+
 	hasTextMatch := false
 	hasVectorMatch := false
 	var matchText *types.MatchTextExpr
