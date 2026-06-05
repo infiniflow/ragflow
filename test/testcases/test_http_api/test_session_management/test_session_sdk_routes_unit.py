@@ -127,6 +127,154 @@ def _enhance_quart_stub(quart_mod):
     quart_mod.session = SimpleNamespace()
 
 
+def _stub_agent_api_import_deps(monkeypatch, repo_root):
+    """Stub only what agent_api.py imports — avoid loading bot_api via _load_session_module."""
+    from enum import Enum, StrEnum
+
+    class _StubRetCode(int, Enum):
+        SUCCESS = 0
+        OPERATING_ERROR = 103
+        DATA_ERROR = 102
+        SERVER_ERROR = 500
+
+    class _StubCanvasCategory(StrEnum):
+        Agent = "agent_canvas"
+        DataFlow = "dataflow_canvas"
+
+    common_pkg = ModuleType("common")
+    common_pkg.__path__ = [str(repo_root / "common")]
+    monkeypatch.setitem(sys.modules, "common", common_pkg)
+
+    common_constants_mod = ModuleType("common.constants")
+    common_constants_mod.RetCode = _StubRetCode
+    monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
+
+    common_settings_mod = ModuleType("common.settings")
+    common_settings_mod.STORAGE_IMPL = SimpleNamespace(get=lambda *_args, **_kwargs: None)
+    monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
+
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    common_misc_mod = ModuleType("common.misc_utils")
+    common_misc_mod.thread_pool_exec = _thread_pool_exec
+    common_misc_mod.get_uuid = lambda: "test-uuid"
+    monkeypatch.setitem(sys.modules, "common.misc_utils", common_misc_mod)
+
+    common_ssrf_mod = ModuleType("common.ssrf_guard")
+    common_ssrf_mod.assert_host_is_safe = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "common.ssrf_guard", common_ssrf_mod)
+
+    web_utils_mod = ModuleType("api.utils.web_utils")
+    web_utils_mod.CONTENT_TYPE_MAP = {"pdf": "application/pdf", "markdown": "text/markdown"}
+    web_utils_mod.apply_safe_file_response_headers = lambda response, content_type, extension: None
+    monkeypatch.setitem(sys.modules, "api.utils.web_utils", web_utils_mod)
+
+    pagination_mod = ModuleType("api.utils.pagination_utils")
+    pagination_mod.validate_rest_api_page_size = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_mod)
+
+    api_utils_mod = ModuleType("api.utils.api_utils")
+    api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
+    api_utils_mod.get_data_error_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {
+        "code": code,
+        "message": message,
+    }
+    api_utils_mod.get_json_result = lambda code=_StubRetCode.SUCCESS, message="success", data=None: {
+        "code": code,
+        "message": message,
+        "data": data,
+    }
+    api_utils_mod.get_result = lambda code=_StubRetCode.SUCCESS, message="", data=None, total=None: {
+        key: value
+        for key, value in {"code": code, "message": message, "data": data, "total": total}.items()
+        if value is not None
+    }
+    api_utils_mod.get_request_json = lambda: _AwaitableValue({})
+    api_utils_mod.server_error_response = lambda e: {"code": _StubRetCode.SERVER_ERROR, "message": str(e)}
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
+    monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
+
+    quart_mod = ModuleType("quart")
+    quart_mod.request = SimpleNamespace(args=_Args(), headers={}, files=_AwaitableValue({}), method="GET")
+    quart_mod.Response = _StubResponse
+    quart_mod.jsonify = lambda payload: payload
+    _enhance_quart_stub(quart_mod)
+    monkeypatch.setitem(sys.modules, "quart", quart_mod)
+
+    api_db_mod = ModuleType("api.db")
+    api_db_mod.CanvasCategory = _StubCanvasCategory
+    monkeypatch.setitem(sys.modules, "api.db", api_db_mod)
+
+    class _FakeExpr:
+        def __or__(self, other):
+            return self
+
+        def __and__(self, other):
+            return self
+
+        def contains(self, _value):
+            return self
+
+    class _FakeField:
+        def __eq__(self, other):
+            return _FakeExpr()
+
+        def __ne__(self, other):
+            return _FakeExpr()
+
+        def is_null(self, value=True):
+            return _FakeExpr()
+
+    class _FakeQuery:
+        def where(self, *_args, **_kwargs):
+            return self
+
+        def exists(self):
+            return False
+
+    class _StubAPI4Conversation:
+        id = _FakeField()
+        user_id = _FakeField()
+        exp_user_id = _FakeField()
+        message = _FakeField()
+
+        @classmethod
+        def select(cls, *_args, **_kwargs):
+            return _FakeQuery()
+
+    class _StubTaskModel:
+        id = _FakeField()
+        doc_id = _FakeField()
+
+    def _connection_context():
+        def decorator(func):
+            return func
+
+        return decorator
+
+    db_models_mod = ModuleType("api.db.db_models")
+    db_models_mod.API4Conversation = _StubAPI4Conversation
+    db_models_mod.Task = _StubTaskModel
+    db_models_mod.DB = SimpleNamespace(connection_context=_connection_context)
+    monkeypatch.setitem(sys.modules, "api.db.db_models", db_models_mod)
+
+    services_pkg = ModuleType("api.db.services")
+    services_pkg.__path__ = [str(repo_root / "api" / "db" / "services")]
+    monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
+
+    async def _empty_agent_completion(*_args, **_kwargs):
+        if False:
+            yield None
+
+    canvas_service_mod = ModuleType("api.db.services.canvas_service")
+    canvas_service_mod.CanvasTemplateService = SimpleNamespace(get_all=lambda *_args, **_kwargs: [])
+    canvas_service_mod.UserCanvasService = SimpleNamespace(accessible=lambda *_args, **_kwargs: True)
+    canvas_service_mod.completion = _empty_agent_completion
+    canvas_service_mod.completion_openai = lambda *_args, **_kwargs: {}
+    monkeypatch.setitem(sys.modules, "api.db.services.canvas_service", canvas_service_mod)
+
+
 async def _collect_stream(body):
     items = []
     if hasattr(body, "__aiter__"):
@@ -744,7 +892,27 @@ def _load_session_module(monkeypatch):
 
     user_service_mod = ModuleType("api.db.services.user_service")
     user_service_mod.UserTenantService = SimpleNamespace(query=lambda **_kwargs: [])
+    user_service_mod.TenantService = SimpleNamespace(
+        get_by_id=lambda tenant_id: (
+            True,
+            SimpleNamespace(
+                id=tenant_id,
+                llm_id="chat-model",
+                embd_id="embd-model",
+                asr_id="asr-model",
+                img2txt_id="img2txt-model",
+                rerank_id="rerank-model",
+                tts_id="tts-model",
+            ),
+        ),
+        get_info_by=lambda _tenant_id: [],
+    )
     monkeypatch.setitem(sys.modules, "api.db.services.user_service", user_service_mod)
+
+    reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
+    reference_metadata_utils_mod.enrich_chunks_with_document_metadata = lambda *_args, **_kwargs: None
+    reference_metadata_utils_mod.resolve_reference_metadata_preferences = lambda *_args, **_kwargs: ({}, [])
+    monkeypatch.setitem(sys.modules, "api.utils.reference_metadata_utils", reference_metadata_utils_mod)
 
     user_canvas_version_mod = ModuleType("api.db.services.user_canvas_version")
     user_canvas_version_mod.UserCanvasVersionService = SimpleNamespace(
@@ -792,8 +960,8 @@ def _load_session_module(monkeypatch):
 
 
 def _load_agent_api_module(monkeypatch):
-    _load_session_module(monkeypatch)
     repo_root = Path(__file__).resolve().parents[4]
+    _stub_agent_api_import_deps(monkeypatch, repo_root)
 
     agent_component_mod = ModuleType("agent.component")
 
