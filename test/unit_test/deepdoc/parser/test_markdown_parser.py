@@ -106,3 +106,41 @@ class TestMarkdownElementExtractorFences:
             "````markdown\n```python\nprint('inner')\n```\n````",
             "After",
         ]
+
+
+@pytest.mark.p2
+class TestMarkdownElementExtractorTables:
+    def test_custom_delimiter_preserves_pipe_table(self, markdown_element_extractor):
+        text = "# Title\n\n| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`", include_meta=True)
+
+        assert [section["content"] for section in sections] == [
+            "# Title",
+            "| Name | Value |\n| --- | --- |\n| A | 1 |\n| B | 2 |",
+            "After",
+        ]
+        assert sections[1]["start_line"] == 2
+        assert sections[1]["end_line"] == 5
+
+    def test_custom_delimiter_preserves_borderless_pipe_table(self, markdown_element_extractor):
+        text = "Before\nName | Value\n--- | ---\nA | 1\nB | 2\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == [
+            "Before",
+            "Name | Value\n--- | ---\nA | 1\nB | 2",
+            "After",
+        ]
+
+    def test_custom_delimiter_preserves_html_table(self, markdown_element_extractor):
+        text = "Before\n<table>\n<tr><td>A</td></tr>\n<tr><td>B</td></tr>\n</table>\nAfter"
+
+        sections = markdown_element_extractor(text).extract_elements(delimiter="`\n`")
+
+        assert sections == [
+            "Before",
+            "<table>\n<tr><td>A</td></tr>\n<tr><td>B</td></tr>\n</table>",
+            "After",
+        ]
