@@ -18,12 +18,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"ragflow/internal/common"
+	"gorm.io/gorm"
 	"go.uber.org/zap"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -200,8 +202,12 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	kb, err := h.kbSvc.GetByID(req.KnowledgeID)
-	if err != nil || kb == nil {
-		c.JSON(http.StatusNotFound, gin.H{"code": common.CodeNotFound, "message": "Knowledgebase not found!"})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"code": common.CodeNotFound, "message": "Knowledgebase not found!"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": "failed to query knowledgebase"})
+		}
 		return
 	}
 

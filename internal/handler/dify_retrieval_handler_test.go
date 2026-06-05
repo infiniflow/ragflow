@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+		"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -246,7 +247,7 @@ func TestDifyRetrieval_KBNotFound(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
 		getByIDFn: func(kbID string) (*entity.Knowledgebase, error) {
-			return nil, errors.New("not found")
+			return nil, gorm.ErrRecordNotFound
 		},
 	}
 	w := httptest.NewRecorder()
@@ -337,3 +338,20 @@ func TestDifyRetrieval_UseKG(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestDifyRetrieval_KBDBError(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.kbSvc = &mockKBService{
+		getByIDFn: func(kbID string) (*entity.Knowledgebase, error) {
+			return nil, errors.New("connection refused")
+		},
+	}
+	w := httptest.NewRecorder()
+	body := `{"knowledge_id": "kb1", "query": "test"}`
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 for DB error, got %d", w.Code)
+	}
+}
