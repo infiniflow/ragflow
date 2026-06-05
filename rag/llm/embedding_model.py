@@ -1015,7 +1015,9 @@ class VoyageEmbed(Base):
 
     def _call(self, batch):
         res = self.client.embed(texts=batch, model=self.model_name, input_type="document")
-        return list(res.embeddings), res.total_tokens
+        # `_batched_encode` accumulates these per-batch vectors and returns a
+        # single np.ndarray, so encode() keeps the np.ndarray contract.
+        return res.embeddings, res.total_tokens
 
     def encode(self, texts: list):
         return self._batched_encode(texts, self._call, batch_size=16)
