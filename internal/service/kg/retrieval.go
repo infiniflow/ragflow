@@ -199,7 +199,7 @@ func buildSearchExprs(embModel *modelModule.EmbeddingModel, matchText *types.Mat
 		return []interface{}{matchText}
 	}
 	denseExpr := buildMatchDenseExpr(embeddings[0].Embedding, denseTopK, simThreshold)
-	fusionExpr := buildFusionExpr(0.5, 0.5, matchText.TopN)
+	fusionExpr := buildFusionExpr(defaultTextWeight, defaultVectorWeight, matchText.TopN)
 	return []interface{}{matchText, denseExpr, fusionExpr}
 }
 
@@ -253,4 +253,7 @@ func queryRewrite(chatModel *modelModule.ChatModel, question string, ty2entsJSON
 const (
 	defaultSimThreshold = 0.3
 	defaultDenseTopK    = 1024
+	// defaultTextWeight / defaultVectorWeight are fusion weights for hybrid search (equal by default).
+	defaultTextWeight   = 0.5
+	defaultVectorWeight = 0.5
 )

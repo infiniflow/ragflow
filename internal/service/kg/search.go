@@ -122,13 +122,7 @@ func buildHybridExpr(dense *types.MatchDenseExpr, text *types.MatchTextExpr, top
 	if dense == nil {
 		return []interface{}{text}
 	}
-	fusion := &types.FusionExpr{
-		Method: "weighted_sum",
-		TopN:   topN,
-		FusionParams: map[string]interface{}{
-			"weights": "0.50,0.50",
-		},
-	}
+	fusion := buildFusionExpr(defaultTextWeight, defaultVectorWeight, topN)
 	return []interface{}{dense, text, fusion}
 }
 
