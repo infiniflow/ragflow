@@ -72,6 +72,7 @@ class DocumentSource(str, Enum):
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
     DATABRICKS = "databricks"
+    SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
 
 

@@ -1121,6 +1121,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
       outlookUserIdsTip:
         '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      salesforceDescription:
+        '连接 Salesforce 组织，通过 SOQL 增量同步并索引 CRM 记录（客户、联系人、商机、个案、知识文章）。',
+      salesforceInstanceUrlTip:
+        'Salesforce 组织地址，例如 https://your-domain.my.salesforce.com（不要包含末尾斜杠）。',
+      salesforceClientIdTip:
+        '已启用 Client Credentials Flow 且包含 api 权限的 Connected App 的 Consumer Key。',
+      salesforceClientSecretTip:
+        '用于客户端凭证身份验证的 Connected App 的 Consumer Secret。',
+      salesforceObjectsTip:
+        '要索引的 SObject API 名称列表（逗号分隔）。默认值：Account, Contact, Opportunity, Case, Knowledge__kav。',
+      salesforceApiVersionTip:
+        'Salesforce REST API 版本（例如 v59.0），请使用您组织所支持的版本。',
       azure_blobDescription:
         '将 Azure Blob 存储容器中的文件索引到知识库。支持账户密钥、连接字符串和 SAS 令牌三种认证方式，通过 ETag 指纹跳过未变更的文件。',
       azureBlobAuthModeTip:
