@@ -35,9 +35,9 @@ func NhopEntityNames(nHopJSON string) []string {
 	return result
 }
 
-// SearchKGEntities searches for KG entities matching a question.
-func SearchKGEntities(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGEntity, error) {
-	dense, err := buildKGDenseExpr(embModel, question, topN)
+// SearchEntities searches for KG entities matching a question.
+func SearchEntities(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGEntity, error) {
+	dense, err := buildDenseExpr(embModel, question, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -46,22 +46,22 @@ func SearchKGEntities(ctx context.Context, docEngine engine.DocEngine, kbIDs []s
 	if err != nil {
 		return nil, fmt.Errorf("KG entity search failed: %w", err)
 	}
-	return ParseKGEntityChunks(result.Chunks), nil
+	return ParseEntityChunks(result.Chunks), nil
 }
 
-// SearchKGEntitiesByTypes searches for KG entities by type keywords.
-func SearchKGEntitiesByTypes(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, typeKeywords []string, topN int) ([]KGEntity, error) {
+// SearchEntitiesByTypes searches for KG entities by type keywords.
+func SearchEntitiesByTypes(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, typeKeywords []string, topN int) ([]KGEntity, error) {
 	searchReq := buildEntityTypeSearchRequest(kbIDs, typeKeywords, topN)
 	result, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("KG entity type search failed: %w", err)
 	}
-	return ParseKGEntityChunks(result.Chunks), nil
+	return ParseEntityChunks(result.Chunks), nil
 }
 
-// SearchKGRelations searches for KG relations matching a question.
-func SearchKGRelations(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGRelation, error) {
-	dense, err := buildKGDenseExpr(embModel, question, topN)
+// SearchRelations searches for KG relations matching a question.
+func SearchRelations(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGRelation, error) {
+	dense, err := buildDenseExpr(embModel, question, topN)
 	if err != nil {
 		return nil, err
 	}
@@ -70,31 +70,31 @@ func SearchKGRelations(ctx context.Context, docEngine engine.DocEngine, kbIDs []
 	if err != nil {
 		return nil, fmt.Errorf("KG relation search failed: %w", err)
 	}
-	return ParseKGRelationChunks(result.Chunks), nil
+	return ParseRelationChunks(result.Chunks), nil
 }
 
-// SearchKGCommunityReports searches for community reports related to given entities.
-func SearchKGCommunityReports(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, entityNames []string, topN int) ([]KGCommunityReport, error) {
+// SearchCommunityReports searches for community reports related to given entities.
+func SearchCommunityReports(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, entityNames []string, topN int) ([]KGCommunityReport, error) {
 	searchReq := buildCommunitySearchRequest(kbIDs, entityNames, topN)
 	result, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("KG community search failed: %w", err)
 	}
-	return ParseKGCommunityReportChunks(result.Chunks), nil
+	return ParseCommunityReportChunks(result.Chunks), nil
 }
 
-// SearchKGTypeSamples retrieves the typeu2192entities mapping from ES.
-func SearchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, kbIDs []string) (map[string][]string, error) {
+// SearchTypeSamples retrieves the typeu2192entities mapping from ES.
+func SearchTypeSamples(ctx context.Context, docEngine engine.DocEngine, kbIDs []string) (map[string][]string, error) {
 	searchReq := buildTypeSamplesSearchRequest(kbIDs)
 	result, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
-	return ParseKGTypeSamplesChunks(result.Chunks), nil
+	return ParseTypeSamplesChunks(result.Chunks), nil
 }
 
-// buildKGDenseExpr computes the query vector and returns a MatchDenseExpr.
-func buildKGDenseExpr(embModel *modelModule.EmbeddingModel, question string, topN int) (*types.MatchDenseExpr, error) {
+// buildDenseExpr computes the query vector and returns a MatchDenseExpr.
+func buildDenseExpr(embModel *modelModule.EmbeddingModel, question string, topN int) (*types.MatchDenseExpr, error) {
 	if embModel == nil || question == "" {
 		return nil, nil
 	}
@@ -211,8 +211,8 @@ func buildTypeSamplesSearchRequest(kbIDs []string) *types.SearchRequest {
 	}
 }
 
-// ParseKGEntityChunks converts raw search result chunks into KGEntity slices.
-func ParseKGEntityChunks(chunks []map[string]interface{}) []KGEntity {
+// ParseEntityChunks converts raw search result chunks into KGEntity slices.
+func ParseEntityChunks(chunks []map[string]interface{}) []KGEntity {
 	var entities []KGEntity
 	for _, chunk := range chunks {
 		name, _ := chunk["entity_kwd"].(string)
@@ -241,8 +241,8 @@ func ParseKGEntityChunks(chunks []map[string]interface{}) []KGEntity {
 	return entities
 }
 
-// ParseKGRelationChunks converts raw search result chunks into KGRelation slices.
-func ParseKGRelationChunks(chunks []map[string]interface{}) []KGRelation {
+// ParseRelationChunks converts raw search result chunks into KGRelation slices.
+func ParseRelationChunks(chunks []map[string]interface{}) []KGRelation {
 	var relations []KGRelation
 	for _, chunk := range chunks {
 		from, _ := chunk["from_entity_kwd"].(string)
@@ -267,8 +267,8 @@ func ParseKGRelationChunks(chunks []map[string]interface{}) []KGRelation {
 	return relations
 }
 
-// ParseKGCommunityReportChunks converts raw search result chunks into KGCommunityReport slices.
-func ParseKGCommunityReportChunks(chunks []map[string]interface{}) []KGCommunityReport {
+// ParseCommunityReportChunks converts raw search result chunks into KGCommunityReport slices.
+func ParseCommunityReportChunks(chunks []map[string]interface{}) []KGCommunityReport {
 	var reports []KGCommunityReport
 	for _, chunk := range chunks {
 		title, _ := chunk["docnm_kwd"].(string)
@@ -286,8 +286,8 @@ func ParseKGCommunityReportChunks(chunks []map[string]interface{}) []KGCommunity
 	return reports
 }
 
-// ParseKGTypeSamplesChunks converts raw search result chunks into a typeu2192entities map.
-func ParseKGTypeSamplesChunks(chunks []map[string]interface{}) map[string][]string {
+// ParseTypeSamplesChunks converts raw search result chunks into a typeu2192entities map.
+func ParseTypeSamplesChunks(chunks []map[string]interface{}) map[string][]string {
 	typeMap := make(map[string][]string)
 	for _, chunk := range chunks {
 		content, ok := chunk["content_with_weight"].(string)

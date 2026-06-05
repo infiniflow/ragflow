@@ -121,7 +121,7 @@ func (p *Pipeline) Retrieval(ctx context.Context) (map[string]interface{}, error
 	// 1. Query rewrite via LLM, or fall back to raw question
 	ty2entsJSON := ""
 	if p.chatModel != nil {
-		typeSamples, err := searchKGTypeSamples(ctx, p.docEngine, p.idxnms, p.kbIDs)
+		typeSamples, err := searchTypeSamples(ctx, p.docEngine, p.idxnms, p.kbIDs)
 		if err != nil {
 			common.Warn("KG type samples search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
 		}
@@ -167,11 +167,11 @@ func (p *Pipeline) Retrieval(ctx context.Context) (map[string]interface{}, error
 	scoredRels := SortAndTrimRelations(relsFromText, p.relTopN)
 
 	// 7. Build KG content with token budget
-	entsRelsContent := BuildKGContent(scoredEnts, scoredRels, p.maxToken)
+	entsRelsContent := BuildContent(scoredEnts, scoredRels, p.maxToken)
 	used := NumTokensFromString(entsRelsContent)
 	remaining := p.maxToken - used
 	// 8. Search community reports with remaining token budget
-	communityContent := searchKGCommunityContent(ctx, p.docEngine, p.idxnms, p.kbIDs, scoredEnts, p.commTopN, &remaining)
+	communityContent := searchCommunityContent(ctx, p.docEngine, p.idxnms, p.kbIDs, scoredEnts, p.commTopN, &remaining)
 
 	// 9. Build synthetic chunk
 	return map[string]interface{}{
@@ -217,7 +217,7 @@ func (p *Pipeline) searchEntities(ctx context.Context, entities []string) (map[s
 		if name == "" {
 			continue
 		}
-		e := kgEntityFromChunk(name, chunk)
+		e := entityFromChunk(name, chunk)
 		result[name] = &e
 	}
 	return result, nil
@@ -275,7 +275,7 @@ func (p *Pipeline) searchRelations(ctx context.Context, entities []string) map[E
 		common.Warn("KG relations search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
 	} else {
 		for _, chunk := range FilterChunksByScore(relsResult.Chunks, p.relSimThreshold) {
-			edge, rel := kgRelationFromChunk(chunk)
+			edge, rel := relationFromChunk(chunk)
 			if edge.From == "" || edge.To == "" {
 				continue
 			}

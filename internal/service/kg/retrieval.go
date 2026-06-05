@@ -54,8 +54,8 @@ func indexName(tenantID string) string {
 	return "ragflow_" + tenantID
 }
 
-// searchKGTypeSamples searches for ty2ents data.
-func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string) (map[string][]string, error) {
+// searchTypeSamples searches for ty2ents data.
+func searchTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string) (map[string][]string, error) {
 	req := &types.SearchRequest{
 		IndexNames:   idxnms,
 		KbIDs:        kbIDs,
@@ -84,8 +84,8 @@ func searchKGTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms
 	return typeMap, nil
 }
 
-// searchKGCommunityContent searches for community reports and formats them.
-func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
+// searchCommunityContent searches for community reports and formats them.
+func searchCommunityContent(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
 	if maxToken == nil || len(scoredEnts) == 0 || *maxToken <= 0 {
 		return ""
 	}
@@ -142,8 +142,8 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, i
 	return bld
 }
 
-// kgEntityFromChunk parses a single entity chunk into a KGEntity.
-func kgEntityFromChunk(name string, chunk map[string]interface{}) KGEntity {
+// entityFromChunk parses a single entity chunk into a KGEntity.
+func entityFromChunk(name string, chunk map[string]interface{}) KGEntity {
 	e := KGEntity{}
 	if v, ok := chunk["_score"].(float64); ok {
 		e.Similarity = v
@@ -171,8 +171,8 @@ func kgEntityFromChunk(name string, chunk map[string]interface{}) KGEntity {
 	return e
 }
 
-// kgRelationFromChunk parses a single relation chunk into a KGRelation.
-func kgRelationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
+// relationFromChunk parses a single relation chunk into a KGRelation.
+func relationFromChunk(chunk map[string]interface{}) (Edge, KGRelation) {
 	r := KGRelation{}
 	r.Description, _ = chunk["content_with_weight"].(string)
 	if v, ok := chunk["_score"].(float64); ok {

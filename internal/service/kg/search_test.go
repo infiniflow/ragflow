@@ -159,13 +159,13 @@ func TestBuildTypeSamplesSearchRequest(t *testing.T) {
 	}
 }
 
-// --- ParseKGEntityChunks ---
+// --- ParseEntityChunks ---
 
-func TestParseKGEntityChunks_Basic(t *testing.T) {
+func TestParseEntityChunks_Basic(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"entity_kwd": "Elon Musk", "entity_type_kwd": "PERSON", "rank_flt": 0.9, "_score": 0.85, "content_with_weight": "Founder of SpaceX"},
 	}
-	entities := ParseKGEntityChunks(chunks)
+	entities := ParseEntityChunks(chunks)
 	if len(entities) != 1 {
 		t.Fatalf("expected 1, got %d", len(entities))
 	}
@@ -174,98 +174,98 @@ func TestParseKGEntityChunks_Basic(t *testing.T) {
 	}
 }
 
-func TestParseKGEntityChunks_List(t *testing.T) {
+func TestParseEntityChunks_List(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"entity_kwd": []interface{}{"Elon Musk", "elon_musk"}},
 	}
-	entities := ParseKGEntityChunks(chunks)
+	entities := ParseEntityChunks(chunks)
 	if len(entities) != 1 || entities[0].Name != "Elon Musk" {
 		t.Errorf("expected first list element, got %q", entities[0].Name)
 	}
 }
 
-func TestParseKGEntityChunks_EmptyName(t *testing.T) {
+func TestParseEntityChunks_EmptyName(t *testing.T) {
 	chunks := []map[string]interface{}{{"entity_type_kwd": "PERSON"}}
-	if len(ParseKGEntityChunks(chunks)) != 0 {
+	if len(ParseEntityChunks(chunks)) != 0 {
 		t.Error("expected 0 for missing name")
 	}
 }
 
-func TestParseKGEntityChunks_ScoreFallback(t *testing.T) {
+func TestParseEntityChunks_ScoreFallback(t *testing.T) {
 	chunks := []map[string]interface{}{{"entity_kwd": "Test", "score": 0.75}}
-	if ParseKGEntityChunks(chunks)[0].Similarity != 0.75 {
+	if ParseEntityChunks(chunks)[0].Similarity != 0.75 {
 		t.Error("expected 0.75 from score field")
 	}
 }
 
-func TestParseKGEntityChunks_NilInput(t *testing.T) {
-	if len(ParseKGEntityChunks(nil)) != 0 {
+func TestParseEntityChunks_NilInput(t *testing.T) {
+	if len(ParseEntityChunks(nil)) != 0 {
 		t.Error("expected 0 for nil input")
 	}
 }
 
-// --- ParseKGRelationChunks ---
+// --- ParseRelationChunks ---
 
-func TestParseKGRelationChunks_Basic(t *testing.T) {
+func TestParseRelationChunks_Basic(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"from_entity_kwd": "Elon Musk", "to_entity_kwd": "SpaceX", "weight_int": float64(5), "content_with_weight": "Founder"},
 	}
-	relations := ParseKGRelationChunks(chunks)
+	relations := ParseRelationChunks(chunks)
 	if len(relations) != 1 || relations[0].From != "Elon Musk" || relations[0].PageRank != 5 {
 		t.Errorf("unexpected: %+v", relations[0])
 	}
 }
 
-func TestParseKGRelationChunks_IntWeight(t *testing.T) {
+func TestParseRelationChunks_IntWeight(t *testing.T) {
 	chunks := []map[string]interface{}{{"from_entity_kwd": "A", "to_entity_kwd": "B", "weight_int": 3}}
-	if ParseKGRelationChunks(chunks)[0].PageRank != 3 {
+	if ParseRelationChunks(chunks)[0].PageRank != 3 {
 		t.Error("expected weight 3")
 	}
 }
 
-func TestParseKGRelationChunks_EmptyFrom(t *testing.T) {
-	if len(ParseKGRelationChunks([]map[string]interface{}{{"to_entity_kwd": "B"}})) != 0 {
+func TestParseRelationChunks_EmptyFrom(t *testing.T) {
+	if len(ParseRelationChunks([]map[string]interface{}{{"to_entity_kwd": "B"}})) != 0 {
 		t.Error("expected 0 for missing from")
 	}
 }
 
-func TestParseKGRelationChunks_NilInput(t *testing.T) {
-	if len(ParseKGRelationChunks(nil)) != 0 {
+func TestParseRelationChunks_NilInput(t *testing.T) {
+	if len(ParseRelationChunks(nil)) != 0 {
 		t.Error("expected 0 for nil")
 	}
 }
 
-// --- ParseKGCommunityReportChunks ---
+// --- ParseCommunityReportChunks ---
 
-func TestParseKGCommunityReportChunks_Basic(t *testing.T) {
+func TestParseCommunityReportChunks_Basic(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"docnm_kwd": "Report 1", "content_with_weight": "content", "weight_flt": 0.95, "entities_kwd": "A, B"},
 	}
-	reports := ParseKGCommunityReportChunks(chunks)
+	reports := ParseCommunityReportChunks(chunks)
 	if len(reports) != 1 || reports[0].Title != "Report 1" || reports[0].Weight != 0.95 {
 		t.Errorf("unexpected: %+v", reports[0])
 	}
 }
 
-func TestParseKGCommunityReportChunks_EmptyTitle(t *testing.T) {
-	if len(ParseKGCommunityReportChunks([]map[string]interface{}{{"weight_flt": 0.5}})) != 0 {
+func TestParseCommunityReportChunks_EmptyTitle(t *testing.T) {
+	if len(ParseCommunityReportChunks([]map[string]interface{}{{"weight_flt": 0.5}})) != 0 {
 		t.Error("expected 0 for empty title and content")
 	}
 }
 
-func TestParseKGCommunityReportChunks_NilInput(t *testing.T) {
-	if len(ParseKGCommunityReportChunks(nil)) != 0 {
+func TestParseCommunityReportChunks_NilInput(t *testing.T) {
+	if len(ParseCommunityReportChunks(nil)) != 0 {
 		t.Error("expected 0 for nil")
 	}
 }
 
-// --- ParseKGTypeSamplesChunks ---
+// --- ParseTypeSamplesChunks ---
 
-func TestParseKGTypeSamplesChunks_ValidJSON(t *testing.T) {
+func TestParseTypeSamplesChunks_ValidJSON(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"content_with_weight": `{"PERSON": ["Elon Musk", "Einstein"], "ORGANIZATION": ["SpaceX"]}`},
 	}
-	result := ParseKGTypeSamplesChunks(chunks)
+	result := ParseTypeSamplesChunks(chunks)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 types, got %d: %v", len(result), result)
 	}
@@ -277,18 +277,18 @@ func TestParseKGTypeSamplesChunks_ValidJSON(t *testing.T) {
 	}
 }
 
-func TestParseKGTypeSamplesChunks_InvalidJSON(t *testing.T) {
+func TestParseTypeSamplesChunks_InvalidJSON(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"content_with_weight": "not json"},
 	}
-	result := ParseKGTypeSamplesChunks(chunks)
+	result := ParseTypeSamplesChunks(chunks)
 	if len(result) != 0 {
 		t.Error("expected empty for invalid JSON")
 	}
 }
 
-func TestParseKGTypeSamplesChunks_Empty(t *testing.T) {
-	result := ParseKGTypeSamplesChunks(nil)
+func TestParseTypeSamplesChunks_Empty(t *testing.T) {
+	result := ParseTypeSamplesChunks(nil)
 	if len(result) != 0 {
 		t.Error("expected empty for nil")
 	}
@@ -356,9 +356,9 @@ func TestBuildKGDenseExpr_WithModel(t *testing.T) {
 		},
 		APIConfig: &modelModule.APIConfig{},
 	}
-	dense, err := buildKGDenseExpr(embModel, "test question", 10)
+	dense, err := buildDenseExpr(embModel, "test question", 10)
 	if err != nil {
-		t.Fatalf("buildKGDenseExpr failed: %v", err)
+		t.Fatalf("buildDenseExpr failed: %v", err)
 	}
 	if dense == nil {
 		t.Fatal("expected non-nil MatchDenseExpr")
@@ -372,14 +372,14 @@ func TestBuildKGDenseExpr_WithModel(t *testing.T) {
 }
 
 func TestBuildKGDenseExpr_NilModel(t *testing.T) {
-	dense, err := buildKGDenseExpr(nil, "test", 10)
+	dense, err := buildDenseExpr(nil, "test", 10)
 	if dense != nil || err != nil {
 		t.Errorf("expected nil,nil for nil model, got dense=%v err=%v", dense, err)
 	}
 }
 
 func TestBuildKGDenseExpr_EmptyQuestion(t *testing.T) {
-	dense, err := buildKGDenseExpr(&modelModule.EmbeddingModel{}, "", 10)
+	dense, err := buildDenseExpr(&modelModule.EmbeddingModel{}, "", 10)
 	if dense != nil || err != nil {
 		t.Errorf("expected nil,nil for empty question, got dense=%v err=%v", dense, err)
 	}
@@ -387,7 +387,7 @@ func TestBuildKGDenseExpr_EmptyQuestion(t *testing.T) {
 
 // --- Search integration with mock ---
 
-func TestSearchKGEntities_WithMock(t *testing.T) {
+func TestSearchEntities_WithMock(t *testing.T) {
 	mock := &mockKGEngine{
 		searchFunc: func(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 			if req.Filter["knowledge_graph_kwd"] != "entity" {
@@ -400,16 +400,16 @@ func TestSearchKGEntities_WithMock(t *testing.T) {
 			}, nil
 		},
 	}
-	entities, err := SearchKGEntities(context.Background(), mock, []string{"kb1"}, "Elon", nil, 10)
+	entities, err := SearchEntities(context.Background(), mock, []string{"kb1"}, "Elon", nil, 10)
 	if err != nil {
-		t.Fatalf("SearchKGEntities failed: %v", err)
+		t.Fatalf("SearchEntities failed: %v", err)
 	}
 	if len(entities) != 1 || entities[0].Name != "Elon Musk" {
 		t.Errorf("expected [Elon Musk], got %v", entities)
 	}
 }
 
-func TestSearchKGEntitiesByTypes_WithMock(t *testing.T) {
+func TestSearchEntitiesByTypes_WithMock(t *testing.T) {
 	mock := &mockKGEngine{
 		searchFunc: func(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 			return &types.SearchResult{
@@ -419,20 +419,20 @@ func TestSearchKGEntitiesByTypes_WithMock(t *testing.T) {
 			}, nil
 		},
 	}
-	entities, err := SearchKGEntitiesByTypes(context.Background(), mock, []string{"kb1"}, []string{"ORGANIZATION"}, 10)
+	entities, err := SearchEntitiesByTypes(context.Background(), mock, []string{"kb1"}, []string{"ORGANIZATION"}, 10)
 	if err != nil {
-		t.Fatalf("SearchKGEntitiesByTypes failed: %v", err)
+		t.Fatalf("SearchEntitiesByTypes failed: %v", err)
 	}
 	if len(entities) != 1 || entities[0].Type != "ORGANIZATION" {
 		t.Errorf("expected ORGANIZATION, got %v", entities)
 	}
 }
 
-func TestSearchKGTypeSamples_WithMock(t *testing.T) {
+func TestSearchTypeSamples_WithMock(t *testing.T) {
 	mock := &mockKGEngine{}
-	samples, err := SearchKGTypeSamples(context.Background(), mock, []string{"kb1"})
+	samples, err := SearchTypeSamples(context.Background(), mock, []string{"kb1"})
 	if err != nil {
-		t.Fatalf("SearchKGTypeSamples failed: %v", err)
+		t.Fatalf("SearchTypeSamples failed: %v", err)
 	}
 	if samples == nil {
 		samples = map[string][]string{}
