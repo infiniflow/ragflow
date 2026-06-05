@@ -303,3 +303,72 @@ func TestConvertToMetaCondition_StringValuePassthrough(t *testing.T) {
 		t.Errorf("expected 'Zhang San', got %q", v)
 	}
 }
+
+func TestConvertToMetaCondition_InEmptyParts(t *testing.T) {
+	f := MetaFilterCondition{Key: "cat", Value: "A,,B", Op: "in"}
+	mc := convertToMetaCondition(f)
+	vals, ok := mc.Value.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", mc.Value)
+	}
+	if len(vals) != 2 {
+		t.Errorf("expected 2 values after filtering empty parts, got %d: %v", len(vals), vals)
+	}
+	if vals[0] != "A" || vals[1] != "B" {
+		t.Errorf("expected [A B], got %v", vals)
+	}
+}
+
+func TestConvertToMetaCondition_InOnlyWhitespaceParts(t *testing.T) {
+	f := MetaFilterCondition{Key: "cat", Value: "A, ,  ,B", Op: "in"}
+	mc := convertToMetaCondition(f)
+	vals, ok := mc.Value.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", mc.Value)
+	}
+	if len(vals) != 2 {
+		t.Errorf("expected 2 values after filtering whitespace, got %d: %v", len(vals), vals)
+	}
+	if vals[0] != "A" || vals[1] != "B" {
+		t.Errorf("expected [A B], got %v", vals)
+	}
+}
+
+func TestConvertToMetaCondition_InAllEmptyParts(t *testing.T) {
+	f := MetaFilterCondition{Key: "cat", Value: ",,,", Op: "in"}
+	mc := convertToMetaCondition(f)
+	vals, ok := mc.Value.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", mc.Value)
+	}
+	if len(vals) != 0 {
+		t.Errorf("expected 0 values for all-empty input, got %d: %v", len(vals), vals)
+	}
+}
+
+func TestConvertToMetaCondition_NotInEmptyParts(t *testing.T) {
+	f := MetaFilterCondition{Key: "cat", Value: "A,,B", Op: "not in"}
+	mc := convertToMetaCondition(f)
+	vals, ok := mc.Value.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", mc.Value)
+	}
+	if len(vals) != 2 {
+		t.Errorf("expected 2 values after filtering empty parts, got %d: %v", len(vals), vals)
+	}
+}
+
+func TestConvertToMetaCondition_InMixedSpaces(t *testing.T) {
+	f := MetaFilterCondition{Key: "cat", Value: " A , B , C ", Op: "in"}
+	mc := convertToMetaCondition(f)
+	vals, ok := mc.Value.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", mc.Value)
+	}
+	if len(vals) != 3 {
+		t.Errorf("expected 3 values, got %d: %v", len(vals), vals)
+	}
+	if vals[0] != "A" || vals[1] != "B" || vals[2] != "C" {
+		t.Errorf("expected [A B C], got %v", vals)
+	}
+}
