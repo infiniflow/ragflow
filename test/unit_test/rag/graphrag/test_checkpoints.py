@@ -14,12 +14,55 @@
 #  limitations under the License.
 #
 
-import json
-from unittest.mock import MagicMock
-
 import pytest
 
 from rag.graphrag import checkpoints
+
+
+class _FakeRedisClient:
+    def __init__(self):
+        self.expirations = {}
+
+    def expire(self, key, ttl):
+        self.expirations[key] = ttl
+        return True
+
+
+class _FakeRedisConn:
+    def __init__(self):
+        self.values = {}
+        self.sets = {}
+        self.REDIS = _FakeRedisClient()
+        self.fail_set = False
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def set(self, key, value, exp=3600):
+        if self.fail_set:
+            return False
+        self.values[key] = value
+        self.REDIS.expire(key, exp)
+        return True
+
+    def sadd(self, key, member):
+        self.sets.setdefault(key, set()).add(member)
+        return True
+
+    def smembers(self, key):
+        return set(self.sets.get(key, set()))
+
+    def delete(self, key):
+        self.values.pop(key, None)
+        self.sets.pop(key, None)
+        return True
+
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    fake = _FakeRedisConn()
+    monkeypatch.setattr(checkpoints, "REDIS_CONN", fake)
+    return fake
 
 
 @pytest.mark.p1
@@ -38,56 +81,36 @@ def test_checkpoint_keys_are_stable():
 
 @pytest.mark.p1
 @pytest.mark.asyncio
-async def test_load_checkpoints_paginates(monkeypatch):
-    pages = {
-        0: {
-            "row-1": {"content_with_weight": json.dumps({"key": "k1", "payload": {"value": 1}})},
-            "row-2": {"content_with_weight": json.dumps({"key": "k2", "payload": {"value": 2}})},
-        },
-        2: {
-            "row-3": {"content_with_weight": json.dumps({"key": "k3", "payload": {"value": 3}})},
-        },
-    }
-    offsets = []
+async def test_load_checkpoints_reads_redis_index(fake_redis):
+    await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k1", {"value": 1})
+    await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k2", {"value": 2})
+    await checkpoints.save_checkpoint("tenant-1", "kb-2", checkpoints.COMMUNITY_CHECKPOINT, "k3", {"value": 3})
 
-    def search_mock(_fields, _filters, _condition, _order, _orderby, offset, _limit, *_args):
-        offsets.append(offset)
-        return offset
+    loaded = await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT)
 
-    store = MagicMock()
-    store.search.side_effect = search_mock
-    store.get_fields.side_effect = lambda offset, _fields: pages[offset]
-    monkeypatch.setattr(checkpoints.settings, "docStoreConn", store)
-
-    loaded = await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, page_size=2)
-
-    assert offsets == [0, 2]
-    assert loaded == {"k1": {"value": 1}, "k2": {"value": 2}, "k3": {"value": 3}}
+    assert loaded == {"k1": {"value": 1}, "k2": {"value": 2}}
 
 
 @pytest.mark.p2
 @pytest.mark.asyncio
-async def test_save_checkpoint_degrades_on_insert_failure(monkeypatch):
-    store = MagicMock()
-    store.insert.return_value = ["insert failed"]
-    monkeypatch.setattr(checkpoints.settings, "docStoreConn", store)
+async def test_save_checkpoint_degrades_on_redis_failure(fake_redis):
+    fake_redis.fail_set = True
 
     saved = await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT, "key-1", {"ok": True})
 
     assert saved is False
-    store.insert.assert_called_once()
+    assert fake_redis.values == {}
 
 
 @pytest.mark.p2
 @pytest.mark.asyncio
-async def test_cleanup_checkpoints_deletes_stage_rows(monkeypatch):
-    store = MagicMock()
-    monkeypatch.setattr(checkpoints.settings, "docStoreConn", store)
+async def test_cleanup_checkpoints_deletes_redis_stage_keys(fake_redis):
+    await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT, "k1", {"value": 1})
+    await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT, "k2", {"value": 2})
+    await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k3", {"value": 3})
 
     cleaned = await checkpoints.cleanup_checkpoints("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT)
 
     assert cleaned is True
-    store.delete.assert_called_once()
-    condition = store.delete.call_args.args[0]
-    assert condition["knowledge_graph_kwd"] == [checkpoints.RESOLUTION_CHECKPOINT]
-    assert condition["kb_id"] == "kb-1"
+    assert await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.RESOLUTION_CHECKPOINT) == {}
+    assert await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT) == {"k3": {"value": 3}}
