@@ -123,8 +123,7 @@ func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{
 	}
 	typeKeywords, entities := queryRewrite(p.chatModel, p.question, ty2entsJSON)
 
-	// 2-4. Search entities, types, and relations in parallel
-	// (mutually independent, can run concurrently for ~3x latency reduction)
+	// 2-4. Search entities, types, and relations in parallel (mutually independent)
 	var (
 		entsFromQuery map[string]*KGEntity
 		entsFromTypes map[string]struct{}
@@ -135,102 +134,20 @@ func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		entsReq := &types.SearchRequest{
-			IndexNames:   p.idxnms,
-			KbIDs:        p.kbIDs,
-			SelectFields: []string{"entity_kwd", "entity_type_kwd", "rank_flt", "content_with_weight", "n_hop_with_weight"},
-			Limit:        50,
-			Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
-		}
-		if len(entities) > 0 {
-			entsReq.MatchExprs = buildSearchExprs(p.embModel, &types.MatchTextExpr{
-				Fields:       []string{"entity_kwd^10", "content_ltks^2"},
-				MatchingText: strings.Join(entities, " "),
-				TopN:         50,
-			}, p.entSimThreshold, p.denseTopK)
-		}
-		entsResult, err := p.docEngine.Search(ctx, entsReq)
-		if err != nil {
-			entsErr = fmt.Errorf("KG entity search failed: %w", err)
-			return
-		}
-		result := make(map[string]*KGEntity)
-		for _, chunk := range FilterChunksByScore(entsResult.Chunks, p.entSimThreshold) {
-			name, _ := chunk["entity_kwd"].(string)
-			if name == "" {
-				continue
-			}
-			e := kgEntityFromChunk(name, chunk)
-			result[name] = &e
-		}
-		entsFromQuery = result
+		entsFromQuery, entsErr = p.searchEntities(ctx, entities)
 	}()
 	go func() {
 		defer wg.Done()
-		typesReq := &types.SearchRequest{
-			IndexNames:   p.idxnms,
-			KbIDs:        p.kbIDs,
-			SelectFields: []string{"entity_kwd", "entity_type_kwd"},
-			Limit:        10000,
-			Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
-		}
-		if len(typeKeywords) > 0 {
-			typeFilters := make([]interface{}, len(typeKeywords))
-			for i, t := range typeKeywords {
-				typeFilters[i] = t
-			}
-			typesReq.Filter["entity_type_kwd"] = typeFilters
-		}
-		typesResult, err := p.docEngine.Search(ctx, typesReq)
-		result := make(map[string]struct{})
-		if err != nil {
-			common.Warn("KG types search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
-		} else {
-			for _, chunk := range typesResult.Chunks {
-				if name, ok := chunk["entity_kwd"].(string); ok {
-					result[name] = struct{}{}
-				}
-			}
-		}
-		entsFromTypes = result
+		entsFromTypes = p.searchEntityTypes(ctx, typeKeywords)
 	}()
 	go func() {
 		defer wg.Done()
-		relsReq := &types.SearchRequest{
-			IndexNames:   p.idxnms,
-			KbIDs:        p.kbIDs,
-			SelectFields: []string{"from_entity_kwd", "to_entity_kwd", "weight_int", "content_with_weight"},
-			Limit:        50,
-			Filter:       map[string]interface{}{"knowledge_graph_kwd": "relation"},
-		}
-		if len(entities) > 0 {
-			relsReq.MatchExprs = buildSearchExprs(p.embModel, &types.MatchTextExpr{
-				Fields:       []string{"content_ltks", "from_entity_kwd", "to_entity_kwd"},
-				MatchingText: strings.Join(entities, " "),
-				TopN:         50,
-			}, p.relSimThreshold, p.denseTopK)
-		}
-		relsResult, err := p.docEngine.Search(ctx, relsReq)
-		result := make(map[Edge]*KGRelation)
-		if err != nil {
-			common.Warn("KG relations search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
-		} else {
-			for _, chunk := range FilterChunksByScore(relsResult.Chunks, p.relSimThreshold) {
-				edge, rel := kgRelationFromChunk(chunk)
-				if edge.From == "" || edge.To == "" {
-					continue
-				}
-				result[edge] = &rel
-			}
-		}
-		relsFromText = result
+		relsFromText = p.searchRelations(ctx, entities)
 	}()
 	wg.Wait()
 	if entsErr != nil {
 		return nil, entsErr
-	}
-
-	// 5. N-hop analysis + score fusion
+	}// 5. N-hop analysis + score fusion
 	nhopPathes := AnalyzeNHopPaths(entsFromQuery)
 	DoubleHitBoost(entsFromQuery, entsFromTypes)
 	FuseRelationScores(relsFromText, entsFromTypes, nhopPathes)
@@ -262,4 +179,98 @@ func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{
 		"vector":                []float64{},
 		"positions":             []interface{}{},
 	}, nil
+}
+
+// searchEntities searches KG entities by keyword text and optional dense vector.
+func (p *KGSearchPipeline) searchEntities(ctx context.Context, entities []string) (map[string]*KGEntity, error) {
+	entsReq := &types.SearchRequest{
+		IndexNames:   p.idxnms,
+		KbIDs:        p.kbIDs,
+		SelectFields: []string{"entity_kwd", "entity_type_kwd", "rank_flt", "content_with_weight", "n_hop_with_weight"},
+		Limit:        50,
+		Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
+	}
+	if len(entities) > 0 {
+		entsReq.MatchExprs = buildSearchExprs(p.embModel, &types.MatchTextExpr{
+			Fields:       []string{"entity_kwd^10", "content_ltks^2"},
+			MatchingText: strings.Join(entities, " "),
+			TopN:         50,
+		}, p.entSimThreshold, p.denseTopK)
+	}
+	entsResult, err := p.docEngine.Search(ctx, entsReq)
+	if err != nil {
+		return nil, fmt.Errorf("KG entity search failed: %w", err)
+	}
+	result := make(map[string]*KGEntity)
+	for _, chunk := range FilterChunksByScore(entsResult.Chunks, p.entSimThreshold) {
+		name, _ := chunk["entity_kwd"].(string)
+		if name == "" {
+			continue
+		}
+		e := kgEntityFromChunk(name, chunk)
+		result[name] = &e
+	}
+	return result, nil
+}
+
+// searchEntityTypes searches KG entities by type keywords.
+func (p *KGSearchPipeline) searchEntityTypes(ctx context.Context, typeKeywords []string) map[string]struct{} {
+	typesReq := &types.SearchRequest{
+		IndexNames:   p.idxnms,
+		KbIDs:        p.kbIDs,
+		SelectFields: []string{"entity_kwd", "entity_type_kwd"},
+		Limit:        10000,
+		Filter:       map[string]interface{}{"knowledge_graph_kwd": "entity"},
+	}
+	if len(typeKeywords) > 0 {
+		typeFilters := make([]interface{}, len(typeKeywords))
+		for i, t := range typeKeywords {
+			typeFilters[i] = t
+		}
+		typesReq.Filter["entity_type_kwd"] = typeFilters
+	}
+	typesResult, err := p.docEngine.Search(ctx, typesReq)
+	result := make(map[string]struct{})
+	if err != nil {
+		common.Warn("KG types search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
+	} else {
+		for _, chunk := range typesResult.Chunks {
+			if name, ok := chunk["entity_kwd"].(string); ok {
+				result[name] = struct{}{}
+			}
+		}
+	}
+	return result
+}
+
+// searchRelations searches KG relations by entity text and optional dense vector.
+func (p *KGSearchPipeline) searchRelations(ctx context.Context, entities []string) map[Edge]*KGRelation {
+	relsReq := &types.SearchRequest{
+		IndexNames:   p.idxnms,
+		KbIDs:        p.kbIDs,
+		SelectFields: []string{"from_entity_kwd", "to_entity_kwd", "weight_int", "content_with_weight"},
+		Limit:        50,
+		Filter:       map[string]interface{}{"knowledge_graph_kwd": "relation"},
+	}
+	if len(entities) > 0 {
+		relsReq.MatchExprs = buildSearchExprs(p.embModel, &types.MatchTextExpr{
+			Fields:       []string{"content_ltks", "from_entity_kwd", "to_entity_kwd"},
+			MatchingText: strings.Join(entities, " "),
+			TopN:         50,
+		}, p.relSimThreshold, p.denseTopK)
+	}
+	relsResult, err := p.docEngine.Search(ctx, relsReq)
+	result := make(map[Edge]*KGRelation)
+	if err != nil {
+		common.Warn("KG relations search failed", zap.String("kbIDs", fmt.Sprint(p.kbIDs)))
+	} else {
+		for _, chunk := range FilterChunksByScore(relsResult.Chunks, p.relSimThreshold) {
+			edge, rel := kgRelationFromChunk(chunk)
+			if edge.From == "" || edge.To == "" {
+				continue
+			}
+			result[edge] = &rel
+		}
+	}
+	return result
 }
