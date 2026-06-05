@@ -266,11 +266,11 @@ func TestGoogleModelNewInstancePreservesCustomBaseURL(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *GoogleModel, got %T", instance)
 	}
-	if google.BaseURL["default"] != customBaseURL["default"] {
-		t.Fatalf("expected base URL %q, got %q", customBaseURL["default"], google.BaseURL["default"])
+	if google.baseModel.BaseURL["default"] != customBaseURL["default"] {
+		t.Fatalf("expected base URL %q, got %q", customBaseURL["default"], google.baseModel.BaseURL["default"])
 	}
-	if google.URLSuffix != model.URLSuffix {
-		t.Fatalf("expected URL suffix %v, got %v", model.URLSuffix, google.URLSuffix)
+	if google.baseModel.URLSuffix != model.baseModel.URLSuffix {
+		t.Fatalf("expected URL suffix %v, got %v", model.baseModel.URLSuffix, google.baseModel.URLSuffix)
 	}
 }
 
