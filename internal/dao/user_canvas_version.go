@@ -37,10 +37,21 @@ func (d *UserCanvasVersionDAO) ListByCanvasID(canvasID string) ([]*entity.UserCa
 }
 
 // GetByID returns a version by its ID.
-func (d *UserCanvasVersionDAO) GetByID(versionID string) (*entity.UserCanvasVersion, error) {
+func (d *UserCanvasVersionDAO) GetByID(id string) (*entity.UserCanvasVersion, error) {
 	var version entity.UserCanvasVersion
-	err := DB.Where("id = ?", versionID).First(&version).Error
-	if err != nil {
+	if err := DB.Where("id = ?", id).First(&version).Error; err != nil {
+		return nil, err
+	}
+	return &version, nil
+}
+
+// GetLatestReleasedVersion returns the most recently updated released version for a canvas.
+func (d *UserCanvasVersionDAO) GetLatestReleasedVersion(canvasID string) (*entity.UserCanvasVersion, error) {
+	var version entity.UserCanvasVersion
+	if err := DB.Select("id", "user_canvas_id", "update_time").
+		Where("user_canvas_id = ? AND `release` = ?", canvasID, true).
+		Order("update_time DESC").
+		First(&version).Error; err != nil {
 		return nil, err
 	}
 	return &version, nil

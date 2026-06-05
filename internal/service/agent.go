@@ -17,11 +17,15 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // AgentService agent service
@@ -30,6 +34,7 @@ type AgentService struct {
 	userTenantDAO        *dao.UserTenantDAO
 	userCanvasVersionDAO *dao.UserCanvasVersionDAO
 	canvasTemplateDAO    *dao.CanvasTemplateDAO
+	replicaService       *CanvasReplicaService
 }
 
 // NewAgentService create agent service
@@ -39,6 +44,7 @@ func NewAgentService() *AgentService {
 		userTenantDAO:        dao.NewUserTenantDAO(),
 		userCanvasVersionDAO: dao.NewUserCanvasVersionDAO(),
 		canvasTemplateDAO:    dao.NewCanvasTemplateDAO(),
+		replicaService:       NewCanvasReplicaService(),
 	}
 }
 
@@ -78,6 +84,68 @@ func toAgentItem(c *entity.UserCanvas) *AgentItem {
 		CreateTime:     c.CreateTime,
 		UpdateTime:     c.UpdateTime,
 	}
+}
+
+// AgentDetailItem is the response body for GET /api/v1/agents/:agent_id.
+type AgentDetailItem struct {
+	*entity.UserCanvas
+	LastPublishTime *int64 `json:"last_publish_time"`
+}
+
+// GetAgent returns the details of a specific agent canvas.
+// Mirrors Python agent_api.get_agent with access check, replica bootstrap,
+// latest publish time lookup, and DSL normalization.
+// DataFlow datasets are currently omitted.
+func (s *AgentService) GetAgent(userID, canvasID string) (*AgentDetailItem, error) {
+	ok, err := s.CheckCanvasAccess(userID, canvasID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("canvas not found")
+	}
+
+	canvas, err := s.canvasDAO.GetByID(canvasID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("canvas not found")
+		}
+		return nil, err
+	}
+
+	// 3. Canvas Replica Bootstrap (Snapshot sync)
+	title := ""
+	if canvas.Title != nil {
+		title = *canvas.Title
+	}
+	// Note: We use userID as the tenantID matching the Python @add_tenant_id_to_kwargs behaviour
+	if _, err := s.replicaService.Bootstrap(canvasID, userID, userID, canvas.DSL, canvas.CanvasCategory, title); err != nil {
+		// Log error but don't fail the request, allowing graceful degradation if Redis is down
+		common.Warn("canvas replica bootstrap failed", zap.String("error", err.Error()))
+	}
+
+	// 4. Fetch the Last Publish Time (latest released version)
+	var lastPublishTime *int64
+	version, err := s.userCanvasVersionDAO.GetLatestReleasedVersion(canvasID)
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	} else if version != nil {
+		lastPublishTime = version.UpdateTime
+	}
+
+	if canvas.DSL == nil {
+		canvas.DSL = entity.JSONMap{}
+	}
+	canvas.DSL = NormalizeChunkerDSL(canvas.DSL)
+
+	// Note: DataFlow datasets appending is omitted as it crosses into KnowledgebaseService boundaries
+
+	return &AgentDetailItem{
+		UserCanvas:      canvas,
+		LastPublishTime: lastPublishTime,
+	}, nil
 }
 
 // ListAgents returns agent canvases visible to userID.
