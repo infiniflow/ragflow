@@ -39,8 +39,7 @@ from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
-from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_model_config_by_type_and_name, get_tenant_default_model_by_type
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_model_type_by_name
 from common.time_utils import current_timestamp, datetime_format
 from common.text_utils import normalize_arabic_digits
 from rag.graphrag.general.mind_map_extractor import MindMapExtractor
@@ -288,21 +287,19 @@ class DialogService(CommonService):
 
 
 async def async_chat_solo(dialog, messages, stream=True):
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
+    llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
     image_files = []
     if "files" in messages[-1]:
-        if llm_type == "chat":
+        if "chat" in llm_types:
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
         attachments = "\n\n".join(text_attachments)
 
     if dialog.llm_id:
-        model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
-    elif dialog.tenant_llm_id:
-        model_config = get_model_config_by_id(dialog.tenant_llm_id)
+        model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
@@ -317,10 +314,10 @@ async def async_chat_solo(dialog, messages, stream=True):
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
     if attachments and msg:
         msg[-1]["content"] += attachments
-    if llm_type == "chat" and image_attachments:
+    if "chat" in llm_types and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     if stream:
-        if llm_type == "chat":
+        if "chat" in llm_types:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -331,7 +328,7 @@ async def async_chat_solo(dialog, messages, stream=True):
                 continue
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
-        if llm_type == "chat":
+        if "chat" in llm_types:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
@@ -349,22 +346,20 @@ def get_models(dialog):
 
     if embedding_list:
         embd_owner_tenant_id = kbs[0].tenant_id
-        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+        embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
         embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
         if not embd_mdl:
             raise LookupError("Embedding model(%s) not found" % embedding_list[0])
 
     if dialog.llm_id:
-        chat_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
-    elif dialog.tenant_llm_id:
-        chat_model_config = get_model_config_by_id(dialog.tenant_llm_id)
+        chat_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     chat_mdl = LLMBundle(dialog.tenant_id, chat_model_config)
 
     if dialog.rerank_id:
-        rerank_model_config = get_model_config_by_type_and_name(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
+        rerank_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.RERANK, dialog.rerank_id)
         rerank_mdl = LLMBundle(dialog.tenant_id, rerank_model_config)
 
     if dialog.prompt_config.get("tts"):
@@ -554,11 +549,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         return
 
     chat_start_ts = timer()
-    llm_type = TenantLLMService.llm_id2llm_type(dialog.llm_id)
-    if llm_type == "image2text":
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+    if dialog.llm_id:
+        llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
+        if "image2text" in llm_types:
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
+        else:
+            llm_model_config = get_model_config_from_provider_instance(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
     else:
-        llm_model_config = TenantLLMService.get_model_config(dialog.tenant_id, LLMType.CHAT, dialog.llm_id)
+        llm_model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     factory = llm_model_config.get("llm_factory", "") if llm_model_config else ""
     max_tokens = llm_model_config.get("max_tokens", 8192)
@@ -598,7 +596,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     if "doc_ids" in messages[-1]:
         attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
     if "files" in messages[-1]:
-        if llm_type == "chat":
+        if llm_model_config["model_type"] == "chat":
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
         else:
             text_attachments, image_files = split_file_attachments(messages[-1]["files"], raw=True)
@@ -769,7 +767,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         prompt4citation = citation_prompt()
     msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
-    if llm_type == "chat" and image_attachments:
+    if llm_model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
     assert len(msg) >= 2, f"message_fit_in has bug: {msg}"
     prompt = msg[0]["content"]
@@ -881,7 +879,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             langfuse_generation = None
 
     if stream:
-        if llm_type == "chat":
+        if llm_model_config["model_type"] == "chat":
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
@@ -900,7 +898,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final["audio_binary"] = None
             yield final
     else:
-        if llm_type == "chat":
+        if llm_model_config["model_type"] == "chat":
             answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
         else:
             answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf, images=image_files)
@@ -1443,6 +1441,7 @@ class _ThinkStreamState:
         self.last_model_full = ""
         self.in_think = False
         self.buffer = ""
+        self.post_think_text = ""
 
 
 def _extract_visible_answer(text: str) -> str:
@@ -1476,6 +1475,10 @@ def _next_think_delta(state: _ThinkStreamState) -> str:
         state.endswith_think = True
     elif state.endswith_think:
         state.endswith_think = False
+        remainder = delta_ans[len("</think>") :]
+        if remainder:
+            state.post_think_text = remainder
+        state.last_idx = len(full_text)
         return "</think>"
 
     state.last_idx = len(full_text)
@@ -1511,6 +1514,12 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 state.buffer = ""
             state.in_think = delta == "<think>"
             yield ("marker", delta, state)
+            if delta == "</think>" and state.post_think_text:
+                state.buffer += state.post_think_text
+                state.post_think_text = ""
+                if num_tokens_from_string(state.buffer) >= min_tokens:
+                    yield ("text", state.buffer, state)
+                    state.buffer = ""
             continue
         state.buffer += delta
         if num_tokens_from_string(state.buffer) < min_tokens:
@@ -1521,6 +1530,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     if state.buffer:
         yield ("text", state.buffer, state)
         state.buffer = ""
+    if state.post_think_text:
+        yield ("text", state.post_think_text, state)
+        state.post_think_text = ""
     if state.endswith_think:
         yield ("marker", "</think>", state)
 
@@ -1540,12 +1552,12 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
     retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
     embd_owner_tenant_id = kbs[0].tenant_id
-    embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
+    embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, embedding_list[0])
     embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
-    chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_llm_name)
+    chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, chat_llm_name)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
-        rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
     max_tokens = chat_mdl.max_length
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
@@ -1649,23 +1661,18 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     kbs = KnowledgebaseService.get_by_ids(kb_ids)
     if not kbs:
         return {"error": "No KB selected"}
-    tenant_embedding_list = list(set([kb.tenant_embd_id for kb in kbs]))
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
-    if tenant_embedding_list[0]:
-        embd_model_config = get_model_config_by_id(tenant_embedding_list[0])
-        embd_owner_tenant_id = kbs[0].tenant_id
-    else:
-        embd_owner_tenant_id = kbs[0].tenant_id
-        embd_model_config = get_model_config_by_type_and_name(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
+    embd_owner_tenant_id = kbs[0].tenant_id
+    embd_model_config = get_model_config_from_provider_instance(embd_owner_tenant_id, LLMType.EMBEDDING, kbs[0].embd_id)
     embd_mdl = LLMBundle(embd_owner_tenant_id, embd_model_config)
     chat_id = search_config.get("chat_id", "")
     if chat_id:
-        chat_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.CHAT, chat_id)
+        chat_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.CHAT, chat_id)
     else:
         chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
     if rerank_id:
-        rerank_model_config = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_id)
+        rerank_model_config = get_model_config_from_provider_instance(tenant_id, LLMType.RERANK, rerank_id)
         rerank_mdl = LLMBundle(tenant_id, rerank_model_config)
 
     if meta_data_filter:

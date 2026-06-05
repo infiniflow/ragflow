@@ -1099,7 +1099,58 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
-      teamsDescription: '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
+      onedriveDescription:
+        '连接 OneDrive 或 OneDrive for Business，通过 Microsoft Graph delta 查询索引文件和文件夹。',
+      onedriveTenantIdTip:
+        'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      onedriveClientIdTip:
+        '拥有 Files.Read.All 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      onedriveClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
+      onedriveFolderPathTip:
+        '可选的子文件夹路径，用于限制索引范围（例如 /Documents/Reports）。留空则索引整个云盘。',
+      outlookDescription:
+        '连接 Outlook / Microsoft 365 邮箱，通过 Microsoft Graph delta 查询索引邮件。',
+      outlookTenantIdTip:
+        'Microsoft 365 组织的 Azure Active Directory 租户 ID（目录 ID）。',
+      outlookClientIdTip:
+        '拥有 Mail.Read 权限的 Azure AD 应用注册的应用程序（客户端）ID。',
+      outlookClientSecretTip: '在 Azure AD 应用注册中生成的客户端密钥值。',
+      outlookFolderTip:
+        '要同步的邮件文件夹（例如 inbox、sentitems、archive），默认为 inbox。',
+      outlookUserIdsTip:
+        '要同步的邮箱 UPN 或对象 ID 列表（逗号分隔）。留空则同步租户内的所有邮箱（需要 User.Read.All 权限）。',
+      salesforceDescription:
+        '连接 Salesforce 组织，通过 SOQL 增量同步并索引 CRM 记录（客户、联系人、商机、个案、知识文章）。',
+      salesforceInstanceUrlTip:
+        'Salesforce 组织地址，例如 https://your-domain.my.salesforce.com（不要包含末尾斜杠）。',
+      salesforceClientIdTip:
+        '已启用 Client Credentials Flow 且包含 api 权限的 Connected App 的 Consumer Key。',
+      salesforceClientSecretTip:
+        '用于客户端凭证身份验证的 Connected App 的 Consumer Secret。',
+      salesforceObjectsTip:
+        '要索引的 SObject API 名称列表（逗号分隔）。默认值：Account, Contact, Opportunity, Case, Knowledge__kav。',
+      salesforceApiVersionTip:
+        'Salesforce REST API 版本（例如 v59.0），请使用您组织所支持的版本。',
+      azure_blobDescription:
+        '将 Azure Blob 存储容器中的文件索引到知识库。支持账户密钥、连接字符串和 SAS 令牌三种认证方式，通过 ETag 指纹跳过未变更的文件。',
+      azureBlobAuthModeTip:
+        '选择认证方式。账户密钥和连接字符串需填写容器名称；SAS 令牌方式需填写容器 URL 和 SAS 令牌。',
+      azureBlobAccountNameTip:
+        'Azure 存储账户名称（例如 mystorageaccount），账户密钥认证时必填。',
+      azureBlobAccountKeyTip:
+        '存储账户访问密钥（Base64 编码），账户密钥认证时必填。',
+      azureBlobConnectionStringTip:
+        '完整的 Azure 存储连接字符串（DefaultEndpointsProtocol=https;AccountName=...;...），连接字符串认证时必填。',
+      azureBlobContainerUrlTip:
+        '容器的完整 HTTPS 地址（例如 https://account.blob.core.windows.net/container），SAS 令牌认证时必填。',
+      azureBlobSasTokenTip:
+        'SAS 查询字符串（不含开头的"?"），SAS 令牌认证时必填。',
+      azureBlobContainerNameTip:
+        '要索引的容器名称，账户密钥和连接字符串认证时必填。',
+      azureBlobPrefixTip:
+        '可选的 Blob 名称前缀，用于限定索引范围（例如 documents/reports/）。留空则索引整个容器。',
+      teamsDescription:
+        '通过 Microsoft Graph 连接 Microsoft Teams，同步频道帖子与回复。',
       teamsTenantIdTip:
         'Azure AD 租户 ID。需要具备 Team.ReadBasic.All 与 ChannelMessage.Read.All 应用权限（管理员同意）的应用。',
       slackDescription: '连接你的 Slack 工作区，同步频道消息与讨论串。',
@@ -1107,7 +1158,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         'Slack 机器人用户 OAuth Token（以 xoxb- 开头）。应用需具备 channels:read、channels:history 和 users:read 权限。',
       slackChannelsTip:
         '可选：需要同步的频道名称（例如 general）。留空则同步所有可访问的频道。',
-      sharepointDescription: '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
+      sharepointDescription:
+        '通过 Microsoft Graph 连接 SharePoint 站点，同步其文档库。',
       sharepointSiteUrlTip:
         '要索引的 SharePoint 站点完整 URL，例如 https://contoso.sharepoint.com/sites/MySite。需要具备 Sites.Read.All 与 Files.Read.All 应用权限（管理员同意）的 Azure AD 应用。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
@@ -1238,6 +1290,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addLlmTitle: '添加 LLM',
       editLlmTitle: '编辑 {{name}} 模型',
       editModel: '编辑模型',
+      instanceName: '实例名称',
+      instanceNameMessage: '请输入实例名称！',
+      instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       modelName: '模型名称',
       modelID: '模型ID',
       modelUid: '模型UID',

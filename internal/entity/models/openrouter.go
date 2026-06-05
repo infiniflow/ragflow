@@ -1,8 +1,25 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,42 +34,29 @@ import (
 
 // OpenRouterModel implements ModelDriver for OpenRouter AI
 type OpenRouterModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewOpenRouterModel creates a new OpenRouter AI model instance
 func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRouterModel {
 	return &OpenRouterModel{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        10,
+					MaxIdleConnsPerHost: 100,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (o *OpenRouterModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &OpenRouterModel{
-		BaseURL:   baseURL,
-		URLSuffix: o.URLSuffix,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
-			},
-		},
-	}
+	return NewOpenRouterModel(baseURL, o.baseModel.URLSuffix)
 }
 
 func (o *OpenRouterModel) Name() string {
@@ -60,19 +64,18 @@ func (o *OpenRouterModel) Name() string {
 }
 
 func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is nil or empty")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -124,7 +127,10 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -132,7 +138,7 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -193,20 +199,23 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 }
 
 func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
 	modelType := strings.Split(modelName, "_")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.AsyncChat)
+		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Convert messages to API format
@@ -268,7 +277,10 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -276,7 +288,7 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -289,6 +301,7 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 
 	// SSE parsing: read line by line
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		common.Info(line)
@@ -375,6 +388,10 @@ type openrouterUsage struct {
 }
 
 func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -382,12 +399,11 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -403,17 +419,18 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -466,13 +483,12 @@ type OpenRouterRerankResponse struct {
 }
 
 func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
-	if len(documents) == 0 {
-		return &RerankResponse{}, nil
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
 	}
 
 	var topN = rerankConfig.TopN
@@ -492,9 +508,16 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(o.BaseURL[region], "/"), o.URLSuffix.Rerank)
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), o.baseModel.URLSuffix.Rerank)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -502,7 +525,7 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -555,8 +578,8 @@ func openRouterAudioFormat(file string, asrConfig *ASRConfig) string {
 
 // TranscribeAudio transcribe audio
 func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("OpenRouter API key is missing")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
@@ -564,18 +587,13 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
-	if o.URLSuffix.ASR == "" {
+	if o.baseModel.URLSuffix.ASR == "" {
 		return nil, fmt.Errorf("OpenRouter ASR url suffix is missing")
 	}
 
 	audio, err := os.ReadFile(*file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read audio file: %w", err)
-	}
-
-	region := "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
 	}
 
 	reqBody := map[string]interface{}{
@@ -601,8 +619,15 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(o.BaseURL[region], "/"), o.URLSuffix.ASR)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), o.baseModel.URLSuffix.ASR)
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -610,7 +635,7 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -633,25 +658,24 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (z *OpenRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", o.Name())
 }
 
 // AudioSpeech convert text to audio
 func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("OpenRouter API key is missing")
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is empty")
 	}
 
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.TTS)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.TTS)
 
 	// OpenRouter:response Audio bytes stream
 	reqBody := map[string]interface{}{
@@ -673,7 +697,10 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -681,7 +708,7 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -699,27 +726,30 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (z *OpenRouterModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenRouterModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", o.Name())
 }
 
 // OCRFile OCR file
-func (m *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+func (o *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
 // ParseFile parse file
-func (z *OpenRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
 func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Models)
+	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -729,7 +759,10 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -737,7 +770,7 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -770,14 +803,20 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", o.BaseURL[region], o.URLSuffix.Balance)
+	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Balance)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -785,7 +824,7 @@ func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -826,10 +865,10 @@ func (o *OpenRouterModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *OpenRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (z *OpenRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (o *OpenRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
