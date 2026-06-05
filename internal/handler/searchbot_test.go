@@ -1,147 +1,227 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package handler
 
 import (
 	"encoding/json"
-	"errors"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/service"
-
-	"github.com/gin-gonic/gin"
+	modelModule "ragflow/internal/entity/models"
 )
 
-// mockChunkService implements ChunkServiceIface for testing.
-type mockChunkService struct {
-	retrievalTestFn func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+// fakeSearchbotLLM implements searchbotLLM for testing.
+type fakeSearchbotLLM struct {
+	response string
+	err      error
 }
 
-func (m *mockChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-	if m.retrievalTestFn != nil {
-		return m.retrievalTestFn(req, userID)
+func (f *fakeSearchbotLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+	if f.err != nil {
+		return nil, f.err
 	}
-	return &service.RetrievalTestResponse{
-		Chunks: []map[string]interface{}{{"docnm_kwd": "test", "content_with_weight": "content"}},
-	}, nil
+	return &modelModule.ChatResponse{Answer: &f.response}, nil
 }
 
-func setupSearchbotsTest(userID string) (*SearchbotHandler, *gin.Engine) {
-	h := &SearchbotHandler{
-		chunkSvc: &mockChunkService{},
-	}
+func setupSearchbotRequest(body string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: userID})
-	})
-	r.POST("/api/v1/searchbots/retrieval_test", h.RetrievalTest)
-	return h, r
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/related_questions",
+		strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+	return c, w
 }
 
-func TestSearchbotsRetrieval_Basic(t *testing.T) {
-	_, r := setupSearchbotsTest("user1")
-	body := `{"kb_id": ["kb1"], "question": "test question"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+// TestSearchbotHandler_Success verifies the happy path.
+func TestSearchbotHandler_Success(t *testing.T) {
+	llm := &fakeSearchbotLLM{
+		response: `Here are some related questions:
+1. How do EV impact environment?
+2. What are advantages of EV?
+3. Cost of EV?`,
 	}
+	h := NewSearchbotHandler(nil, nil, llm)
+
+	c, w := setupSearchbotRequest(`{"question": "EV benefits"}`)
+	h.Handle(c)
+
 	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["code"] != float64(common.CodeSuccess) {
-		t.Errorf("expected code 0, got %v", resp["code"])
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
+	}
+
+	questions, ok := resp["data"].([]interface{})
+	if !ok {
+		t.Fatalf("expected data array, got %T", resp["data"])
+	}
+	if len(questions) != 3 {
+		t.Fatalf("expected 3 questions, got %d", len(questions))
+	}
+	if questions[0] != "How do EV impact environment?" {
+		t.Errorf("unexpected [0]: %v", questions[0])
 	}
 }
 
-func TestSearchbotsRetrieval_MissingKbID(t *testing.T) {
-	_, r := setupSearchbotsTest("user1")
-	body := `{"question": "test"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+// TestSearchbotHandler_EmptyResponse verifies empty LLM response returns empty list.
+func TestSearchbotHandler_EmptyResponse(t *testing.T) {
+	llm := &fakeSearchbotLLM{
+		response: "No related questions found.",
+	}
+	h := NewSearchbotHandler(nil, nil, llm)
+
+	c, w := setupSearchbotRequest(`{"question": "EV benefits"}`)
+	h.Handle(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", resp["code"], resp["message"])
+	}
+	questions, ok := resp["data"].([]interface{})
+	if !ok {
+		t.Fatalf("expected data array, got %T", resp["data"])
+	}
+	if len(questions) != 0 {
+		t.Errorf("expected 0 questions, got %d", len(questions))
 	}
 }
 
-func TestSearchbotsRetrieval_MissingQuestion(t *testing.T) {
-	_, r := setupSearchbotsTest("user1")
-	body := `{"kb_id": ["kb1"]}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+// TestSearchbotHandler_LLMFailure verifies error handling on LLM failure.
+func TestSearchbotHandler_LLMFailure(t *testing.T) {
+	llm := &fakeSearchbotLLM{
+		err: errFake{msg: "LLM unavailable"},
+	}
+	h := NewSearchbotHandler(nil, nil, llm)
+
+	c, w := setupSearchbotRequest(`{"question": "EV benefits"}`)
+	h.Handle(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code == 0 {
+		t.Errorf("expected error code, got 0")
 	}
 }
 
-func TestSearchbotsRetrieval_NoAuth(t *testing.T) {
-	h := &SearchbotHandler{chunkSvc: &mockChunkService{}}
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.POST("/api/v1/searchbots/retrieval_test", h.RetrievalTest)
-	w := httptest.NewRecorder()
-	body := `{"kb_id": ["kb1"], "question": "test"}`
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+// TestSearchbotHandler_MissingQuestion verifies validation.
+func TestSearchbotHandler_MissingQuestion(t *testing.T) {
+	llm := &fakeSearchbotLLM{response: "dummy"}
+	h := NewSearchbotHandler(nil, nil, llm)
+
+	c, w := setupSearchbotRequest(`{}`)
+	h.Handle(c)
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	code, _ := resp["code"].(float64)
+	if code == 0 {
+		t.Errorf("expected error code, got 0")
 	}
 }
 
-func TestSearchbotsRetrieval_ServiceError(t *testing.T) {
-	h, r := setupSearchbotsTest("user1")
-	h.chunkSvc = &mockChunkService{
-		retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-			return nil, errors.New("db error")
-		},
+// errFake implements error for testing.
+type errFake struct{ msg string }
+
+func (e errFake) Error() string { return e.msg }
+
+// Existing parse tests below
+func TestParseRelatedQuestions_Standard(t *testing.T) {
+	input := `1. How do electric vehicles impact the environment?
+2. What are the advantages of owning an electric car?
+3. What is the cost-effectiveness?`
+
+	got := parseRelatedQuestions(input)
+	if len(got) != 3 {
+		t.Fatalf("expected 3, got %d", len(got))
 	}
-	w := httptest.NewRecorder()
-	body := `{"kb_id": ["kb1"], "question": "test"}`
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", w.Code)
+	if got[0] != "How do electric vehicles impact the environment?" {
+		t.Errorf("unexpected [0]: %q", got[0])
+	}
+	if got[1] != "What are the advantages of owning an electric car?" {
+		t.Errorf("unexpected [1]: %q", got[1])
+	}
+	if got[2] != "What is the cost-effectiveness?" {
+		t.Errorf("unexpected [2]: %q", got[2])
 	}
 }
 
-func TestSearchbotsRetrieval_NotFound(t *testing.T) {
-	h, r := setupSearchbotsTest("user1")
-	h.chunkSvc = &mockChunkService{
-		retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-			return nil, errors.New("no chunk found: not_found")
-		},
-	}
-	w := httptest.NewRecorder()
-	body := `{"kb_id": ["kb1"], "question": "test"}`
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", w.Code)
+func TestParseRelatedQuestions_Empty(t *testing.T) {
+	got := parseRelatedQuestions("")
+	if len(got) != 0 {
+		t.Errorf("expected 0, got %d", len(got))
 	}
 }
 
-func TestSearchbotsRetrieval_InvalidJSON(t *testing.T) {
-	_, r := setupSearchbotsTest("user1")
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader("{invalid}"))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+func TestParseRelatedQuestions_NoNumberedLines(t *testing.T) {
+	input := `Here are some related questions:
+- First question
+- Second question`
+
+	got := parseRelatedQuestions(input)
+	if len(got) != 0 {
+		t.Errorf("expected 0, got %d", len(got))
+	}
+}
+
+func TestParseRelatedQuestions_MixedContent(t *testing.T) {
+	input := `Here are some related questions:
+1. First related question.
+Some explanation text.
+2. Second related question.
+More text.
+3. Third related question.`
+
+	got := parseRelatedQuestions(input)
+	if len(got) != 3 {
+		t.Fatalf("expected 3, got %d", len(got))
+	}
+	if got[0] != "First related question." {
+		t.Errorf("unexpected [0]: %q", got[0])
+	}
+	if got[1] != "Second related question." {
+		t.Errorf("unexpected [1]: %q", got[1])
+	}
+	if got[2] != "Third related question." {
+		t.Errorf("unexpected [2]: %q", got[2])
+	}
+}
+
+func TestParseRelatedQuestions_MultiDigit(t *testing.T) {
+	input := `10. Tenth question.
+11. Eleventh question.`
+
+	got := parseRelatedQuestions(input)
+	if len(got) != 2 {
+		t.Fatalf("expected 2, got %d", len(got))
+	}
+	if got[0] != "Tenth question." {
+		t.Errorf("unexpected [0]: %q", got[0])
+	}
+	if got[1] != "Eleventh question." {
+		t.Errorf("unexpected [1]: %q", got[1])
 	}
 }

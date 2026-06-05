@@ -36,11 +36,6 @@ type searchbotLLM interface {
 	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
 }
 
-// ChunkServiceIface abstracts chunk retrieval for the searchbots handler.
-type ChunkServiceIface interface {
-	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
-}
-
 // SearchbotRealLLM wraps ModelProviderService to implement searchbotLLM.
 type SearchbotRealLLM struct {
 	Svc *service.ModelProviderService
@@ -54,26 +49,6 @@ func (r *SearchbotRealLLM) Chat(tenantID, modelID string, messages []modelModule
 	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
 }
 
-// SearchbotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
-type SearchbotRetrievalTestRequest struct {
-	KbIDs                  []string                `json:"kb_id" binding:"required"`
-	Question               string                  `json:"question" binding:"required"`
-	Page                   *int                    `json:"page,omitempty"`
-	Size                   *int                    `json:"size,omitempty"`
-	DocIDs                 []string                `json:"doc_ids,omitempty"`
-	UseKG                  *bool                   `json:"use_kg,omitempty"`
-	TopK                   *int                    `json:"top_k,omitempty"`
-	CrossLanguages         []string                `json:"cross_languages,omitempty"`
-	SearchID               *string                 `json:"search_id,omitempty"`
-	MetaDataFilter         *map[string]interface{} `json:"meta_data_filter,omitempty"`
-	TenantRerankID         *string                 `json:"tenant_rerank_id,omitempty"`
-	RerankID               *string                 `json:"rerank_id,omitempty"`
-	Keyword                *bool                   `json:"keyword,omitempty"`
-	SimilarityThreshold    *float64                `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64                `json:"vector_similarity_weight,omitempty"`
-	Highlight              *bool                   `json:"highlight,omitempty"`
-}
-
 // SearchbotRequest is the request body for POST /api/v1/searchbots/related_questions.
 type SearchbotRequest struct {
 	Question string `json:"question" binding:"required"`
@@ -85,12 +60,11 @@ type SearchbotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
 	llm       searchbotLLM
-	chunkSvc  ChunkServiceIface
 }
 
 // NewSearchbotHandler creates a new SearchbotHandler.
-func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkServiceIface) *SearchbotHandler {
-	return &SearchbotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc}
+func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM) *SearchbotHandler {
+	return &SearchbotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm}
 }
 
 // Handle generates related search questions based on a user query.
@@ -175,64 +149,6 @@ func (h *SearchbotHandler) Handle(c *gin.Context) {
 		"data":    questions,
 		"message": "",
 	})
-}
-
-// RetrievalTest handles POST /api/v1/searchbots/retrieval_test.
-func (h *SearchbotHandler) RetrievalTest(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": errorCode, "message": errorMessage})
-		return
-	}
-
-	var req SearchbotRetrievalTestRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "invalid request body"})
-		return
-	}
-
-	if len(req.KbIDs) == 0 || req.Question == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "message": "kb_id and question are required"})
-		return
-	}
-
-	svcReq := &service.RetrievalTestRequest{
-		Datasets:               req.KbIDs,
-		Question:               req.Question,
-		Page:                   req.Page,
-		Size:                   req.Size,
-		DocIDs:                 req.DocIDs,
-		UseKG:                  req.UseKG,
-		TopK:                   req.TopK,
-		CrossLanguages:         req.CrossLanguages,
-		SearchID:               req.SearchID,
-		Filter:                 h.resolveMetaDataFilter(req.MetaDataFilter),
-		TenantRerankID:         req.TenantRerankID,
-		RerankID:               req.RerankID,
-		Keyword:                req.Keyword,
-		SimilarityThreshold:    req.SimilarityThreshold,
-		VectorSimilarityWeight: req.VectorSimilarityWeight,
-	}
-
-	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not_found") {
-			c.JSON(http.StatusNotFound, gin.H{"code": common.CodeNotFound, "message": "No chunk found! Check the chunk status please!"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"code": 0, "data": result, "message": "success"})
-}
-
-// resolveMetaDataFilter extracts the metadata filter map from the request.
-func (h *SearchbotHandler) resolveMetaDataFilter(f *map[string]interface{}) map[string]interface{} {
-	if f != nil {
-		return *f
-	}
-	return nil
 }
 
 // ptrFloat64 returns a pointer to a float64 value.

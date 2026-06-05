@@ -222,7 +222,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			// Searchbot routes
 			v1.POST("/searchbots/related_questions", r.relatedQuestionsHandler.Handle)
-			v1.POST("/searchbots/retrieval_test", r.relatedQuestionsHandler.RetrievalTest)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
