@@ -1407,6 +1407,24 @@ Example: Virtual Hosted Style`,
         'Mail folder to sync (e.g. inbox, sentitems, archive). Defaults to inbox.',
       outlookUserIdsTip:
         'Comma-separated UPNs or object IDs of mailboxes to sync. Leave blank to sync every mailbox in the tenant (requires User.Read.All).',
+      azure_blobDescription:
+        'Index blobs from an Azure Blob Storage container into a knowledge base. Supports account-key, connection-string, and SAS-token auth. Unchanged blobs are skipped via ETag fingerprinting.',
+      azureBlobAuthModeTip:
+        'Choose the authentication method. Account Key and Connection String require container_name; SAS Token requires container_url + sas_token.',
+      azureBlobAccountNameTip:
+        'Azure storage account name (e.g. mystorageaccount). Required for account-key auth.',
+      azureBlobAccountKeyTip:
+        'Storage account access key (Base64-encoded). Required for account-key auth.',
+      azureBlobConnectionStringTip:
+        'Full Azure Storage connection string (DefaultEndpointsProtocol=https;AccountName=...;...). Required for connection-string auth.',
+      azureBlobContainerUrlTip:
+        'Full HTTPS URL of the container (e.g. https://account.blob.core.windows.net/container). Required for SAS-token auth.',
+      azureBlobSasTokenTip:
+        'SAS query string (without the leading "?"). Required for SAS-token auth.',
+      azureBlobContainerNameTip:
+        'Name of the container to index. Required for account-key and connection-string auth.',
+      azureBlobPrefixTip:
+        'Optional blob name prefix to limit indexing to a virtual folder (e.g. documents/reports/). Leave blank to index the entire container.',
       restApiQueryParamsTip:
         'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
       restApiHeadersTip:
