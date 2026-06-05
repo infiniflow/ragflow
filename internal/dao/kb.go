@@ -326,7 +326,7 @@ func (dao *KnowledgebaseDAO) AtomicIncreaseDocNumByID(kbID string) error {
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
-			"doc_num": DB.Raw("doc_num + 1"),
+			"doc_num":     DB.Raw("doc_num + 1"),
 		}).Error
 }
 
@@ -336,9 +336,9 @@ func (dao *KnowledgebaseDAO) DecreaseDocumentNum(kbID string, docNum, chunkNum, 
 	return DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", kbID).
 		Updates(map[string]interface{}{
-			"doc_num":   DB.Raw("doc_num - ?", docNum),
-			"chunk_num": DB.Raw("chunk_num - ?", chunkNum),
-			"token_num": DB.Raw("token_num - ?", tokenNum),
+			"doc_num":     DB.Raw("doc_num - ?", docNum),
+			"chunk_num":   DB.Raw("chunk_num - ?", chunkNum),
+			"token_num":   DB.Raw("token_num - ?", tokenNum),
 		}).Error
 }
 
