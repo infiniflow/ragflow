@@ -85,6 +85,40 @@ func (f *fakeDocumentService) DeleteDocumentAllMetadata(docID string) error {
 func (f *fakeDocumentService) GetDocumentMetadataByID(docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
+func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
+	if filename == "error.txt" {
+		return nil, service.ErrArtifactNotFound
+	}
+	if filename == "unexpected.txt" {
+		return nil, fmt.Errorf("unexpected error")
+	}
+	return &service.ArtifactResponse{
+		Data:            []byte("artifact content"),
+		ContentType:     "text/plain",
+		SafeFilename:    "safe.txt",
+		ForceAttachment: false,
+	}, nil
+}
+func (f *fakeDocumentService) GetDocumentPreview(docID string) (*service.DocumentPreview, error) {
+	if docID == "not-found" {
+		return nil, fmt.Errorf("not found")
+	}
+	return &service.DocumentPreview{
+		Data:        []byte("preview content"),
+		ContentType: "text/plain",
+		FileName:    "preview.txt",
+	}, nil
+}
+func (f *fakeDocumentService) DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error) {
+	if docID == "not-found" {
+		return nil, fmt.Errorf("not found")
+	}
+	return &service.DownloadDocumentResp{
+		Data:        []byte("document data"),
+		ContentType: "application/pdf",
+		FileName:    "doc.pdf",
+	}, nil
+}
 
 func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
@@ -242,5 +276,148 @@ func TestDeleteDocumentsHandler_MissingDatasetID(t *testing.T) {
 	code, _ := resp["code"].(float64)
 	if code == float64(common.CodeSuccess) {
 		t.Fatal("expected error for missing dataset_id")
+	}
+}
+
+func TestGetDocumentArtifact_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/artifact/test.txt", "")
+	c.Params = gin.Params{{Key: "filename", Value: "test.txt"}}
+
+	h.GetDocumentArtifact(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "text/plain" {
+		t.Fatalf("unexpected content type: %s", w.Header().Get("Content-Type"))
+	}
+	if w.Body.String() != "artifact content" {
+		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
+func TestGetDocumentArtifact_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/artifact/error.txt", "")
+	c.Params = gin.Params{{Key: "filename", Value: "error.txt"}}
+
+	h.GetDocumentArtifact(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+func TestGetDocumentArtifact_UnexpectedError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/artifact/unexpected.txt", "")
+	c.Params = gin.Params{{Key: "filename", Value: "unexpected.txt"}}
+
+	h.GetDocumentArtifact(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeExceptionError) {
+		t.Fatalf("expected code %d, got %v", common.CodeExceptionError, resp["code"])
+	}
+}
+
+func TestGetDocumentPreview_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/doc-1/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+
+	h.GetDocumentPreview(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "text/plain" {
+		t.Fatalf("unexpected content type: %s", w.Header().Get("Content-Type"))
+	}
+	if w.Body.String() != "preview content" {
+		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
+func TestGetDocumentPreview_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/not-found/preview", "")
+	c.Params = gin.Params{{Key: "id", Value: "not-found"}}
+
+	h.GetDocumentPreview(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	}
+}
+
+func TestDownloadDocument_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents/doc-1", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}, {Key: "document_id", Value: "doc-1"}}
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if w.Header().Get("Content-Type") != "application/pdf" {
+		t.Fatalf("unexpected content type: %s", w.Header().Get("Content-Type"))
+	}
+	if w.Body.String() != "document data" {
+		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
+func TestDownloadDocument_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+	}
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents/not-found", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}, {Key: "document_id", Value: "not-found"}}
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
 	}
 }
