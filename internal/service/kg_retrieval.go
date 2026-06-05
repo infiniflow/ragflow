@@ -177,16 +177,19 @@ func KGSearchRetrieval(
 	scoredEnts := common.SortAndTrimEntities(entsFromQuery, 6)
 	scoredRels := common.SortAndTrimRelations(relsFromText, 6)
 
-	// 9. Search community reports and build content
+	// 9. Build KG content (entities + relations) with token budget, matching Python order
 	maxToken := 8196
-	communityContent := searchKGCommunityContent(ctx, docEngine, kbIDs, scoredEnts, 1, &maxToken)
-	kgContent := common.BuildKGContent(scoredEnts, scoredRels, maxToken-len(communityContent)/4)
+	entsRelsContent := common.BuildKGContent(scoredEnts, scoredRels, maxToken)
+	used := common.NumTokensFromString(entsRelsContent)
+	remaining := maxToken - used
+	// 10. Search community reports with remaining token budget
+	communityContent := searchKGCommunityContent(ctx, docEngine, kbIDs, scoredEnts, 1, &remaining)
 
-	// 10. Build synthetic chunk
+	// 11. Build synthetic chunk
 	return map[string]interface{}{
 		"chunk_id":              "",
 		"content_ltks":          "",
-		"content_with_weight":   kgContent + communityContent,
+		"content_with_weight":   entsRelsContent + communityContent,
 		"doc_id":                "",
 		"docnm_kwd":             "Related content in Knowledge Graph",
 		"kb_id":                 kbIDs,
