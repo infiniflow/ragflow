@@ -20,6 +20,7 @@ import re
 import time
 from abc import ABC
 from functools import partial
+from urllib.parse import urlparse
 
 import requests
 
@@ -182,8 +183,24 @@ class Invoke(ComponentBase, ABC):
 
         return {key: self._resolve_header_text(value, kwargs) if isinstance(value, str) else value for key, value in headers.items()}
 
+    @staticmethod
+    def _ssrf_log_target(url: str) -> str:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.hostname:
+            return "invalid-url"
+        return f"{parsed.scheme}://{parsed.hostname}"
+
+    def _normalize_proxy_url(self) -> str | None:
+        proxy = (self._param.proxy or "").strip()
+        if not re.sub(r"https?:?/?/?", "", proxy):
+            return None
+        if not proxy.startswith(("http://", "https://")):
+            proxy = "http://" + proxy
+        return proxy
+
     def _build_proxies(self) -> dict | None:
-        if not re.sub(r"https?:?/?/?", "", self._param.proxy):
+        proxy_url = self._normalize_proxy_url()
+        if not proxy_url:
             return None
         return {"http": self._param.proxy, "https": self._param.proxy}
 
@@ -195,6 +212,7 @@ class Invoke(ComponentBase, ABC):
             "headers": headers,
             "proxies": proxies,
             "timeout": self._param.timeout,
+            "allow_redirects": False,
         }
 
         # GET sends query params; POST/PUT send either JSON or form data based on datatype.
@@ -223,12 +241,31 @@ class Invoke(ComponentBase, ABC):
         url = self._build_url(kwargs)
         headers = self._build_headers(kwargs)
         proxies = self._build_proxies()
+        proxy_hostname = proxy_ip = None
+
+        if proxies:
+            proxy_url = self._normalize_proxy_url()
+            try:
+                proxy_hostname, proxy_ip = assert_url_is_safe(proxy_url)
+            except ValueError as exc:
+                logging.warning(
+                    "Invoke SSRF guard blocked proxy=%s: %s",
+                    self._ssrf_log_target(proxy_url),
+                    exc,
+                )
+                self.set_output("_ERROR", "URL not valid")
+                return "Http request error: URL not valid"
 
         try:
-            ssrf_hostname, ssrf_ip = assert_url_is_safe(url)
-        except ValueError as e:
-            self.set_output("_ERROR", str(e))
-            return f"Http request error: SSRF guard blocked {url!r}: {e}"
+            hostname, resolved_ip = assert_url_is_safe(url)
+        except ValueError as exc:
+            logging.warning(
+                "Invoke SSRF guard blocked url=%s: %s",
+                self._ssrf_log_target(url),
+                exc,
+            )
+            self.set_output("_ERROR", "URL not valid")
+            return "Http request error: URL not valid"
 
         last_error = None
         for _ in range(self._param.max_retries + 1):
@@ -236,8 +273,12 @@ class Invoke(ComponentBase, ABC):
                 return
 
             try:
-                with pin_dns(ssrf_hostname, ssrf_ip):
-                    response = self._send_request(url, args, headers, proxies)
+                with pin_dns(hostname, resolved_ip):
+                    if proxy_hostname and proxy_ip:
+                        with pin_dns(proxy_hostname, proxy_ip):
+                            response = self._send_request(url, args, headers, proxies)
+                    else:
+                        response = self._send_request(url, args, headers, proxies)
                 result = self._format_response(response)
                 self.set_output("result", result)
                 return result
