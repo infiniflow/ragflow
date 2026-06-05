@@ -82,11 +82,14 @@ func KGSearchRetrieval(
 	tenantIDs []string,
 	question string,
 ) (map[string]interface{}, error) {
-	// 1. Query rewrite (simplified: use question entities directly)
-	typeKeywords := extractTypeKeywords(question)
-	entities := extractEntities(question)
+	// 1. Query rewrite via LLM, or fall back to raw question
+	typeKeywords, entities := queryRewrite(chatModel, question, func() string {
+		typeSamples, _ := searchKGTypeSamples(ctx, docEngine, kbIDs)
+		data, _ := json.Marshal(typeSamples)
+		return string(data)
+	})
 
-	// 4. Search entities by keywords
+	// 2. Search entities by keywords
 	entsReq := &types.SearchRequest{
 		KbIDs:        kbIDs,
 		SelectFields: []string{"entity_kwd", "entity_type_kwd", "rank_flt", "content_with_weight", "n_hop_with_weight"},
@@ -278,20 +281,26 @@ func searchKGCommunityContent(ctx context.Context, docEngine engine.DocEngine, k
 	return bld
 }
 
-// extractTypeKeywords extracts type-related keywords from a question.
-// Simplified version; full implementation would use LLM query_rewrite.
-func extractTypeKeywords(question string) []string {
+// queryRewrite attempts LLM-based query rewrite, falling back to raw question.
+func queryRewrite(chatModel *modelModule.ChatModel, question string, getTypeSamples func() string) (typeKeywords, entities []string) {
 	if question == "" {
-		return nil
+		return nil, nil
 	}
-	return nil
-}
-
-// extractEntities extracts entity names from a question.
-// Simplified version; full implementation would use LLM query_rewrite.
-func extractEntities(question string) []string {
-	if question == "" {
-		return nil
+	if chatModel != nil {
+		ty2entsJSON := getTypeSamples()
+		prompt := common.BuildQueryRewritePrompt(question, ty2entsJSON)
+		messages := []modelModule.Message{
+			{Role: "system", Content: prompt},
+			{Role: "user", Content: "Output:"},
+		}
+		response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, nil)
+		if err == nil && response != nil && response.Answer != nil {
+			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
+			if parseErr == nil && result != nil {
+				return result.TypeKeywords, result.Entities
+			}
+		}
 	}
-	return []string{question}
+	// Fallback: use raw question as single entity
+	return nil, []string{question}
 }

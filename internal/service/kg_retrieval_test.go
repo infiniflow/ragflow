@@ -198,18 +198,21 @@ func TestKGSearchRetrieval_NoEntities(t *testing.T) {
 	}
 }
 
-// --- extractEntities ---
+// --- queryRewrite ---
 
-func TestExtractEntities(t *testing.T) {
-	result := extractEntities("What is SpaceX?")
-	if len(result) != 1 || result[0] != "What is SpaceX?" {
-		t.Errorf("expected [What is SpaceX?], got %v", result)
+func TestQueryRewrite_Fallback(t *testing.T) {
+	typeKeywords, entities := queryRewrite(nil, "What is SpaceX?", func() string { return "{}" })
+	if typeKeywords != nil {
+		t.Errorf("expected nil typeKeywords when no LLM, got %v", typeKeywords)
+	}
+	if len(entities) != 1 || entities[0] != "What is SpaceX?" {
+		t.Errorf("expected [What is SpaceX?], got %v", entities)
 	}
 }
 
-func TestExtractEntities_Empty(t *testing.T) {
-	result := extractEntities("")
-	if result != nil {
-		t.Errorf("expected nil, got %v", result)
+func TestQueryRewrite_EmptyQuestion(t *testing.T) {
+	typeKeywords, entities := queryRewrite(nil, "", nil)
+	if typeKeywords != nil || entities != nil {
+		t.Errorf("expected nil for empty question, got type=%v entities=%v", typeKeywords, entities)
 	}
 }
