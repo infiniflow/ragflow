@@ -1896,7 +1896,7 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.provider in FACTORY_DEFAULT_BASE_URL:
+        if self.base_url:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
