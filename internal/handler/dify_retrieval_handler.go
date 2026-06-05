@@ -210,14 +210,18 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	// Parse retrieval options
-	topK := 1024
+	// Parse retrieval options (nil means service uses defaults)
+	var topK *int
 	if req.RetrievalSetting != nil && req.RetrievalSetting.TopK != nil {
-		topK = *req.RetrievalSetting.TopK
+		topK = req.RetrievalSetting.TopK
 	}
-	scoreThreshold := 0.0
+	var scoreThreshold *float64
 	if req.RetrievalSetting != nil && req.RetrievalSetting.ScoreThreshold != nil {
-		scoreThreshold = *req.RetrievalSetting.ScoreThreshold
+		scoreThreshold = req.RetrievalSetting.ScoreThreshold
+	}
+	pageSize := 1024
+	if topK != nil {
+		pageSize = *topK
 	}
 
 	// Get embedding model
@@ -253,9 +257,9 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		KbIDs:                  []string{req.KnowledgeID},
 		DocIDs:                 docIDs,
 		Page:                   1,
-		PageSize:               topK,
-		Top:                    &topK,
-		SimilarityThreshold:    &scoreThreshold,
+		PageSize:               pageSize,
+		Top:                    topK,
+		SimilarityThreshold:    scoreThreshold,
 		EmbeddingModel:         embModel,
 	}
 	if rankFeature != nil {
