@@ -382,3 +382,20 @@ func TestDifyRetrieval_DocLoadError(t *testing.T) {
 		t.Errorf("expected 500 for doc load error, got %d", w.Code)
 	}
 }
+
+func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			return nil, errors.New("no chunk found: not_found")
+		},
+	}
+	w := httptest.NewRecorder()
+	body := `{"knowledge_id": "kb1", "query": "test"}`
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for not_found, got %d", w.Code)
+	}
+}
