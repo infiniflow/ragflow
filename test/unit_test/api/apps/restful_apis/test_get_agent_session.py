@@ -42,10 +42,56 @@ def _load_agent_api(monkeypatch, get_by_id_result):
     `get_by_id_result` is the `(exists, conv)` tuple the stub
     `API4ConversationService.get_by_id` will return for any session_id.
     """
+    class _FakeExpr:
+        def __or__(self, other):
+            return self
+
+        def __and__(self, other):
+            return self
+
+        def contains(self, _value):
+            return self
+
+    class _FakeField:
+        def __eq__(self, other):
+            return _FakeExpr()
+
+        def __ne__(self, other):
+            return _FakeExpr()
+
+    class _FakeQuery:
+        def where(self, *_args, **_kwargs):
+            return self
+
+        def exists(self):
+            return False
+
+    class _StubAPI4Conversation:
+        id = _FakeField()
+        user_id = _FakeField()
+        exp_user_id = _FakeField()
+        message = _FakeField()
+
+        @classmethod
+        def select(cls, *_args, **_kwargs):
+            return _FakeQuery()
+
+    def _connection_context():
+        def decorator(func):
+            return func
+
+        return decorator
+
     _stub(monkeypatch, "api.apps", current_user=SimpleNamespace(id="tenant-1"), login_required=lambda func: func)
     _stub(monkeypatch, "api.apps.services.canvas_replica_service", CanvasReplicaService=SimpleNamespace())
     _stub(monkeypatch, "api.db", CanvasCategory=SimpleNamespace())
-    _stub(monkeypatch, "api.db.db_models", Task=SimpleNamespace())
+    _stub(
+        monkeypatch,
+        "api.db.db_models",
+        Task=SimpleNamespace(),
+        API4Conversation=_StubAPI4Conversation,
+        DB=SimpleNamespace(connection_context=_connection_context),
+    )
     _stub(
         monkeypatch,
         "api.db.services.api_service",
