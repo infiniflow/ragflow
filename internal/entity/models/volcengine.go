@@ -31,29 +31,29 @@ import (
 
 // VolcEngine implements ModelDriver for VolcEngine
 type VolcEngine struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client // Reusable HTTP client with connection pool
+	baseModel BaseModel
 }
 
 // NewVolcEngine creates a new VolcEngine model instance
 func NewVolcEngine(baseURL map[string]string, urlSuffix URLSuffix) *VolcEngine {
 	return &VolcEngine{
-		BaseURL:   baseURL,
-		URLSuffix: urlSuffix,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  false,
+		baseModel: BaseModel{
+			BaseURL:   baseURL,
+			URLSuffix: urlSuffix,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					MaxIdleConns:        100,
+					MaxIdleConnsPerHost: 10,
+					IdleConnTimeout:     90 * time.Second,
+					DisableCompression:  false,
+				},
 			},
 		},
 	}
 }
 
 func (v *VolcEngine) NewInstance(baseURL map[string]string) ModelDriver {
-	return nil
+	return NewVolcEngine(baseURL, v.baseModel.URLSuffix)
 }
 
 func (v *VolcEngine) Name() string {
@@ -62,16 +62,19 @@ func (v *VolcEngine) Name() string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -159,11 +162,9 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -225,17 +226,19 @@ func (v *VolcEngine) ChatWithMessages(modelName string, messages []Message, apiC
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/chat/completions", v.BaseURL[region])
+	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -332,7 +335,7 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -440,16 +443,19 @@ type volcenginePromptTokensDetails struct {
 
 // Embed embeds a list of texts into embeddings
 func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Embedding)
 
 	var embeddings []EmbeddingData
 
@@ -491,7 +497,7 @@ func (v *VolcEngine) Embed(modelName *string, texts []string, apiConfig *APIConf
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-			resp, err := v.httpClient.Do(req)
+			resp, err := v.baseModel.httpClient.Do(req)
 			if err != nil {
 				return parsed, fmt.Errorf("failed to send request: %w", err)
 			}
@@ -558,19 +564,19 @@ func (v *VolcEngine) ParseFile(modelName *string, content []byte, url *string, a
 }
 
 func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	baseURL := v.BaseURL[region]
-	if baseURL == "" {
-		baseURL = v.BaseURL["default"]
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
+	baseURL := resolvedBaseURL
 	if baseURL == "" {
-		return nil, fmt.Errorf("volcengine: no base URL configured for region %q", region)
+		baseURL = resolvedBaseURL
 	}
-	modelsSuffix := strings.Trim(strings.TrimSpace(v.URLSuffix.Models), "/")
+	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
 	}
@@ -585,11 +591,9 @@ func (v *VolcEngine) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -626,12 +630,15 @@ func (v *VolcEngine) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 }
 
 func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := v.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
 	}
 
-	url := fmt.Sprintf("%s/%s", v.BaseURL[region], v.URLSuffix.Files)
+	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -644,7 +651,7 @@ func (v *VolcEngine) CheckConnection(apiConfig *APIConfig) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := v.httpClient.Do(req)
+	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
