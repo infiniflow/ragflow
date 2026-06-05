@@ -328,16 +328,28 @@ class OSConnection(DocStoreConnection):
             # Besides, Opensearch's DSL for KNN_search query syntax differs from that in Elasticsearch, I also made some adaptions for it
             elif isinstance(m, MatchDenseExpr):
                 assert (bqry is not None)
-                similarity = 0.0
-                if "similarity" in m.extra_options:
-                    similarity = m.extra_options["similarity"]
                 use_knn = True
                 vector_column_name = m.vector_column_name
                 knn_query[vector_column_name] = {}
                 knn_query[vector_column_name]["vector"] = list(m.embedding_data)
                 knn_query[vector_column_name]["k"] = m.topn
                 knn_query[vector_column_name]["filter"] = bqry.to_dict()
-                knn_query[vector_column_name]["boost"] = similarity
+                # Keep the knn boost at 1.0 instead of mapping
+                # extra_options["similarity"] onto it. `similarity` here is a
+                # minimum-similarity *threshold* (Elasticsearch knn semantics),
+                # not a score multiplier -- es_conn.py passes it as the knn
+                # `similarity` argument, not as `boost`. rag/nlp/search.py's
+                # _knn_scores() runs a clean-cosine second pass and deliberately
+                # passes similarity=0.0 to disable thresholding; mapped onto
+                # `boost` that multiplied every OpenSearch knn _score by 0.0, so
+                # get_scores() returned all-zero and vector_similarity was always
+                # 0 -> dense retrieval was silently dead on the OpenSearch
+                # backend and the similarity threshold then dropped every chunk.
+                # Main search ranking is unaffected: boost is a uniform scale and
+                # the text query is only used as a knn filter, so candidates are
+                # ranked by cosine either way. The similarity threshold is still
+                # enforced downstream in Dealer.retrieval() (post_threshold).
+                knn_query[vector_column_name]["boost"] = 1.0
 
         if bqry and rank_feature:
             for fld, sc in rank_feature.items():
