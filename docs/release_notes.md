@@ -11,13 +11,16 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.26.0
 
-Released on June 4, 2026.
+Released on June 8, 2026.
 
 ### New features
 
 - **Model providers**: Allows configuring multiple API keys for the same model provider. [#15516](https://github.com/infiniflow/ragflow/pull/15516)
-- **Data source connectors**: Introduces new connectors for Outlook, OneDrive, Microsoft Teams, Slack, and SharePoint. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)
-- Marks MySQL migrations as applied to streamline the database upgrade process. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
+- **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, and SharePoint. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)
+
+### Improvements
+
+- Marks MySQL migrations as applied, ensuring the database schema remains synchronized with the application's current version requirements. [#15504](https://github.com/infiniflow/ragflow/pull/15504)
 
 ### Model Support
 
@@ -28,21 +31,21 @@ Released on June 4, 2026.
 
 ### Bug fixes
 
-- **Chat/LLM**: Fixed an issue where the Minimax thinking mode toggle did not function correctly. [#15496](https://github.com/infiniflow/ragflow/pull/15496)
-- Resolved a potential infinite loop that occurred when using the thinking mode for Qwen3.5 and Qwen3.6 models. [#15101](https://github.com/infiniflow/ragflow/pull/15101)
-- Fixed an issue that caused duplicate answers during OpenAI-compatible chat completion streaming. [#15286](https://github.com/infiniflow/ragflow/issues/15286)[#15443](https://github.com/infiniflow/ragflow/pull/15443)
-- Corrected a bug where NaN or Inf scores failed to serialize properly in chat completions. [#15245](https://github.com/infiniflow/ragflow/issues/15245)[#15266](https://github.com/infiniflow/ragflow/pull/15266)
-- Fixed an issue where extra fields interfered with the LiteLLM provider configuration. [#15427](https://github.com/infiniflow/ragflow/issues/15427)[#15432](https://github.com/infiniflow/ragflow/pull/15432)
-- Addressed an issue where the default non-streaming mode behaved incorrectly for default OpenAI chat completions. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
-- Fixed a bug that dropped empty `AND` results during metadata filtering. [#15477](https://github.com/infiniflow/ragflow/pull/15477)
-- **Document processing**: Fixed an issue that resulted in duplicate MinerU page chrome blocks. [#15335](https://github.com/infiniflow/ragflow/issues/15335)[#15387](https://github.com/infiniflow/ragflow/pull/15387)
-- Fixed an issue where English chart titles were missing in DeepDoc. [#15481](https://github.com/infiniflow/ragflow/pull/15481)
-- Fixed a regression by restoring the TitleChunker JSON/chunks upstream format output. [#14247](https://github.com/infiniflow/ragflow/pull/14247)[#15396](https://github.com/infiniflow/ragflow/pull/15396)
-- Fixed an issue where the error prompt was missing during invalid TSV file uploads. [#15284](https://github.com/infiniflow/ragflow/pull/15284)
-- Fixed a bug that prevented the successful backfill of API token beta values. [#15405](https://github.com/infiniflow/ragflow/pull/15405)
-- Fixed an issue with large queries by capping the maximum `page_size` to 100. [#15292](https://github.com/infiniflow/ragflow/pull/15292)
-- Fixed an issue by automatically inferring the `Content-Type` for document image endpoints. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
-- Fixed an issue where missing file downloads did not properly return HTTP 4xx errors. [#15369](https://github.com/infiniflow/ragflow/issues/15369)[#15371](https://github.com/infiniflow/ragflow/pull/15371)
+- The thinking mode of MiniMax models was not correctly enabled. [#15496](https://github.com/infiniflow/ragflow/pull/15496)
+- Infinite loops were triggered when the thinking mode was enabled for Qwen3.5 and Qwen3.6 models. [#15101](https://github.com/infiniflow/ragflow/pull/15101)
+- Streamed answers were being duplicated when using the OpenAI-compatible chat completions API endpoint. [#15286](https://github.com/infiniflow/ragflow/issues/15286)[#15443](https://github.com/infiniflow/ragflow/pull/15443)
+- Serialization errors were caused during chat completions when invalid numeric scores like `NaN` (Not-a-Number) or `Inf` (Infinity) were passed to the JSON encoder. [#15245](https://github.com/infiniflow/ragflow/issues/15245)[#15266](https://github.com/infiniflow/ragflow/pull/15266)
+- Chat completions using LiteLLM providers were failing because unrecognized internal configuration parameters were not being filtered out before reaching the external APIs. [#15427](https://github.com/infiniflow/ragflow/issues/15427)[#15432](https://github.com/infiniflow/ragflow/pull/15432)
+- The OpenAI-compatible chat completions API was defaulting to streamed responses. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
+- Empty `AND` results were incorrectly dropped during metadata filtering. [#15477](https://github.com/infiniflow/ragflow/pull/15477)
+- Repetitive page chrome, such as headers and footers, was incorrectly extracted as main text by the MinerU parser. [#15335](https://github.com/infiniflow/ragflow/issues/15335)[#15387](https://github.com/infiniflow/ragflow/pull/15387)
+- English chart titles were missing during document extraction in the DeepDoc module. [#15481](https://github.com/infiniflow/ragflow/pull/15481)
+- Empty outputs were returned by the TitleChunker for `json` and `chunks` upstream formats [#14247](https://github.com/infiniflow/ragflow/pull/14247)[#15396](https://github.com/infiniflow/ragflow/pull/15396)
+- An error message was missing when a .tsv file upload attempt failed. [#15284](https://github.com/infiniflow/ragflow/pull/15284)
+- API tokens missing beta values caused token retrieval errors. [#15405](https://github.com/infiniflow/ragflow/pull/15405)
+- Caps the maximum page size to fix system crashes or slowdowns from large queries. [#15292](https://github.com/infiniflow/ragflow/pull/15292)
+- Client errors were caused by the OpenAI-compatible chat completion API incorrectly defaulting to streamed responses. [#15356](https://github.com/infiniflow/ragflow/issues/15356)[#15394](https://github.com/infiniflow/ragflow/pull/15394)
+- HTTP 500 internal server errors were triggered instead of standard 4xx client errors when users attempted to download missing files from the storage backend. [#15369](https://github.com/infiniflow/ragflow/issues/15369)[#15371](https://github.com/infiniflow/ragflow/pull/15371)
 
 ## v0.25.6
 
