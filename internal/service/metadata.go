@@ -283,7 +283,7 @@ func (s *MetadataService) FetchDocMetaByKB(docIDsByKB KBDocIDsMap, tenantID stri
 		if err != nil {
 			continue
 		}
-		for docID, meta := range ConvertSearchResultToDocMeta(result.Chunks) {
+		for docID, meta := range ConvertSearchResultToDocMeta(result.MetadataRecords) {
 			metaByDoc[docID] = meta
 		}
 	}

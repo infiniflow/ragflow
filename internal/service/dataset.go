@@ -342,7 +342,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
 		if err != nil {
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
-			flattedMeta = make(map[string]interface{})
+			flattedMeta = make(common.MetaData)
 		}
 		common.Info("Metadata filter conditions", zap.Any("filter", metadataFilter))
 		filteredDocIDs, _ := ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, req.DocIDs, datasetIDs)

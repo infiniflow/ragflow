@@ -276,7 +276,8 @@ func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 	}
 	switch f.Op {
 	case "in", "not in":
-		parts := strings.Split(f.Value, ",")
+		strVal, _ := f.Value.(string)
+		parts := strings.Split(strVal, ",")
 		arr := make([]interface{}, 0, len(parts))
 		for _, p := range parts {
 			if trimmed := strings.TrimSpace(p); trimmed != "" { arr = append(arr, trimmed) }
@@ -520,9 +521,8 @@ func applySingleCondition(metaData map[string]interface{}, condition MetaFilterC
 				result = append(result, v...)
 			}
 		}
-		mc.Value = arr
 	}
-	return mc
+	return result
 }
 
 // metaFilterValues extracts string values from a MetaFilterCondition Value which can

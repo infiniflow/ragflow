@@ -686,6 +686,23 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		outputColumns = append(outputColumns, "row_id()")
 	}
 
+	// Strip score pseudo-columns when there's no match expression — Infinity
+	// rejects SCORE()/SCORE_FACTORS() without MATCH TEXT/TENSOR/Fusion with
+	// "InfinityException(3013)". This protects callers (e.g. the no-match
+	// fallback in retrieval.go) that reuse a SelectFields list containing
+	// "_score" across both matched and unmatched queries.
+	if !hasTextMatch && !hasVectorMatch {
+		filtered := outputColumns[:0]
+		for _, c := range outputColumns {
+			switch c {
+			case "_score", "SCORE", "score()", "similarity()":
+				continue
+			}
+			filtered = append(filtered, c)
+		}
+		outputColumns = filtered
+	}
+
 	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
 	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
 		outputColumns = append(outputColumns, matchDense.VectorColumnName)
@@ -1792,6 +1809,11 @@ func (e *infinityEngine) GetScores(knnResult map[string]interface{}) map[string]
 
 // convertSelectFields converts field names to Infinity format
 // isSkillIndex indicates if this is a skill index (uses skill_id instead of id)
+//
+// Does NOT mutate the input slice — callers (e.g. retrieval.go) reuse the same
+// SelectFields list both for Search() and GetFields(); mutating it would
+// replace logical names like "content_with_weight" with their Infinity column
+// names ("content"), breaking GetFields's field-presence checks.
 func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm",
@@ -1813,20 +1835,24 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		skillIndex = isSkillIndex[0]
 	}
 
+	// Copy + map without mutating the caller's slice.
+	mapped := make([]string, len(output))
 	needEmptyCount := false
 	for i, field := range output {
 		if field == "important_kwd" {
 			needEmptyCount = true
 		}
 		if newField, ok := fieldMapping[field]; ok {
-			output[i] = newField
+			mapped[i] = newField
+		} else {
+			mapped[i] = field
 		}
 	}
 
 	// Remove duplicates
 	seen := make(map[string]bool)
 	result := []string{}
-	for _, f := range output {
+	for _, f := range mapped {
 		if f != "" && !seen[f] {
 			seen[f] = true
 			result = append(result, f)

@@ -757,11 +757,6 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 	// Build bool query from condition
 	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, isSkillIndex)
 
-	// Allow caller to override output columns (used by KG search, etc.)
-	if len(req.SelectFields) > 0 {
-		outputColumns = req.SelectFields
-	}
-
 	// Extract vector_similarity_weight from FusionExpr
 	var matchText *types.MatchTextExpr
 	var matchDense *types.MatchDenseExpr
