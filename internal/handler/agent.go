@@ -407,3 +407,41 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		"message": "",
 	})
 }
+
+type updateAgentTagsRequest struct {
+	Tags interface{} `json:"tags"`
+}
+
+func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req updateAgentTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.agentService.UpdateAgentTags(user.ID, c.Param("agent_id"), req.Tags)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
