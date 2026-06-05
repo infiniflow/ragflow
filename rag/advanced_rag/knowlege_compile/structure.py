@@ -62,12 +62,18 @@ import json
 import logging
 from typing import Tuple
 
-import xxhash
-
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.nlp import rag_tokenizer
 from rag.prompts.generator import INPUT_UTILIZATION, gen_json, split_chunks
+
+from ._common import (
+    encode as _encode,
+    find_vec_field as _find_vec_field,
+    stable_row_id as _stable_row_id,
+    tokenize_for_search as _tokenize_for_search,
+    union_ordered as _union_ordered,
+)
 
 
 _STRUCT_TYPES = ("list", "set", "hypergraph")
@@ -253,11 +259,10 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     return nodes, edges
 
 
-async def _struct_embed(payloads: list[str], embd_mdl) -> list:
-    if not payloads:
-        return []
-    embeddings, _ = await thread_pool_exec(embd_mdl.encode, payloads)
-    return list(embeddings)
+# Backwards-compat alias for the shared helper. New code should use
+# ``_common.encode`` directly; kept here so existing references inside this
+# module keep working without a wider rename.
+_struct_embed = _encode
 
 
 def _struct_payload_description(payload: dict) -> str:
@@ -335,9 +340,7 @@ def _struct_to_es_doc(
     doc_id_str = str(doc_id)
 
     description = _struct_payload_description(payload)
-
-    content_ltks = rag_tokenizer.tokenize(description) if description else ""
-    content_sm_ltks = rag_tokenizer.fine_grained_tokenize(content_ltks) if content_ltks else ""
+    content_ltks, content_sm_ltks = _tokenize_for_search(description)
 
     doc = {
         "content_with_weight": content_with_weight,
@@ -348,9 +351,7 @@ def _struct_to_es_doc(
         "content_ltks": content_ltks,
         "content_sm_ltks": content_sm_ltks,
         f"q_{len(vec_list)}_vec": vec_list,
-        "id": xxhash.xxh64(
-            (content_with_weight + doc_id_str).encode("utf-8", "surrogatepass")
-        ).hexdigest(),
+        "id": _stable_row_id(content_with_weight, doc_id_str),
     }
 
     if kind == "relation":
@@ -367,10 +368,9 @@ def _struct_to_es_doc(
 
 
 async def _struct_process_batch(
-    batch: list,
+    packed: list[dict],
     batch_idx: int,
     total: int,
-    chunk_ids: list,
     autotype: str,
     parser_config: dict,
     chat_mdl,
@@ -382,20 +382,20 @@ async def _struct_process_batch(
 ) -> list[dict]:
     """Process one packed batch end-to-end (extract → embed → ES docs).
 
-    The semaphore (if any) is taken around the entire batch's LLM + embedding
-    work to bound peak concurrency.
+    ``packed`` is the per-batch shape produced by
+    ``_common.build_chunk_batches``: ``[{label, chunk_id, text}, ...]``.
+    The ``label`` field is unused here — structure uses ``---`` separators
+    instead of per-chunk labels — but ``chunk_id`` is collected so every
+    item produced by this batch carries the batch's source chunk ids.
+
+    The semaphore (if any) is taken around the entire batch's LLM +
+    embedding work to bound peak concurrency.
     """
-    if not batch:
+    if not packed:
         return []
 
-    batch_ids: list = []
-    batch_segments: list[str] = []
-    for item in batch:
-        for idx, text in item.items():
-            cid = chunk_ids[idx]
-            if cid:
-                batch_ids.append(cid)
-            batch_segments.append(text)
+    batch_ids: list = [e["chunk_id"] for e in packed if e.get("chunk_id")]
+    batch_segments: list[str] = [e["text"] for e in packed if isinstance(e.get("text"), str)]
     combined_text = "\n\n---\n\n".join(batch_segments)
 
     src_field, target_field = _struct_relation_member_fields(parser_config)
@@ -489,15 +489,15 @@ async def compile_structure_from_text(
                 "q_<dim>_vec": [...],
                 "id": <xxhash>,
             }
-    """
+
     parser_config = {
         "compile_type": "list",
         "guideline": {
             "target": "你是一位专业的合规分析师，负责从合规文档中准确提取结构化的合规要求。",
-            "rules_for_entities": """- '提取的合规要求应完整保留原文的核心含义'
+            "rules_for_entities": "- '提取的合规要求应完整保留原文的核心含义' 
       - '依据法规应标注具体的法规名称和条款'
       - '完成期限应明确标注时间节点'
-      - '责任人应尽可能具体到部门或个人'"""
+      - '责任人应尽可能具体到部门或个人'"
         },
         "output": {
             "entities": {
@@ -529,7 +529,7 @@ async def compile_structure_from_text(
               }
             ]}
         }
-    }
+    }    """
     if isinstance(parser_config, str):
         try:
             parser_config = json.loads(parser_config)
@@ -545,57 +545,48 @@ async def compile_structure_from_text(
         logging.error(f"compile_structure_from_text: unsupported type '{autotype}'")
         return []
 
-    chunk_ids: list = []
-    chunk_texts: list[str] = []
-    for chunk in chunks:
-        text = chunk.get("text") or chunk.get("content_with_weight") or chunk.get("content") or ""
-        if not isinstance(text, str) or not text.strip():
-            continue
-        chunk_ids.append(chunk.get("id") or chunk.get("chunk_id"))
-        chunk_texts.append(text)
-
-    if not chunk_texts:
-        return []
-
     node_prompt, edge_prompt = _struct_hypergraph_prompts(parser_config, language)
     prompt_overhead = max(num_tokens_from_string(node_prompt), num_tokens_from_string(edge_prompt))
 
-    input_budget = int(chat_mdl.max_length * INPUT_UTILIZATION) - prompt_overhead
-    if input_budget < 1024:
-        input_budget = 1024
-
-    batches = split_chunks(chunk_texts, input_budget)
-    total = max(1, len(batches))
-    semaphore = asyncio.Semaphore(max_workers) if max_workers and max_workers > 0 else None
-
-    tasks = [
-        asyncio.create_task(
-            _struct_process_batch(
-                batch, bi, total, chunk_ids, autotype,
-                parser_config, chat_mdl, embd_mdl, doc_id,
-                language, callback, semaphore,
-            )
-        )
-        for bi, batch in enumerate(batches)
-        if batch
-    ]
-
-    if not tasks:
+    packed_batches, _info = _build_chunk_batches(
+        chunks,
+        chat_mdl,
+        prompt_overhead_tokens=prompt_overhead,
+    )
+    if not packed_batches:
         return []
 
-    try:
-        batch_results = await asyncio.gather(*tasks, return_exceptions=False)
-    except Exception:
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        raise
+    async def _process_one(batch: list[dict], bi: int, total: int) -> list[dict]:
+        # The engine's semaphore already bounds concurrency.
+        return await _struct_process_batch(
+            packed=batch,
+            batch_idx=bi,
+            total=total,
+            autotype=autotype,
+            parser_config=parser_config,
+            chat_mdl=chat_mdl,
+            embd_mdl=embd_mdl,
+            doc_id=doc_id,
+            language=language,
+            callback=callback,
+            semaphore=None,
+        )
 
-    results: list[dict] = []
-    for br in batch_results:
-        if br:
-            results.extend(br)
-    return results
+    def _flatten(per_batch: list) -> list[dict]:
+        out: list[dict] = []
+        for br in (per_batch or []):
+            if br:
+                out.extend(br)
+        return out
+
+    return await _run_chunked_pipeline(
+        packed_batches,
+        process_batch=_process_one,
+        aggregate=_flatten,
+        max_workers=max_workers,
+        callback=callback,
+        log_prefix="compile_structure",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -652,22 +643,14 @@ def _struct_filter_key(doc: dict) -> tuple:
     )
 
 
-def _struct_doc_vec(doc: dict):
-    """Return (vector_field_name, vector_values) or (None, None)."""
-    for k, v in doc.items():
-        if isinstance(k, str) and k.startswith("q_") and k.endswith("_vec"):
-            return k, v
-    return None, None
+# Backwards-compat aliases for the shared helpers. New code should call
+# the ``_common`` versions directly.
+_struct_doc_vec = _find_vec_field
 
 
 def _struct_union_chunk_ids(a: list, b: list) -> list:
-    """Order-preserving union."""
-    seen = []
-    for src in (a or [], b or []):
-        for cid in src:
-            if cid and cid not in seen:
-                seen.append(cid)
-    return seen
+    """Order-preserving union (compat shim — prefer ``_common.union_ordered``)."""
+    return _union_ordered(a, b)
 
 
 async def _struct_merge_pair(existing: dict, incoming: dict, chat_mdl) -> dict | None:
