@@ -366,7 +366,7 @@ export const useFetchDefaultModels = () => {
 };
 
 export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
-  const { data: defaultModels } = useFetchDefaultModels();
+  const { data: defaultModels, loading } = useFetchDefaultModels();
 
   const result = useMemo(() => {
     const dict: Record<string, string> = {};
@@ -377,7 +377,7 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     return dict;
   }, [defaultModels]);
 
-  useWarnEmptyModel(showEmptyModelWarn, result.embd_id, result.llm_id);
+  useWarnEmptyModel(showEmptyModelWarn, result.embd_id, result.llm_id, loading);
 
   return result;
 };
