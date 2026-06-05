@@ -106,6 +106,16 @@ func NewKGSearchPipeline(
 	return p
 }
 
+// SetChatModel sets the chat model for LLM-based query rewrite.
+func (p *KGSearchPipeline) SetChatModel(chatModel *modelModule.ChatModel) {
+	p.chatModel = chatModel
+}
+
+// SetEmbModel sets the embedding model for dense/hybrid search.
+func (p *KGSearchPipeline) SetEmbModel(embModel *modelModule.EmbeddingModel) {
+	p.embModel = embModel
+}
+
 // Retrieval runs the full KG retrieval pipeline and returns a synthetic chunk.
 func (p *KGSearchPipeline) Retrieval(ctx context.Context) (map[string]interface{}, error) {
 	// 1. Query rewrite via LLM, or fall back to raw question

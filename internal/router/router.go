@@ -43,6 +43,7 @@ type Router struct {
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
 	relatedQuestionsHandler *handler.SearchbotHandler
+	difyRetrievalHandler  *handler.DifyRetrievalHandler
 }
 
 // NewRouter create router
@@ -67,6 +68,7 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
 	relatedQuestionsHandler *handler.SearchbotHandler,
+	difyRetrievalHandler  *handler.DifyRetrievalHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -89,6 +91,7 @@ func NewRouter(
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
 		relatedQuestionsHandler: relatedQuestionsHandler,
+			difyRetrievalHandler:  difyRetrievalHandler,
 	}
 }
 
@@ -516,6 +519,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 	}
+
+	// Dify retrieval routes
+	dify := authorized.Group("/api/v1/dify")
+	{
+		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
+		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
+	}
+	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)
