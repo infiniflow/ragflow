@@ -1,3 +1,5 @@
+import pytest
+
 from agent.component.variable_assigner import VariableAssigner, VariableAssignerParam
 
 
@@ -20,13 +22,15 @@ def _make_component(variables, initial=None):
     return comp
 
 
+@pytest.mark.p1
 def test_set_number_zero_succeeds():
     comp = _make_component([{"variable": "counter", "operator": "set", "parameter": 0}])
     comp._invoke()
     assert comp._canvas._values["counter"] == 0
 
 
+@pytest.mark.p1
 def test_clear_without_parameter_succeeds():
-    comp = _make_component([{"variable": "items", "operator": "clear", "parameter": ""}])
+    comp = _make_component([{"variable": "items", "operator": "clear"}])
     comp._invoke()
     assert comp._canvas._values["items"] == []
