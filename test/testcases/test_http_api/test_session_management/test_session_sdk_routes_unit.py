@@ -176,7 +176,12 @@ def _stub_agent_api_import_deps(monkeypatch, repo_root):
 
     api_utils_mod = ModuleType("api.utils.api_utils")
     api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
+    api_utils_mod.check_duplicate_ids = lambda ids, _kind="item": (ids, [])
     api_utils_mod.get_data_error_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {
+        "code": code,
+        "message": message,
+    }
+    api_utils_mod.get_error_data_result = lambda message="Sorry! Data missing!", code=_StubRetCode.DATA_ERROR: {
         "code": code,
         "message": message,
     }
@@ -192,6 +197,7 @@ def _stub_agent_api_import_deps(monkeypatch, repo_root):
     }
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.server_error_response = lambda e: {"code": _StubRetCode.SERVER_ERROR, "message": str(e)}
+    api_utils_mod.token_required = lambda func: func
     api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
