@@ -87,11 +87,29 @@ def load_model(model_dir, nm, device_id: int | None = None):
             pip_install_torch()
             import torch
             target_id = 0 if device_id is None else device_id
-            if torch.cuda.is_available() and torch.cuda.device_count() > target_id:
-                return True
+            if not (torch.cuda.is_available() and torch.cuda.device_count() > target_id):
+                return False
         except Exception:
             return False
-        return False
+        # onnxruntime-gpu 1.23.x is built against CUDA 12 + cuDNN 9 and dlopens
+        # libcublasLt.so.12 / libcudnn.so.9 at provider-load time. When the host
+        # only ships CUDA 13 user-mode libs (via nvidia-container-toolkit on a
+        # CUDA-13 host), the CUDA EP fails to register and ORT logs noisy errors
+        # while silently falling back to CPU. Probe for the cu12 SONAMEs up-front
+        # so we request CPU explicitly and skip the misleading warnings.
+        # See https://github.com/infiniflow/ragflow/issues/15687
+        import ctypes
+        for soname in ("libcublasLt.so.12", "libcudnn.so.9"):
+            try:
+                ctypes.CDLL(soname)
+            except OSError:
+                logging.warning(
+                    f"{soname} not found; onnxruntime-gpu CUDA EP requires CUDA 12 + cuDNN 9. "
+                    "Falling back to CPUExecutionProvider for OCR. "
+                    "If you intended GPU inference, install matching libs or use a CUDA 12 host."
+                )
+                return False
+        return True
 
     options = ort.SessionOptions()
     options.enable_cpu_mem_arena = False
