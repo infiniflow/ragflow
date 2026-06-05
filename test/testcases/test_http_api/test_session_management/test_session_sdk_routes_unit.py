@@ -90,6 +90,43 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _stub_api_apps_package(monkeypatch, repo_root, user_id="tenant-1"):
+    api_apps_mod = ModuleType("api.apps")
+    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
+    api_apps_mod.current_user = SimpleNamespace(id=user_id)
+    api_apps_mod.login_required = lambda func: func
+    api_apps_mod.AUTH_BETA = object()
+    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
+    return api_apps_mod
+
+
+def _enhance_quart_stub(quart_mod):
+    class _StubBlueprint:
+        def __init__(self, *args, **_kwargs):
+            self.name = args[0] if args else "stub"
+
+        def route(self, *_args, **_kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def register_blueprint(self, *_args, **_kwargs):
+            return None
+
+    async def _make_response(data):
+        if isinstance(data, _StubResponse):
+            return data
+        body = data if isinstance(data, (bytes, bytearray)) else b""
+        return _StubResponse(body)
+
+    quart_mod.Blueprint = _StubBlueprint
+    quart_mod.Quart = _StubBlueprint
+    quart_mod.make_response = _make_response
+    quart_mod.g = SimpleNamespace()
+    quart_mod.session = SimpleNamespace()
+
+
 async def _collect_stream(body):
     items = []
     if hasattr(body, "__aiter__"):
@@ -570,6 +607,7 @@ def _load_session_module(monkeypatch):
     quart_mod.has_request_context = lambda: False
     quart_mod.has_websocket_context = lambda: False
     quart_mod.websocket = SimpleNamespace()
+    _enhance_quart_stub(quart_mod)
     monkeypatch.setitem(sys.modules, "quart", quart_mod)
 
     quart_auth_mod = ModuleType("quart_auth")
@@ -718,6 +756,9 @@ def _load_session_module(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "api.db.services.user_canvas_version", user_canvas_version_mod)
 
+    # Prevent bot_api (merged main) from loading real api.apps/__init__.py during unit import.
+    _stub_api_apps_package(monkeypatch, repo_root)
+
     module_path = repo_root / "api" / "apps" / "restful_apis" / "bot_api.py"
     spec = importlib.util.spec_from_file_location("test_session_sdk_routes_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -762,11 +803,7 @@ def _load_agent_api_module(monkeypatch):
     agent_component_mod.LLM = _StubAgentLLM
     monkeypatch.setitem(sys.modules, "agent.component", agent_component_mod)
 
-    api_apps_mod = ModuleType("api.apps")
-    api_apps_mod.__path__ = [str(repo_root / "api" / "apps")]
-    api_apps_mod.current_user = SimpleNamespace(id="tenant-1")
-    api_apps_mod.login_required = lambda func: func
-    monkeypatch.setitem(sys.modules, "api.apps", api_apps_mod)
+    _stub_api_apps_package(monkeypatch, repo_root)
 
     api_apps_services_mod = ModuleType("api.apps.services")
     api_apps_services_mod.__path__ = [str(repo_root / "api" / "apps" / "services")]
