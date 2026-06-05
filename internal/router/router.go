@@ -23,26 +23,26 @@ import (
 )
 
 type Router struct {
-	authHandler          *handler.AuthHandler
-	userHandler          *handler.UserHandler
-	tenantHandler        *handler.TenantHandler
-	documentHandler      *handler.DocumentHandler
-	datasetsHandler      *handler.DatasetsHandler
-	systemHandler        *handler.SystemHandler
-	knowledgebaseHandler *handler.KnowledgebaseHandler
-	chunkHandler         *handler.ChunkHandler
-	llmHandler           *handler.LLMHandler
-	chatHandler          *handler.ChatHandler
-	chatSessionHandler   *handler.ChatSessionHandler
-	connectorHandler     *handler.ConnectorHandler
-	searchHandler        *handler.SearchHandler
-	fileHandler          *handler.FileHandler
-	memoryHandler        *handler.MemoryHandler
-	mcpHandler           *handler.MCPHandler
-	skillSearchHandler   *handler.SkillSearchHandler
-	providerHandler           *handler.ProviderHandler
-	agentHandler              *handler.AgentHandler
-	relatedQuestionsHandler   *handler.SearchbotHandler
+	authHandler             *handler.AuthHandler
+	userHandler             *handler.UserHandler
+	tenantHandler           *handler.TenantHandler
+	documentHandler         *handler.DocumentHandler
+	datasetsHandler         *handler.DatasetsHandler
+	systemHandler           *handler.SystemHandler
+	knowledgebaseHandler    *handler.KnowledgebaseHandler
+	chunkHandler            *handler.ChunkHandler
+	llmHandler              *handler.LLMHandler
+	chatHandler             *handler.ChatHandler
+	chatSessionHandler      *handler.ChatSessionHandler
+	connectorHandler        *handler.ConnectorHandler
+	searchHandler           *handler.SearchHandler
+	fileHandler             *handler.FileHandler
+	memoryHandler           *handler.MemoryHandler
+	mcpHandler              *handler.MCPHandler
+	skillSearchHandler      *handler.SkillSearchHandler
+	providerHandler         *handler.ProviderHandler
+	agentHandler            *handler.AgentHandler
+	relatedQuestionsHandler *handler.SearchbotHandler
 }
 
 // NewRouter create router
@@ -69,25 +69,25 @@ func NewRouter(
 	relatedQuestionsHandler *handler.SearchbotHandler,
 ) *Router {
 	return &Router{
-		authHandler:          authHandler,
-		userHandler:          userHandler,
-		tenantHandler:        tenantHandler,
-		documentHandler:      documentHandler,
-		datasetsHandler:      datasetsHandler,
-		systemHandler:        systemHandler,
-		knowledgebaseHandler: knowledgebaseHandler,
-		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
-		chatHandler:          chatHandler,
-		chatSessionHandler:   chatSessionHandler,
-		connectorHandler:     connectorHandler,
-		searchHandler:        searchHandler,
-		fileHandler:          fileHandler,
-		memoryHandler:        memoryHandler,
-		mcpHandler:           mcpHandler,
-		skillSearchHandler:   skillSearchHandler,
-		providerHandler:      providerHandler,
-		agentHandler:         agentHandler,
+		authHandler:             authHandler,
+		userHandler:             userHandler,
+		tenantHandler:           tenantHandler,
+		documentHandler:         documentHandler,
+		datasetsHandler:         datasetsHandler,
+		systemHandler:           systemHandler,
+		knowledgebaseHandler:    knowledgebaseHandler,
+		chunkHandler:            chunkHandler,
+		llmHandler:              llmHandler,
+		chatHandler:             chatHandler,
+		chatSessionHandler:      chatSessionHandler,
+		connectorHandler:        connectorHandler,
+		searchHandler:           searchHandler,
+		fileHandler:             fileHandler,
+		memoryHandler:           memoryHandler,
+		mcpHandler:              mcpHandler,
+		skillSearchHandler:      skillSearchHandler,
+		providerHandler:         providerHandler,
+		agentHandler:            agentHandler,
 		relatedQuestionsHandler: relatedQuestionsHandler,
 	}
 }
@@ -374,6 +374,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			agents := v1.Group("/agents")
 			{
 				agents.GET("", r.agentHandler.ListAgents)
+				agents.GET("/templates", r.agentHandler.ListTemplates)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
