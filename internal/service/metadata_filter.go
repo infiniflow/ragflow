@@ -242,7 +242,7 @@ func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 		parts := strings.Split(f.Value, ",")
 		arr := make([]interface{}, 0, len(parts))
 		for _, p := range parts {
-				arr = append(arr, strings.TrimSpace(p))
+			if trimmed := strings.TrimSpace(p); trimmed != "" { arr = append(arr, trimmed) }
 		}
 		mc.Value = arr
 	}
