@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"errors"
 	"ragflow/internal/entity"
 	"time"
 
@@ -112,6 +113,36 @@ func (dao *ConnectorDAO) CancelRunningOrScheduledLogs(connectorID string) error 
 	return DB.Model(&entity.SyncLogs{}).
 		Where("connector_id = ? AND status IN ?", connectorID, []string{string(entity.TaskStatusSchedule), string(entity.TaskStatusRunning)}).
 		Update("status", string(entity.TaskStatusCancel)).Error
+}
+
+// ScheduleConnectorTasks schedules sync and optional prune tasks for a connector.
+func (dao *ConnectorDAO) ScheduleConnectorTasks(connectorID string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var connector entity.Connector
+		if err := tx.Where("id = ?", connectorID).First(&connector).Error; err != nil {
+			return err
+		}
+
+		var mappings []entity.Connector2Kb
+		if err := tx.Where("connector_id = ?", connectorID).Find(&mappings).Error; err != nil {
+			return err
+		}
+
+		for _, mapping := range mappings {
+			if err := scheduleConnectorTask(tx, connectorID, mapping.KbID, connectorTaskTypeSync, false); err != nil {
+				return err
+			}
+			if connectorConfigBool(connector.Config, "sync_deleted_files") {
+				if err := scheduleConnectorTask(tx, connectorID, mapping.KbID, connectorTaskTypePrune, false); err != nil {
+					return err
+				}
+			}
+		}
+
+		return tx.Model(&entity.Connector{}).
+			Where("id = ?", connectorID).
+			Update("status", string(entity.TaskStatusSchedule)).Error
+	})
 }
 
 // ListDocumentsByKBAndSourceType lists connector documents in a dataset.
@@ -224,6 +255,68 @@ func createRebuildSyncLog(tx *gorm.DB, connectorID, kbID, taskType string, reind
 	}).Error
 }
 
+func scheduleConnectorTask(tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
+	var existing int64
+	if err := tx.Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusSchedule)).
+		Count(&existing).Error; err != nil {
+		return err
+	}
+	if existing > 0 {
+		return nil
+	}
+
+	var pollRangeStart *string
+	var totalDocsIndexed int64
+	if taskType == connectorTaskTypeSync {
+		var latest entity.SyncLogs
+		err := tx.Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusDone)).
+			Order("update_time DESC").
+			First(&latest).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil {
+			pollRangeStart = latest.PollRangeEnd
+			totalDocsIndexed = latest.TotalDocsIndexed
+		}
+	}
+
+	fromBeginning := "0"
+	if reindex {
+		fromBeginning = "1"
+	}
+	now := time.Now().Local()
+	return tx.Create(&entity.SyncLogs{
+		ID:               generateUUID(),
+		ConnectorID:      connectorID,
+		KbID:             kbID,
+		TaskType:         taskType,
+		Status:           string(entity.TaskStatusSchedule),
+		FromBeginning:    &fromBeginning,
+		PollRangeStart:   pollRangeStart,
+		TimeStarted:      &now,
+		ErrorMsg:         "",
+		TotalDocsIndexed: totalDocsIndexed,
+	}).Error
+}
+
+func connectorConfigBool(config map[string]interface{}, key string) bool {
+	value, ok := config[key]
+	if !ok {
+		return false
+	}
+
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return typed == "1" || typed == "true" || typed == "TRUE"
+	default:
+		return false
+	}
+}
+
 // ListLogsByConnectorID lists sync logs for one connector with pagination.
 func (dao *ConnectorDAO) ListLogsByConnectorID(connectorID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
 	baseQuery := DB.Model(&entity.SyncLogs{}).
@@ -257,7 +350,7 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(connectorID string, offset, limit
 			"sync_logs.status",
 		).
 		Distinct().
-		Order("sync_logs.update_time DESC").
+		Order("sync_logs.update_date DESC").
 		Offset(offset).
 		Limit(limit).
 		Scan(&logs).Error

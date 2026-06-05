@@ -1,5 +1,6 @@
 import {
   DynamicForm,
+  DynamicFormRef,
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
@@ -7,9 +8,13 @@ import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
-import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback } from 'react';
+import { IAddProviderInstanceRequestBody } from '@/interfaces/request/llm';
+import {
+  useFetchInstanceNameSet,
+  useHideWhenInstanceExists,
+  VerifyResult,
+} from '@/pages/user-setting/setting-model/hooks';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -21,7 +26,7 @@ const GoogleModal = ({
   onVerify,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & {
+}: IModalProps<IAddProviderInstanceRequestBody> & {
   llmFactory: string;
   onVerify?: (
     postBody: any,
@@ -30,85 +35,102 @@ const GoogleModal = ({
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
+  const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
+  const formRef = useRef<DynamicFormRef>(null);
 
-  const fields: FormFieldConfig[] = [
-    {
-      name: 'model_type',
-      label: t('modelType'),
-      type: FormFieldType.Select,
-      required: true,
-      options: buildModelTypeOptions(['chat', 'image2text']),
-      defaultValue: 'chat',
-      validation: {
-        message: t('modelTypeMessage'),
+  const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+
+  const fields: FormFieldConfig[] = useMemo(
+    () => [
+      {
+        name: 'instance_name',
+        label: t('instanceName'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('instanceNameMessage'),
+        tooltip: t('instanceNameTip'),
+        validation: { message: t('instanceNameMessage') },
       },
-    },
-    {
-      name: 'llm_name',
-      label: t('modelID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleModelIDMessage'),
-      validation: {
-        message: t('GoogleModelIDMessage'),
+      {
+        name: 'model_type',
+        label: t('modelType'),
+        type: FormFieldType.MultiSelect,
+        required: true,
+        options: buildModelTypeOptions(['chat', 'image2text']),
+        defaultValue: ['chat'],
       },
-    },
-    {
-      name: 'google_project_id',
-      label: t('addGoogleProjectID'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleProjectIDMessage'),
-      validation: {
-        message: t('GoogleProjectIDMessage'),
+      {
+        name: 'llm_name',
+        label: t('modelID'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('GoogleModelIDMessage'),
+        validation: {
+          message: t('GoogleModelIDMessage'),
+        },
       },
-    },
-    {
-      name: 'google_region',
-      label: t('addGoogleRegion'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleRegionMessage'),
-      validation: {
-        message: t('GoogleRegionMessage'),
+      {
+        name: 'google_project_id',
+        label: t('addGoogleProjectID'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('GoogleProjectIDMessage'),
+        validation: {
+          message: t('GoogleProjectIDMessage'),
+        },
+        shouldRender: hideWhenInstanceExists,
       },
-    },
-    {
-      name: 'google_service_account_key',
-      label: t('addGoogleServiceAccountKey'),
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: t('GoogleServiceAccountKeyMessage'),
-      validation: {
-        message: t('GoogleServiceAccountKeyMessage'),
+      {
+        name: 'google_region',
+        label: t('addGoogleRegion'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('GoogleRegionMessage'),
+        validation: {
+          message: t('GoogleRegionMessage'),
+        },
+        shouldRender: hideWhenInstanceExists,
       },
-    },
-    {
-      name: 'max_tokens',
-      label: t('maxTokens'),
-      type: FormFieldType.Number,
-      required: true,
-      placeholder: t('maxTokensTip'),
-      validation: {
-        min: 0,
-        message: t('maxTokensMinMessage'),
+      {
+        name: 'google_service_account_key',
+        label: t('addGoogleServiceAccountKey'),
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: t('GoogleServiceAccountKeyMessage'),
+        validation: {
+          message: t('GoogleServiceAccountKeyMessage'),
+        },
+        shouldRender: hideWhenInstanceExists,
       },
-      customValidate: (value: any) => {
-        if (value === undefined || value === null || value === '') {
-          return t('maxTokensMessage');
-        }
-        if (value < 0) {
-          return t('maxTokensMinMessage');
-        }
-        return true;
+      {
+        name: 'max_tokens',
+        label: t('maxTokens'),
+        type: FormFieldType.Number,
+        required: true,
+        placeholder: t('maxTokensTip'),
+        validation: {
+          min: 0,
+          message: t('maxTokensMinMessage'),
+        },
+        customValidate: (value: any) => {
+          if (value === undefined || value === null || value === '') {
+            return t('maxTokensMessage');
+          }
+          if (value < 0) {
+            return t('maxTokensMinMessage');
+          }
+          return true;
+        },
       },
-    },
-  ];
+    ],
+    [t, buildModelTypeOptions, hideWhenInstanceExists],
+  );
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
     const data = {
+      instance_name: values.instance_name as string,
       llm_factory: llmFactory,
       model_type: values.model_type,
       llm_name: values.llm_name,
@@ -116,7 +138,7 @@ const GoogleModal = ({
       google_region: values.google_region,
       google_service_account_key: values.google_service_account_key,
       max_tokens: values.max_tokens,
-    } as IAddLlmRequestBody;
+    } as IAddProviderInstanceRequestBody;
 
     await onOk?.(data);
   };
@@ -135,6 +157,13 @@ const GoogleModal = ({
     },
     [verifyParamsFunc, onVerify],
   );
+
+  useEffect(() => {
+    if (!visible) {
+      formRef.current?.reset();
+    }
+  }, [visible]);
+
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
@@ -148,9 +177,12 @@ const GoogleModal = ({
         onSubmit={() => {
           // Form submission is handled by SavingButton
         }}
+        ref={formRef}
         defaultValues={
           {
-            model_type: 'chat',
+            instance_name: '',
+            model_type: ['chat'],
+            max_tokens: 8192,
           } as FieldValues
         }
         labelClassName="font-normal"

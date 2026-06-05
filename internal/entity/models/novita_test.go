@@ -58,6 +58,20 @@ func newNovitaForTest(baseURL string) *NovitaModel {
 	)
 }
 
+func TestNovitaNewModelWithCustomDefaultTransport(t *testing.T) {
+	original := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, nil
+	})
+	t.Cleanup(func() {
+		http.DefaultTransport = original
+	})
+
+	if model := NewNovitaModel(map[string]string{"default": "http://unused"}, URLSuffix{}); model == nil {
+		t.Fatal("NewNovitaModel returned nil")
+	}
+}
+
 // newNovitaSSEServer asserts the SSE-chat wire contract (POST, path,
 // Authorization, Content-Type) the same way newNovitaServer does for
 // the JSON-chat path, then writes the supplied SSE payload. Closes

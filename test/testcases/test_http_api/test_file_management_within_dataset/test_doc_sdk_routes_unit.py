@@ -17,7 +17,6 @@ import asyncio
 import inspect
 import importlib.util
 import sys
-from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -131,7 +130,7 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _load_doc_module(monkeypatch):
+def _load_doc_module(monkeypatch, module_basename="chunk_api"):
     repo_root = Path(__file__).resolve().parents[4]
     common_pkg = ModuleType("common")
     common_pkg.__path__ = [str(repo_root / "common")]
@@ -249,14 +248,6 @@ def _load_doc_module(monkeypatch):
         if value is not None
     }
     api_utils_mod.server_error_response = lambda e: {"code": 500, "message": str(e)}
-    def _token_required(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
-
-        return wrapper
-
-    api_utils_mod.token_required = _token_required
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     image_utils_mod = ModuleType("api.utils.image_utils")
@@ -478,7 +469,7 @@ def _load_doc_module(monkeypatch):
                 raise LookupError(f"Tenant Model with id {tenant_model_id} not authorized")
         return _MockModelConfig2(mock_tenant_id, "model-1").to_dict()
     
-    def _get_model_config_by_type_and_name(tenant_id: str, model_type: str, model_name: str):
+    def _get_model_config_from_provider_instance(tenant_id: str, model_type: str, model_name: str):
         if not model_name:
             raise Exception("Model Name is required")
         return _MockModelConfig2(tenant_id, model_name).to_dict()
@@ -488,11 +479,29 @@ def _load_doc_module(monkeypatch):
         return _MockModelConfig2(tenant_id, "chat-model").to_dict()
     
     tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
-    tenant_model_service_mod.get_model_config_by_type_and_name = _get_model_config_by_type_and_name
+    tenant_model_service_mod.get_model_config_from_provider_instance = _get_model_config_from_provider_instance
     tenant_model_service_mod.get_tenant_default_model_by_type = _get_tenant_default_model_by_type
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
-    module_path = repo_root / "api" / "apps" / "restful_apis" / "chunk_api.py"
+    if module_basename == "document_api":
+        stub_apps_services = ModuleType("api.apps.services")
+        stub_apps_services.__path__ = [str(repo_root / "api" / "apps" / "services")]
+        monkeypatch.setitem(sys.modules, "api.apps.services", stub_apps_services)
+
+        document_api_service_mod = ModuleType("api.apps.services.document_api_service")
+        document_api_service_mod.validate_document_update_fields = lambda *_args, **_kwargs: (None, None)
+        document_api_service_mod.map_doc_keys = lambda doc: doc.to_dict() if hasattr(doc, "to_dict") else doc
+        document_api_service_mod.map_doc_keys_with_run_status = lambda doc, run_status="0": {
+            **(doc if isinstance(doc, dict) else doc.to_dict()),
+            "run": run_status,
+        }
+        document_api_service_mod.update_document_name_only = lambda *_args, **_kwargs: None
+        document_api_service_mod.update_chunk_method = lambda *_args, **_kwargs: None
+        document_api_service_mod.update_document_status_only = lambda *_args, **_kwargs: None
+        document_api_service_mod.reset_document_for_reparse = lambda *_args, **_kwargs: None
+        monkeypatch.setitem(sys.modules, "api.apps.services.document_api_service", document_api_service_mod)
+
+    module_path = repo_root / "api" / "apps" / "restful_apis" / f"{module_basename}.py"
     spec = importlib.util.spec_from_file_location("test_doc_sdk_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
     module.manager = _DummyManager()
@@ -515,7 +524,11 @@ def _route_core(func):
 
 def _patch_send_file(monkeypatch, module):
     async def _fake_send_file(file_obj, **kwargs):
-        return {"file": file_obj, "filename": kwargs.get("attachment_filename")}
+        return {
+            "file": file_obj,
+            "filename": kwargs.get("attachment_filename"),
+            "mimetype": kwargs.get("mimetype"),
+        }
 
     monkeypatch.setattr(module, "send_file", _fake_send_file)
 
@@ -612,6 +625,16 @@ class TestDocRoutesUnit:
         _patch_storage(monkeypatch, module, file_stream=b"abc")
         res = _run(module.download_doc("doc-1"))
         assert res["filename"] == "doc.txt"
+
+    def test_download_mimetype_from_filename(self, monkeypatch):
+        module = _load_doc_module(monkeypatch, module_basename="document_api")
+        _patch_send_file(monkeypatch, module)
+        _patch_storage(monkeypatch, module, file_stream=b"pdf-bytes")
+        monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc(name="report.pdf", doc_type=FileType.PDF)])
+        monkeypatch.setattr(module.File2DocumentService, "get_storage_address", lambda **_kwargs: ("b", "n"))
+        res = _run(module.download.__wrapped__("ds-1", "doc-1"))
+        assert res["filename"] == "report.pdf"
+        assert res["mimetype"] == "application/pdf"
 
 
     def test_parse_branches(self, monkeypatch):

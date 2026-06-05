@@ -1166,7 +1166,7 @@ func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateProviderInstance creates a new provider instance
-// CREATE PROVIDER <name> INSTANCE <instance_name> <api_key>
+// CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
 func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1442,7 +1442,8 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 }
 
 // DropInstanceModel deletes a provider instance, only works for local deployed model
-// DROP MODEL <name> FROM <provider_name> <instance_name>
+// DROP MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
+// Remove MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
 func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1458,13 +1459,13 @@ func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	modelName, ok := cmd.Params["model_name"].(string)
+	modelNames, ok := cmd.Params["model_names"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("model name not provided")
 	}
 
 	payload := map[string]interface{}{
-		"models": []string{modelName},
+		"models": modelNames,
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
@@ -2551,6 +2552,64 @@ func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error
 	return &result, nil
 }
 
+func (c *RAGFlowClient) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
+	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+		return nil, fmt.Errorf("API token not set. Please login first")
+	}
+	if c.ServerType != "user" {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
+	}
+
+	providerName, ok := cmd.Params["provider_name"].(string)
+	if !ok || providerName == "" {
+		return nil, fmt.Errorf("provider name not provided")
+	}
+	region, ok := cmd.Params["region"].(string)
+	if !ok || region == "" {
+		return nil, fmt.Errorf("region not provided")
+	}
+	apiKey, ok := cmd.Params["api_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("api_key not provided")
+	}
+	baseURL, _ := cmd.Params["base_url"].(string)
+
+	var apiKeyValue interface{}
+	if apiKey != "" {
+		apiKeyValue = apiKey
+	} else {
+		apiKeyValue = nil
+	}
+
+	url := fmt.Sprintf("/providers/%s/connection", providerName)
+
+	payload := map[string]interface{}{
+		"region":  region,
+		"api_key": apiKeyValue,
+	}
+	if baseURL != "" {
+		payload["base_url"] = baseURL
+	}
+
+	resp, err := c.HTTPClient.Request("GET", url, "api", nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check provider connection with key: %w", err)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to check provider connection: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result SimpleResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("check provider connection failed: invalid JSON (%w)", err)
+	}
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // UseModel sets the current model for chat
 func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
@@ -2623,20 +2682,9 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("instance name not provided")
 	}
 
-	modelName, ok := cmd.Params["model_name"].(string)
+	models, ok := cmd.Params["models"].([]map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("model name not provided")
-	}
-
-	// chat, vision, embedding, rerank, tts, asr, ocr
-	modelTypes, ok := cmd.Params["model_types"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("model type not provided")
-	}
-
-	maxTokens, ok := cmd.Params["max_tokens"].(int)
-	if !ok {
-		return nil, fmt.Errorf("max tokens not provided")
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
@@ -2644,14 +2692,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_types":   modelTypes,
-		"max_tokens":    maxTokens,
-	}
-
-	supportThink, ok := cmd.Params["support_think"].(bool)
-	if ok {
-		payload["thinking"] = supportThink
+		"models":        models,
 	}
 
 	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
