@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -40,6 +40,15 @@ type fakeDocumentService struct {
 	err        error
 	stopResult map[string]interface{}
 	stopErr    error
+
+	uploadLocalData []map[string]interface{}
+	uploadLocalErrs []string
+	uploadEmptyData map[string]interface{}
+	uploadEmptyCode common.ErrorCode
+	uploadEmptyErr  error
+	uploadWebData   map[string]interface{}
+	uploadWebCode   common.ErrorCode
+	uploadWebErr    error
 }
 
 func (f *fakeDocumentService) GetDocumentArtifact(filename string) (*service.ArtifactResponse, error) {
@@ -368,7 +377,7 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
 		CreatedBy: "user-1", Permission: string(entity.TenantPermissionTeam),
-		Status:    sptr(string(entity.StatusValid)),
+		Status: sptr(string(entity.StatusValid)),
 	})
 
 	return db

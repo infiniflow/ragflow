@@ -1077,6 +1077,13 @@ func (s *DatasetService) Accessible(kbID, userID string) bool {
 	return s.kbDAO.Accessible(kbID, userID)
 }
 
+// GetKBByID returns the dataset (knowledgebase) entity, or an error if it does
+// not exist. Used by the upload handler to distinguish a missing dataset
+// (DATA_ERROR) from an inaccessible one (AUTHENTICATION_ERROR).
+func (s *DatasetService) GetKBByID(kbID string) (*entity.Knowledgebase, error) {
+	return s.kbDAO.GetByID(kbID)
+}
+
 // GetIngestionSummary returns dataset-level ingestion counters together with
 // the aggregated document parsing status, mirroring
 // dataset_api_service.get_ingestion_summary.

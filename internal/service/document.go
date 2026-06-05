@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -38,6 +40,7 @@ import (
 
 	"ragflow/internal/server"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -379,6 +382,200 @@ func (s *DocumentService) CreateDocument(req *CreateDocumentRequest) (*entity.Do
 	}
 
 	return document, nil
+}
+
+// UploadLocalDocuments stores each uploaded file in object storage and inserts a
+// matching Document row into the dataset. It mirrors Python
+// FileService.upload_document: it derives parser_id by filetype, merges the
+// optional parser_config override into the dataset config, dedup-renames the
+// filename, and records size + xxhash content hash. Chunking/embedding happen
+// later in the parse step, so nothing here touches the doc store index.
+//
+// Gaps vs Python (documented, not yet ported): thumbnail generation,
+// read_potential_broken_pdf repair, and the file-manager folder linking
+// (add_file_from_kb / file2document). The Document row alone makes the file
+// visible and parseable in the dataset.
+func (s *DocumentService) UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, []string{"storage not initialized"}
+	}
+
+	// Merge parser_config override (allow-listed keys only) over the dataset config.
+	merged := entity.JSONMap{}
+	for k, v := range kb.ParserConfig {
+		merged[k] = v
+	}
+	for k, v := range parserConfigOverride {
+		merged[k] = v
+	}
+
+	safeParent := utility.SanitizeFilename(parentPath)
+
+	taken := map[string]bool{}
+	if names, err := s.documentDAO.ListNamesByKbID(kb.ID); err == nil {
+		for _, n := range names {
+			taken[n] = true
+		}
+	}
+
+	var results []map[string]interface{}
+	var errMsgs []string
+
+	for _, fh := range files {
+		blob, err := readFileHeaderBytes(fh)
+		if err != nil {
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+
+		filename := uniqueUploadName(fh.Filename, taken)
+		taken[filename] = true
+
+		filetype := utility.FilenameType(filename)
+		if filetype == utility.FileTypeOTHER {
+			errMsgs = append(errMsgs, fh.Filename+": This type of file has not been supported yet!")
+			continue
+		}
+
+		location := filename
+		if safeParent != "" {
+			location = safeParent + "/" + filename
+		}
+		for storageImpl.ObjExist(kb.ID, location) {
+			location += "_"
+		}
+		if err := storageImpl.Put(kb.ID, location, blob); err != nil {
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+
+		doc := s.newDatasetDocument(kb, tenantID, filename, location, filetype, merged, "local", int64(len(blob)), blob)
+		if err := s.documentDAO.Create(doc); err != nil {
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
+		results = append(results, docToRawMap(doc))
+	}
+
+	return results, errMsgs
+}
+
+// UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
+func (s *DocumentService) UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+	if names, err := s.documentDAO.ListNamesByKbID(kb.ID); err == nil {
+		for _, n := range names {
+			if n == name {
+				return nil, common.CodeDataError, fmt.Errorf("Duplicated document name in the same dataset.")
+			}
+		}
+	}
+
+	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserConfig, "local", 0, nil)
+	if err := s.documentDAO.Create(doc); err != nil {
+		return nil, common.CodeServerError, err
+	}
+	return docToRawMap(doc), common.CodeSuccess, nil
+}
+
+// UploadWebDocument is not yet supported on the Go server: the Python path
+// converts the URL to PDF via html2pdf and generates a thumbnail, neither of
+// which has a Go equivalent. Request validation happens in the handler; this
+// surfaces an explicit, honest error rather than silently misbehaving.
+func (s *DocumentService) UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeServerError, fmt.Errorf("web upload (URL → PDF) is not supported by the Go server yet")
+}
+
+// newDatasetDocument builds a Document row for an upload, deriving parser_id,
+// suffix and content hash. blob may be nil for the empty/virtual document.
+func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
+	docID := strings.ReplaceAll(uuid.New().String(), "-", "")
+	zero := "0"
+	suffix := ""
+	if i := strings.LastIndex(filename, "."); i >= 0 {
+		suffix = filename[i+1:]
+	}
+	loc := location
+	doc := &entity.Document{
+		ID:           docID,
+		KbID:         kb.ID,
+		ParserID:     utility.GetParser(filetype, filename, kb.ParserID),
+		PipelineID:   kb.PipelineID,
+		ParserConfig: parserConfig,
+		CreatedBy:    tenantID,
+		Type:         filetype,
+		SourceType:   src,
+		Name:         &filename,
+		Location:     &loc,
+		Size:         size,
+		Suffix:       suffix,
+		Run:          &zero,
+		Status:       &zero,
+	}
+	if blob != nil {
+		hash := fmt.Sprintf("%016x", xxhash.Sum64(blob))
+		doc.ContentHash = &hash
+	}
+	return doc
+}
+
+// docToRawMap serialises a freshly created Document into the raw key shape the
+// handler remaps (chunk_num→chunk_count, kb_id→dataset_id, parser_id→chunk_method).
+func docToRawMap(doc *entity.Document) map[string]interface{} {
+	m := map[string]interface{}{
+		"id":            doc.ID,
+		"kb_id":         doc.KbID,
+		"parser_id":     doc.ParserID,
+		"parser_config": map[string]interface{}(doc.ParserConfig),
+		"created_by":    doc.CreatedBy,
+		"type":          doc.Type,
+		"source_type":   doc.SourceType,
+		"size":          doc.Size,
+		"chunk_num":     doc.ChunkNum,
+		"token_num":     doc.TokenNum,
+		"suffix":        doc.Suffix,
+		"run":           "0",
+	}
+	if doc.Name != nil {
+		m["name"] = *doc.Name
+	}
+	if doc.Location != nil {
+		m["location"] = *doc.Location
+	}
+	if doc.PipelineID != nil {
+		m["pipeline_id"] = *doc.PipelineID
+	}
+	if doc.ContentHash != nil {
+		m["content_hash"] = *doc.ContentHash
+	}
+	return m
+}
+
+// uniqueUploadName appends a numeric suffix until the name is free, mirroring
+// Python duplicate_name.
+func uniqueUploadName(name string, taken map[string]bool) string {
+	if !taken[name] {
+		return name
+	}
+	base, ext := name, ""
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		base, ext = name[:i], name[i:]
+	}
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s(%d)%s", base, i, ext)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+}
+
+func readFileHeaderBytes(fh *multipart.FileHeader) ([]byte, error) {
+	src, err := fh.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer src.Close()
+	return io.ReadAll(src)
 }
 
 // GetDocumentByID get document by ID

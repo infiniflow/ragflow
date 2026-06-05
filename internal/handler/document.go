@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -59,6 +61,9 @@ type documentServiceIface interface {
 	GetDocumentArtifact(filename string) (*service.ArtifactResponse, error)
 	GetDocumentPreview(docID string) (*service.DocumentPreview, error)
 	DownloadDocument(datasetID, docID string) (*service.DownloadDocumentResp, error)
+	UploadLocalDocuments(kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
+	UploadWebDocument(kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
+	UploadEmptyDocument(kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
@@ -111,6 +116,193 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 		"message": "created successfully",
 		"data":    document,
 	})
+}
+
+// UploadDocuments uploads one or more documents to a dataset. It dispatches on
+// the `type` query param (local|web|empty), mirroring Python upload_document.
+// @Summary Upload Documents
+// @Tags documents
+// @Accept multipart/form-data
+// @Produce json
+// @Security ApiKeyAuth
+// @Param dataset_id path string true "Dataset ID"
+// @Param type query string false "Upload type: local (default), web, or empty"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents [post]
+func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	tenantID := user.ID
+	datasetID := c.Param("dataset_id")
+	uploadType := strings.ToLower(c.DefaultQuery("type", "local"))
+
+	// Existence check BEFORE permission check, matching Python's error codes.
+	kb, err := h.datasetService.GetKBByID(datasetID)
+	if err != nil || kb == nil {
+		jsonError(c, common.CodeDataError, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
+		return
+	}
+	if !h.datasetService.Accessible(datasetID, tenantID) {
+		jsonError(c, common.CodeAuthenticationError, "No authorization.")
+		return
+	}
+
+	switch uploadType {
+	case "web":
+		h.uploadWebDocument(c, kb, tenantID)
+	case "empty":
+		h.uploadEmptyDocument(c, kb, tenantID)
+	case "local":
+		h.uploadLocalDocuments(c, kb, tenantID)
+	default:
+		jsonError(c, common.CodeArgumentError, `"type" must be one of "local", "web", or "empty".`)
+	}
+}
+
+func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+	form, err := c.MultipartForm()
+	if err != nil || form == nil || len(form.File["file"]) == 0 {
+		jsonError(c, common.CodeArgumentError, "No file part!")
+		return
+	}
+	files := form.File["file"]
+	for _, fh := range files {
+		if fh == nil || fh.Filename == "" {
+			jsonError(c, common.CodeArgumentError, "No file selected!")
+			return
+		}
+		if len([]byte(fh.Filename)) > 255 {
+			jsonError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+			return
+		}
+	}
+
+	// Optional parser_config override — only the allow-listed table column keys.
+	var override map[string]interface{}
+	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
+		var parsed map[string]interface{}
+		if json.Unmarshal([]byte(raw), &parsed) == nil {
+			override = map[string]interface{}{}
+			for _, k := range []string{"table_column_mode", "table_column_roles"} {
+				if v, ok := parsed[k]; ok {
+					override[k] = v
+				}
+			}
+			if len(override) == 0 {
+				override = nil
+			}
+		}
+	}
+
+	data, errMsgs := h.documentService.UploadLocalDocuments(kb, tenantID, files, c.PostForm("parent_path"), override)
+	if len(errMsgs) > 0 {
+		jsonError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
+		return
+	}
+	if len(data) == 0 {
+		jsonError(c, common.CodeDataError, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
+		return
+	}
+
+	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
+		jsonSuccess(c, data)
+		return
+	}
+	mapped := make([]map[string]interface{}, len(data))
+	for i, d := range data {
+		mapped[i] = mapDocKeysWithRunStatus(d)
+	}
+	jsonSuccess(c, mapped)
+}
+
+func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		jsonError(c, common.CodeArgumentError, "File name can't be empty.")
+		return
+	}
+	if len([]byte(name)) > 255 {
+		jsonError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+		return
+	}
+	data, code, err := h.documentService.UploadEmptyDocument(kb, tenantID, name)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonSuccess(c, mapDocKeysWithRunStatus(data))
+}
+
+func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+	name := strings.TrimSpace(c.PostForm("name"))
+	rawURL := c.PostForm("url")
+	if name == "" {
+		jsonError(c, common.CodeArgumentError, `Lack of "name"`)
+		return
+	}
+	if rawURL == "" {
+		jsonError(c, common.CodeArgumentError, `Lack of "url"`)
+		return
+	}
+	if len([]byte(name)) > 255 {
+		jsonError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+		return
+	}
+	if !isValidHTTPURL(rawURL) {
+		jsonError(c, common.CodeArgumentError, "The URL format is invalid")
+		return
+	}
+	data, code, err := h.documentService.UploadWebDocument(kb, tenantID, name, rawURL)
+	if err != nil {
+		jsonError(c, code, err.Error())
+		return
+	}
+	jsonSuccess(c, mapDocKeysWithRunStatus(data))
+}
+
+// jsonSuccess writes the standard {code:0,message:"success",data} envelope.
+func jsonSuccess(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"message": "success",
+		"data":    data,
+	})
+}
+
+// mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
+// public response shape (chunk_num→chunk_count, token_num→token_count,
+// kb_id→dataset_id, parser_id→chunk_method) and reports run as a label.
+// Mirrors Python map_doc_keys_with_run_status / map_doc_keys.
+func mapDocKeysWithRunStatus(raw map[string]interface{}) map[string]interface{} {
+	out := map[string]interface{}{
+		"chunk_count":  raw["chunk_num"],
+		"token_count":  raw["token_num"],
+		"dataset_id":   raw["kb_id"],
+		"chunk_method": raw["parser_id"],
+		"run":          "UNSTART",
+	}
+	for _, k := range []string{"id", "name", "type", "size", "suffix", "source_type", "created_by", "parser_config", "location", "pipeline_id", "content_hash"} {
+		if v, ok := raw[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// isValidHTTPURL mirrors Python is_valid_url: requires an http/https scheme and a host.
+func isValidHTTPURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // GetDocumentByID get document by ID
