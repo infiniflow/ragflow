@@ -168,6 +168,21 @@ func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 	return h, r
 }
 
+func setupDifyTestNoAuth() (*DifyRetrievalHandler, *gin.Engine) {
+	h := &DifyRetrievalHandler{
+		kbSvc:        &mockKBService{},
+		modelSvc:     &mockModelService{},
+		metadataSvc:  &mockMetadataService{},
+		retrievalSvc: &mockRetrievalService{},
+		docDAO:       &mockDocDAO{},
+		docEngine:    &mockDocEngine{},
+	}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/api/v1/dify/retrieval", h.Retrieval)
+	return h, r
+}
+
 // --- Tests ---
 
 func TestDifyRetrieval_HealthCheck(t *testing.T) {
@@ -261,12 +276,7 @@ func TestDifyRetrieval_KBNotFound(t *testing.T) {
 }
 
 func TestDifyRetrieval_NoAuth(t *testing.T) {
-	// Override auth to fail
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.POST("/api/v1/dify/retrieval", func(c *gin.Context) {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": common.CodeUnauthorized, "message": "User not found"})
-	})
+	_, r := setupDifyTestNoAuth()
 	w := httptest.NewRecorder()
 	body := `{"knowledge_id": "kb1", "query": "test"}`
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
