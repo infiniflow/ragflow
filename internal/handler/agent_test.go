@@ -20,11 +20,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -195,6 +196,7 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 		t.Errorf("expected operating error code %d, got %v", common.CodeOperatingError, code)
 	}
 }
+
 // TestGetAgentVersionHandler_Success verifies getting a specific version.
 func TestGetAgentVersionHandler_Success(t *testing.T) {
 	c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/canvas-1/versions/v1")
@@ -260,8 +262,264 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentTagsHandlerSuccess(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPut, "/api/v1/agents/canvas-1/tags")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/agents/canvas-1/tags", strings.NewReader(`{"tags":["alpha","beta","alpha"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-1"}}
 
+	db.Create(&entity.UserCanvas{
+		ID:     "canvas-1",
+		UserID: "user-1",
+		Title:  sptr("Test Agent"),
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.UpdateAgentTags(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeSuccess, code, resp["message"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected data true, got %v", resp["data"])
+	}
+
+	var canvas entity.UserCanvas
+	if err := db.Where("id = ?", "canvas-1").First(&canvas).Error; err != nil {
+		t.Fatalf("failed to reload canvas: %v", err)
+	}
+	if canvas.Tags != "alpha,beta" {
+		t.Fatalf("expected normalized tags alpha,beta, got %q", canvas.Tags)
+	}
+}
+
+func TestUpdateAgentTagsHandlerNoPermission(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPut, "/api/v1/agents/canvas-b/tags")
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/agents/canvas-b/tags", strings.NewReader(`{"tags":["alpha"]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "agent_id", Value: "canvas-b"}}
+
+	db.Create(&entity.UserCanvas{
+		ID:         "canvas-b",
+		UserID:     "user-b",
+		Title:      sptr("Private Agent"),
+		Permission: "me",
+	})
+
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.UpdateAgentTags(c)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeOperatingError) {
+		t.Fatalf("expected code %d, got %v: %v", common.CodeOperatingError, code, resp["message"])
+	}
+	if resp["data"] != false {
+		t.Fatalf("expected data false, got %v", resp["data"])
+	}
+	if resp["message"] != "Agent not found or no permission." {
+		t.Fatalf("unexpected message: %v", resp["message"])
+	}
+}
 
 // sptr returns a pointer to the given string.
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
+
+// fakeAgentService satisfies the subset of AgentService used by the handler.
+// It is injected via a wrapper to avoid importing the real DAO (which requires a DB).
+type fakeAgentService struct {
+	result       *service.ListAgentsResponse
+	code         common.ErrorCode
+	err          error
+	templates    []*entity.CanvasTemplate
+	templatesErr error
+}
+
+// agentServiceIface is the minimum interface the handler depends on.
+type agentServiceIface interface {
+	ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error)
+	ListTemplates() ([]*entity.CanvasTemplate, error)
+}
+
+// agentHandlerTestable is a version of AgentHandler that accepts the interface.
+type agentHandlerTestable struct {
+	svc agentServiceIface
+}
+
+func (h *agentHandlerTestable) listAgents(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "")
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": code, "data": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": result, "message": "success"})
+}
+
+func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	templates, err := h.svc.ListTemplates()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	if templates == nil {
+		templates = []*entity.CanvasTemplate{}
+	}
+	c.JSON(http.StatusOK, gin.H{"code": common.CodeSuccess, "data": templates, "message": "success"})
+}
+
+func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string) (*service.ListAgentsResponse, common.ErrorCode, error) {
+	return f.result, f.code, f.err
+}
+
+func (f *fakeAgentService) ListTemplates() ([]*entity.CanvasTemplate, error) {
+	return f.templates, f.templatesErr
+}
+
+func setupAgentRouter(svc agentServiceIface) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h := &agentHandlerTestable{svc: svc}
+	r.GET("/api/v1/agents", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-abc"})
+		h.listAgents(c)
+	})
+	r.GET("/api/v1/agents/templates", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-abc"})
+		h.listTemplates(c)
+	})
+	r.GET("/api/v1/agents/templates_anon", func(c *gin.Context) {
+		// no user set → unauthenticated probe
+		h.listTemplates(c)
+	})
+	return r
+}
+
+func TestListAgents_Success(t *testing.T) {
+	title := "My Agent"
+	svc := &fakeAgentService{
+		result: &service.ListAgentsResponse{
+			Canvas: []*service.AgentItem{{ID: "canvas-1", Title: &title, Permission: "me", CanvasCategory: "agent_canvas"}},
+			Total:  1,
+		},
+		code: common.CodeSuccess,
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Errorf("expected code %d, got %v", common.CodeSuccess, body["code"])
+	}
+	data, ok := body["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data is not a map: %v", body["data"])
+	}
+	if data["total"] != float64(1) {
+		t.Errorf("expected total=1, got %v", data["total"])
+	}
+}
+
+func TestListAgentTemplates_Success(t *testing.T) {
+	cnvType := "agent"
+	svc := &fakeAgentService{
+		templates: []*entity.CanvasTemplate{
+			{
+				ID:             "template-1",
+				CanvasType:     &cnvType,
+				CanvasCategory: "agent_canvas",
+				Title:          entity.JSONMap{"en": "Sample"},
+				Description:    entity.JSONMap{"en": "Sample desc"},
+			},
+		},
+	}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents/templates", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, w.Body.String())
+	}
+	if body["code"] != float64(common.CodeSuccess) {
+		t.Errorf("code=%v want %d", body["code"], common.CodeSuccess)
+	}
+	data, ok := body["data"].([]interface{})
+	if !ok {
+		t.Fatalf("data is not an array: %v", body["data"])
+	}
+	if len(data) != 1 {
+		t.Fatalf("expected 1 template, got %d", len(data))
+	}
+	first := data[0].(map[string]interface{})
+	if first["id"] != "template-1" {
+		t.Errorf("id=%v want template-1", first["id"])
+	}
+	if first["canvas_category"] != "agent_canvas" {
+		t.Errorf("canvas_category=%v want agent_canvas", first["canvas_category"])
+	}
+}
+
+func TestListAgentTemplates_EmptyIsArrayNotNull(t *testing.T) {
+	svc := &fakeAgentService{templates: nil}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents/templates", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	var body map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	// JSON shape contract: never null - frontends do .map() on it.
+	if _, ok := body["data"].([]interface{}); !ok {
+		t.Fatalf("data is not an array when templates empty: %v (raw=%s)", body["data"], w.Body.String())
+	}
+}
+
+func TestListAgentTemplates_RequiresAuth(t *testing.T) {
+	svc := &fakeAgentService{templates: []*entity.CanvasTemplate{}}
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/api/v1/agents/templates_anon", nil)
+	setupAgentRouter(svc).ServeHTTP(w, req)
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if code, _ := body["code"].(float64); int(code) == int(common.CodeSuccess) {
+		t.Errorf("expected non-success without auth, got body=%v", body)
+	}
+}
