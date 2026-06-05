@@ -40,15 +40,15 @@ import (
 
 // DocumentService document service
 type DocumentService struct {
-	documentDAO       *dao.DocumentDAO
-	kbDAO             *dao.KnowledgebaseDAO
-	ingestionTaskDAO  *dao.IngestionDAO
-	ingestionLogDAO   *dao.IngestionLogDAO
-	docEngine         engine.DocEngine
-	engineType        server.EngineType
-	metadataSvc       *MetadataService
-	taskDAO           *dao.TaskDAO
-	file2DocumentDAO  *dao.File2DocumentDAO
+	documentDAO      *dao.DocumentDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	ingestionTaskDAO *dao.IngestionDAO
+	ingestionLogDAO  *dao.IngestionLogDAO
+	docEngine        engine.DocEngine
+	engineType       server.EngineType
+	metadataSvc      *MetadataService
+	taskDAO          *dao.TaskDAO
+	file2DocumentDAO *dao.File2DocumentDAO
 }
 
 // NewDocumentService create document service
@@ -686,7 +686,7 @@ func (s *DocumentService) GetMetadataSummary(kbID string, docIDs []string) (map[
 	}
 
 	// Aggregate metadata from results
-	return aggregateMetadata(searchResult.Chunks), nil
+	return aggregateMetadata(searchResult.MetadataRecords), nil
 }
 
 // SetDocumentMetadata sets metadata for a document in the document engine
@@ -783,9 +783,9 @@ func (s *DocumentService) GetDocumentMetadataByID(docID string) (map[string]inte
 	}
 
 	// Return metadata if found
-	if len(searchResult.Chunks) > 0 {
-		chunk := searchResult.Chunks[0]
-		return ExtractMetaFields(chunk)
+	if len(searchResult.MetadataRecords) > 0 {
+		metadata := searchResult.MetadataRecords[0]
+		return ExtractMetaFields(metadata)
 	}
 
 	return make(map[string]interface{}), nil
@@ -803,20 +803,20 @@ func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface
 	}
 
 	flattenedMeta := make(map[string]map[string][]string)
-	numChunks := len(searchResult.Chunks)
+	numMetadata := len(searchResult.MetadataRecords)
 
 	var allMetaFields []map[string]interface{}
-	if numChunks > 1 && len(searchResult.Chunks) > 0 {
-		firstChunk := searchResult.Chunks[0]
-		if metaFieldsVal := firstChunk["meta_fields"]; metaFieldsVal != nil {
+	if numMetadata > 1 && len(searchResult.MetadataRecords) > 0 {
+		firstMetadata := searchResult.MetadataRecords[0]
+		if metaFieldsVal := firstMetadata["meta_fields"]; metaFieldsVal != nil {
 			if v, ok := metaFieldsVal.([]byte); ok {
 				allMetaFields = ParseAllLengthPrefixedJSON(v)
 			}
 		}
 	}
 
-	for idx, chunk := range searchResult.Chunks {
-		docID, ok := ExtractDocumentID(chunk)
+	for idx, metadata := range searchResult.MetadataRecords {
+		docID, ok := ExtractDocumentID(metadata)
 		if !ok {
 			continue
 		}
@@ -829,7 +829,7 @@ func (s *DocumentService) GetMetadataByKBs(kbIDs []string) (map[string]interface
 			metaFields = allMetaFields[idx]
 		} else {
 			// Normal case - get from chunk
-			metaFieldsVal = chunk["meta_fields"]
+			metaFieldsVal = metadata["meta_fields"]
 			if metaFieldsVal != nil {
 				switch v := metaFieldsVal.(type) {
 				case string:

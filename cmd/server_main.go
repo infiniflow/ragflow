@@ -71,7 +71,7 @@ func main() {
 
 	// Initialize logger with default level
 	// logger.Init("info"); // set debug log level
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "server_main.log"); err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
@@ -92,10 +92,12 @@ func main() {
 	}
 
 	// Reinitialize logger with configured level if different
-	if config.Log.Level != "" && config.Log.Level != "info" {
-		if err := common.Init(config.Log.Level); err != nil {
-			common.Error("Failed to reinitialize logger with configured level", err)
-		}
+	level := config.Log.Level
+	if level == "" {
+		level = "info"
+	}
+	if err := common.Init(level, "server_main.log"); err != nil {
+		common.Error("Failed to reinitialize logger", err)
 	}
 	server.SetLogger(common.Logger)
 	if config.Log.Level == "" {

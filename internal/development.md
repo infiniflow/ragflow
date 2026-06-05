@@ -423,7 +423,7 @@ RAGFlow(user)> DROP CHUNK STORE FOR DATASET 'test'
 
 - Search chunks
 ```
-RAGFlow(user)> SEARCH '曹操' ON DATASETS 'test'
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test'
 ```
 
 - Get chunks
@@ -462,7 +462,42 @@ DELETE METADATA OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' KEYS '["key1", "k
 RAGFlow(user)> DROP METADATA STORE
 ```
 
-- List metadata
+- Get metadata
 ```
-RAGFlow(user)> LIST METADATA OF DATASET 'test' 'test2'
+RAGFlow(user)> GET METADATA OF DATASET 'test' 'test2'
+```
+
+### 6.28 Search datasets
+
+- Search datasets
+```
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test';
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test1' 'test2';
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'teset' WITH top_k 1;
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH page 2 page_size 20;
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH similarity_threshold 0.5;
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH vector_similarity_weight 0.0;
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH keyword true;
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH use_kg true;
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH rerank_id 'BAAI/bge-reranker-v2-m3@CI@SILICONFLOW';
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH search_id 'abc123';
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH cross_languages ['Chinese'];
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH doc_ids ['doc_a', 'doc_b'];
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH meta_data_filter '{"method":"auto"}';
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true';
 ```

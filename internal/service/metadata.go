@@ -57,11 +57,7 @@ func BuildMetadataIndexName(tenantID string) string {
 
 // GetTenantIDByKBID retrieves tenant ID from knowledge base ID
 func (s *MetadataService) GetTenantIDByKBID(kbID string) (string, error) {
-	kb, err := s.kbDAO.GetByID(kbID)
-	if err != nil {
-		return "", fmt.Errorf("knowledgebase not found: %w", err)
-	}
-	return kb.TenantID, nil
+	return dao.GetTenantIDByKBID(kbID)
 }
 
 // GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
@@ -69,48 +65,42 @@ func (s *MetadataService) GetTenantIDByKBIDs(kbIDs []string) (string, error) {
 	if len(kbIDs) == 0 {
 		return "", fmt.Errorf("no kb_ids provided")
 	}
-	kb, err := s.kbDAO.GetByID(kbIDs[0])
-	if err != nil {
-		return "", fmt.Errorf("knowledgebase not found: %w", err)
-	}
-	return kb.TenantID, nil
+	return dao.GetTenantIDByKBID(kbIDs[0])
 }
 
-// SearchMetadataResult holds the result of a metadata search
-type SearchMetadataResult struct {
+// SearchMetadataResponse holds the result of a metadata search
+type SearchMetadataResponse struct {
 	IndexName string
-	Chunks    []map[string]interface{}
+	MetadataRecords   []map[string]interface{}
 }
 
 // SearchMetadata searches the metadata index with the given parameters
-func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResult, error) {
-	indexName := BuildMetadataIndexName(tenantID)
-
-	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		KbIDs:      []string{kbID},
-		Offset:     0,
-		Limit:      size,
+func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string, size int) (*SearchMetadataResponse, error) {
+	searchReq := &types.SearchMetadataRequest{
+		TenantID: tenantID,
+		Offset:   0,
+		Limit:    size,
 		Filter: map[string]interface{}{
-			"doc_id": docIDs,
+			"id":    docIDs,
+			"kb_id": kbID,
 		},
 	}
 
-	searchResult, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	return &SearchMetadataResult{
-		IndexName: indexName,
-		Chunks:    searchResult.Chunks,
+	return &SearchMetadataResponse{
+		IndexName: BuildMetadataIndexName(tenantID),
+		MetadataRecords:   searchResult.MetadataRecords,
 	}, nil
 }
 
 // SearchMetadataByKBs searches the metadata index for multiple knowledge bases
-func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*SearchMetadataResult, error) {
+func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
-		return &SearchMetadataResult{Chunks: []map[string]interface{}{}}, nil
+		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
 
 	tenantID, err := s.GetTenantIDByKBIDs(kbIDs)
@@ -118,23 +108,23 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 		return nil, err
 	}
 
-	indexName := BuildMetadataIndexName(tenantID)
-
-	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		KbIDs:      kbIDs,
-		Offset:     0,
-		Limit:      size,
+	searchReq := &types.SearchMetadataRequest{
+		TenantID: tenantID,
+		Offset:   0,
+		Limit:    size,
+		Filter: map[string]interface{}{
+			"kb_id": kbIDs,
+		},
 	}
 
-	searchResult, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	return &SearchMetadataResult{
-		IndexName: indexName,
-		Chunks:    searchResult.Chunks,
+	return &SearchMetadataResponse{
+		IndexName: BuildMetadataIndexName(tenantID),
+		MetadataRecords:   searchResult.MetadataRecords,
 	}, nil
 }
 
@@ -153,7 +143,7 @@ func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, 
 
 	flattedMeta := make(common.MetaData)
 
-	for _, chunk := range result.Chunks {
+	for _, chunk := range result.MetadataRecords {
 		// Extract doc_id from chunk
 		docID := ""
 		if id, ok := chunk["id"].(string); ok {

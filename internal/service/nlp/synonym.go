@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -194,6 +195,9 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 				wnRes = append(wnRes, w)
 			}
 		}
+
+		// Sort for deterministic results (map iteration order is non-deterministic in Go)
+		sort.Strings(wnRes)
 
 		if len(wnRes) > topN {
 			return wnRes[:topN]

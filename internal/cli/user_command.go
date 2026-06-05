@@ -498,8 +498,8 @@ func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
 	return "", fmt.Errorf("dataset '%s' not found", datasetName)
 }
 
-// ListMetadata lists metadata for datasets
-func (c *RAGFlowClient) ListMetadata(cmd *Command) (ResponseIf, error) {
+// GetMetadata gets metadata for one or more datasets
+func (c *RAGFlowClient) GetMetadata(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -606,6 +606,66 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 		"question":                 question,
 		"similarity_threshold":     0.2,
 		"vector_similarity_weight": 0.3,
+	}
+
+	// Add optional parameters from command
+	if val, ok := cmd.Params["top_k"]; ok {
+		payload["top_k"] = val
+	}
+	if val, ok := cmd.Params["similarity_threshold"]; ok {
+		payload["similarity_threshold"] = val
+	}
+	if val, ok := cmd.Params["vector_similarity_weight"]; ok {
+		payload["vector_similarity_weight"] = val
+	}
+	if val, ok := cmd.Params["keyword"]; ok {
+		payload["keyword"] = val
+	}
+	if val, ok := cmd.Params["use_kg"]; ok {
+		payload["use_kg"] = val
+	}
+	if val, ok := cmd.Params["rerank_id"]; ok {
+		payload["rerank_id"] = val
+	}
+	if val, ok := cmd.Params["tenant_rerank_id"]; ok {
+		payload["tenant_rerank_id"] = val
+	}
+	if val, ok := cmd.Params["page_size"]; ok {
+		payload["page_size"] = val
+	}
+	if val, ok := cmd.Params["page"]; ok {
+		payload["page"] = val
+	}
+	if val, ok := cmd.Params["search_id"]; ok {
+		if s, ok := val.(string); ok {
+			payload["search_id"] = s
+		}
+	}
+	if val, ok := cmd.Params["cross_languages"]; ok {
+		if list, ok := val.([]string); ok {
+			payload["cross_languages"] = list
+		}
+	}
+	if val, ok := cmd.Params["doc_ids"]; ok {
+		if list, ok := val.([]string); ok {
+			payload["doc_ids"] = list
+		}
+	}
+	if val, ok := cmd.Params["meta_data_filter"]; ok {
+		// Accept either a raw JSON string from the CLI or a pre-decoded
+		// map[string]interface{} (future-proofing for callers that
+		// construct the command programmatically). The string form is
+		// the public CLI surface; the map form is for unit tests.
+		switch v := val.(type) {
+		case string:
+			var decoded map[string]interface{}
+			if err := json.Unmarshal([]byte(v), &decoded); err != nil {
+				return nil, fmt.Errorf("invalid meta_data_filter JSON: %w", err)
+			}
+			payload["meta_data_filter"] = decoded
+		case map[string]interface{}:
+			payload["meta_data_filter"] = v
+		}
 	}
 
 	if iterations > 1 {
