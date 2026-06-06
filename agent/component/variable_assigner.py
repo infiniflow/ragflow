@@ -79,6 +79,8 @@ class VariableAssigner(ComponentBase,ABC):
                 self._canvas.set_variable_value(variable, new_variable)
 
     def _operate(self,variable,operator,parameter):
+        if operator not in self._SUPPORTED_OPERATORS:
+            raise ValueError(f"Unsupported operator: {operator}")
         if operator == "overwrite":
             return self._overwrite(parameter)
         elif operator == "clear":
@@ -102,7 +104,7 @@ class VariableAssigner(ComponentBase,ABC):
         elif operator == "/=":
             return self._divide(variable,parameter)
         else:
-            return
+            raise ValueError(f"Unsupported operator: {operator}")
     
     def _overwrite(self,parameter):
         return self._canvas.get_variable_value(parameter)
