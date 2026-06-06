@@ -48,6 +48,11 @@ class RAGFlowJsonParser:
     @staticmethod
     def _set_nested_dict(d: dict, path: list[str], value: Any) -> None:
         """Set a value in a nested dictionary based on the given path."""
+        if not path:
+            # Top-level scalar JSON ("42", "\"text\"", true) reaches _json_split's
+            # single-item branch with an empty path; there is no key to set it
+            # under, so skip it instead of raising IndexError on path[-1].
+            return
         for key in path[:-1]:
             d = d.setdefault(key, {})
         d[path[-1]] = value
