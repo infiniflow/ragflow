@@ -1,4 +1,4 @@
-"""RDBMS (MySQL/PostgreSQL) data source connector for importing data from relational databases."""
+"""RDBMS (MySQL/PostgreSQL/MSSQL) data source connector for importing data from relational databases."""
 
 import copy
 import hashlib
@@ -239,6 +239,12 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def _get_base_queries(self) -> list[str]:
+        """Return the list of base SQL queries to execute.
+
+        When a custom query is configured, returns it as a single-element list.
+        Otherwise returns a ``SELECT * FROM <table>`` query for every table in
+        the database.
+        """
         if self.query:
             return [self.query.rstrip(";")]
         return [f"SELECT * FROM {table}" for table in self._get_tables()]
@@ -261,17 +267,23 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         return cleaned
 
     def _wrap_query(self, base_query: str, select_clause: str = "*") -> str:
+        """Wrap *base_query* as a derived table so WHERE / SELECT clauses can be appended.
+
+        Strips any trailing top-level ORDER BY before wrapping because SQL Server
+        rejects ORDER BY inside a derived-table subquery.
+        """
         inner = self._strip_trailing_order_by(base_query)
         return f"SELECT {select_clause} FROM ({inner}) AS ragflow_src"
 
 
     @staticmethod
     def serialize_cursor_value(value: Any) -> Any:
-        # Example:
-        # - int cursor 42 is stored as 42
-        # - datetime cursor 2026-05-07T12:34:56+00:00 is stored as
-        #   {"__ragflow_rdbms_cursor_type__": "datetime", "value": "..."}
-        # Only datetime needs wrapping because connector config is JSON.
+        """Serialize a cursor value to a JSON-safe representation.
+
+        Primitive types (int, float, str) are returned as-is. ``datetime``
+        objects are wrapped in a typed dict so they survive a JSON round-trip:
+        ``{"__ragflow_rdbms_cursor_type__": "datetime", "value": "<isoformat>"}``.
+        """
         if isinstance(value, datetime):
             return {
                 "__ragflow_rdbms_cursor_type__": "datetime",
@@ -282,8 +294,11 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
     @staticmethod
     def deserialize_cursor_value(value: Any) -> Any:
-        # Reverse the datetime wrapper above.
-        # Non-datetime cursors such as int/str/float are returned as-is.
+        """Deserialize a cursor value produced by :meth:`serialize_cursor_value`.
+
+        Recognises the ``__ragflow_rdbms_cursor_type__`` wrapper and converts it
+        back to a ``datetime``. Any other value is returned unchanged.
+        """
         if (
             isinstance(value, dict)
             and value.get("__ragflow_rdbms_cursor_type__") == "datetime"
@@ -293,6 +308,12 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def _format_sql_value(self, value: Any) -> str:
+        """Format a Python value as a SQL literal suitable for embedding in a WHERE clause.
+
+        Handles ``datetime``, ``bool``, numeric, and string types with
+        database-specific formatting where needed (e.g. MySQL datetime format vs.
+        ISO-8601 for PostgreSQL/MSSQL, boolean literals for PostgreSQL).
+        """
         if isinstance(value, datetime):
             if value.tzinfo is None:
                 value = value.replace(tzinfo=timezone.utc)
@@ -320,6 +341,14 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         start: Any = None,
         end: Any = None,
     ) -> str:
+        """Build a query that filters rows by the configured timestamp column.
+
+        When no timestamp column is set, or neither bound is provided, the base
+        query is returned verbatim (no derived-table wrapping) so that trailing
+        clauses such as ORDER BY remain valid for all database backends.
+        Otherwise the base query is wrapped as a derived table and a WHERE clause
+        with ``> start`` and/or ``<= end`` conditions is appended.
+        """
         if not self.timestamp_column or (start is None and end is None):
             # No incremental filter to apply: run the user's query verbatim so
             # trailing clauses such as ORDER BY stay valid. Wrapping it as a
@@ -344,6 +373,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def _build_max_timestamp_query(self, base_query: str) -> str:
+        """Build a query that returns the maximum value of the timestamp column."""
         return (
             f"SELECT MAX(ragflow_src.{self.timestamp_column}) "
             f"FROM ({base_query}) AS ragflow_src"
@@ -351,6 +381,12 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def _build_slim_query(self, base_query: str) -> str:
+        """Build a lightweight query that fetches only the columns needed to identify documents.
+
+        Selects the id column when configured, falls back to the content columns,
+        or selects every column when neither is set (the whole row is hashed to
+        derive the document id).
+        """
         columns = [self.id_column] if self.id_column else self.content_columns
         if not columns:
             # No id column and no explicit content columns: the slim snapshot
@@ -361,6 +397,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def _build_content(self, row_dict: Dict[str, Any]) -> str:
+        """Build the document content string from the resolved content columns of a row."""
         content_parts = []
         for col in self._content_columns_for_row(row_dict):
             if col not in row_dict or row_dict[col] is None:
@@ -373,6 +410,11 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def _build_document_id_from_row(self, row_dict: Dict[str, Any]) -> str:
+        """Derive a stable document id from a database row.
+
+        Uses ``<db_type>:<database>:<id_column_value>`` when an id column is
+        configured, otherwise falls back to an MD5 hash of the document content.
+        """
         if self.id_column and self.id_column in row_dict and row_dict[self.id_column] is not None:
             return f"{self.db_type}:{self.database}:{row_dict[self.id_column]}"
         content = self._build_content(row_dict)
@@ -475,6 +517,11 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self,
         query: str,
     ) -> Generator[list[SlimDocument], None, None]:
+        """Yield batches of :class:`SlimDocument` objects from *query*.
+
+        Only the document id is populated; no content is fetched. Used during
+        permission sync to detect and remove stale documents.
+        """
         connection = self._get_connection()
         cursor = connection.cursor()
 
@@ -502,6 +549,12 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def get_max_cursor_value(self) -> Any:
+        """Return the maximum value of the timestamp column across all base queries.
+
+        Returns ``None`` when no timestamp column is configured or the result set
+        is empty.  Used to snapshot the upper bound of the sync window before
+        fetching documents.
+        """
         if not self.timestamp_column:
             return None
 
@@ -553,6 +606,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         self,
         callback: Any = None,
     ) -> Generator[list[SlimDocument], None, None]:
+        """Yield slim snapshots of all current documents for stale-document reconciliation."""
         del callback
 
         base_queries = self._get_base_queries()
@@ -568,6 +622,12 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             self._close_connection()
 
     def prepare_sync_state(self, connector_id: str, config: Dict[str, Any]) -> None:
+        """Snapshot the current maximum cursor value before documents are fetched.
+
+        Must be called before :meth:`load_from_cursor_range` so the upper bound
+        of the sync window is captured atomically and can be persisted afterwards
+        via :meth:`persist_sync_state`.
+        """
         self._sync_connector_id = connector_id
         self._sync_config = copy.deepcopy(config)
         if not self.timestamp_column:
@@ -577,12 +637,18 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
     def get_saved_sync_cursor_value(self) -> Any:
+        """Return the cursor value that was persisted at the end of the previous sync run."""
         if self._sync_config is None:
             return None
         return self.deserialize_cursor_value(self._sync_config.get("sync_cursor_value"))
 
 
     def persist_sync_state(self) -> None:
+        """Write the pending cursor value back to the connector config in the database.
+
+        No-op when no timestamp column is configured or :meth:`prepare_sync_state`
+        was not called.
+        """
         if not self.timestamp_column or self._sync_connector_id is None or self._sync_config is None:
             return
 
@@ -601,6 +667,11 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         start_value: Any = None,
         end_value: Any = None,
     ) -> Generator[list[Document], None, None]:
+        """Yield documents whose timestamp column falls in ``(start_value, end_value]``.
+
+        Returns an empty iterator when *end_value* is ``None`` or the range is
+        empty (``end_value <= start_value``).
+        """
         if end_value is None:
             self._close_connection()
             return iter(())
