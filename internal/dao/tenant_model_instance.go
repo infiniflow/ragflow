@@ -17,7 +17,11 @@
 package dao
 
 import (
+	"errors"
+	"fmt"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TenantModelInstanceDAO tenant model instance data access object
@@ -29,7 +33,23 @@ func NewTenantModelInstanceDAO() *TenantModelInstanceDAO {
 }
 
 func (dao *TenantModelInstanceDAO) Create(instance *entity.TenantModelInstance) error {
-	return DB.Create(instance).Error
+	// begin tx and check if the same provider instance exists
+	tx := DB.Begin()
+	defer tx.Rollback()
+	var existingInstance entity.TenantModelInstance
+	err := tx.Where("provider_id = ? AND instance_name = ?", instance.ProviderID, instance.InstanceName).First(&existingInstance).Error
+	if err == nil {
+		return fmt.Errorf("instance %s already exists", instance.InstanceName)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	err = tx.Create(instance).Error
+	if err != nil {
+		return err
+	}
+	tx.Commit()
+	return nil
 }
 
 func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(providerID string) ([]*entity.TenantModelInstance, error) {
@@ -39,6 +59,15 @@ func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(providerID string
 		return nil, err
 	}
 	return instances, nil
+}
+
+func (dao *TenantModelInstanceDAO) GetInstanceByApiKey(apiKey, providerID string) (*entity.TenantModelInstance, error) {
+	var instance entity.TenantModelInstance
+	err := DB.Where("api_key = ? && provider_id = ?", apiKey, providerID).First(&instance).Error
+	if err != nil {
+		return nil, err
+	}
+	return &instance, nil
 }
 
 func (dao *TenantModelInstanceDAO) GetByProviderIDAndInstanceName(providerID, instanceName string) (*entity.TenantModelInstance, error) {

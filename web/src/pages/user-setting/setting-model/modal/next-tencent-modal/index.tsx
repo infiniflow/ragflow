@@ -1,5 +1,6 @@
 import {
   DynamicForm,
+  DynamicFormRef,
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
@@ -13,7 +14,7 @@ import {
   useHideWhenInstanceExists,
   VerifyResult,
 } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../../modal/verify-button';
@@ -34,6 +35,7 @@ const TencentCloudModal = ({
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
+  const formRef = useRef<DynamicFormRef>(null);
   const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
 
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
@@ -147,17 +149,24 @@ const TencentCloudModal = ({
     [verifyParamsFunc, onVerify],
   );
 
+  useEffect(() => {
+    if (!visible) {
+      formRef.current?.reset();
+    }
+  }, [visible]);
+
   return (
     <Modal
       title={<LLMHeader name={llmFactory} />}
       open={visible || false}
       onOpenChange={(open) => !open && hideModal?.()}
       maskClosable={false}
-      footer={null}
+      footer={<div className="p-4"></div>}
     >
       <DynamicForm.Root
         fields={fields}
         onSubmit={() => {}}
+        ref={formRef}
         defaultValues={
           {
             instance_name: '',
