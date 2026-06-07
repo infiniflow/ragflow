@@ -34,7 +34,7 @@ type BenchmarkResult struct {
 }
 
 // RunBenchmark runs a benchmark with the given concurrency and iterations
-func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
+func (c *CLI) RunBenchmark(cmd *Command) (ResponseIf, error) {
 	concurrency, ok := cmd.Params["concurrency"].(int)
 	if !ok {
 		concurrency = 1
@@ -64,7 +64,7 @@ func (c *RAGFlowClient) RunBenchmark(cmd *Command) (ResponseIf, error) {
 }
 
 // runBenchmarkSingle runs benchmark with single concurrency (sequential execution)
-func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
+func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	commandType := nestedCmd.Type
 
 	// For search_on_datasets, convert dataset names to IDs first
@@ -144,7 +144,7 @@ func (c *RAGFlowClient) runBenchmarkSingle(iterations int, nestedCmd *Command) (
 }
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
-func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
+func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
 	results := make([]map[string]interface{}, concurrency)
 	var wg sync.WaitGroup
 
@@ -173,7 +173,11 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 			defer wg.Done()
 
 			// Create a new client for each goroutine to avoid race conditions
-			workerClient := NewRAGFlowClient(c.ServerType)
+			workerClient, err := NewCLIWithConfig(nil)
+			if err != nil {
+				fmt.Printf("fail to create worker client: %s", err)
+				return
+			}
 			workerClient.HTTPClient = c.HTTPClient // Share the same HTTP client config
 
 			// Execute benchmark silently (no output)
@@ -218,7 +222,7 @@ func (c *RAGFlowClient) runBenchmarkConcurrent(concurrency, iterations int, nest
 }
 
 // executeBenchmarkSilent executes a command for benchmark without printing output
-func (c *RAGFlowClient) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
+func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 	responseList := make([]*Response, 0, iterations)
 
 	for i := 0; i < iterations; i++ {

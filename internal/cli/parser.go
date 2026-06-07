@@ -46,7 +46,7 @@ func (p *Parser) nextToken() {
 }
 
 // Parse parses the input and returns a Command
-func (p *Parser) Parse(adminCommand bool) (*Command, error) {
+func (p *Parser) Parse(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type == TokenEOF {
 		return nil, nil
 	}
@@ -62,7 +62,7 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 	// 	return p.parseCECommand()
 	// }
 
-	return p.parseCommand(adminCommand)
+	return p.parseCommand(cliMode)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -231,16 +231,19 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	}
 }
 
-func (p *Parser) parseCommand(adminCommand bool) (*Command, error) {
+func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
 
-	if adminCommand {
+	switch cliMode {
+	case AdminMode:
 		return p.parseAdminCommand()
+	case UserMode:
+		return p.parseUserCommand()
+	default:
+		return nil, fmt.Errorf("unknown mode: %s", cliMode)
 	}
-
-	return p.parseUserCommand()
 }
 
 func (p *Parser) expectPeek(tokenType int) error {

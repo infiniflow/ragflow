@@ -22,11 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
+	//"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
+	//"syscall"
 	"unicode/utf8"
 
 	"github.com/peterh/liner"
@@ -67,6 +67,286 @@ type ConnectionArgs struct {
 	AdminMode      bool
 	OutputFormat   OutputFormat // Output format: table, plain, json
 	Verbose        bool         // Enable verbose logging
+}
+
+type CommandLineMode string
+
+const (
+	UserMode      CommandLineMode = "user"
+	AdminMode     CommandLineMode = "admin"
+	IngestorMode  CommandLineMode = "ingestor"  // If we want to access ingestor
+	CollectorMode CommandLineMode = "collector" // If we want to access collector
+)
+
+type CommandLineConfig struct {
+	CLIMode           CommandLineMode
+	AdminClientConfig *AdminModeConfig
+	APIClientConfig   *UserModeConfig
+	ShowHelp          bool
+	Verbose           bool
+	Interactive       bool
+	OutputFormat      OutputFormat
+	Command           *string
+}
+
+type AdminModeConfig struct {
+	AdminHost     string
+	AdminPort     int
+	AdminName     string
+	AdminPassword string
+	//AdminCommand  *string
+	WebAuth *string
+}
+
+type UserModeConfig struct {
+	ApiHost      string
+	ApiPort      int
+	UserName     *string // Check username and password firstly, then check api token
+	UserPassword *string
+	WebAuth      *string
+	ApiToken     *string
+	//ApiCommand   *string
+}
+
+func (c *CommandLineConfig) Print() {
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err == nil {
+		fmt.Println(string(b))
+	}
+}
+
+func ParseArgs(args []string) (*CommandLineConfig, error) {
+	commandLineConfig := &CommandLineConfig{
+		CLIMode:           UserMode,
+		AdminClientConfig: nil,
+		APIClientConfig:   nil,
+		ShowHelp:          false,
+		Verbose:           false,
+		Interactive:       true,
+		OutputFormat:      OutputFormatTable,
+		Command:           nil,
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		switch arg {
+		case "-o", "--output":
+			// Parse output format
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				format := args[i+1]
+				switch format {
+				case "plain":
+					commandLineConfig.OutputFormat = OutputFormatPlain
+				case "json":
+					commandLineConfig.OutputFormat = OutputFormatJSON
+				default:
+					commandLineConfig.OutputFormat = OutputFormatTable
+				}
+				i++
+			}
+		case "-v", "--verbose":
+			commandLineConfig.Verbose = true
+		case "--admin", "-admin":
+			commandLineConfig.CLIMode = AdminMode
+		case "--help", "-help":
+			commandLineConfig.ShowHelp = true
+		default:
+			if !strings.HasPrefix(arg, "-") {
+				commandLineConfig.Interactive = false
+			}
+		}
+	}
+
+	var commandArgs []string
+	var foundCommand bool
+
+	switch commandLineConfig.CLIMode {
+	case UserMode:
+		APIClientConfig := &UserModeConfig{
+			ApiHost:      "127.0.0.1",
+			ApiPort:      9384,
+			UserName:     nil,
+			UserPassword: nil,
+			WebAuth:      nil,
+			ApiToken:     nil,
+		}
+
+		configFile := "rf.yml"
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+
+			// If we've found the command, collect remaining args as subcommand args
+			if foundCommand {
+				commandArgs = append(commandArgs, arg)
+				continue
+			}
+
+			switch arg {
+			case "-h", "--host":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					hostVal := args[i+1]
+					h, port, err := parseHostPort(hostVal)
+					if err != nil {
+						return nil, fmt.Errorf("invalid host format: %v", err)
+					}
+					APIClientConfig.ApiHost = h
+					APIClientConfig.ApiPort = port
+					i++
+				}
+			case "-t", "--token":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					APIClientConfig.ApiToken = &args[i+1]
+					i++
+				}
+			case "-u", "--user":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					APIClientConfig.UserName = &args[i+1]
+					i++
+				}
+			case "-p", "--password":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					APIClientConfig.UserPassword = &args[i+1]
+					i++
+				}
+			case "-f", "--config":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					configFile = args[i+1]
+					// Convert to absolute path immediately
+					if !filepath.IsAbs(configFile) {
+						absPath, err := filepath.Abs(configFile)
+						if err == nil {
+							configFile = absPath
+						}
+					}
+					i++
+				}
+			case "-o", "--output":
+				// Already handled above
+				if i+1 < len(args) {
+					i++
+				}
+				continue
+			case "-v", "--verbose", "--help", "-help":
+				// Already handled above
+				continue
+			case "--admin", "-admin":
+				return nil, fmt.Errorf("unexpected parameter: --admin")
+			default:
+				// Non-flag argument (command)
+				if !strings.HasPrefix(arg, "-") {
+					commandArgs = append(commandArgs, arg)
+					foundCommand = true
+				}
+			}
+		}
+
+		var config ConfigFile
+		data, err := os.ReadFile(configFile)
+		if err == nil {
+			if err = yaml.Unmarshal(data, &config); err != nil {
+				return nil, fmt.Errorf("failed to parse rf.yml: %v", err)
+			}
+			if config.Host != "" {
+				var h string
+				var port int
+				h, port, err = parseHostPort(config.Host)
+				if err != nil {
+					return nil, fmt.Errorf("invalid host in config file: %v", err)
+				}
+				APIClientConfig.ApiHost = h
+				APIClientConfig.ApiPort = port
+			}
+			if config.UserName != "" {
+				APIClientConfig.UserName = &config.UserName
+			}
+			if config.Password != "" {
+				APIClientConfig.UserPassword = &config.Password
+			}
+			if config.APIToken != "" {
+				APIClientConfig.ApiToken = &config.APIToken
+			}
+		} else {
+			if configFile == "rf.yml" && os.IsNotExist(err) {
+			} else {
+				return nil, fmt.Errorf("failed to read %s: %v", configFile, err)
+			}
+		}
+
+		commandLineConfig.APIClientConfig = APIClientConfig
+	case AdminMode:
+		AdminConfig := &AdminModeConfig{
+			AdminHost:     "127.0.0.1",
+			AdminPort:     9383,
+			AdminName:     "admin@ragflow.io",
+			AdminPassword: "admin",
+		}
+
+		for i := 0; i < len(args); i++ {
+			arg := args[i]
+
+			// If we've found the command, collect remaining args as subcommand args
+			if foundCommand {
+				commandArgs = append(commandArgs, arg)
+				continue
+			}
+
+			switch arg {
+			case "-h", "--host":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					hostVal := args[i+1]
+					h, port, err := parseHostPort(hostVal)
+					if err != nil {
+						return nil, fmt.Errorf("invalid host format: %v", err)
+					}
+					AdminConfig.AdminHost = h
+					AdminConfig.AdminPort = port
+					i++
+				}
+			case "-t", "--token":
+				return nil, fmt.Errorf("token is invalid in admin mode")
+			case "-u", "--user":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					AdminConfig.AdminName = args[i+1]
+					i++
+				}
+			case "-p", "--password":
+				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+					AdminConfig.AdminPassword = args[i+1]
+					i++
+				}
+			case "-f", "--config":
+				return nil, fmt.Errorf("config is invalid in admin mode")
+			case "-o", "--output":
+				// Already handled above
+				if i+1 < len(args) {
+					i++
+				}
+				continue
+			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
+				// Already handled above
+				continue
+			default:
+				// Non-flag argument (command)
+				if !strings.HasPrefix(arg, "-") {
+					commandArgs = append(commandArgs, arg)
+					foundCommand = true
+				}
+			}
+		}
+		commandLineConfig.AdminClientConfig = AdminConfig
+	}
+
+	commandArgsLen := len(commandArgs)
+	if commandArgsLen > 0 {
+		if commandArgsLen > 1 {
+			commandLineConfig.Command = &commandArgs[0]
+		} else {
+			ApiCommand := strings.Join(commandArgs, " ")
+			commandLineConfig.Command = &ApiCommand
+		}
+	}
+
+	return commandLineConfig, nil
 }
 
 // LoadDefaultConfigFile reads the rf.yml file from current directory if it exists
@@ -421,86 +701,252 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client         *RAGFlowClient
-	contextEngine  *filesystem.Engine
-	prompt         string
-	running        bool
-	line           *liner.State
-	args           *ConnectionArgs
-	outputFormat   OutputFormat // Output format
+	client        *RAGFlowClient
+	contextEngine *filesystem.Engine
+	prompt        string
+	running       bool
+	line          *liner.State
+	args          *ConnectionArgs
+	outputFormat  OutputFormat // Output format
+
+	HTTPClient     *HTTPClient
+	PasswordPrompt PasswordPromptFunc // Function for password input
+	ContextEngine  *filesystem.Engine // Context Engine for virtual filesystem
+	CurrentModel   *CurrentModel      // Current model configuration
+	Config         *CommandLineConfig
 }
 
 // NewCLI creates a new CLI instance
-func NewCLI() (*CLI, error) {
-	return NewCLIWithArgs(nil)
-}
+//func NewCLI() (*CLI, error) {
+//	return NewCLIWithArgs(nil)
+//}
 
-// NewCLIWithArgs creates a new CLI instance with connection arguments
-func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
+func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	// Create liner first
 	line := liner.NewLiner()
 
-	// Determine server type based on --admin or --user flag
-	// Default to "user" mode if not specified
-	serverType := "user"
-	if args != nil && args.AdminMode {
-		serverType = "admin"
+	cli := &CLI{
+		line:   line,
+		Config: commandLineConfig,
 	}
 
-	// Create client with password prompt using liner
-	client := NewRAGFlowClient(serverType)
-	client.PasswordPrompt = line.PasswordPrompt
-
-	// Apply connection arguments if provided
-	if args != nil {
-		client.HTTPClient.Host = args.Host
-		if args.Port > 0 {
-			client.HTTPClient.Port = args.Port
+	httpClient := NewHTTPClient()
+	if commandLineConfig.CLIMode == UserMode {
+		httpClient.Host = commandLineConfig.APIClientConfig.ApiHost
+		httpClient.Port = commandLineConfig.APIClientConfig.ApiPort
+		if commandLineConfig.APIClientConfig.ApiToken != nil {
+			httpClient.APIToken = *commandLineConfig.APIClientConfig.ApiToken
+			httpClient.useAPIToken = true
 		}
-
-		if args.APIToken != "" {
-			client.HTTPClient.APIToken = args.APIToken
-		}
+		cli.prompt = fmt.Sprintf("RAGFlow(user)> ")
+	} else if commandLineConfig.CLIMode == AdminMode {
+		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
+		httpClient.Port = commandLineConfig.AdminClientConfig.AdminPort
+		cli.prompt = fmt.Sprintf("RAGFlow(admin)> ")
+	} else {
+		return nil, fmt.Errorf("invalid CLI mode: %s", commandLineConfig.CLIMode)
 	}
 
-	// Apply API token if provided (from config file)
-	if args.APIToken != "" {
-		client.HTTPClient.APIToken = args.APIToken
-		client.HTTPClient.useAPIToken = true
-	}
+	cli.HTTPClient = httpClient
 
-	// Set output format
-	client.OutputFormat = args.OutputFormat
-
-	// Auto-login if user and password are provided (from config file)
-	if args.UserName != "" && args.Password != "" && args.APIToken == "" {
-		if err := client.LoginUserInteractive(args.UserName, args.Password); err != nil {
-			line.Close()
-			return nil, fmt.Errorf("auto-login failed: %w", err)
-		}
-	}
-
-	// Set prompt based on server type
-	prompt := "RAGFlow(user)> "
-	if serverType == "admin" {
-		prompt = "RAGFlow(admin)> "
-	}
-
-	// Create filesystem engine and register providers
 	engine := filesystem.NewEngine()
-	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
-	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
-	engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{client: client.HTTPClient}))
 
-	return &CLI{
-		prompt:        prompt,
-		client:        client,
-		contextEngine: engine,
-		line:          line,
-		args:          args,
-		outputFormat:  args.OutputFormat,
-	}, nil
+	// Register providers
+	// TODO: if http config change, engine http config won't be updated. They should share the same config
+	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{httpClient}))
+	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{httpClient}))
+	engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{httpClient}))
+
+	cli.ContextEngine = engine
+
+	return cli, nil
 }
+
+// Run starts the interactive CLI
+func (c *CLI) NewRun() error {
+	// If username is provided without password, prompt for password
+	cliConfig := c.Config
+	switch cliConfig.CLIMode {
+	case UserMode:
+		apiConfig := c.Config.APIClientConfig
+		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.ApiToken == nil {
+			// provider username but no password or api token
+			maxAttempts := 3
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
+				fmt.Printf("Please input your password for '%s': ", *apiConfig.UserName)
+
+				password, err := ReadPassword()
+
+				if password == "" {
+					if attempt < maxAttempts {
+						fmt.Println("Password cannot be empty, please try again")
+						continue
+					}
+					return errors.New("no password provided after 3 attempts")
+				}
+
+				c.Config.APIClientConfig.UserPassword = &password
+
+				if err = c.VerifyAuth(); err != nil {
+					if attempt < maxAttempts {
+						fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
+						continue
+					}
+					return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
+				}
+
+				break
+			}
+		}
+
+	case AdminMode:
+	default:
+		return fmt.Errorf("unexpected CLI mode: %s", cliConfig.CLIMode)
+	}
+
+	if c.args != nil && c.args.UserName != "" && c.args.Password == "" && c.args.APIToken == "" {
+		maxAttempts := 3
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			fmt.Print("Please input your password: ")
+
+			password, err := ReadPassword()
+
+			if password == "" {
+				if attempt < maxAttempts {
+					fmt.Println("Password cannot be empty, please try again")
+					continue
+				}
+				return errors.New("no password provided after 3 attempts")
+			}
+
+			c.args.Password = password
+
+			if err = c.VerifyAuth(); err != nil {
+				if attempt < maxAttempts {
+					fmt.Printf("Authentication failed: %v (%d/%d attempts)\n", err, attempt, maxAttempts)
+					continue
+				}
+				return fmt.Errorf("authentication failed after %d attempts: %v", maxAttempts, err)
+			}
+
+			break
+		}
+	}
+
+	c.running = true
+
+	// Load history from file
+	histFile := HistoryFile()
+	if f, err := os.Open(histFile); err == nil {
+		c.line.ReadHistory(f)
+		f.Close()
+	}
+
+	// Save history on exit
+	defer func() {
+		if f, err := os.Create(histFile); err == nil {
+			c.line.WriteHistory(f)
+			f.Close()
+		}
+		c.line.Close()
+	}()
+
+	fmt.Println("Welcome to RAGFlow CLI")
+	fmt.Println("Type \\? for help, \\q to quit")
+	fmt.Println()
+
+	for c.running {
+		input, err := c.line.Prompt(c.prompt)
+		if err != nil {
+			fmt.Printf("Error reading input: %v\n", err)
+			continue
+		}
+
+		input = strings.TrimSpace(input)
+
+		if input == "" {
+			continue
+		}
+
+		// Add to history (skip meta commands)
+		if !strings.HasPrefix(input, "\\") {
+			c.line.AppendHistory(input)
+		}
+
+		if err = c.executeNew(input); err != nil {
+			fmt.Printf("CLI error: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// NewCLIWithArgs creates a new CLI instance with connection arguments
+//func NewCLIWithArgs(args *ConnectionArgs) (*CLI, error) {
+//	// Create liner first
+//	line := liner.NewLiner()
+//
+//	// Determine server type based on --admin or --user flag
+//	// Default to "user" mode if not specified
+//	serverType := "user"
+//	if args != nil && args.AdminMode {
+//		serverType = "admin"
+//	}
+//
+//	// Create client with password prompt using liner
+//	client := NewRAGFlowClient(serverType)
+//	client.PasswordPrompt = line.PasswordPrompt
+//
+//	// Apply connection arguments if provided
+//	if args != nil {
+//		client.HTTPClient.Host = args.Host
+//		if args.Port > 0 {
+//			client.HTTPClient.Port = args.Port
+//		}
+//
+//		if args.APIToken != "" {
+//			client.HTTPClient.APIToken = args.APIToken
+//		}
+//	}
+//
+//	// Apply API token if provided (from config file)
+//	if args.APIToken != "" {
+//		client.HTTPClient.APIToken = args.APIToken
+//		client.HTTPClient.useAPIToken = true
+//	}
+//
+//	// Set output format
+//	client.OutputFormat = args.OutputFormat
+//
+//	// Auto-login if user and password are provided (from config file)
+//	if args.UserName != "" && args.Password != "" && args.APIToken == "" {
+//		if err := client.LoginUserInteractive(args.UserName, args.Password); err != nil {
+//			line.Close()
+//			return nil, fmt.Errorf("auto-login failed: %w", err)
+//		}
+//	}
+//
+//	// Set prompt based on server type
+//	prompt := "RAGFlow(user)> "
+//	if serverType == "admin" {
+//		prompt = "RAGFlow(admin)> "
+//	}
+//
+//	// Create filesystem engine and register providers
+//	engine := filesystem.NewEngine()
+//	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{client: client.HTTPClient}))
+//	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{client: client.HTTPClient}))
+//	engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{client: client.HTTPClient}))
+//
+//	return &CLI{
+//		prompt:        prompt,
+//		client:        client,
+//		contextEngine: engine,
+//		line:          line,
+//		args:          args,
+//		outputFormat:  args.OutputFormat,
+//	}, nil
+//}
 
 // Run starts the interactive CLI
 func (c *CLI) Run() error {
@@ -584,7 +1030,7 @@ func (c *CLI) Run() error {
 
 func (c *CLI) executeNew(input string) error {
 	p := NewParser(input)
-	cmd, err := p.Parse(c.args.AdminMode)
+	cmd, err := p.Parse(c.Config.CLIMode)
 	if err != nil {
 		return err
 	}
@@ -600,7 +1046,7 @@ func (c *CLI) executeNew(input string) error {
 
 	// Execute the command using the client
 	var result ResponseIf
-	result, err = c.client.ExecuteCommand(cmd)
+	result, err = c.ExecuteCommand(cmd)
 	if result != nil {
 		result.PrintOut()
 	}
@@ -614,7 +1060,7 @@ func (c *CLI) execute(input string) error {
 	// Handle meta commands (start with \)
 	if strings.HasPrefix(input, "\\") {
 		p := NewParser(input)
-		cmd, err := p.Parse(c.args.AdminMode)
+		cmd, err := p.Parse(c.Config.CLIMode)
 		if err != nil {
 			return err
 		}
@@ -636,7 +1082,7 @@ func (c *CLI) execute(input string) error {
 	if isSQLMode {
 		// SQL mode: use parser
 		p := NewParser(input)
-		cmd, err := p.Parse(c.args.AdminMode)
+		cmd, err := p.Parse(c.Config.CLIMode)
 		if err != nil {
 			return err
 		}
@@ -645,7 +1091,7 @@ func (c *CLI) execute(input string) error {
 		}
 		// Execute SQL command using the client
 		var result ResponseIf
-		result, err = c.client.ExecuteCommand(cmd)
+		result, err = c.ExecuteCommand(cmd)
 		if result != nil {
 			result.SetOutputFormat(c.outputFormat)
 			result.PrintOut()
@@ -1072,13 +1518,13 @@ func (c *CLI) printSkillSearchResults(result *filesystem.Result, format OutputFo
 
 	// Skill search result structure
 	type skillSearchResult struct {
-		SkillID     string   `json:"skill_id"`
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Tags        string   `json:"tags"`
-		Score       float64  `json:"score"`
-		BM25Score   float64  `json:"bm25_score"`
-		VectorScore float64  `json:"vector_score"`
+		SkillID     string  `json:"skill_id"`
+		Name        string  `json:"name"`
+		Description string  `json:"description"`
+		Tags        string  `json:"tags"`
+		Score       float64 `json:"score"`
+		BM25Score   float64 `json:"bm25_score"`
+		VectorScore float64 `json:"vector_score"`
 	}
 
 	results := make([]skillSearchResult, 0, len(result.Nodes))
@@ -1163,18 +1609,18 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		// Clear screen (simple approach)
 		fmt.Print("\033[H\033[2J")
 	case "admin":
-		c.client.ServerType = "admin"
+		c.Config.CLIMode = AdminMode
 		c.prompt = "RAGFlow(admin)> "
 		fmt.Println("Switched to ADMIN mode")
 	case "user":
-		c.client.ServerType = "user"
+		c.Config.CLIMode = UserMode
 		c.prompt = "RAGFlow(user)> "
 		fmt.Println("Switched to USER mode")
 	case "host":
 		if len(args) == 0 {
 			fmt.Printf("Current host: %s\n", c.client.HTTPClient.Host)
 		} else {
-			c.client.HTTPClient.Host = args[0]
+			c.HTTPClient.Host = args[0]
 			fmt.Printf("Host set to: %s\n", args[0])
 		}
 	case "port":
@@ -1275,24 +1721,24 @@ func (c *CLI) Cleanup() {
 	}
 }
 
-// RunInteractive runs the CLI in interactive mode
-func RunInteractive() error {
-	cli, err := NewCLI()
-	if err != nil {
-		return fmt.Errorf("failed to create CLI: %v", err)
-	}
-
-	// Handle interrupt signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		cli.Cleanup()
-		os.Exit(0)
-	}()
-
-	return cli.Run()
-}
+//// RunInteractive runs the CLI in interactive mode
+//func RunInteractive() error {
+//	cli, err := NewCLI()
+//	if err != nil {
+//		return fmt.Errorf("failed to create CLI: %v", err)
+//	}
+//
+//	// Handle interrupt signal
+//	sigChan := make(chan os.Signal, 1)
+//	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+//	go func() {
+//		<-sigChan
+//		cli.Cleanup()
+//		os.Exit(0)
+//	}()
+//
+//	return cli.Run()
+//}
 
 // RunSingleCommand executes a single command and exits
 func (c *CLI) RunSingleCommand(command *string) error {
@@ -1304,6 +1750,25 @@ func (c *CLI) RunSingleCommand(command *string) error {
 		return err
 	}
 	return nil
+}
+
+// VerifyAuth verifies authentication if needed
+func (c *CLI) NewVerifyAuth(username, password *string) error {
+	// Otherwise, use username/password authentication
+	if username == nil {
+		return fmt.Errorf("username is required")
+	}
+
+	if password == nil {
+		return fmt.Errorf("password is required")
+	}
+
+	// Create login command with username and password
+	cmd := NewCommand("login_user")
+	cmd.Params["email"] = *username
+	cmd.Params["password"] = *password
+	_, err := c.ExecuteCommand(cmd)
+	return err
 }
 
 // VerifyAuth verifies authentication if needed
@@ -1331,7 +1796,7 @@ func (c *CLI) VerifyAuth() error {
 	cmd := NewCommand("login_user")
 	cmd.Params["email"] = c.args.UserName
 	cmd.Params["password"] = c.args.Password
-	_, err := c.client.ExecuteCommand(cmd)
+	_, err := c.ExecuteCommand(cmd)
 	return err
 }
 

@@ -26,118 +26,39 @@ import (
 	"golang.org/x/term"
 )
 
-// LoginUserInteractive performs interactive login with username and password
-func (c *RAGFlowClient) LoginUserInteractive(username, password string) error {
-	// First, ping the server to check if it's available
-	// For admin mode, use /admin/ping with useAPIBase=true
-	// For user mode, use /system/ping with useAPIBase=false
-	var pingPath string
-	if c.ServerType == "admin" {
-		pingPath = "/admin/ping"
-	} else {
-		pingPath = "/system/ping"
+func (c *CLI) LoginUserByCommand(cmd *Command) (ResponseIf, error) {
+	email, ok := cmd.Params["email"].(string)
+	if !ok {
+		return nil, fmt.Errorf("email not provided")
+	}
+	password, ok := cmd.Params["password"].(string)
+	if !ok {
+		password = ""
 	}
 
-	resp, err := c.HTTPClient.Request("GET", pingPath, "web", nil, nil)
+	err := c.LoginUserInteractive(email, password)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
+		return nil, err
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.SetOutputFormat(c.outputFormat)
+	result.Message = "Login successful"
+
+	return &result, nil
+}
+
+// LoginUserInteractive performs interactive login with username and password
+func (c *CLI) LoginUserInteractive(email, password string) error {
+	// First, ping the server to check if it's available
+	_, err := c.PingServer(1)
+	if err != nil {
 		return err
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
-
-	// Check response - admin returns JSON with message "pong", user returns plain "pong"
-	resJSON, err := resp.JSON()
-	if err == nil {
-		// Admin mode returns {"code":0,"message":"pong"}
-		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	} else {
-		// User mode returns plain "pong"
-		if string(resp.Body) != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
 	}
 
 	// If password is not provided, prompt for it
 	if password == "" {
-		fmt.Printf("password for %s: ", username)
-		var err error
-		password, err = ReadPassword()
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
-		}
-		password = strings.TrimSpace(password)
-	}
-
-	// Login
-	token, err := c.loginUser(username, password)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	c.HTTPClient.LoginToken = token
-	fmt.Printf("Login user %s successfully\n", username)
-	return nil
-}
-
-// LoginUser performs user login
-func (c *RAGFlowClient) LoginUser(cmd *Command) error {
-	// First, ping the server to check if it's available
-	// For admin mode, use /admin/ping with useAPIBase=true
-	// For user mode, use /system/ping with useAPIBase=false
-	var pingPath string
-	if c.ServerType == "admin" {
-		pingPath = "/admin/ping"
-	} else {
-		pingPath = "/system/ping"
-	}
-
-	resp, err := c.HTTPClient.Request("GET", pingPath, "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Can't access server for login (connection failed)")
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		fmt.Println("Server is down")
-		return fmt.Errorf("server is down")
-	}
-
-	// Check response - admin returns JSON with message "pong", user returns plain "pong"
-	resJSON, err := resp.JSON()
-	if err == nil {
-		// Admin mode returns {"code":0,"message":"pong"}
-		if msg, ok := resJSON["message"].(string); !ok || msg != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	} else {
-		// User mode returns plain "pong"
-		if string(resp.Body) != "pong" {
-			fmt.Println("Server is down")
-			return fmt.Errorf("server is down")
-		}
-	}
-
-	email, ok := cmd.Params["email"].(string)
-	if !ok {
-		return fmt.Errorf("email not provided")
-	}
-
-	password, ok := cmd.Params["password"].(string)
-	if !ok {
-		// Get password from user input (hidden)
 		fmt.Printf("password for %s: ", email)
 		password, err = ReadPassword()
 		if err != nil {
@@ -159,8 +80,64 @@ func (c *RAGFlowClient) LoginUser(cmd *Command) error {
 	return nil
 }
 
+func (c *CLI) PingByCommand(cmd *Command) (ResponseIf, error) {
+	iterations := 1
+	if iterationsParam, ok := cmd.Params["iterations"]; ok {
+		iterations = int(iterationsParam.(float64))
+	}
+	return c.PingServer(iterations)
+}
+
+func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
+	var pingPath string
+	switch c.Config.CLIMode {
+	case AdminMode:
+		pingPath = "/admin/ping"
+	case UserMode:
+		pingPath = "/system/ping"
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if iterations > 1 {
+		// Benchmark mode: multiple iterations
+		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", "web", nil, nil, iterations)
+	}
+
+	resp, err := c.HTTPClient.Request("GET", pingPath, "web", nil, nil)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		fmt.Println("Can't access server for login (connection failed)")
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		fmt.Println("Server is down")
+		return nil, fmt.Errorf("server is down")
+	}
+
+	var result SimpleResponse
+	switch c.Config.CLIMode {
+	case AdminMode:
+		if err = json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("list users failed: invalid JSON (%w)", err)
+		}
+	case UserMode:
+		if string(resp.Body) == "pong" {
+			result.Code = 0
+			result.Message = "Pong"
+		} else {
+			result.Code = 1
+			result.Message = "Ping failed"
+		}
+	}
+
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
 // loginUser performs the actual login request
-func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
+func (c *CLI) loginUser(email, password string) (string, error) {
 	// Encrypt password using scrypt (same as Python implementation)
 	encryptedPassword, err := EncryptPassword(password)
 	if err != nil {
@@ -173,10 +150,13 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 	}
 
 	var path string
-	if c.ServerType == "admin" {
+	switch c.Config.CLIMode {
+	case AdminMode:
 		path = "/admin/login"
-	} else {
+	case UserMode:
 		path = "/auth/login"
+	default:
+		return "", fmt.Errorf("invalid server type")
 	}
 
 	resp, err := c.HTTPClient.Request("POST", path, "", nil, payload)
@@ -201,16 +181,19 @@ func (c *RAGFlowClient) loginUser(email, password string) (string, error) {
 	return token, nil
 }
 
-func (c *RAGFlowClient) Logout() (ResponseIf, error) {
+func (c *CLI) Logout() (ResponseIf, error) {
 	if c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("not logged in")
 	}
 
 	var path string
-	if c.ServerType == "admin" {
+	switch c.Config.CLIMode {
+	case AdminMode:
 		path = "/admin/logout"
-	} else {
+	case UserMode:
 		path = "/auth/logout"
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	resp, err := c.HTTPClient.Request("POST", path, "web", nil, nil)
@@ -230,13 +213,16 @@ func (c *RAGFlowClient) Logout() (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 
 	var endPoint string
-	if c.ServerType == "admin" {
-		endPoint = fmt.Sprintf("/admin/providers?available=true")
-	} else {
-		endPoint = fmt.Sprintf("/providers?available=true")
+	switch c.Config.CLIMode {
+	case AdminMode:
+		endPoint = "/admin/providers?available=true"
+	case UserMode:
+		endPoint = "/providers?available=true"
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
@@ -260,17 +246,20 @@ func (c *RAGFlowClient) ListAvailableProviders(cmd *Command) (ResponseIf, error)
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ShowProvider(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowProvider(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
 	}
 
 	var endPoint string
-	if c.ServerType == "admin" {
+	switch c.Config.CLIMode {
+	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s", providerName)
-	} else {
+	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s", providerName)
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
@@ -294,7 +283,7 @@ func (c *RAGFlowClient) ShowProvider(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListModels(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -302,10 +291,13 @@ func (c *RAGFlowClient) ListModels(cmd *Command) (ResponseIf, error) {
 	}
 
 	var endPoint string
-	if c.ServerType == "admin" {
+	switch c.Config.CLIMode {
+	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/models", providerName)
-	} else {
+	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s/models", providerName)
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
@@ -329,7 +321,7 @@ func (c *RAGFlowClient) ListModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListSupportedModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -341,10 +333,13 @@ func (c *RAGFlowClient) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 	}
 
 	var endPoint string
-	if c.ServerType == "admin" {
+	switch c.Config.CLIMode {
+	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
-	} else {
+	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
@@ -368,7 +363,7 @@ func (c *RAGFlowClient) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -379,12 +374,14 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	}
 
 	var endPoint string
-	if c.ServerType == "admin" {
+	switch c.Config.CLIMode {
+	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/models/%s", providerName, modelName)
-	} else {
+	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s/models/%s", providerName, modelName)
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
-
 	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show model: %w", err)
@@ -406,7 +403,7 @@ func (c *RAGFlowClient) ShowModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
@@ -455,7 +452,7 @@ func (c *RAGFlowClient) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
@@ -487,7 +484,7 @@ func (c *RAGFlowClient) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListDefaultModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 	resp, err := c.HTTPClient.Request("GET", "/models", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list default models: %w", err)

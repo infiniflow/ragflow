@@ -34,41 +34,9 @@ import (
 	"time"
 )
 
-// PingServer pings the server to check if it's alive
-// Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) PingServer(cmd *Command) (ResponseIf, error) {
-	// Get iterations from command params (for benchmark)
-	iterations := 1
-	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
-		iterations = val
-	}
-
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", "web", nil, nil, iterations)
-	}
-
-	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/ping", "web", nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		fmt.Println("Server is down")
-		return nil, err
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to ping: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result SimpleResponse
-	result.Message = string(resp.Body)
-	result.Code = 0
-	return &result, nil
-}
-
 // Show server version to show RAGFlow server version
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -100,9 +68,9 @@ func (c *RAGFlowClient) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListConfigs(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+func (c *CLI) ListConfigs(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 	// Get iterations from command params (for benchmark)
 	iterations := 1
@@ -252,9 +220,9 @@ func GetHost(config *map[string]interface{}, serverType, address, port string) s
 	return result
 }
 
-func (c *RAGFlowClient) SetLogLevel(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	if logLevel, ok := cmd.Params["level"].(string); ok {
@@ -283,9 +251,9 @@ func (c *RAGFlowClient) SetLogLevel(cmd *Command) (ResponseIf, error) {
 	return nil, fmt.Errorf("no log level")
 }
 
-func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
+		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
 	// Check for benchmark iterations
@@ -349,8 +317,8 @@ func (c *RAGFlowClient) RegisterUser(cmd *Command) (ResponseIf, error) {
 
 // ListDatasets lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -403,8 +371,8 @@ func (c *RAGFlowClient) ListDatasets(cmd *Command) (ResponseIf, error) {
 }
 
 // ListDatasetDocumentUserCommand lists dataset documents
-func (c *RAGFlowClient) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -459,7 +427,7 @@ func (c *RAGFlowClient) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf
 }
 
 // getDatasetID gets dataset ID by name
-func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
+func (c *CLI) getDatasetID(datasetName string) (string, error) {
 	resp, err := c.HTTPClient.Request("GET", "/datasets", "web", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list datasets: %w", err)
@@ -499,8 +467,8 @@ func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
 }
 
 // ListMetadata lists metadata for datasets
-func (c *RAGFlowClient) ListMetadata(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListMetadata(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -568,8 +536,8 @@ func formatEmptyArray(v interface{}) string {
 
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -684,8 +652,8 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateToken creates a new API token
-func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -715,8 +683,8 @@ func (c *RAGFlowClient) CreateToken(cmd *Command) (ResponseIf, error) {
 }
 
 // ListTokens lists all API tokens for the current user
-func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -742,8 +710,8 @@ func (c *RAGFlowClient) ListTokens(cmd *Command) (ResponseIf, error) {
 }
 
 // DropToken deletes an API token
-func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -774,8 +742,8 @@ func (c *RAGFlowClient) DropToken(cmd *Command) (ResponseIf, error) {
 }
 
 // SetToken sets the API token after validating it
-func (c *RAGFlowClient) SetToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) SetToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -832,8 +800,8 @@ func (c *RAGFlowClient) SetToken(cmd *Command) (ResponseIf, error) {
 }
 
 // ShowToken displays the current API token
-func (c *RAGFlowClient) ShowToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -856,8 +824,8 @@ func (c *RAGFlowClient) ShowToken(cmd *Command) (ResponseIf, error) {
 }
 
 // UnsetToken removes the current API token
-func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) UnsetToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -876,8 +844,8 @@ func (c *RAGFlowClient) UnsetToken(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateChunkStore creates a chunk store in doc engine
-func (c *RAGFlowClient) CreateChunkStore(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) CreateChunkStore(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -933,8 +901,8 @@ func (c *RAGFlowClient) CreateChunkStore(cmd *Command) (ResponseIf, error) {
 }
 
 // DropChunkStore drops a chunk store in doc engine
-func (c *RAGFlowClient) DropChunkStore(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DropChunkStore(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -984,8 +952,8 @@ func (c *RAGFlowClient) DropChunkStore(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateMetadataStore creates the document metadata store for the tenant
-func (c *RAGFlowClient) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1020,8 +988,8 @@ func (c *RAGFlowClient) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
 }
 
 // DropMetadataStore drops the document metadata store for the tenant
-func (c *RAGFlowClient) DropMetadataStore(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DropMetadataStore(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1058,8 +1026,8 @@ func (c *RAGFlowClient) DropMetadataStore(cmd *Command) (ResponseIf, error) {
 // AddProvider creates a new model provider
 // ADD PROVIDER <name>
 // ADD PROVIDER <name> <api_key>
-func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1097,8 +1065,8 @@ func (c *RAGFlowClient) AddProvider(cmd *Command) (ResponseIf, error) {
 
 // ListProviders lists all providers
 // LIST PROVIDERS
-func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListProviders(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1126,8 +1094,8 @@ func (c *RAGFlowClient) ListProviders(cmd *Command) (ResponseIf, error) {
 
 // DeleteProvider deletes a provider
 // DELETE PROVIDER <name>
-func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1167,8 +1135,8 @@ func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 
 // CreateProviderInstance creates a new provider instance
 // CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
-func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1230,8 +1198,8 @@ func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error)
 
 // ListProviderInstances lists all instances of a provider
 // LIST INSTANCES FROM PROVIDER <name>
-func (c *RAGFlowClient) ListProviderInstances(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListProviderInstances(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1266,8 +1234,8 @@ func (c *RAGFlowClient) ListProviderInstances(cmd *Command) (ResponseIf, error) 
 
 // ShowProviderInstance shows details of a specific instance
 // SHOW INSTANCE <name> FROM PROVIDER <name>
-func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1307,8 +1275,8 @@ func (c *RAGFlowClient) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 
 // ShowInstanceBalance shows balance of a specific instance
 // SHOW BALANCE FROM PROVIDER <provider_name> <instance_name>
-func (c *RAGFlowClient) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1348,8 +1316,8 @@ func (c *RAGFlowClient) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
 
 // AlterProviderInstance renames a provider instance
 // ALTER INSTANCE <name> NAME <new_name> FROM PROVIDER <name>
-func (c *RAGFlowClient) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1398,8 +1366,8 @@ func (c *RAGFlowClient) AlterProviderInstance(cmd *Command) (ResponseIf, error) 
 
 // DropProviderInstance deletes a provider instance
 // DROP INSTANCE <name> FROM PROVIDER <name>
-func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1443,8 +1411,8 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 
 // DropInstanceModel deletes a provider instance, only works for local deployed model
 // DROP MODEL <name> FROM <provider_name> <instance_name>
-func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1491,8 +1459,8 @@ func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ListInstanceModels(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 	providerName, ok := cmd.Params["provider_name"].(string)
@@ -1528,8 +1496,8 @@ func (c *RAGFlowClient) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1580,8 +1548,8 @@ func isValidURL(str string) bool {
 	return u.Scheme != "" && u.Host != ""
 }
 
-func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1833,12 +1801,12 @@ func (c *RAGFlowClient) ChatToModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) EmbedUserText(cmd *Command) (ResponseIf, error) {
+func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1900,12 +1868,12 @@ func (c *RAGFlowClient) EmbedUserText(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) RerankUserDocument(cmd *Command) (ResponseIf, error) {
+func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1973,12 +1941,12 @@ func (c *RAGFlowClient) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2165,12 +2133,12 @@ func (c *RAGFlowClient) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2252,12 +2220,12 @@ func (c *RAGFlowClient) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) OCRUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2334,12 +2302,12 @@ func (c *RAGFlowClient) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2421,12 +2389,12 @@ func (c *RAGFlowClient) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2464,12 +2432,12 @@ func (c *RAGFlowClient) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2512,12 +2480,12 @@ func (c *RAGFlowClient) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2551,11 +2519,11 @@ func (c *RAGFlowClient) CheckProviderConnection(cmd *Command) (ResponseIf, error
 	return &result, nil
 }
 
-func (c *RAGFlowClient) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2610,11 +2578,11 @@ func (c *RAGFlowClient) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 }
 
 // UseModel sets the current model for chat
-func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2641,8 +2609,8 @@ func (c *RAGFlowClient) UseModel(cmd *Command) (ResponseIf, error) {
 }
 
 // ShowCurrentModel displays the current model configuration
-func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2662,12 +2630,12 @@ func (c *RAGFlowClient) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2734,11 +2702,11 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 // Context related commands
 
 // CECat handles the cat command - shows content using Context Engine
-func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CECat(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2756,7 +2724,7 @@ func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
 
 	// Convert to response
 	var response ContextCatResponse
-	response.OutputFormat = c.OutputFormat
+	response.OutputFormat = c.outputFormat
 	response.Code = 0
 	response.Content = string(content)
 
@@ -2764,7 +2732,7 @@ func (c *RAGFlowClient) CECat(cmd *Command) (ResponseIf, error) {
 }
 
 // CEList handles the ls command - lists nodes using Context Engine
-func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CEList(cmd *Command) (ResponseIf, error) {
 	// Get path from command params, default to "datasets"
 	path, _ := cmd.Params["path"].(string)
 	if path == "" {
@@ -2792,15 +2760,15 @@ func (c *RAGFlowClient) CEList(cmd *Command) (ResponseIf, error) {
 
 	// Convert to response
 	var response ContextListResponse
-	response.OutputFormat = c.OutputFormat
+	response.OutputFormat = c.outputFormat
 	response.Code = 0
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+	response.Data = ce.FormatNodes(result.Nodes, string(c.outputFormat))
 
 	return &response, nil
 }
 
 // CESearch handles the search command using Context Engine
-func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CESearch(cmd *Command) (ResponseIf, error) {
 	// Get path and query from command params
 	path, _ := cmd.Params["path"].(string)
 	if path == "" {
@@ -2831,17 +2799,17 @@ func (c *RAGFlowClient) CESearch(cmd *Command) (ResponseIf, error) {
 
 	// Convert to response
 	var response ContextSearchResponse
-	response.OutputFormat = c.OutputFormat
+	response.OutputFormat = c.outputFormat
 	response.Code = 0
 	response.Total = result.Total
-	response.Data = ce.FormatNodes(result.Nodes, string(c.OutputFormat))
+	response.Data = ce.FormatNodes(result.Nodes, string(c.outputFormat))
 
 	return &response, nil
 }
 
 // InsertChunksFromFile inserts chunks from a JSON file
-func (c *RAGFlowClient) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 	filePath, ok := cmd.Params["file_path"].(string)
@@ -2884,8 +2852,8 @@ func (c *RAGFlowClient) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
 }
 
 // InsertMetadataFromFile inserts metadata from a JSON file
-func (c *RAGFlowClient) InsertMetadataFromFile(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) InsertMetadataFromFile(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2929,8 +2897,8 @@ func (c *RAGFlowClient) InsertMetadataFromFile(cmd *Command) (ResponseIf, error)
 }
 
 // UpdateChunk updates a chunk in a dataset
-func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) UpdateChunk(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3002,8 +2970,8 @@ func (c *RAGFlowClient) UpdateChunk(cmd *Command) (ResponseIf, error) {
 }
 
 // GetChunk retrieves a chunk by ID
-func (c *RAGFlowClient) GetChunk(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) GetChunk(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3045,8 +3013,8 @@ func (c *RAGFlowClient) GetChunk(cmd *Command) (ResponseIf, error) {
 }
 
 // SetMeta sets metadata for a document
-func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) SetMeta(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3097,8 +3065,8 @@ func (c *RAGFlowClient) SetMeta(cmd *Command) (ResponseIf, error) {
 
 // DeleteMeta deletes metadata for a document
 // If keys is provided, deletes specific keys; otherwise deletes entire document metadata
-func (c *RAGFlowClient) DeleteMeta(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) DeleteMeta(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3147,8 +3115,8 @@ func (c *RAGFlowClient) DeleteMeta(cmd *Command) (ResponseIf, error) {
 }
 
 // RmTags removes tags from chunks in a dataset
-func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) RmTags(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3202,8 +3170,8 @@ func (c *RAGFlowClient) RmTags(cmd *Command) (ResponseIf, error) {
 }
 
 // RemoveChunks removes chunks from a document
-func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "user" {
+func (c *CLI) RemoveChunks(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3271,12 +3239,12 @@ func (c *RAGFlowClient) RemoveChunks(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.ServerType != "user" {
+	if c.Config.CLIMode == UserMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 

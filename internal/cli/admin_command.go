@@ -24,7 +24,7 @@ import (
 
 // PingServer pings the server to check if it's alive
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
+func (c *CLI) PingAdmin(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -58,7 +58,7 @@ func (c *RAGFlowClient) PingAdmin(cmd *Command) (ResponseIf, error) {
 
 // Show admin version to show RAGFlow admin version
 // Returns benchmark result map if iterations > 1, otherwise prints status
-func (c *RAGFlowClient) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
+func (c *CLI) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
 	// Get iterations from command params (for benchmark)
 	iterations := 1
 	if val, ok := cmd.Params["iterations"].(int); ok && val > 1 {
@@ -93,8 +93,8 @@ func (c *RAGFlowClient) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
 }
 
 // ListRoles to list roles (admin mode only)
-func (c *RAGFlowClient) ListRoles(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListRoles(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -136,8 +136,8 @@ func (c *RAGFlowClient) ListRoles(cmd *Command) (ResponseIf, error) {
 }
 
 // ShowRole to show role (admin mode only)
-func (c *RAGFlowClient) ShowRole(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ShowRole(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -179,8 +179,8 @@ func (c *RAGFlowClient) ShowRole(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateRole creates a new role (admin mode only)
-func (c *RAGFlowClient) CreateRole(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) CreateRole(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -220,8 +220,8 @@ func (c *RAGFlowClient) CreateRole(cmd *Command) (ResponseIf, error) {
 }
 
 // DropRole deletes the role (admin mode only)
-func (c *RAGFlowClient) DropRole(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) DropRole(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -253,8 +253,8 @@ func (c *RAGFlowClient) DropRole(cmd *Command) (ResponseIf, error) {
 }
 
 // AlterRole alters the role rights (admin mode only)
-func (c *RAGFlowClient) AlterRole(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) AlterRole(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -294,8 +294,8 @@ func (c *RAGFlowClient) AlterRole(cmd *Command) (ResponseIf, error) {
 }
 
 // GrantAdmin grants admin privileges to a user (admin mode only)
-func (c *RAGFlowClient) GrantAdmin(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -327,8 +327,8 @@ func (c *RAGFlowClient) GrantAdmin(cmd *Command) (ResponseIf, error) {
 }
 
 // RevokeAdmin revokes admin privileges from a user (admin mode only)
-func (c *RAGFlowClient) RevokeAdmin(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -360,8 +360,8 @@ func (c *RAGFlowClient) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateUser creates a new user (admin mode only)
-func (c *RAGFlowClient) CreateUser(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) CreateUser(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -410,8 +410,8 @@ func (c *RAGFlowClient) CreateUser(cmd *Command) (ResponseIf, error) {
 }
 
 // ActivateUser activates or deactivates a user (admin mode only)
-func (c *RAGFlowClient) ActivateUser(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ActivateUser(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -457,8 +457,8 @@ func (c *RAGFlowClient) ActivateUser(cmd *Command) (ResponseIf, error) {
 }
 
 // AlterUserPassword changes a user's password (admin mode only)
-func (c *RAGFlowClient) AlterUserPassword(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) AlterUserPassword(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -511,8 +511,8 @@ type listServicesResponse struct {
 }
 
 // ListServices lists all services (admin mode only)
-func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListServices(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -554,8 +554,8 @@ func (c *RAGFlowClient) ListServices(cmd *Command) (ResponseIf, error) {
 }
 
 // Show service show service (admin mode only)
-func (c *RAGFlowClient) ShowService(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ShowService(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -610,8 +610,8 @@ func normalizeVariableRows(rows []map[string]interface{}) {
 }
 
 // ListVariables lists all system variables (admin mode only).
-func (c *RAGFlowClient) ListVariables(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListVariables(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -648,8 +648,8 @@ func (c *RAGFlowClient) ListVariables(cmd *Command) (ResponseIf, error) {
 }
 
 // ShowVariable shows system variables by exact name or name prefix (admin mode only).
-func (c *RAGFlowClient) ShowVariable(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ShowVariable(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -692,8 +692,8 @@ func (c *RAGFlowClient) ShowVariable(cmd *Command) (ResponseIf, error) {
 }
 
 // SetVariable updates a system variable (admin mode only).
-func (c *RAGFlowClient) SetVariable(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -734,8 +734,8 @@ func (c *RAGFlowClient) SetVariable(cmd *Command) (ResponseIf, error) {
 
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListUsers(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListUsers(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -777,8 +777,8 @@ func (c *RAGFlowClient) ListUsers(cmd *Command) (ResponseIf, error) {
 }
 
 // DropUser deletes a user (admin mode only)
-func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -810,8 +810,8 @@ func (c *RAGFlowClient) DropUser(cmd *Command) (ResponseIf, error) {
 }
 
 // Show user show user (admin mode only)
-func (c *RAGFlowClient) ShowUser(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ShowUser(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -844,8 +844,8 @@ func (c *RAGFlowClient) ShowUser(cmd *Command) (ResponseIf, error) {
 
 // ListUserDatasets lists datasets for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -899,8 +899,8 @@ func (c *RAGFlowClient) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 
 // ListAgents lists agents for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *RAGFlowClient) ListAgents(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListAgents(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -953,8 +953,8 @@ func (c *RAGFlowClient) ListAgents(cmd *Command) (ResponseIf, error) {
 }
 
 // GrantPermission grants permission to a role (admin mode only)
-func (c *RAGFlowClient) GrantPermission(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) GrantPermission(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -991,8 +991,8 @@ func (c *RAGFlowClient) GrantPermission(cmd *Command) (ResponseIf, error) {
 }
 
 // RevokePermission revokes permission from a role (admin mode only)
-func (c *RAGFlowClient) RevokePermission(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) RevokePermission(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1051,8 +1051,8 @@ func (c *RAGFlowClient) RevokePermission(cmd *Command) (ResponseIf, error) {
 }
 
 // AlterUserRole alters user's role (admin mode only)
-func (c *RAGFlowClient) AlterUserRole(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) AlterUserRole(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1098,8 +1098,8 @@ func (c *RAGFlowClient) AlterUserRole(cmd *Command) (ResponseIf, error) {
 }
 
 // ShowUserPermission shows user's permissions (admin mode only)
-func (c *RAGFlowClient) ShowUserPermission(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1136,8 +1136,8 @@ func (c *RAGFlowClient) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 }
 
 // GenerateAdminToken generates an API token for a user (admin mode only)
-func (c *RAGFlowClient) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1173,8 +1173,8 @@ func (c *RAGFlowClient) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
 }
 
 // ListAdminTokens lists all API tokens for a user (admin mode only)
-func (c *RAGFlowClient) ListAdminTokens(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListAdminTokens(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1215,8 +1215,8 @@ func (c *RAGFlowClient) ListAdminTokens(cmd *Command) (ResponseIf, error) {
 }
 
 // DropToken drops an API token for a user (admin mode only)
-func (c *RAGFlowClient) DropAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) DropAdminToken(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1255,8 +1255,8 @@ func (c *RAGFlowClient) DropAdminToken(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListAdminTasks(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListAdminTasks(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1282,8 +1282,8 @@ func (c *RAGFlowClient) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 	resp, err := c.HTTPClient.Request("GET", "/admin/ingestors", "admin", nil, nil)
@@ -1307,8 +1307,8 @@ func (c *RAGFlowClient) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	result.Duration = resp.Duration
 	return &result, nil
 }
-func (c *RAGFlowClient) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1334,8 +1334,8 @@ func (c *RAGFlowClient) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error
 	return &result, nil
 }
 
-func (c *RAGFlowClient) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1370,8 +1370,8 @@ func (c *RAGFlowClient) AdminStartIngestionCommand(cmd *Command) (ResponseIf, er
 	return &result, nil
 }
 
-func (c *RAGFlowClient) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 
@@ -1406,8 +1406,8 @@ func (c *RAGFlowClient) AdminStopIngestionCommand(cmd *Command) (ResponseIf, err
 	return &result, nil
 }
 
-func (c *RAGFlowClient) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
-	if c.ServerType != "admin" {
+func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
 	}
 

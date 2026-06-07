@@ -23,8 +23,8 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 	cmd := NewCommand("login_user")
 
 	p.nextToken() // consume LOGIN
-	if p.curToken.Type != TokenUser {
-		return nil, fmt.Errorf("expected USER after LOGIN")
+	if p.curToken.Type != TokenAdmin {
+		return nil, fmt.Errorf("expected ADMIN after LOGIN")
 	}
 
 	p.nextToken()
