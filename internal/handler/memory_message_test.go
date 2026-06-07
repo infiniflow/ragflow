@@ -19,6 +19,10 @@ func TestIsMemoryServiceNotFound(t *testing.T) {
 	if !isMemoryServiceNotFound(fmt.Errorf("wrapped: %w", notFoundErr)) {
 		t.Fatal("expected wrapped service not found error to map to not found")
 	}
+	messageNotFoundErr := &service.ResourceNotFoundError{Resource: "Message", ID: "message-1"}
+	if isMemoryServiceNotFound(messageNotFoundErr) {
+		t.Fatal("expected non-memory resource not found error to avoid memory 404 mapping")
+	}
 	if isMemoryServiceNotFound(fmt.Errorf("backend index does not exist")) {
 		t.Fatal("backend text should not map to not found without service error type")
 	}

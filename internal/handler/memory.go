@@ -605,7 +605,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 
 func isMemoryServiceNotFound(err error) bool {
 	var notFoundErr *service.ResourceNotFoundError
-	return errors.As(err, &notFoundErr)
+	return errors.As(err, &notFoundErr) && notFoundErr.Resource == "Memory"
 }
 
 func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {

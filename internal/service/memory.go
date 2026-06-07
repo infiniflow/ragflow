@@ -774,7 +774,7 @@ func (s *MemoryService) DeleteMemory(memoryID string) error {
 // This mirrors Python memory_api_service.forget_message and keeps the message
 // record for retention/cleanup policies instead of deleting it immediately.
 func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memoryID string, messageID int64) error {
-	memory, err := s.requireMemoryAccess(userID, memoryID)
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
 	if err != nil {
 		return err
 	}
@@ -783,7 +783,7 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 		return errors.New("message store is not initialized")
 	}
 
-	now := time.Now().Local()
+	now := time.Now().UTC()
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{
@@ -797,6 +797,8 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 
 	if err := s.docEngine.UpdateChunks(ctx, condition, updates, indexName, memoryID); err != nil {
 		if isMessageDocumentNotFound(err) {
+			// Match Python delete-by-query behavior: forgetting an already-missing
+			// message document is idempotent and still considered successful.
 			return nil
 		}
 		return fmt.Errorf("failed to forget message '%d' in memory '%s': %w", messageID, memoryID, err)
@@ -809,8 +811,11 @@ func isMessageDocumentNotFound(err error) bool {
 	return errors.Is(err, enginetypes.ErrDocumentNotFound)
 }
 
-func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*entity.Memory, error) {
-	memory, err := s.memoryDAO.GetByID(memoryID)
+func (s *MemoryService) requireMemoryAccess(ctx context.Context, userID string, memoryID string) (*entity.Memory, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	memory, err := s.memoryDAO.GetByIDWithContext(ctx, memoryID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
@@ -824,8 +829,11 @@ func (s *MemoryService) requireMemoryAccess(userID string, memoryID string) (*en
 		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	userTenantService := NewUserTenantService()
-	userTenants, err := userTenantService.GetUserTenantRelationByUserID(userID)
+	userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -933,9 +941,6 @@ func (s *MemoryService) GetMemoryConfig(memoryID string) (*CreateMemoryResponse,
 
 // TODO: AddMessage - Implementation pending - depends on embedding engine
 // func (s *MemoryService) AddMessage(memoryIDs []string, messageDict map[string]interface{}) (bool, string, error) { ... }
-
-// TODO: ForgetMessage - Implementation pending - depends on embedding engine
-// func (s *MemoryService) ForgetMessage(memoryID string, messageID int) (bool, error) { ... }
 
 // TODO: UpdateMessageStatus - Implementation pending - depends on embedding engine
 // func (s *MemoryService) UpdateMessageStatus(memoryID string, messageID int, status bool) (bool, error) { ... }
