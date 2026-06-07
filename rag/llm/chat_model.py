@@ -318,10 +318,7 @@ class Base(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
-        try:
-            result_payload = json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2)
-        except (TypeError, ValueError):
-            result_payload = json.dumps({"name": name, "args": args, "result": str(res)}, ensure_ascii=False, indent=2)
+        result_payload = json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2, default=str)
         return "<tool_call>" + result_payload + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
@@ -1564,9 +1561,10 @@ class LiteLLMBase(ABC):
 
     def _verbose_tool_use(self, name, args, res):
         return "<tool_call>" + json.dumps(
-            {"name": name, "args": args, "result": str(res) if isinstance(res, Exception) else res},
+            {"name": name, "args": args, "result": res},
             ensure_ascii=False,
             indent=2,
+            default=str,
         ) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):

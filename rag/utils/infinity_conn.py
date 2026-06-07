@@ -452,7 +452,7 @@ class InfinityConnection(InfinityConnectionBase):
                             try:
                                 d[k] = json.dumps(v)
                             except (TypeError, ValueError) as exc:
-                                logging.warning("infinity_conn: failed to serialize 'extra' field (type=%s): %s; storing empty string", type(v).__name__, exc)
+                                self.logger.warning("Failed to serialize 'extra' field for chunk %s (type=%s): %s; storing empty string", d.get("id", "<unknown>"), type(v).__name__, exc)
                                 d[k] = ""
                         else:
                             d[k] = v if v else ""
