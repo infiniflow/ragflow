@@ -45,11 +45,11 @@ func (c *CLI) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/version", "web", nil, nil, iterations)
+		return c.APIServerClient.RequestWithIterations("GET", "/system/version", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/version", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/system/version", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show version: %w", err)
 	}
@@ -80,11 +80,11 @@ func (c *CLI) ListConfigs(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/configs", "web", nil, nil, iterations)
+		return c.APIServerClient.RequestWithIterations("GET", "/system/configs", "web", nil, nil, iterations)
 	}
 
 	// Single mode
-	resp, err := c.HTTPClient.Request("GET", "/system/configs", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/system/configs", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list configs: %w", err)
 	}
@@ -230,7 +230,7 @@ func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
 			"level": logLevel,
 		}
 
-		resp, err := c.HTTPClient.Request("PUT", "/system/log", "admin", nil, payload)
+		resp, err := c.APIServerClient.Request("PUT", "/system/log", "admin", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to change log level: %w", err)
 		}
@@ -293,7 +293,7 @@ func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
 		"nickname": nickname,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/users", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/users", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register user: %w", err)
 	}
@@ -329,26 +329,26 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Determine auth kind based on whether API token is being used
-	if c.HTTPClient.LoginToken == nil && !c.HTTPClient.useAPIToken {
+	if c.APIServerClient.LoginToken == nil && !c.APIServerClient.useAPIToken {
 		return nil, fmt.Errorf("no authorization")
 	}
 
 	authKind := "web"
-	if c.HTTPClient.useAPIToken {
+	if c.APIServerClient.useAPIToken {
 		authKind = "api"
 	}
 
-	if c.HTTPClient.LoginToken != nil {
+	if c.APIServerClient.LoginToken != nil {
 		authKind = "web"
 	}
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", "/datasets", authKind, nil, nil, iterations)
+		return c.APIServerClient.RequestWithIterations("GET", "/datasets", authKind, nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", "/datasets", authKind, nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/datasets", authKind, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -383,7 +383,7 @@ func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Determine auth kind based on whether API token is being used
-	if c.HTTPClient.LoginToken == nil && !c.HTTPClient.useAPIToken {
+	if c.APIServerClient.LoginToken == nil && !c.APIServerClient.useAPIToken {
 		return nil, fmt.Errorf("no authorization")
 	}
 
@@ -400,11 +400,11 @@ func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("GET", url, "web", nil, nil, iterations)
+		return c.APIServerClient.RequestWithIterations("GET", url, "web", nil, nil, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}
@@ -428,7 +428,7 @@ func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 
 // getDatasetID gets dataset ID by name
 func (c *CLI) getDatasetID(datasetName string) (string, error) {
-	resp, err := c.HTTPClient.Request("GET", "/datasets", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/datasets", "web", nil, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to list datasets: %w", err)
 	}
@@ -490,7 +490,7 @@ func (c *CLI) ListMetadata(cmd *Command) (ResponseIf, error) {
 	// Build comma-separated dataset_ids for query param
 	datasetIDsStr := strings.Join(datasetIDs, ",")
 
-	resp, err := c.HTTPClient.Request("GET", "/datasets/metadata/flattened?dataset_ids="+datasetIDsStr, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/datasets/metadata/flattened?dataset_ids="+datasetIDsStr, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metadata: %w", err)
 	}
@@ -578,11 +578,11 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 
 	if iterations > 1 {
 		// Benchmark mode - return raw result for benchmark stats
-		return c.HTTPClient.RequestWithIterations("POST", "/datasets/search", "web", nil, payload, iterations)
+		return c.APIServerClient.RequestWithIterations("POST", "/datasets/search", "web", nil, payload, iterations)
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", "/datasets/search", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/datasets/search", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search on datasets: %w", err)
 	}
@@ -657,7 +657,7 @@ func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/system/tokens", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("POST", "/system/tokens", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
@@ -688,7 +688,7 @@ func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/system/tokens", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/system/tokens", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -720,7 +720,7 @@ func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("token not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), "web", nil, nil)
+	resp, err := c.APIServerClient.Request("DELETE", fmt.Sprintf("/system/tokens/%s", token), "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop token: %w", err)
 	}
@@ -753,41 +753,41 @@ func (c *CLI) SetToken(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Save current token to restore if validation fails
-	savedToken := c.HTTPClient.APIToken
-	savedUseAPIToken := c.HTTPClient.useAPIToken
+	savedToken := c.APIServerClient.APIToken
+	savedUseAPIToken := c.APIServerClient.useAPIToken
 
 	// Set the new token temporarily for validation
-	c.HTTPClient.APIToken = &token
-	c.HTTPClient.useAPIToken = true
+	c.APIServerClient.APIToken = &token
+	c.APIServerClient.useAPIToken = true
 
 	// Validate token by calling list tokens API
-	resp, err := c.HTTPClient.Request("GET", "/tokens", "api", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/tokens", "api", nil, nil)
 	if err != nil {
 		// Restore original token on error
-		c.HTTPClient.APIToken = savedToken
-		c.HTTPClient.useAPIToken = savedUseAPIToken
+		c.APIServerClient.APIToken = savedToken
+		c.APIServerClient.useAPIToken = savedUseAPIToken
 		return nil, fmt.Errorf("failed to validate token: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
 		// Restore original token on error
-		c.HTTPClient.APIToken = savedToken
-		c.HTTPClient.useAPIToken = savedUseAPIToken
+		c.APIServerClient.APIToken = savedToken
+		c.APIServerClient.useAPIToken = savedUseAPIToken
 		return nil, fmt.Errorf("token validation failed: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
 	var result CommonResponse
 	if err = json.Unmarshal(resp.Body, &result); err != nil {
 		// Restore original token on error
-		c.HTTPClient.APIToken = savedToken
-		c.HTTPClient.useAPIToken = savedUseAPIToken
+		c.APIServerClient.APIToken = savedToken
+		c.APIServerClient.useAPIToken = savedUseAPIToken
 		return nil, fmt.Errorf("token validation failed: invalid JSON (%w)", err)
 	}
 
 	if result.Code != 0 {
 		// Restore original token on error
-		c.HTTPClient.APIToken = savedToken
-		c.HTTPClient.useAPIToken = savedUseAPIToken
+		c.APIServerClient.APIToken = savedToken
+		c.APIServerClient.useAPIToken = savedUseAPIToken
 		return nil, fmt.Errorf("token validation failed: %s", result.Message)
 	}
 
@@ -805,18 +805,18 @@ func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if c.HTTPClient.APIToken == nil {
+	if c.APIServerClient.APIToken == nil {
 		return nil, fmt.Errorf("no API token is currently set")
 	}
 
-	//fmt.Printf("Token: %s\n", c.HTTPClient.APIToken)
+	//fmt.Printf("Token: %s\n", c.APIServerClient.APIToken)
 
 	var result CommonResponse
 	result.Code = 0
 	result.Message = ""
 	result.Data = []map[string]interface{}{
 		{
-			"token": c.HTTPClient.APIToken,
+			"token": c.APIServerClient.APIToken,
 		},
 	}
 	result.Duration = 0
@@ -829,12 +829,12 @@ func (c *CLI) UnsetToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if c.HTTPClient.APIToken == nil {
+	if c.APIServerClient.APIToken == nil {
 		return nil, fmt.Errorf("no API token is currently set")
 	}
 
-	c.HTTPClient.APIToken = nil
-	c.HTTPClient.useAPIToken = false
+	c.APIServerClient.APIToken = nil
+	c.APIServerClient.useAPIToken = false
 
 	var result SimpleResponse
 	result.Code = 0
@@ -870,7 +870,7 @@ func (c *CLI) CreateChunkStore(cmd *Command) (ResponseIf, error) {
 		"vector_size": vectorSize,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/chunk_store", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/tenant/chunk_store", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chunk store: %w", err)
 	}
@@ -921,7 +921,7 @@ func (c *CLI) DropChunkStore(cmd *Command) (ResponseIf, error) {
 		"kb_id": datasetID,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/tenant/chunk_store", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("DELETE", "/tenant/chunk_store", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop dataset: %w", err)
 	}
@@ -957,7 +957,7 @@ func (c *CLI) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/metadata_store", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("POST", "/tenant/metadata_store", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata store: %w", err)
 	}
@@ -993,7 +993,7 @@ func (c *CLI) DropMetadataStore(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/tenant/metadata_store", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("DELETE", "/tenant/metadata_store", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop metadata store: %w", err)
 	}
@@ -1041,7 +1041,7 @@ func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 		"provider_name": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", "/providers", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("PUT", "/providers", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add provider: %w", err)
 	}
@@ -1070,7 +1070,7 @@ func (c *CLI) ListProviders(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", "/providers", "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", "/providers", "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -1111,7 +1111,7 @@ func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
 		"llm_factory": providerName,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete provider: %w", err)
 	}
@@ -1174,7 +1174,7 @@ func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 		"region":        region,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create provider instance: %w", err)
 	}
@@ -1210,7 +1210,7 @@ func (c *CLI) ListProviderInstances(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instances: %w", err)
 	}
@@ -1251,7 +1251,7 @@ func (c *CLI) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
@@ -1292,7 +1292,7 @@ func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show instance: %w", err)
 	}
@@ -1342,7 +1342,7 @@ func (c *CLI) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
 		"llm_name": newName,
 	}
 
-	resp, err := c.HTTPClient.Request("PUT", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("PUT", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter instance: %w", err)
 	}
@@ -1387,7 +1387,7 @@ func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances", providerName)
 
-	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1437,7 +1437,7 @@ func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("DELETE", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("DELETE", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop instance: %w", err)
 	}
@@ -1475,7 +1475,7 @@ func (c *CLI) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 	var endPoint string
 	endPoint = fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instance models: %w", err)
 	}
@@ -1522,7 +1522,7 @@ func (c *CLI) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, err
 		"status": status,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("PATCH", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable/disable model: %w", err)
 	}
@@ -1711,7 +1711,7 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 	if stream {
 		// Call stream http api
 		startTime := time.Now()
-		reader, err := c.HTTPClient.RequestStream("POST", url, "web", nil, payload)
+		reader, err := c.APIServerClient.RequestStream("POST", url, "web", nil, payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to chat model: %w", err)
 		}
@@ -1780,7 +1780,7 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 		return result, nil
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, formatRequestError("Chat request", err)
 	}
@@ -1802,7 +1802,7 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -1850,7 +1850,7 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 
 	url := "/embeddings"
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to embed text: %w", err)
 	}
@@ -1869,7 +1869,7 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -1923,7 +1923,7 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 
 	url := "/rerank"
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to rerank document: %w", err)
 	}
@@ -1942,7 +1942,7 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2035,7 +2035,7 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := "/audio/speech"
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to TTS document: %w", err)
 	}
@@ -2134,7 +2134,7 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2189,7 +2189,7 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := "/audio/transcriptions"
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ASR document: %w", err)
 	}
@@ -2221,7 +2221,7 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2283,7 +2283,7 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := "/file/ocr"
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to OCR document: %w", err)
 	}
@@ -2303,7 +2303,7 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2370,7 +2370,7 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := "/file/parse"
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to PARSE document: %w", err)
 	}
@@ -2390,7 +2390,7 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2414,7 +2414,7 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tasks: %w", err)
 	}
@@ -2433,7 +2433,7 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2462,7 +2462,7 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/tasks/%s", providerName, instanceName, taskID)
 
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task: %w", err)
 	}
@@ -2481,7 +2481,7 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2501,7 +2501,7 @@ func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
 
-	resp, err := c.HTTPClient.Request("GET", url, "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", url, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection: %w", err)
 	}
@@ -2520,7 +2520,7 @@ func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 	if c.Config.CLIMode != UserMode {
@@ -2558,7 +2558,7 @@ func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 		payload["base_url"] = baseURL
 	}
 
-	resp, err := c.HTTPClient.Request("GET", url, "api", nil, payload)
+	resp, err := c.APIServerClient.Request("GET", url, "api", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check provider connection with key: %w", err)
 	}
@@ -2579,7 +2579,7 @@ func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 
 // UseModel sets the current model for chat
 func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 	if c.Config.CLIMode != UserMode {
@@ -2609,7 +2609,7 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2658,7 +2658,7 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		payload["thinking"] = supportThink
 	}
 
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add custom model: %w", err)
 	}
@@ -2681,7 +2681,7 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 // CECat handles the cat command - shows content using Context Engine
 func (c *CLI) CECat(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 	if c.Config.CLIMode != UserMode {
@@ -2799,7 +2799,7 @@ func (c *CLI) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_chunks_from_file", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/tenant/insert_chunks_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert dataset from file: %w", err)
 	}
@@ -2844,7 +2844,7 @@ func (c *CLI) InsertMetadataFromFile(cmd *Command) (ResponseIf, error) {
 		"file_path": filePath,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/tenant/insert_metadata_from_file", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/tenant/insert_metadata_from_file", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert metadata from file: %w", err)
 	}
@@ -2917,7 +2917,7 @@ func (c *CLI) UpdateChunk(cmd *Command) (ResponseIf, error) {
 	payload["document_id"] = docID
 	payload["chunk_id"] = chunkID
 
-	resp, err := c.HTTPClient.Request("POST", "/chunk/update", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/chunk/update", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update chunk: %w", err)
 	}
@@ -2968,7 +2968,7 @@ func (c *CLI) GetChunk(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("dataset_id not provided")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), "web", nil, nil)
+	resp, err := c.APIServerClient.Request("GET", fmt.Sprintf("/datasets/%s/documents/%s/chunks/%s", datasetID, docID, chunkID), "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chunk: %w", err)
 	}
@@ -3011,7 +3011,7 @@ func (c *CLI) SetMeta(cmd *Command) (ResponseIf, error) {
 		"meta":   metaJSON,
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/document/set_meta", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/document/set_meta", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set metadata: %w", err)
 	}
@@ -3062,7 +3062,7 @@ func (c *CLI) DeleteMeta(cmd *Command) (ResponseIf, error) {
 		payload["keys"] = keysJSON
 	}
 
-	resp, err := c.HTTPClient.Request("POST", "/document/delete_meta", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", "/document/delete_meta", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete metadata: %w", err)
 	}
@@ -3117,7 +3117,7 @@ func (c *CLI) RmTags(cmd *Command) (ResponseIf, error) {
 		"tags": tags,
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/datasets/"+kbID+"/tags", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("DELETE", "/datasets/"+kbID+"/tags", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove tags: %w", err)
 	}
@@ -3178,7 +3178,7 @@ func (c *CLI) RemoveChunks(cmd *Command) (ResponseIf, error) {
 		payload["chunk_ids"] = chunkIDs
 	}
 
-	resp, err := c.HTTPClient.Request("DELETE", "/datasets/"+datasetID+"/documents/"+docID+"/chunks", "web", nil, payload)
+	resp, err := c.APIServerClient.Request("DELETE", "/datasets/"+datasetID+"/documents/"+docID+"/chunks", "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to remove chunks: %w", err)
 	}
@@ -3218,7 +3218,7 @@ func (c *CLI) RemoveChunks(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
+	if c.APIServerClient.APIToken == nil && c.APIServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -3243,7 +3243,7 @@ func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Normal mode
-	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)
+	resp, err := c.APIServerClient.Request("POST", url, "web", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list documents: %w", err)
 	}

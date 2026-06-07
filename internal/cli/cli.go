@@ -709,11 +709,12 @@ type CLI struct {
 	args          *ConnectionArgs
 	outputFormat  OutputFormat // Output format
 
-	HTTPClient     *HTTPClient
-	PasswordPrompt PasswordPromptFunc // Function for password input
-	ContextEngine  *filesystem.Engine // Context Engine for virtual filesystem
-	CurrentModel   *CurrentModel      // Current model configuration
-	Config         *CommandLineConfig
+	APIServerClient   *HTTPClient
+	AdminServerClient *HTTPClient
+	PasswordPrompt    PasswordPromptFunc // Function for password input
+	ContextEngine     *filesystem.Engine // Context Engine for virtual filesystem
+	CurrentModel      *CurrentModel      // Current model configuration
+	Config            *CommandLineConfig
 }
 
 // NewCLI creates a new CLI instance
@@ -730,8 +731,8 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		Config: commandLineConfig,
 	}
 
-	httpClient := NewHTTPClient()
 	if commandLineConfig.CLIMode == UserMode {
+		httpClient := NewHTTPClient()
 		httpClient.Host = commandLineConfig.APIClientConfig.ApiHost
 		httpClient.Port = commandLineConfig.APIClientConfig.ApiPort
 		if commandLineConfig.APIClientConfig.ApiToken != nil {
@@ -739,25 +740,26 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 			httpClient.useAPIToken = true
 		}
 		cli.prompt = fmt.Sprintf("RAGFlow(user)> ")
+		cli.APIServerClient = httpClient
+
+		engine := filesystem.NewEngine()
+
+		// Register providers
+		// TODO: if http config change, engine http config won't be updated. They should share the same config
+		engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{httpClient}))
+		engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{httpClient}))
+		engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{httpClient}))
+
+		cli.ContextEngine = engine
 	} else if commandLineConfig.CLIMode == AdminMode {
+		httpClient := NewHTTPClient()
 		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
 		httpClient.Port = commandLineConfig.AdminClientConfig.AdminPort
 		cli.prompt = fmt.Sprintf("RAGFlow(admin)> ")
+		cli.AdminServerClient = httpClient
 	} else {
 		return nil, fmt.Errorf("invalid CLI mode: %s", commandLineConfig.CLIMode)
 	}
-
-	cli.HTTPClient = httpClient
-
-	engine := filesystem.NewEngine()
-
-	// Register providers
-	// TODO: if http config change, engine http config won't be updated. They should share the same config
-	engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{httpClient}))
-	engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{httpClient}))
-	engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{httpClient}))
-
-	cli.ContextEngine = engine
 
 	return cli, nil
 }
@@ -1239,7 +1241,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("skill provider not available")
 		}
 		// Create adapter for HTTPClient
-		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "uninstall-skill":
@@ -1252,7 +1254,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("file provider not available")
 		}
 		// Create adapter for HTTPClient
-		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
@@ -1267,7 +1269,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
-		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "delete-skill":
@@ -1281,7 +1283,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		if fileProvider == nil {
 			return fmt.Errorf("file provider not available")
 		}
-		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
@@ -1597,7 +1599,7 @@ func (c *CLI) printSkillSearchResults(result *filesystem.Result, format OutputFo
 
 func (c *CLI) handleMetaCommand(cmd *Command) error {
 	command := cmd.Params["command"].(string)
-	args, _ := cmd.Params["args"].([]string)
+	//args, _ := cmd.Params["args"].([]string)
 
 	switch command {
 	case "q", "quit", "exit":
@@ -1616,29 +1618,6 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		c.Config.CLIMode = UserMode
 		c.prompt = "RAGFlow(user)> "
 		fmt.Println("Switched to USER mode")
-	case "host":
-		if len(args) == 0 {
-			fmt.Printf("Current host: %s\n", c.HTTPClient.Host)
-		} else {
-			c.HTTPClient.Host = args[0]
-			fmt.Printf("Host set to: %s\n", args[0])
-		}
-	case "port":
-		if len(args) == 0 {
-			fmt.Printf("Current port: %d\n", c.HTTPClient.Port)
-		} else {
-			port, err := strconv.Atoi(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid port number: %s", args[0])
-			}
-			if port < 1 || port > 65535 {
-				return fmt.Errorf("port must be between 1 and 65535")
-			}
-			c.HTTPClient.Port = port
-			fmt.Printf("Port set to: %d\n", port)
-		}
-	case "status":
-		fmt.Printf("Server: %s:%d (mode: %s)\n", c.HTTPClient.Host, c.HTTPClient.Port, c.Config.CLIMode)
 	default:
 		return fmt.Errorf("unknown meta command: \\%s", command)
 	}

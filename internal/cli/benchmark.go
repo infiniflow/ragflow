@@ -178,7 +178,8 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 				fmt.Printf("fail to create worker client: %s", err)
 				return
 			}
-			workerClient.HTTPClient = c.HTTPClient // Share the same HTTP client config
+			workerClient.AdminServerClient = c.AdminServerClient
+			workerClient.APIServerClient = c.APIServerClient
 
 			// Execute benchmark silently (no output)
 			responseList := workerClient.executeBenchmarkSilent(nestedCmd, iterations)
@@ -231,12 +232,12 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 
 		switch cmd.Type {
 		case "ping":
-			resp, err = c.HTTPClient.Request("GET", "/system/ping", "web", nil, nil)
+			resp, err = c.APIServerClient.Request("GET", "/system/ping", "web", nil, nil)
 		case "list_user_datasets":
-			resp, err = c.HTTPClient.Request("POST", "/kb/list", "web", nil, nil)
+			resp, err = c.APIServerClient.Request("POST", "/kb/list", "web", nil, nil)
 		case "list_datasets":
 			userName, _ := cmd.Params["user_name"].(string)
-			resp, err = c.HTTPClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
+			resp, err = c.APIServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
 		case "search_on_datasets":
 			question, _ := cmd.Params["question"].(string)
 			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)
@@ -246,7 +247,7 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 				"similarity_threshold":     0.2,
 				"vector_similarity_weight": 0.3,
 			}
-			resp, err = c.HTTPClient.Request("POST", "/datasets/search", "web", nil, payload)
+			resp, err = c.APIServerClient.Request("POST", "/datasets/search", "web", nil, payload)
 		default:
 			// For other commands, we would need to add specific handling
 			// For now, mark as failed

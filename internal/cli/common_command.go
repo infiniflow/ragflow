@@ -75,7 +75,15 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		return err
 	}
 
-	c.HTTPClient.LoginToken = &token
+	switch c.Config.CLIMode {
+	case AdminMode:
+		c.AdminServerClient.LoginToken = &token
+	case UserMode:
+		c.APIServerClient.LoginToken = &token
+	default:
+		return fmt.Errorf("invalid server type")
+	}
+
 	fmt.Printf("Login user %s successfully\n", email)
 	return nil
 }
@@ -90,21 +98,25 @@ func (c *CLI) PingByCommand(cmd *Command) (ResponseIf, error) {
 
 func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
 	var pingPath string
+	var resp *Response
+	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
 		pingPath = "/admin/ping"
+		if iterations > 1 {
+			return c.AdminServerClient.RequestWithIterations("GET", pingPath, "web", nil, nil, iterations)
+		}
+		resp, err = c.AdminServerClient.Request("GET", pingPath, "web", nil, nil)
 	case UserMode:
 		pingPath = "/system/ping"
+		if iterations > 1 {
+			return c.APIServerClient.RequestWithIterations("GET", pingPath, "web", nil, nil, iterations)
+		}
+		resp, err = c.APIServerClient.Request("GET", pingPath, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	if iterations > 1 {
-		// Benchmark mode: multiple iterations
-		return c.HTTPClient.RequestWithIterations("GET", "/system/ping", "web", nil, nil, iterations)
-	}
-
-	resp, err := c.HTTPClient.Request("GET", pingPath, "web", nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		fmt.Println("Can't access server for login (connection failed)")
@@ -149,17 +161,16 @@ func (c *CLI) loginUser(email, password string) (string, error) {
 		"password": encryptedPassword,
 	}
 
-	var path string
+	var resp *Response
 	switch c.Config.CLIMode {
 	case AdminMode:
-		path = "/admin/login"
+		resp, err = c.AdminServerClient.Request("POST", "/admin/login", "", nil, payload)
 	case UserMode:
-		path = "/auth/login"
+		resp, err = c.APIServerClient.Request("POST", "/auth/login", "", nil, payload)
 	default:
 		return "", fmt.Errorf("invalid server type")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", path, "", nil, payload)
 	if err != nil {
 		return "", err
 	}
@@ -182,21 +193,24 @@ func (c *CLI) loginUser(email, password string) (string, error) {
 }
 
 func (c *CLI) Logout() (ResponseIf, error) {
-	if c.HTTPClient.LoginToken == nil {
-		return nil, fmt.Errorf("not logged in")
-	}
 
-	var path string
+	var resp *Response
+	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-		path = "/admin/logout"
+		if c.AdminServerClient.LoginToken == nil {
+			return nil, fmt.Errorf("not logged in")
+		}
+		resp, err = c.AdminServerClient.Request("POST", "/admin/logout", "web", nil, nil)
 	case UserMode:
-		path = "/auth/logout"
+		if c.APIServerClient.LoginToken == nil {
+			return nil, fmt.Errorf("not logged in")
+		}
+		resp, err = c.APIServerClient.Request("POST", "/auth/logout", "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := c.HTTPClient.Request("POST", path, "web", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -215,17 +229,18 @@ func (c *CLI) Logout() (ResponseIf, error) {
 
 func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 
-	var endPoint string
+	var resp *Response
+	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = "/admin/providers?available=true"
+
+		resp, err = c.AdminServerClient.Request("GET", "/admin/providers?available=true", "web", nil, nil)
 	case UserMode:
-		endPoint = "/providers?available=true"
+		resp, err = c.APIServerClient.Request("GET", "/providers?available=true", "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list providers: %w", err)
 	}
@@ -252,17 +267,20 @@ func (c *CLI) ShowProvider(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider_name not provided")
 	}
 
+	var resp *Response
+	var err error
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s", providerName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
 	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s", providerName)
+		resp, err = c.APIServerClient.Request("GET", endPoint, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show provider: %w", err)
 	}
@@ -290,17 +308,20 @@ func (c *CLI) ListModels(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider_name not provided")
 	}
 
+	var resp *Response
+	var err error
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/models", providerName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
 	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s/models", providerName)
+		resp, err = c.APIServerClient.Request("GET", endPoint, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
@@ -332,17 +353,20 @@ func (c *CLI) ListSupportedModels(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("instance_name not provided")
 	}
 
+	var resp *Response
+	var err error
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
 	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
+		resp, err = c.APIServerClient.Request("GET", endPoint, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
 
-	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list models: %w", err)
 	}
@@ -373,16 +397,19 @@ func (c *CLI) ShowModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("model_name not provided")
 	}
 
+	var resp *Response
+	var err error
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
 		endPoint = fmt.Sprintf("/admin/providers/%s/models/%s", providerName, modelName)
+		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
 	case UserMode:
 		endPoint = fmt.Sprintf("/providers/%s/models/%s", providerName, modelName)
+		resp, err = c.APIServerClient.Request("GET", endPoint, "web", nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
-	resp, err := c.HTTPClient.Request("GET", endPoint, "web", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to show model: %w", err)
 	}
@@ -431,7 +458,17 @@ func (c *CLI) SetDefaultModel(cmd *Command) (ResponseIf, error) {
 		"model_name":     modelName,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", "/models", "web", nil, payload)
+	var resp *Response
+	var err error
+	switch c.Config.CLIMode {
+	case AdminMode:
+		resp, err = c.AdminServerClient.Request("PATCH", "/admin/models", "web", nil, payload)
+	case UserMode:
+		resp, err = c.APIServerClient.Request("PATCH", "/models", "web", nil, payload)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to set default model: %w", err)
 	}
@@ -463,7 +500,17 @@ func (c *CLI) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 		"model_type": modelType,
 	}
 
-	resp, err := c.HTTPClient.Request("PATCH", "/models", "web", nil, payload)
+	var resp *Response
+	var err error
+	switch c.Config.CLIMode {
+	case AdminMode:
+		resp, err = c.AdminServerClient.Request("PATCH", "/admin/models", "web", nil, payload)
+	case UserMode:
+		resp, err = c.APIServerClient.Request("PATCH", "/models", "web", nil, payload)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to reset default model: %w", err)
 	}
@@ -485,7 +532,18 @@ func (c *CLI) ResetDefaultModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
-	resp, err := c.HTTPClient.Request("GET", "/models", "web", nil, nil)
+
+	var resp *Response
+	var err error
+	switch c.Config.CLIMode {
+	case AdminMode:
+		resp, err = c.AdminServerClient.Request("GET", "/admin/models", "web", nil, nil)
+	case UserMode:
+		resp, err = c.APIServerClient.Request("GET", "/models", "web", nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to list default models: %w", err)
 	}
@@ -522,7 +580,7 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 		if c.Config.AdminClientConfig.AdminPassword != nil {
 			result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
 		}
-		if c.HTTPClient.LoginToken == nil {
+		if c.AdminServerClient.LoginToken == nil {
 			result.Data["auth"] = "no auth"
 		} else {
 			result.Data["auth"] = "login"
@@ -534,7 +592,7 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 		if c.Config.APIClientConfig.UserPassword != nil {
 			result.Data["user_password"] = strings.Repeat("*", len(*c.Config.APIClientConfig.UserPassword))
 		}
-		if c.HTTPClient.LoginToken == nil {
+		if c.APIServerClient.LoginToken == nil {
 			result.Data["auth"] = "login"
 		} else if c.Config.APIClientConfig.ApiToken != nil {
 			result.Data["auth"] = "api token"
