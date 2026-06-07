@@ -95,7 +95,6 @@ type AdminModeConfig struct {
 	AdminName     *string
 	AdminPassword *string
 	//AdminCommand  *string
-	WebAuth *string
 }
 
 type UserModeConfig struct {
@@ -103,7 +102,6 @@ type UserModeConfig struct {
 	ApiPort      int
 	UserName     *string // Check username and password firstly, then check api token
 	UserPassword *string
-	WebAuth      *string
 	ApiToken     *string
 	//ApiCommand   *string
 }
@@ -167,7 +165,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			ApiPort:      9384,
 			UserName:     nil,
 			UserPassword: nil,
-			WebAuth:      nil,
 			ApiToken:     nil,
 		}
 

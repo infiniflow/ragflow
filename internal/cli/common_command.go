@@ -75,16 +75,20 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		return err
 	}
 
+	fmt.Printf("Login user %s successfully\n", email)
+
 	switch c.Config.CLIMode {
 	case AdminMode:
 		c.AdminServerClient.LoginToken = &token
+		c.Config.AdminClientConfig.AdminName = &email
+		c.Config.AdminClientConfig.AdminPassword = &password
 	case UserMode:
 		c.APIServerClient.LoginToken = &token
+		c.Config.APIClientConfig.UserName = &email
+		c.Config.APIClientConfig.UserPassword = &password
 	default:
 		return fmt.Errorf("invalid server type")
 	}
-
-	fmt.Printf("Login user %s successfully\n", email)
 	return nil
 }
 
@@ -574,30 +578,40 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 	result.Data["verbose"] = c.Config.Verbose
 	switch c.Config.CLIMode {
 	case AdminMode:
-		result.Data["admin_host"] = c.Config.AdminClientConfig.AdminHost
-		result.Data["admin_port"] = c.Config.AdminClientConfig.AdminPort
-		result.Data["admin_name"] = c.Config.AdminClientConfig.AdminName
-		if c.Config.AdminClientConfig.AdminPassword != nil {
-			result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
+		if c.Config.AdminClientConfig != nil {
+			result.Data["admin_host"] = c.Config.AdminClientConfig.AdminHost
+			result.Data["admin_port"] = c.Config.AdminClientConfig.AdminPort
+			if c.Config.AdminClientConfig.AdminName != nil {
+				result.Data["admin_name"] = *c.Config.AdminClientConfig.AdminName
+			}
+			if c.Config.AdminClientConfig.AdminPassword != nil {
+				result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
+			}
+			if c.AdminServerClient.LoginToken == nil {
+				result.Data["auth"] = "no auth"
+			} else {
+				result.Data["auth"] = "login"
+			}
 		}
-		if c.AdminServerClient.LoginToken == nil {
-			result.Data["auth"] = "no auth"
-		} else {
-			result.Data["auth"] = "login"
-		}
+
 	case UserMode:
-		result.Data["api_host"] = c.Config.APIClientConfig.ApiHost
-		result.Data["api_port"] = c.Config.APIClientConfig.ApiPort
-		result.Data["user_name"] = c.Config.APIClientConfig.UserName
-		if c.Config.APIClientConfig.UserPassword != nil {
-			result.Data["user_password"] = strings.Repeat("*", len(*c.Config.APIClientConfig.UserPassword))
-		}
-		if c.APIServerClient.LoginToken == nil {
-			result.Data["auth"] = "login"
-		} else if c.Config.APIClientConfig.ApiToken != nil {
-			result.Data["auth"] = "api token"
-		} else {
-			result.Data["auth"] = "no auth"
+		if c.Config.APIClientConfig != nil {
+			result.Data["api_host"] = c.Config.APIClientConfig.ApiHost
+			result.Data["api_port"] = c.Config.APIClientConfig.ApiPort
+			if c.Config.APIClientConfig.UserName != nil {
+				result.Data["user_name"] = *c.Config.APIClientConfig.UserName
+			}
+
+			if c.Config.APIClientConfig.UserPassword != nil {
+				result.Data["user_password"] = strings.Repeat("*", len(*c.Config.APIClientConfig.UserPassword))
+			}
+			if c.APIServerClient.LoginToken != nil {
+				result.Data["auth"] = "login"
+			} else if c.Config.APIClientConfig.ApiToken != nil {
+				result.Data["auth"] = "api token"
+			} else {
+				result.Data["auth"] = "no auth"
+			}
 		}
 
 		if c.CurrentModel != nil {
