@@ -92,8 +92,8 @@ type CommandLineConfig struct {
 type AdminModeConfig struct {
 	AdminHost     string
 	AdminPort     int
-	AdminName     string
-	AdminPassword string
+	AdminName     *string
+	AdminPassword *string
 	//AdminCommand  *string
 	WebAuth *string
 }
@@ -275,10 +275,10 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		commandLineConfig.APIClientConfig = APIClientConfig
 	case AdminMode:
 		AdminConfig := &AdminModeConfig{
-			AdminHost:     "127.0.0.1",
-			AdminPort:     9383,
-			AdminName:     "admin@ragflow.io",
-			AdminPassword: "admin",
+			AdminHost: "127.0.0.1",
+			AdminPort: 9383,
+			//AdminName:     "admin@ragflow.io",
+			//AdminPassword: "admin",
 		}
 
 		for i := 0; i < len(args); i++ {
@@ -306,12 +306,12 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 				return nil, fmt.Errorf("token is invalid in admin mode")
 			case "-u", "--user":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					AdminConfig.AdminName = args[i+1]
+					AdminConfig.AdminName = &args[i+1]
 					i++
 				}
 			case "-p", "--password":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					AdminConfig.AdminPassword = args[i+1]
+					AdminConfig.AdminPassword = &args[i+1]
 					i++
 				}
 			case "-f", "--config":

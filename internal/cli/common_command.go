@@ -511,11 +511,44 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 	result.Code = 0
 	result.Data = make(map[string]interface{})
 	result.Data["mode"] = c.Config.CLIMode
-	if c.CurrentModel != nil {
-		result.Data["model_provider"] = c.CurrentModel.Provider
-		result.Data["model_instance"] = c.CurrentModel.Instance
-		result.Data["model_model"] = c.CurrentModel.Model
+	result.Data["output"] = c.Config.OutputFormat
+	result.Data["interactive"] = c.Config.Interactive
+	result.Data["verbose"] = c.Config.Verbose
+	switch c.Config.CLIMode {
+	case AdminMode:
+		result.Data["admin_host"] = c.Config.AdminClientConfig.AdminHost
+		result.Data["admin_port"] = c.Config.AdminClientConfig.AdminPort
+		result.Data["admin_name"] = c.Config.AdminClientConfig.AdminName
+		if c.Config.AdminClientConfig.AdminPassword != nil {
+			result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
+		}
+		if c.HTTPClient.LoginToken == "" {
+			result.Data["auth"] = "no auth"
+		} else {
+			result.Data["auth"] = "login"
+		}
+	case UserMode:
+		result.Data["api_host"] = c.Config.APIClientConfig.ApiHost
+		result.Data["api_port"] = c.Config.APIClientConfig.ApiPort
+		result.Data["user_name"] = c.Config.APIClientConfig.UserName
+		if c.Config.APIClientConfig.UserPassword != nil {
+			result.Data["user_password"] = strings.Repeat("*", len(*c.Config.APIClientConfig.UserPassword))
+		}
+		if c.HTTPClient.LoginToken == "" {
+			result.Data["auth"] = "login"
+		} else if c.Config.APIClientConfig.ApiToken != nil {
+			result.Data["auth"] = "api token"
+		} else {
+			result.Data["auth"] = "no auth"
+		}
+
+		if c.CurrentModel != nil {
+			result.Data["model_provider"] = c.CurrentModel.Provider
+			result.Data["model_instance"] = c.CurrentModel.Instance
+			result.Data["model_model"] = c.CurrentModel.Model
+		}
 	}
+
 	return &result, nil
 }
 
