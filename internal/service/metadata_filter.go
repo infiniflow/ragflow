@@ -122,7 +122,7 @@ func genMetaFilterPrompt(metaDataJSON, question, constraintsJSON, currentDate st
 }
 
 // GenMetaFilter generates filter conditions using LLM based on metadata and question.
-func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaData map[string]interface{}, question string, constraints map[string]string) (*MetaFilterResult, error) {
+func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaData common.MetaData, question string, constraints map[string]string) (*MetaFilterResult, error) {
 	if chatModel == nil {
 		return nil, fmt.Errorf("chat model is nil")
 	}
@@ -134,13 +134,11 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	// Build metadata structure for prompt
 	metaDataStructure := make(map[string][]string)
 	for key, values := range metaData {
-		if valueMap, ok := values.(map[string]interface{}); ok {
-			keys := make([]string, 0, len(valueMap))
-			for k := range valueMap {
-				keys = append(keys, k)
-			}
-			metaDataStructure[key] = keys
+		keys := make([]string, 0, len(values))
+		for k := range values {
+			keys = append(keys, k)
 		}
+		metaDataStructure[key] = keys
 	}
 
 	metaDataJSON, _ := json.Marshal(metaDataStructure)
@@ -201,243 +199,56 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	return &result, nil
 }
 
-// ApplyMetaFilter applies filter conditions to metadata and returns matching doc IDs
-func ApplyMetaFilter(metaData map[string]interface{}, filters []MetaFilterCondition, logic string) []string {
+// ApplyMetaFilter applies filter conditions to metadata and returns matching doc IDs.
+// It converts service-layer MetaFilterCondition to common.MetaCondition, then delegates
+// all conditions and their logic to common.MetaFilter which handles multi-condition
+// AND/OR merging internally. This eliminates the duplicate merge logic that previously
+// existed between ApplyMetaFilter and common.MetaFilter.
+func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, logic string) []string {
 	if len(filters) == 0 {
 		return []string{}
 	}
 
-	docIDSet := make(map[string]bool)
-
-	for i, condition := range filters {
-		matchingIDs := applySingleCondition(metaData, condition)
-		if i == 0 {
-			for _, id := range matchingIDs {
-				docIDSet[id] = true
-			}
-		} else {
-			if logic == "or" {
-				// Union
-				for _, id := range matchingIDs {
-					docIDSet[id] = true
-				}
-			} else {
-				// AND - intersection
-				newSet := make(map[string]bool)
-				for _, id := range matchingIDs {
-					if docIDSet[id] {
-						newSet[id] = true
-					}
-				}
-				docIDSet = newSet
-			}
-		}
+	conditions := make([]common.MetaCondition, 0, len(filters))
+	for _, f := range filters {
+		conditions = append(conditions, convertToMetaCondition(f))
 	}
 
-	// Convert to list
-	result := make([]string, 0, len(docIDSet))
-	for id := range docIDSet {
-		result = append(result, id)
-	}
-	return result
+	return common.MetaFilter(metaData, &common.MetaFilterInput{
+		Conditions: conditions,
+		Logic:      logic,
+	})
 }
 
-// applySingleCondition applies a single filter condition and returns matching doc IDs
-func applySingleCondition(metaData map[string]interface{}, condition MetaFilterCondition) []string {
-	key := condition.Key
-	value := condition.Value
-	op := condition.Op
-
-	valueMap, ok := metaData[key].(map[string]interface{})
-	if !ok {
-		return []string{}
+// convertToMetaCondition converts a MetaFilterCondition to common.MetaCondition,
+// normalizing operator symbols and value types for compatibility with common.MetaFilter.
+//
+// Operator normalization:
+//   - "==" = "="    "!=" = "≠"
+//   - ">=" = "≥"    "<=" = "≤"
+//   - "is" = "="    "not is" = "≠"
+//   (see common.metadata_utils.operatorMapping for the full list)
+// Value conversion:
+//   - "in" / "not in": comma-separated string → []interface{} (as expected by common.MetaFilter)
+//   - all other operators: passed through as-is (string)
+func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
+	mc := common.MetaCondition{
+		Key:      f.Key,
+		Operator: common.NormalizeOperator(f.Op),
+		Value:    f.Value,
 	}
-
-	var result []string
-
-	switch op {
-	case "=", "==":
-		if docIDs, exists := valueMap[value]; exists {
-			switch v := docIDs.(type) {
-			case []interface{}:
-				for _, id := range v {
-					if idStr, ok := id.(string); ok {
-						result = append(result, idStr)
-					}
-				}
-			case []string:
-				result = append(result, v...)
-			}
+	switch f.Op {
+	case "in", "not in":
+		parts := strings.Split(f.Value, ",")
+		arr := make([]interface{}, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" { arr = append(arr, trimmed) }
 		}
-	case "!=", "≠":
-		for val, docIDs := range valueMap {
-			if val != value {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "contains":
-		for val, docIDs := range valueMap {
-			if strings.Contains(strings.ToLower(val), strings.ToLower(value)) {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "not contains":
-		for val, docIDs := range valueMap {
-			if !strings.Contains(strings.ToLower(val), strings.ToLower(value)) {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "in":
-		values := strings.Split(value, ",")
-		for _, v := range values {
-			v = strings.TrimSpace(v)
-			if docIDs, exists := valueMap[v]; exists {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "not in":
-		excludeValues := make(map[string]bool)
-		for _, v := range strings.Split(value, ",") {
-			excludeValues[strings.TrimSpace(strings.ToLower(v))] = true
-		}
-		for val, docIDs := range valueMap {
-			if !excludeValues[strings.ToLower(val)] {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "start with":
-		for val, docIDs := range valueMap {
-			if strings.HasPrefix(strings.ToLower(val), strings.ToLower(value)) {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "end with":
-		for val, docIDs := range valueMap {
-			if strings.HasSuffix(strings.ToLower(val), strings.ToLower(value)) {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "empty":
-		if len(valueMap) == 0 {
-			return []string{}
-		}
-	case "not empty":
-		if len(valueMap) > 0 {
-			for _, docIDs := range valueMap {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case ">":
-		for val, docIDs := range valueMap {
-			if val > value {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "<":
-		for val, docIDs := range valueMap {
-			if val < value {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case ">=":
-		for val, docIDs := range valueMap {
-			if val >= value {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	case "<=":
-		for val, docIDs := range valueMap {
-			if val <= value {
-				if ids, ok := docIDs.([]interface{}); ok {
-					for _, id := range ids {
-						if idStr, ok := id.(string); ok {
-							result = append(result, idStr)
-						}
-					}
-				}
-			}
-		}
-	default:
-		// Default to equality check
-		if docIDs, exists := valueMap[value]; exists {
-			if ids, ok := docIDs.([]interface{}); ok {
-				for _, id := range ids {
-					if idStr, ok := id.(string); ok {
-						result = append(result, idStr)
-					}
-				}
-			}
-		}
+		mc.Value = arr
 	}
-
-	return result
+	return mc
 }
+
 
 // ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
 // Supports three modes:
@@ -447,7 +258,7 @@ func applySingleCondition(metaData map[string]interface{}, condition MetaFilterC
 func ApplyMetaDataFilter(
 	ctx context.Context,
 	metaDataFilter map[string]interface{},
-	metaData map[string]interface{},
+	metaData common.MetaData,
 	question string,
 	chatModel *modelModule.ChatModel,
 	baseDocIDs []string,
@@ -497,7 +308,7 @@ func ApplyMetaDataFilter(
 
 		if len(selectedKeys) > 0 {
 			// Filter metadata to only selected keys
-			filteredMeta := make(map[string]interface{})
+			filteredMeta := make(common.MetaData)
 			for _, key := range selectedKeys {
 				if val, exists := metaData[key]; exists {
 					filteredMeta[key] = val
