@@ -60,7 +60,7 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         Initialize the RDBMS connector.
         
         Args:
-            db_type: Database type ('mysql' or 'postgresql')
+            db_type: Database type ('mysql', 'postgresql', or 'mssql')
             host: Database host
             port: Database port
             database: Database name
@@ -198,7 +198,6 @@ class RDBMSConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     user=username,
                     password=password,
                     database=self.database,
-                    tds_version="7.0",
                     charset="UTF-8",
                 )
             except Exception as e:
