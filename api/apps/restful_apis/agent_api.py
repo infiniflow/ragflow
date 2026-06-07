@@ -51,13 +51,16 @@ from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
+    check_duplicate_ids,
     get_data_error_result,
+    get_error_data_result,
     get_json_result,
     get_result,
     get_request_json,
     server_error_response,
     validate_request,
 )
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common import settings
 from common.ssrf_guard import assert_host_is_safe
 from common.constants import RetCode
@@ -349,7 +352,7 @@ def list_agent_sessions(agent_id, tenant_id):
     session_id = request.args.get("id")
     user_id = request.args.get("user_id")
     page_number = int(request.args.get("page", 1))
-    items_per_page = int(request.args.get("page_size", 30))
+    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
     keywords = request.args.get("keywords")
     from_date = request.args.get("from_date")
     to_date = request.args.get("to_date")
@@ -440,6 +443,61 @@ def delete_agent_session_item(agent_id, session_id, tenant_id):
     return get_json_result(data=API4ConversationService.delete_by_id(session_id))
 
 
+@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def delete_agent_session(tenant_id, agent_id):
+    errors = []
+    success_count = 0
+    req = await get_request_json()
+    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+
+    if not req:
+        return get_result()
+
+    ids = req.get("ids")
+    if not ids:
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
+
+    conv_list = ids
+
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+
+    for session_id in conv_list:
+        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
+        if not conv:
+            errors.append(f"The agent doesn't own the session {session_id}")
+            continue
+        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
+        success_count += 1
+
+    if errors:
+        if success_count > 0:
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+        else:
+            return get_error_data_result(message="; ".join(errors))
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+
+    return get_result()
+
+
 @manager.route("/agents/download", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -517,7 +575,7 @@ def list_agents(tenant_id):
     tags = [item for item in request.args.get("tags", "").strip().split(",") if item]
 
     page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
+    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
     order_by = request.args.get("orderby", "create_time")
     desc = str(request.args.get("desc", "true")).lower() != "false"
     tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)

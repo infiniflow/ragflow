@@ -55,6 +55,16 @@ func (h *SystemHandler) Health(c *gin.Context) {
 	})
 }
 
+// Healthz reports dependency health in the Python-compatible format.
+func (h *SystemHandler) Healthz(c *gin.Context) {
+	result, allOK := h.systemService.Healthz(c.Request.Context())
+	statusCode := http.StatusOK
+	if !allOK {
+		statusCode = http.StatusInternalServerError
+	}
+	c.JSON(statusCode, result)
+}
+
 // GetConfig get system configuration
 // @Summary Get System Configuration
 // @Description Get system configuration including register enabled status
@@ -105,6 +115,27 @@ func (h *SystemHandler) GetConfigs(c *gin.Context) {
 	})
 }
 
+// GetStatus get RAGFlow status
+func (h *SystemHandler) GetStatus(c *gin.Context) {
+	_, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	status, err := h.systemService.GetStatus()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    status,
+		"message": "success",
+	})
+}
+
 // GetVersion get RAGFlow version
 // @Summary Get RAGFlow Version
 // @Description Get the current version of the application
@@ -133,44 +164,46 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 
 // GetLogLevel returns the current log level
 func (h *SystemHandler) GetLogLevel(c *gin.Context) {
-	level := common.GetLevel()
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
-		"data":    gin.H{"level": level},
+		"data":    common.GetLogLevels(),
 	})
 }
 
 // SetLogLevelRequest set log level request
 type SetLogLevelRequest struct {
-	Level string `json:"level" binding:"required"`
+	PkgName string `json:"pkg_name" binding:"required"`
+	Level   string `json:"level" binding:"required"`
 }
 
 // SetLogLevel sets the log level at runtime
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "level is required",
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "pkg_name and level are required",
 		})
 		return
 	}
 
-	if err := common.SetLevel(req.Level); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
+	if err := common.SetPackageLogLevel(req.PkgName, req.Level); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"message": "Invalid log level: " + req.Level,
 		})
 		return
 	}
 
 	config := server.GetConfig()
-	config.Log.Level = req.Level
+	if req.PkgName == "root" && config != nil {
+		config.Log.Level = common.GetLevel()
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"message": "Log level updated successfully",
-		"data":    gin.H{"level": req.Level},
+		"message": "success",
+		"data":    gin.H{"pkg_name": req.PkgName, "level": req.Level},
 	})
 }

@@ -61,6 +61,13 @@ from common.data_source import (
     RDBMSConnector,
     DingTalkAITableConnector,
     RestAPIConnector,
+    OneDriveConnector,
+    OutlookConnector,
+    AzureBlobConnector,
+    SalesforceConnector,
+    TeamsConnector,
+    SlackConnector,
+    SharePointConnector,
 )
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
@@ -78,6 +85,23 @@ from common.versions import get_ragflow_version
 from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+
+
+def _redact_mailbox(value: str) -> str:
+    """Return a privacy-preserving representation of a UPN / email / object id.
+
+    Sync logs surface connector configuration verbatim, so leaking the
+    full mailbox list of a tenant is enough to inventory their org from
+    a single log file. Preserve the first two characters of the local
+    part as a debugging hint and mask the rest.
+    """
+    if not value:
+        return "<empty>"
+    if "@" in value:
+        local, _, _domain = value.partition("@")
+        local_mask = local if len(local) <= 2 else local[:2] + "***"
+        return f"{local_mask}@***"
+    return f"{value[:4]}***" if len(value) > 4 else "***"
 
 
 class SyncBase:
@@ -932,21 +956,415 @@ class SharePoint(SyncBase):
     SOURCE_NAME: str = FileSource.SHAREPOINT
 
     async def _generate(self, task: dict):
-        pass
+        self.connector = SharePointConnector(
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+            _begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            _begin_info = f"from {task['poll_range_start']}"
+
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(
+                    self.connector.load_from_checkpoint(start_time, end_time, checkpoint)
+                )
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning(
+                            "SharePoint connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading SharePoint documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        self.log_connection("SharePoint", self.conf.get("credentials", {}).get("site_url", ""), task)
+        return document_batches()
+
+
+class OneDrive(SyncBase):
+    SOURCE_NAME: str = FileSource.ONEDRIVE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = OneDriveConnector(
+            batch_size=batch_size,
+            folder_path=self.conf.get("folder_path") or None,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the lastModifiedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every drive's root each run.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        self.log_connection(
+            "OneDrive",
+            self.conf.get("folder_path", "/") or "/",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class Outlook(SyncBase):
+    SOURCE_NAME: str = FileSource.OUTLOOK
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_user_ids = self.conf.get("user_ids")
+        if isinstance(raw_user_ids, str):
+            user_ids = [u.strip() for u in raw_user_ids.split(",") if u.strip()]
+        elif isinstance(raw_user_ids, list):
+            user_ids = [str(u).strip() for u in raw_user_ids if str(u).strip()]
+        else:
+            user_ids = []
+
+        self.connector = OutlookConnector(
+            batch_size=batch_size,
+            folder=self.conf.get("folder") or "inbox",
+            user_ids=user_ids or None,
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Always route through load_from_checkpoint so the connector owns the
+        # delta-link bookkeeping; incremental runs pass the previous poll
+        # range start as the receivedDateTime floor while the same delta
+        # walk drives both modes. poll_source disregarded the checkpoint
+        # entirely, which would have re-walked every mailbox each run.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        # Redact mailbox identifiers — full UPN / email lists in connector
+        # logs leak PII (the entire org's mail directory ends up in
+        # tail-of-logs output). Surface the folder, the count, and a small
+        # masked preview so operators can still spot a misconfigured run.
+        if user_ids:
+            preview = ",".join(_redact_mailbox(u) for u in user_ids[:3])
+            if len(user_ids) > 3:
+                preview = f"{preview},+{len(user_ids) - 3} more"
+            details = "{}@{} users (preview: {})".format(
+                self.conf.get("folder", "inbox"),
+                len(user_ids),
+                preview,
+            )
+        else:
+            details = "{}@<all-users>".format(self.conf.get("folder", "inbox"))
+        self.log_connection("Outlook", details, task)
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class Salesforce(SyncBase):
+    SOURCE_NAME: str = FileSource.SALESFORCE
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        raw_objects = self.conf.get("objects")
+        if isinstance(raw_objects, str):
+            objects = [o.strip() for o in raw_objects.split(",") if o.strip()]
+        elif isinstance(raw_objects, list):
+            objects = [str(o).strip() for o in raw_objects if str(o).strip()]
+        else:
+            objects = None
+
+        self.connector = SalesforceConnector(
+            batch_size=batch_size,
+            objects=objects,
+            api_version=self.conf.get("api_version") or "v59.0",
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        # Fail fast on invalid/inaccessible objects (typos, missing object
+        # permissions) before iterating, so a bad `objects` config surfaces
+        # as a clear error instead of silently skipping data at sync time.
+        # This guards configs that reach runtime without going through the
+        # UI (direct API callers, scripts, previously-persisted configs).
+        self.connector.validate_connector_settings()
+
+        # Always route through load_from_checkpoint so the per-object
+        # SystemModstamp cursor owns incrementality; poll_source would
+        # re-query every object from the caller's window each run and
+        # ignore the persisted per-object cursors entirely.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        instance_url = (self.conf.get("credentials") or {}).get("instance_url", "")
+        self.log_connection(
+            "Salesforce",
+            f"{instance_url} objects({','.join(self.connector.objects)})",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
+
+
+class AzureBlob(SyncBase):
+    SOURCE_NAME: str = FileSource.AZURE_BLOB
+
+    async def _generate(self, task: dict):
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = AzureBlobConnector(
+            batch_size=batch_size,
+            prefix=self.conf.get("prefix") or None,
+            allow_images=bool(self.conf.get("allow_images", False)),
+            auth_mode=self.conf.get("auth_mode"),
+        )
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+
+        # Route through load_from_checkpoint so incremental runs are scoped
+        # by the poll time window; per-blob ETags ride along as document
+        # fingerprints (content_hash) so unchanged blobs aren't re-embedded.
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_ts = 0.0
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+        end_ts = datetime.now(timezone.utc).timestamp()
+        checkpoint = self.connector.build_dummy_checkpoint()
+        document_batch_generator = self.connector.load_from_checkpoint(
+            start_ts, end_ts, checkpoint
+        )
+
+        container_hint = (
+            credentials.get("container_name")
+            or credentials.get("container_url", "").rstrip("/").rsplit("/", 1)[-1]
+            or "<container>"
+        )
+        self.log_connection(
+            "Azure Blob",
+            f"{container_hint}/{self.conf.get('prefix', '') or ''}",
+            task,
+        )
+
+        def wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+
+        return wrapper()
 
 
 class Slack(SyncBase):
     SOURCE_NAME: str = FileSource.SLACK
 
     async def _generate(self, task: dict):
-        pass
+        from common.data_source.config import DocumentSource
+        from common.data_source.interfaces import StaticCredentialsProvider
+
+        channels_conf = self.conf.get("channels")
+        if isinstance(channels_conf, str):
+            channels = [c.strip() for c in channels_conf.split(",") if c.strip()]
+        elif isinstance(channels_conf, list):
+            channels = [str(c).strip() for c in channels_conf if str(c).strip()]
+        else:
+            channels = None
+
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        self.connector = SlackConnector(
+            channels=channels or None,
+            channel_regex_enabled=bool(self.conf.get("channel_regex_enabled", False)),
+            batch_size=batch_size,
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        if not credentials.get("slack_bot_token"):
+            raise ValueError("Slack connector is missing the bot token credential.")
+
+        credentials_provider = StaticCredentialsProvider(
+            tenant_id=task["tenant_id"],
+            connector_name=DocumentSource.SLACK,
+            credential_json=credentials,
+        )
+        self.connector.set_credentials_provider(credentials_provider)
+        self.connector.validate_connector_settings()
+
+        poll_start = task["poll_range_start"]
+        if task["reindex"] == "1" or not poll_start:
+            document_generator = self.connector.load_from_state()
+            _begin_info = "totally"
+        else:
+            end_time = datetime.now(timezone.utc).timestamp()
+            document_generator = self.connector.poll_source(poll_start.timestamp(), end_time)
+            _begin_info = f"from {poll_start}"
+
+        self.log_connection(
+            "Slack",
+            f"channels({', '.join(channels) if channels else 'all'})",
+            task,
+        )
+        return document_generator
 
 
 class Teams(SyncBase):
     SOURCE_NAME: str = FileSource.TEAMS
 
     async def _generate(self, task: dict):
-        pass
+        self.connector = TeamsConnector(
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+        )
+
+        credentials = self.conf.get("credentials") or {}
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+            _begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            _begin_info = f"from {task['poll_range_start']}"
+
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(
+                    self.connector.load_from_checkpoint(start_time, end_time, checkpoint)
+                )
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning(
+                            "Teams connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading Teams documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        self.log_connection("Microsoft Teams", "workspace", task)
+        return document_batches()
 
 
 class WebDAV(SyncBase):
@@ -1685,6 +2103,10 @@ func_factory = {
     FileSource.GOOGLE_DRIVE: GoogleDrive,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
+    FileSource.ONEDRIVE: OneDrive,
+    FileSource.OUTLOOK: Outlook,
+    FileSource.AZURE_BLOB: AzureBlob,
+    FileSource.SALESFORCE: Salesforce,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,

@@ -775,6 +775,11 @@ func (e *elasticsearchEngine) searchUnified(ctx context.Context, req *types.Sear
 		}
 	}
 
+	// Allow caller to override output columns (used by KG search, etc.)
+	if len(req.SelectFields) > 0 {
+		outputColumns = req.SelectFields
+	}
+
 	hasTextMatch := false
 	hasVectorMatch := false
 	var matchText *types.MatchTextExpr
