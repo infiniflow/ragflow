@@ -1415,6 +1415,18 @@ Example: Virtual Hosted Style`,
         'Comma-separated CRM objects to index. Defaults to contacts, companies, deals, tickets.',
       hubspotKnowledgeBaseTip:
         'Also index published HubSpot Knowledge Base articles. Disable if your portal does not have the Knowledge Base add-on.',
+      salesforceDescription:
+        'Connect a Salesforce org and index CRM records (Accounts, Contacts, Opportunities, Cases, Knowledge articles) via SOQL with incremental sync.',
+      salesforceInstanceUrlTip:
+        'Salesforce org URL, e.g. https://your-domain.my.salesforce.com (no trailing slash).',
+      salesforceClientIdTip:
+        'Consumer Key of a Connected App with Client Credentials Flow enabled and the api scope.',
+      salesforceClientSecretTip:
+        'Consumer Secret of the Connected App used for client-credentials authentication.',
+      salesforceObjectsTip:
+        'Comma-separated SObject API names to index. Defaults to Account, Contact, Opportunity, Case, Knowledge__kav.',
+      salesforceApiVersionTip:
+        'Salesforce REST API version (e.g. v59.0). Use the version your org supports.',
       azure_blobDescription:
         'Index blobs from an Azure Blob Storage container into a knowledge base. Supports account-key, connection-string, and SAS-token auth. Unchanged blobs are skipped via ETag fingerprinting.',
       azureBlobAuthModeTip:

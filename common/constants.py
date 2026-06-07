@@ -157,6 +157,7 @@ class FileSource(StrEnum):
     ONEDRIVE = "onedrive"
     OUTLOOK = "outlook"
     HUBSPOT = "hubspot"
+    SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
 
 

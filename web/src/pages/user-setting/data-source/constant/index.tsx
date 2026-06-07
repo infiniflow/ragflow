@@ -46,6 +46,7 @@ export enum DataSourceKey {
   ONEDRIVE = 'onedrive',
   OUTLOOK = 'outlook',
   HUBSPOT = 'hubspot',
+  SALESFORCE = 'salesforce',
   AZURE_BLOB = 'azure_blob',
   TEAMS = 'teams',
   SLACK = 'slack',
@@ -140,6 +141,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.HUBSPOT]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.SALESFORCE]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.AZURE_BLOB]: {
@@ -347,6 +351,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'HubSpot',
       description: t(`setting.${DataSourceKey.HUBSPOT}Description`),
       icon: <SvgIcon name={'data-source/hubspot'} width={38} />,
+    },
+    [DataSourceKey.SALESFORCE]: {
+      name: 'Salesforce',
+      description: t(`setting.${DataSourceKey.SALESFORCE}Description`),
+      icon: <SvgIcon name={'data-source/salesforce'} width={38} />,
     },
     [DataSourceKey.AZURE_BLOB]: {
       name: 'Azure Blob Storage',
@@ -562,6 +571,65 @@ export const DataSourceFormFields = {
       required: false,
       defaultValue: true,
       tooltip: t('setting.hubspotKnowledgeBaseTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      validation: {
+        min: 1,
+        message: 'Batch Size must be at least 1',
+      },
+    },
+  ],
+  [DataSourceKey.SALESFORCE]: [
+    {
+      label: 'Instance URL',
+      name: 'config.credentials.instance_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://your-domain.my.salesforce.com',
+      tooltip: t('setting.salesforceInstanceUrlTip'),
+      validation: {
+        pattern: /^https:\/\/[a-zA-Z0-9.-]+\.salesforce\.com$/,
+        message:
+          'Must be a valid Salesforce domain (https://...salesforce.com)',
+      },
+    },
+    {
+      label: 'Client ID',
+      name: 'config.credentials.client_id',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: t('setting.salesforceClientIdTip'),
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.client_secret',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.salesforceClientSecretTip'),
+    },
+    {
+      label: 'Objects',
+      name: 'config.objects',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Account,Contact,Opportunity,Case,Knowledge__kav',
+      tooltip: t('setting.salesforceObjectsTip'),
+    },
+    {
+      label: 'API Version',
+      name: 'config.api_version',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'v59.0',
+      tooltip: t('setting.salesforceApiVersionTip'),
+      validation: {
+        pattern: /^v\d+\.\d+$/,
+        message: 'API version must match format like v59.0',
+      },
     },
     {
       label: 'Batch Size',
@@ -2168,6 +2236,20 @@ export const DataSourceFormDefaultValues = {
       batch_size: 2,
       credentials: {
         access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.SALESFORCE]: {
+    name: '',
+    source: DataSourceKey.SALESFORCE,
+    config: {
+      objects: '',
+      api_version: 'v59.0',
+      batch_size: 2,
+      credentials: {
+        instance_url: '',
+        client_id: '',
+        client_secret: '',
       },
     },
   },
