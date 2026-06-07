@@ -454,8 +454,18 @@ class InfinityConnection(InfinityConnectionBase):
                     elif k == "chunk_metadata_kwd":
                         # chunk_metadata_kwd is a varchar column; serialize dicts to JSON.
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v, ensure_ascii=False)
+                            try:
+                                d[k] = json.dumps(v, ensure_ascii=False)
+                            except (TypeError, ValueError) as e:
+                                self.logger.warning(
+                                    f"chunk_metadata_kwd serialization failed for chunk {d.get('id', 'unknown')}: {e}; value: {v!r}"
+                                )
+                                d[k] = ""
                         else:
+                            if v and not isinstance(v, str):
+                                self.logger.warning(
+                                    f"chunk_metadata_kwd has unexpected type {type(v).__name__} for chunk {d.get('id', 'unknown')}; using as-is"
+                                )
                             d[k] = v if v else ""
                     elif k == "kb_id":
                         if isinstance(d[k], list):
