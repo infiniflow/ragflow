@@ -506,6 +506,19 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
+func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
+	var result CommonDataResponse
+	result.Code = 0
+	result.Data = make(map[string]interface{})
+	result.Data["mode"] = c.Config.CLIMode
+	if c.CurrentModel != nil {
+		result.Data["model_provider"] = c.CurrentModel.Provider
+		result.Data["model_instance"] = c.CurrentModel.Instance
+		result.Data["model_model"] = c.CurrentModel.Model
+	}
+	return &result, nil
+}
+
 // readPassword reads password from terminal without echoing
 func ReadPassword() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {

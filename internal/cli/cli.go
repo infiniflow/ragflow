@@ -701,7 +701,7 @@ const historyFileName = ".ragflow_cli_history"
 
 // CLI represents the command line interface
 type CLI struct {
-	client        *RAGFlowClient
+	//client        *RAGFlowClient
 	contextEngine *filesystem.Engine
 	prompt        string
 	running       bool
@@ -1239,7 +1239,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("skill provider not available")
 		}
 		// Create adapter for HTTPClient
-		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "uninstall-skill":
@@ -1252,7 +1252,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("file provider not available")
 		}
 		// Create adapter for HTTPClient
-		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
@@ -1267,7 +1267,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
-		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "delete-skill":
@@ -1281,7 +1281,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		if fileProvider == nil {
 			return fmt.Errorf("file provider not available")
 		}
-		httpAdapter := &httpClientAdapter{client: c.client.HTTPClient}
+		httpAdapter := &httpClientAdapter{client: c.HTTPClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
@@ -1618,14 +1618,14 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 		fmt.Println("Switched to USER mode")
 	case "host":
 		if len(args) == 0 {
-			fmt.Printf("Current host: %s\n", c.client.HTTPClient.Host)
+			fmt.Printf("Current host: %s\n", c.HTTPClient.Host)
 		} else {
 			c.HTTPClient.Host = args[0]
 			fmt.Printf("Host set to: %s\n", args[0])
 		}
 	case "port":
 		if len(args) == 0 {
-			fmt.Printf("Current port: %d\n", c.client.HTTPClient.Port)
+			fmt.Printf("Current port: %d\n", c.HTTPClient.Port)
 		} else {
 			port, err := strconv.Atoi(args[0])
 			if err != nil {
@@ -1634,11 +1634,11 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 			if port < 1 || port > 65535 {
 				return fmt.Errorf("port must be between 1 and 65535")
 			}
-			c.client.HTTPClient.Port = port
+			c.HTTPClient.Port = port
 			fmt.Printf("Port set to: %d\n", port)
 		}
 	case "status":
-		fmt.Printf("Server: %s:%d (mode: %s)\n", c.client.HTTPClient.Host, c.client.HTTPClient.Port, c.client.ServerType)
+		fmt.Printf("Server: %s:%d (mode: %s)\n", c.HTTPClient.Host, c.HTTPClient.Port, c.Config.CLIMode)
 	default:
 		return fmt.Errorf("unknown meta command: \\%s", command)
 	}

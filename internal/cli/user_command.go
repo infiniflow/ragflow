@@ -2608,28 +2608,6 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-// ShowCurrentModel displays the current model configuration
-func (c *CLI) ShowCurrentModel(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode == UserMode {
-		return nil, fmt.Errorf("this command is only allowed in USER mode")
-	}
-
-	if c.CurrentModel == nil {
-		return nil, fmt.Errorf("no current model set. Use 'use model' command first")
-	}
-
-	var result CommonResponse
-	result.Code = 0
-	result.Data = []map[string]interface{}{
-		{
-			"provider": c.CurrentModel.Provider,
-			"instance": c.CurrentModel.Instance,
-			"model":    c.CurrentModel.Model,
-		},
-	}
-	return &result, nil
-}
-
 func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
 		return nil, fmt.Errorf("API token not set. Please login first")

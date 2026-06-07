@@ -423,23 +423,13 @@ func (p *Parser) parseShowCommand() (*Command, error) {
 		return NewCommand("show_token"), nil
 	case TokenCurrent:
 		p.nextToken()
-		if p.curToken.Type == TokenUser {
+
+		// Semicolon is optional for SHOW TOKEN
+		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
-			// Semicolon is optional for SHOW CURRENT USER
-			if p.curToken.Type == TokenSemicolon {
-				p.nextToken()
-			}
-			return NewCommand("show_current_user"), nil
-		} else if p.curToken.Type == TokenModel {
-			p.nextToken()
-			// Semicolon is optional for SHOW CURRENT MODEL
-			if p.curToken.Type == TokenSemicolon {
-				p.nextToken()
-			}
-			return NewCommand("show_current_model"), nil
 		}
 
-		return nil, fmt.Errorf("expected USER or MODEL after CURRENT")
+		return NewCommand("show_current"), nil
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:

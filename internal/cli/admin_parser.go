@@ -418,15 +418,12 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return NewCommand("show_token"), nil
 	case TokenCurrent:
 		p.nextToken()
-		if p.curToken.Type != TokenUser {
-			return nil, fmt.Errorf("expected USER after CURRENT")
-		}
-		p.nextToken()
+
 		// Semicolon is optional for SHOW TOKEN
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
-		return NewCommand("show_current_user"), nil
+		return NewCommand("show_current"), nil
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:

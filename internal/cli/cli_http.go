@@ -63,6 +63,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ShowService(cmd)
 	case "show_version":
 		return c.ShowAdminVersion(cmd)
+	case "show_current":
+		return c.ShowCommonCurrent(cmd)
 	case "show_user":
 		return c.ShowUser(cmd)
 	case "list_variables":
@@ -147,6 +149,8 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.UnsetToken(cmd)
 	case "show_version":
 		return c.ShowServerVersion(cmd)
+	case "show_current":
+		return c.ShowCommonCurrent(cmd)
 	case "list_available_providers":
 		return c.ListAvailableProviders(cmd)
 	case "show_provider":
@@ -209,8 +213,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.CheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
-	case "show_current_model":
-		return c.ShowCurrentModel(cmd)
 	case "set_default_model":
 		return c.SetDefaultModel(cmd)
 	case "reset_default_model":
