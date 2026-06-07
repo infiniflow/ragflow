@@ -735,7 +735,7 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		httpClient.Host = commandLineConfig.APIClientConfig.ApiHost
 		httpClient.Port = commandLineConfig.APIClientConfig.ApiPort
 		if commandLineConfig.APIClientConfig.ApiToken != nil {
-			httpClient.APIToken = *commandLineConfig.APIClientConfig.ApiToken
+			httpClient.APIToken = commandLineConfig.APIClientConfig.ApiToken
 			httpClient.useAPIToken = true
 		}
 		cli.prompt = fmt.Sprintf("RAGFlow(user)> ")

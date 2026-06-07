@@ -84,9 +84,9 @@ func (a *httpClientAdapter) Request(method, path string, authKind string, header
 	// Auto-detect auth kind based on available tokens
 	// If authKind is "auto" or empty, determine based on token availability
 	if authKind == "auto" || authKind == "" {
-		if a.client.useAPIToken && a.client.APIToken != "" {
+		if a.client.useAPIToken && a.client.APIToken != nil {
 			authKind = "api"
-		} else if a.client.LoginToken != "" {
+		} else if a.client.LoginToken != nil {
 			authKind = "web"
 		} else {
 			authKind = "web" // default

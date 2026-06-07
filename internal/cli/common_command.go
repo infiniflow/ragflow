@@ -75,7 +75,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		return err
 	}
 
-	c.HTTPClient.LoginToken = token
+	c.HTTPClient.LoginToken = &token
 	fmt.Printf("Login user %s successfully\n", email)
 	return nil
 }
@@ -182,7 +182,7 @@ func (c *CLI) loginUser(email, password string) (string, error) {
 }
 
 func (c *CLI) Logout() (ResponseIf, error) {
-	if c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("not logged in")
 	}
 
@@ -522,7 +522,7 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 		if c.Config.AdminClientConfig.AdminPassword != nil {
 			result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
 		}
-		if c.HTTPClient.LoginToken == "" {
+		if c.HTTPClient.LoginToken == nil {
 			result.Data["auth"] = "no auth"
 		} else {
 			result.Data["auth"] = "login"
@@ -534,7 +534,7 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 		if c.Config.APIClientConfig.UserPassword != nil {
 			result.Data["user_password"] = strings.Repeat("*", len(*c.Config.APIClientConfig.UserPassword))
 		}
-		if c.HTTPClient.LoginToken == "" {
+		if c.HTTPClient.LoginToken == nil {
 			result.Data["auth"] = "login"
 		} else if c.Config.APIClientConfig.ApiToken != nil {
 			result.Data["auth"] = "api token"

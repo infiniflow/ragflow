@@ -329,7 +329,7 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Determine auth kind based on whether API token is being used
-	if c.HTTPClient.LoginToken == "" && !c.HTTPClient.useAPIToken {
+	if c.HTTPClient.LoginToken == nil && !c.HTTPClient.useAPIToken {
 		return nil, fmt.Errorf("no authorization")
 	}
 
@@ -338,7 +338,7 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 		authKind = "api"
 	}
 
-	if c.HTTPClient.LoginToken != "" {
+	if c.HTTPClient.LoginToken != nil {
 		authKind = "web"
 	}
 
@@ -383,7 +383,7 @@ func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
 	}
 
 	// Determine auth kind based on whether API token is being used
-	if c.HTTPClient.LoginToken == "" && !c.HTTPClient.useAPIToken {
+	if c.HTTPClient.LoginToken == nil && !c.HTTPClient.useAPIToken {
 		return nil, fmt.Errorf("no authorization")
 	}
 
@@ -757,7 +757,7 @@ func (c *CLI) SetToken(cmd *Command) (ResponseIf, error) {
 	savedUseAPIToken := c.HTTPClient.useAPIToken
 
 	// Set the new token temporarily for validation
-	c.HTTPClient.APIToken = token
+	c.HTTPClient.APIToken = &token
 	c.HTTPClient.useAPIToken = true
 
 	// Validate token by calling list tokens API
@@ -805,7 +805,7 @@ func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if c.HTTPClient.APIToken == "" {
+	if c.HTTPClient.APIToken == nil {
 		return nil, fmt.Errorf("no API token is currently set")
 	}
 
@@ -829,11 +829,11 @@ func (c *CLI) UnsetToken(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
-	if c.HTTPClient.APIToken == "" {
+	if c.HTTPClient.APIToken == nil {
 		return nil, fmt.Errorf("no API token is currently set")
 	}
 
-	c.HTTPClient.APIToken = ""
+	c.HTTPClient.APIToken = nil
 	c.HTTPClient.useAPIToken = false
 
 	var result SimpleResponse
@@ -1802,7 +1802,7 @@ func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -1869,7 +1869,7 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -1942,7 +1942,7 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2134,7 +2134,7 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2221,7 +2221,7 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2303,7 +2303,7 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2390,7 +2390,7 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2433,7 +2433,7 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2481,7 +2481,7 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2520,7 +2520,7 @@ func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 	if c.Config.CLIMode != UserMode {
@@ -2579,7 +2579,7 @@ func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 
 // UseModel sets the current model for chat
 func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 	if c.Config.CLIMode != UserMode {
@@ -2609,7 +2609,7 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
@@ -2681,7 +2681,7 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 
 // CECat handles the cat command - shows content using Context Engine
 func (c *CLI) CECat(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 	if c.Config.CLIMode != UserMode {
@@ -3218,7 +3218,7 @@ func (c *CLI) RemoveChunks(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.HTTPClient.APIToken == "" && c.HTTPClient.LoginToken == "" {
+	if c.HTTPClient.APIToken == nil && c.HTTPClient.LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
