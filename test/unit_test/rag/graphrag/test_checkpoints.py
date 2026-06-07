@@ -125,14 +125,29 @@ def test_checkpoint_keys_are_stable():
 
 @pytest.mark.p1
 @pytest.mark.asyncio
-async def test_load_checkpoints_reads_redis_index(fake_redis):
+async def test_load_checkpoints_reads_redis_index(fake_redis, monkeypatch):
     await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k1", {"value": 1})
     await checkpoints.save_checkpoint("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, "k2", {"value": 2})
     await checkpoints.save_checkpoint("tenant-1", "kb-2", checkpoints.COMMUNITY_CHECKPOINT, "k3", {"value": 3})
 
+    thread_pool_calls = []
+
+    async def _fake_thread_pool_exec(func, *args, **kwargs):
+        thread_pool_calls.append((func, args, kwargs))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(checkpoints, "thread_pool_exec", _fake_thread_pool_exec)
+
     loaded = await checkpoints.load_checkpoints("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, page_size=1)
 
     assert loaded == {"k1": {"value": 1}, "k2": {"value": 2}}
+    assert thread_pool_calls == [
+        (
+            checkpoints._load_checkpoints_sync,
+            ("tenant-1", "kb-1", checkpoints.COMMUNITY_CHECKPOINT, 1),
+            {},
+        )
+    ]
     assert fake_redis.REDIS.scan_counts[-1] == (
         "graphrag:checkpoint:tenant-1:kb-1:graphrag_checkpoint_community:keys",
         1,

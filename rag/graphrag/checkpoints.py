@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Any
 
+from common.misc_utils import thread_pool_exec
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -69,7 +70,7 @@ def _iter_checkpoint_keys(index_key: str, page_size: int | None):
     return redis_client.sscan_iter(index_key, count=_checkpoint_page_size(page_size))
 
 
-async def load_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, page_size: int | None = None) -> dict[str, Any]:
+def _load_checkpoints_sync(tenant_id: str, kb_id: str, checkpoint_type: str, page_size: int | None) -> dict[str, Any]:
     checkpoints: dict[str, Any] = {}
     index_key = _checkpoint_index_key(tenant_id, kb_id, checkpoint_type)
     try:
@@ -90,6 +91,10 @@ async def load_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, 
             logging.exception("Failed to parse GraphRAG checkpoint type=%s kb=%s key=%s", checkpoint_type, kb_id, checkpoint_key)
     logging.info("Loaded %d GraphRAG checkpoints type=%s kb=%s", len(checkpoints), checkpoint_type, kb_id)
     return checkpoints
+
+
+async def load_checkpoints(tenant_id: str, kb_id: str, checkpoint_type: str, *, page_size: int | None = None) -> dict[str, Any]:
+    return await thread_pool_exec(_load_checkpoints_sync, tenant_id, kb_id, checkpoint_type, page_size)
 
 
 async def save_checkpoint(tenant_id: str, kb_id: str, checkpoint_type: str, checkpoint_key: str, payload: Any) -> bool:
