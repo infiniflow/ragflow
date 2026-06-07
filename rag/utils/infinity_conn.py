@@ -448,7 +448,13 @@ class InfinityConnection(InfinityConnectionBase):
                         # both dict and JSON-string. Other backends (OceanBase JSON
                         # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v)
+                            try:
+                                d[k] = json.dumps(v)
+                            except (TypeError, ValueError) as e:
+                                self.logger.warning(
+                                    f"extra serialization failed for chunk {d.get('id', 'unknown')}: {e}; value: {v!r}"
+                                )
+                                d[k] = ""
                         else:
                             d[k] = v if v else ""
                     elif k == "chunk_metadata_kwd":
