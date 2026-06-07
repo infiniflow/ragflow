@@ -451,6 +451,12 @@ class InfinityConnection(InfinityConnectionBase):
                             d[k] = json.dumps(v)
                         else:
                             d[k] = v if v else ""
+                    elif k == "chunk_metadata_kwd":
+                        # chunk_metadata_kwd is a varchar column; serialize dicts to JSON.
+                        if isinstance(v, dict):
+                            d[k] = json.dumps(v, ensure_ascii=False)
+                        else:
+                            d[k] = v if v else ""
                     elif k == "kb_id":
                         if isinstance(d[k], list):
                             d[k] = d[k][0]  # since d[k] is a list, but we need a str

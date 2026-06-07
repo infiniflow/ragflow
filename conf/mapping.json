@@ -19,6 +19,10 @@
       "lat_lon": {
         "type": "geo_point",
         "store": "true"
+      },
+      "chunk_metadata_kwd": {
+        "type": "keyword",
+        "store": true
       }
     },
     "date_detection": "true",
