@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import hashlib
 import json
 import logging
 import random
@@ -502,13 +503,13 @@ class OIDCDelegatingProvider(OAuthAuthorizationServerProvider):
         logging.debug("oauth: redirecting to OIDC provider: %s", redirect)
         return redirect
 
-    async def handle_oidc_callback(self, oidc_code: str, oidc_state: str) -> tuple[str, str]:
+    async def handle_oidc_callback(self, oidc_code: str, oidc_state: str) -> tuple[str, str, str]:
         """
         Called by the /oauth/callback route.
 
         Exchanges the OIDC code for tokens, resolves the RAGFlow API key from the
         user's identity, mints our own authorization code, and returns
-        (redirect_uri, mcp_code) so the route can redirect the MCP client.
+        (redirect_uri, mcp_code, state_part) so the route can redirect the MCP client.
         """
         entry = self._pending_oidc.pop(oidc_state, None)
         if entry is None:
@@ -594,7 +595,7 @@ class OIDCDelegatingProvider(OAuthAuthorizationServerProvider):
         )
         self._auth_codes[mcp_code] = auth_code
         self._auth_code_to_api_key[mcp_code] = ragflow_api_key
-        logging.info("oauth: minted MCP auth code for user %s (client %s)", email, mcp_client_id)
+        logging.info("oauth: minted MCP auth code for user sha256:%s (client %s)", _obfuscate_email(email), mcp_client_id)
 
         redirect_uri = str(mcp_params.redirect_uri)
         state_part = f"&state={mcp_params.state}" if mcp_params.state else ""
@@ -620,15 +621,15 @@ class OIDCDelegatingProvider(OAuthAuthorizationServerProvider):
                 if data.get("code") == 0:
                     api_key = data.get("data", {}).get("api_key")
                     if api_key:
-                        logging.info("oauth: resolved API key for user %s", email)
+                        logging.debug("oauth: resolved API key for user sha256:%s", _obfuscate_email(email))
                         return api_key
         except Exception as exc:
-            logging.warning("oauth: API key resolution request failed for %s: %s", email, exc)
+            logging.warning("oauth: API key resolution request failed for sha256:%s: %s", _obfuscate_email(email), exc)
 
         # Fallback: if a global HOST_API_KEY is configured, use it (useful for
         # single-org deployments where all SSO users share one tenant).
         if HOST_API_KEY:
-            logging.info("oauth: no per-user API key found for %s; using HOST_API_KEY", email)
+            logging.debug("oauth: no per-user API key found for sha256:%s; using HOST_API_KEY", _obfuscate_email(email))
             return HOST_API_KEY
 
         raise RuntimeError(f"No RAGFlow API key found for SSO user: {email}")
@@ -771,6 +772,11 @@ def _to_text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="ignore")
     return str(value)
+
+
+def _obfuscate_email(email: str) -> str:
+    """Return a short SHA-256 prefix of the email to avoid logging PII."""
+    return hashlib.sha256(email.encode()).hexdigest()[:12]
 
 
 def _extract_token_from_headers(headers: Any) -> str | None:

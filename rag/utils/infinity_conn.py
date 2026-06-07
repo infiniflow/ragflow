@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 import json
 import copy
@@ -448,7 +449,11 @@ class InfinityConnection(InfinityConnectionBase):
                         # both dict and JSON-string. Other backends (OceanBase JSON
                         # column, ES/OpenSearch) keep dict shape — this is Infinity-only.
                         if isinstance(v, dict):
-                            d[k] = json.dumps(v)
+                            try:
+                                d[k] = json.dumps(v)
+                            except (TypeError, ValueError) as exc:
+                                logging.warning("infinity_conn: failed to serialize 'extra' field (type=%s): %s; storing empty string", type(v).__name__, exc)
+                                d[k] = ""
                         else:
                             d[k] = v if v else ""
                     elif k == "kb_id":
