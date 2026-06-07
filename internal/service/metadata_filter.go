@@ -83,6 +83,9 @@ func compareValues(val1, val2, op string) bool {
 // ManualValueResolver is a callback function to transform manual filter values
 type ManualValueResolver func(map[string]interface{}) map[string]interface{}
 
+// NoMatchDocIDSentinel forces retrieval to return no documents when filters match nothing.
+const NoMatchDocIDSentinel = "-999"
+
 // metaFilterTemplateCache caches the template content
 var metaFilterTemplateCache string
 
@@ -264,7 +267,8 @@ func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, lo
 //   - "==" = "="    "!=" = "≠"
 //   - ">=" = "≥"    "<=" = "≤"
 //   - "is" = "="    "not is" = "≠"
-//   (see common.metadata_utils.operatorMapping for the full list)
+//     (see common.metadata_utils.operatorMapping for the full list)
+//
 // Value conversion:
 //   - "in" / "not in": comma-separated string → []interface{} (as expected by common.MetaFilter)
 //   - all other operators: passed through as-is (string)
@@ -280,11 +284,13 @@ func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 		parts := strings.Split(strVal, ",")
 		arr := make([]interface{}, 0, len(parts))
 		for _, p := range parts {
-			if trimmed := strings.TrimSpace(p); trimmed != "" { arr = append(arr, trimmed) }
-                    }
-        mc.Value = arr
-    }
-    return mc
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				arr = append(arr, trimmed)
+			}
+		}
+		mc.Value = arr
+	}
+	return mc
 }
 
 // applySingleCondition applies a single filter condition and returns matching doc IDs
@@ -722,7 +728,7 @@ func ApplyMetaDataFilter(
 		filteredIDs := runMetadataFilter(conditions, logic)
 		docIDs = append(docIDs, filteredIDs...)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
-			return []string{"-999"}, false
+			return []string{NoMatchDocIDSentinel}, false
 		}
 	}
 

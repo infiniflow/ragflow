@@ -1957,6 +1957,15 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
 }
 
+// GetRerankModel returns a RerankModel wrapper for the given tenant
+func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
+	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewRerankModel(driver, &modelName, apiConfig), nil
+}
+
 type AddModelRequest struct {
 	ProviderName string         `json:"provider_name"`
 	InstanceName string         `json:"instance_name"`

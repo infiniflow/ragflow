@@ -43,6 +43,8 @@ type chatModelProvider interface {
 	GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error)
 	GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error)
 	GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error)
+	GetModelConfigFromProviderInstance(tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	GetTenantDefaultModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
 }
 
 type chatMetadataService interface {
@@ -349,7 +351,11 @@ func (s *ChatSessionService) Completion(userID string, conversationID string, me
 }
 
 // CompletionStream performs streaming chat completion with full RAG support
-func (s *ChatSessionService) CompletionStream(userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string, streamChan chan<- string) error {
+func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string, streamChan chan<- string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Validate the last message is from user
 	if len(messages) == 0 {
 		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "messages cannot be empty", "data": {"answer": "**ERROR**: messages cannot be empty", "reference": []}}`)
@@ -397,7 +403,7 @@ func (s *ChatSessionService) CompletionStream(userID string, conversationID stri
 	}
 
 	// Perform streaming chat completion with RAG
-	resultChan, err := s.asyncChatStream(userID, dialog, session, messages, chatModelConfig, messageID, reference)
+	resultChan, err := s.asyncChatStream(ctx, userID, dialog, session, messages, chatModelConfig, messageID, reference)
 	if err != nil {
 		streamChan <- fmt.Sprintf("data: %s\n\n", fmt.Sprintf(`{"code": 500, "message": "%s", "data": {"answer": "**ERROR**: %s", "reference": []}}`, err.Error(), err.Error()))
 		return err
@@ -516,7 +522,10 @@ func (s *ChatSessionService) asyncChat(userID string, dialog *entity.Chat, sessi
 }
 
 // asyncChatStream performs streaming chat with RAG support
-func (s *ChatSessionService) asyncChatStream(userID string, dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}) (<-chan map[string]interface{}, error) {
+func (s *ChatSessionService) asyncChatStream(ctx context.Context, userID string, dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}) (<-chan map[string]interface{}, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	resultChan := make(chan map[string]interface{})
 
 	go func() {
@@ -538,7 +547,7 @@ func (s *ChatSessionService) asyncChatStream(userID string, dialog *entity.Chat,
 		}
 
 		if hasKB {
-			ragMessages, emptyResponse, err := s.messagesWithRetrievedKnowledge(context.Background(), userID, dialog, messages, reference)
+			ragMessages, ragDialog, emptyResponse, err := s.messagesWithRetrievedKnowledge(ctx, userID, dialog, messages, reference)
 			if err != nil {
 				resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
 				return
@@ -547,7 +556,7 @@ func (s *ChatSessionService) asyncChatStream(userID string, dialog *entity.Chat,
 				resultChan <- s.structureAnswer(session, *emptyResponse, messageID, session.ID, reference)
 				return
 			}
-			s.asyncChatSoloStream(dialog, session, ragMessages, config, messageID, reference, resultChan)
+			s.asyncChatSoloStream(ragDialog, session, ragMessages, config, messageID, reference, resultChan)
 			return
 		}
 
@@ -560,7 +569,7 @@ func (s *ChatSessionService) asyncChatStream(userID string, dialog *entity.Chat,
 }
 
 func (s *ChatSessionService) asyncChatWithRetrieval(ctx context.Context, userID string, dialog *entity.Chat, session *entity.ChatSession, messages []map[string]interface{}, config map[string]interface{}, messageID string, reference []interface{}, stream bool) (map[string]interface{}, error) {
-	ragMessages, emptyResponse, err := s.messagesWithRetrievedKnowledge(ctx, userID, dialog, messages, reference)
+	ragMessages, ragDialog, emptyResponse, err := s.messagesWithRetrievedKnowledge(ctx, userID, dialog, messages, reference)
 	if err != nil {
 		return nil, err
 	}
@@ -576,30 +585,33 @@ func (s *ChatSessionService) asyncChatWithRetrieval(ctx context.Context, userID 
 		}
 		return s.structureAnswerWithConv(session, ans, messageID, session.ID, reference), nil
 	}
-	return s.asyncChatSolo(dialog, session, ragMessages, config, messageID, reference, stream)
+	return s.asyncChatSolo(ragDialog, session, ragMessages, config, messageID, reference, stream)
 }
 
-func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context, userID string, dialog *entity.Chat, messages []map[string]interface{}, reference []interface{}) ([]map[string]interface{}, *string, error) {
+func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context, userID string, dialog *entity.Chat, messages []map[string]interface{}, reference []interface{}) ([]map[string]interface{}, *entity.Chat, *string, error) {
 	kbIDs := stringSliceFromJSON(dialog.KBIDs)
 	if len(kbIDs) == 0 {
-		return messages, nil, nil
+		return messages, dialog, nil, nil
 	}
 	if s.retrievalSvc == nil {
-		return nil, nil, errors.New("retrieval service is not configured")
+		return nil, nil, nil, errors.New("retrieval service is not configured")
 	}
 
 	question := latestUserQuestion(messages)
 	if question == "" {
-		return messages, nil, nil
+		return messages, dialog, nil, nil
 	}
 
 	kbs, err := s.kbDAO.GetByIDs(kbIDs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load knowledge bases: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to load knowledge bases: %w", err)
 	}
 	kbs, err = s.knowledgebasesForDialog(userID, dialog, kbIDs, kbs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	if err = validateKnowledgebaseEmbeddingModels(kbs); err != nil {
+		return nil, nil, nil, err
 	}
 
 	embeddingTenantID := kbs[0].TenantID
@@ -608,11 +620,11 @@ func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context,
 	}
 	embeddingModel, err := s.embeddingModelForKnowledgebase(embeddingTenantID, kbs[0])
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	rerankModel, err := s.rerankModelForDialog(dialog)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	top := int(dialog.TopK)
@@ -629,7 +641,7 @@ func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context,
 	baseDocIDs := docIDsFromMessages(messages)
 	docIDs, err := s.filteredDocIDsForDialog(ctx, dialog, kbIDs, question, baseDocIDs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	tenantIDs := tenantIDsFromKnowledgebases(kbs, dialog.TenantID)
 
@@ -648,7 +660,7 @@ func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context,
 		RerankModel:            rerankModel,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("retrieval search failed: %w", err)
+		return nil, nil, nil, fmt.Errorf("retrieval search failed: %w", err)
 	}
 	if retrievalResult == nil {
 		retrievalResult = &nlp.RetrievalResult{}
@@ -661,13 +673,13 @@ func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context,
 	setLatestReference(reference, chunks, retrievalResult.DocAggs)
 	knowledge := buildKnowledgeBlock(chunks)
 	if knowledge == "" {
-		return messages, emptyResponseForDialog(dialog), nil
+		return messages, dialog, emptyResponseForDialog(dialog), nil
 	}
-	if injectKnowledgeIntoDialogPrompt(dialog, knowledge) {
-		return copyMessages(messages), nil, nil
+	if ragDialog, ok := dialogWithInjectedKnowledgePrompt(dialog, knowledge); ok {
+		return copyMessages(messages), ragDialog, nil, nil
 	}
 
-	return injectKnowledge(messages, knowledge), nil, nil
+	return injectKnowledge(messages, knowledge), dialog, nil, nil
 }
 
 func (s *ChatSessionService) embeddingModelForKnowledgebase(tenantID string, kb *entity.Knowledgebase) (*modelModule.EmbeddingModel, error) {
@@ -680,6 +692,19 @@ func (s *ChatSessionService) embeddingModelForKnowledgebase(tenantID string, kb 
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 	return embeddingModel, nil
+}
+
+func validateKnowledgebaseEmbeddingModels(kbs []*entity.Knowledgebase) error {
+	if len(kbs) == 0 {
+		return nil
+	}
+	expected := strings.TrimSpace(kbs[0].EmbdID)
+	for _, kb := range kbs[1:] {
+		if strings.TrimSpace(kb.EmbdID) != expected {
+			return fmt.Errorf("knowledge bases must use the same embedding model: %s uses %q, expected %q", kb.ID, kb.EmbdID, expected)
+		}
+	}
+	return nil
 }
 
 func (s *ChatSessionService) rerankModelForDialog(dialog *entity.Chat) (*modelModule.RerankModel, error) {
@@ -724,9 +749,9 @@ func (s *ChatSessionService) filteredDocIDsForDialog(ctx context.Context, dialog
 		}
 	}
 
-	docIDs, empty := ApplyMetaDataFilter(ctx, filter, metaData, question, filterChatModel, baseDocIDs)
+	docIDs, empty := ApplyMetaDataFilter(ctx, filter, metaData, question, filterChatModel, baseDocIDs, kbIDs)
 	if empty {
-		return []string{"-999"}, nil
+		return []string{NoMatchDocIDSentinel}, nil
 	}
 	return docIDs, nil
 }
@@ -1034,19 +1059,20 @@ func textsFromContentBlocks(blocks []interface{}) []string {
 	return texts
 }
 
-func injectKnowledgeIntoDialogPrompt(dialog *entity.Chat, knowledge string) bool {
+func dialogWithInjectedKnowledgePrompt(dialog *entity.Chat, knowledge string) (*entity.Chat, bool) {
 	if dialog.PromptConfig == nil {
-		return false
+		return dialog, false
 	}
 	systemPrompt, ok := dialog.PromptConfig["system"].(string)
 	if !ok || !strings.Contains(systemPrompt, "{knowledge}") {
-		return false
+		return dialog, false
 	}
 
 	copied := cloneJSONMap(dialog.PromptConfig)
 	copied["system"] = strings.ReplaceAll(systemPrompt, "{knowledge}", knowledge)
-	dialog.PromptConfig = copied
-	return true
+	dialogCopy := *dialog
+	dialogCopy.PromptConfig = copied
+	return &dialogCopy, true
 }
 
 func cloneJSONMap(values entity.JSONMap) entity.JSONMap {
@@ -1359,7 +1385,8 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 			if ans["final"] == true && ans["answer"] != nil {
 				lastMsg["content"] = ans["answer"]
 			} else {
-				lastMsg["content"] = (lastMsg["content"].(string)) + content
+				existing, _ := lastMsg["content"].(string)
+				lastMsg["content"] = existing + content
 			}
 			lastMsg["created_at"] = float64(time.Now().Unix())
 			lastMsg["id"] = messageID

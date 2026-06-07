@@ -118,6 +118,10 @@ func (f fakeChatDocEngine) MetadataStoreExists(ctx context.Context, tenantID str
 	return true, nil
 }
 
+func (f fakeChatDocEngine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return nil, nil
+}
+
 func (f fakeChatDocEngine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
 	return nil
 }
@@ -142,7 +146,19 @@ func (f fakeChatDocEngine) GetHighlight(chunks []map[string]interface{}, keyword
 	return nil
 }
 
-func (f fakeChatDocEngine) GetDocIDs(chunks []map[string]interface{}) []string {
+func (f fakeChatDocEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
+	return nil
+}
+
+func (f fakeChatDocEngine) KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error) {
+	return nil, nil
+}
+
+func (f fakeChatDocEngine) GetScores(searchResult map[string]interface{}) map[string]float64 {
+	return nil
+}
+
+func (f fakeChatDocEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
 	return nil
 }
 
@@ -185,6 +201,15 @@ func (f fakeChatModelProvider) GetEmbeddingModel(tenantID, compositeModelName st
 func (f fakeChatModelProvider) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
 	modelName := compositeModelName
 	return modelModule.NewRerankModel(f.driver, &modelName, &modelModule.APIConfig{}), nil
+}
+
+func (f fakeChatModelProvider) GetModelConfigFromProviderInstance(tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	return f.driver, modelName, &modelModule.APIConfig{}, 0, nil
+}
+
+func (f fakeChatModelProvider) GetTenantDefaultModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	modelName := "default@factory"
+	return f.driver, modelName, &modelModule.APIConfig{}, 0, nil
 }
 
 type fakeChatModelDriver struct {
@@ -291,7 +316,10 @@ func TestAsyncChatUsesRetrievedKnowledgeForKBDialog(t *testing.T) {
 	}
 
 	reference := []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}}
-	sessionMessage, _ := json.Marshal(map[string]interface{}{"messages": []interface{}{}})
+	sessionMessage, err := json.Marshal(map[string]interface{}{"messages": []interface{}{}})
+	if err != nil {
+		t.Fatalf("failed to marshal session message: %v", err)
+	}
 	session := &entity.ChatSession{ID: "session-1", Message: sessionMessage}
 	dialog := &entity.Chat{
 		ID:                     "dialog-1",
@@ -413,7 +441,7 @@ func TestMessagesWithRetrievedKnowledgeFillsSystemPlaceholder(t *testing.T) {
 		{"role": "user", "content": "What context is available?"},
 	}
 
-	got, emptyResponse, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", dialog, messages, []interface{}{
+	got, ragDialog, emptyResponse, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", dialog, messages, []interface{}{
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 	})
 	if err != nil {
@@ -425,7 +453,11 @@ func TestMessagesWithRetrievedKnowledgeFillsSystemPlaceholder(t *testing.T) {
 	if got[0]["content"] != "What context is available?" {
 		t.Fatalf("expected user content to stay unchanged, got %q", got[0]["content"])
 	}
-	systemPrompt, _ := dialog.PromptConfig["system"].(string)
+	originalPrompt, _ := dialog.PromptConfig["system"].(string)
+	if !strings.Contains(originalPrompt, "{knowledge}") {
+		t.Fatalf("expected original dialog prompt to remain unchanged, got %q", originalPrompt)
+	}
+	systemPrompt, _ := ragDialog.PromptConfig["system"].(string)
 	if strings.Contains(systemPrompt, "{knowledge}") {
 		t.Fatalf("expected knowledge placeholder to be replaced, got %q", systemPrompt)
 	}
@@ -445,7 +477,10 @@ func TestAsyncChatReturnsEmptyResponseWhenRetrievalHasNoKnowledge(t *testing.T) 
 		retrievalSvc:     &fakeChatRetrievalService{result: &nlp.RetrievalResult{}},
 	}
 	reference := []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}}
-	sessionMessage, _ := json.Marshal(map[string]interface{}{"messages": []interface{}{}})
+	sessionMessage, err := json.Marshal(map[string]interface{}{"messages": []interface{}{}})
+	if err != nil {
+		t.Fatalf("failed to marshal session message: %v", err)
+	}
 	result, err := svc.asyncChat("user-1", &entity.Chat{
 		ID:           "dialog-1",
 		TenantID:     "tenant-1",
@@ -486,7 +521,7 @@ func TestMessagesWithRetrievedKnowledgeAppliesMetadataFilter(t *testing.T) {
 		},
 		"logic": "and",
 	}
-	_, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:             "dialog-1",
 		TenantID:       "tenant-1",
 		PromptConfig:   entity.JSONMap{},
@@ -520,7 +555,7 @@ func TestMessagesWithRetrievedKnowledgePreservesEmptyMetadataFilterMatches(t *te
 	}
 	filter := entity.JSONMap{"method": "auto"}
 
-	_, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:             "dialog-1",
 		TenantID:       "tenant-1",
 		LLMID:          "chat@factory",
@@ -535,7 +570,7 @@ func TestMessagesWithRetrievedKnowledgePreservesEmptyMetadataFilterMatches(t *te
 	if err != nil {
 		t.Fatalf("messagesWithRetrievedKnowledge returned error: %v", err)
 	}
-	if len(retrieval.req.DocIDs) != 1 || retrieval.req.DocIDs[0] != "-999" {
+	if len(retrieval.req.DocIDs) != 1 || retrieval.req.DocIDs[0] != NoMatchDocIDSentinel {
 		t.Fatalf("expected empty metadata filter sentinel, got %#v", retrieval.req.DocIDs)
 	}
 }
@@ -558,7 +593,7 @@ func TestMessagesWithRetrievedKnowledgeFailsClosedWhenMetadataUnavailable(t *tes
 		"logic": "and",
 	}
 
-	_, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:             "dialog-1",
 		TenantID:       "tenant-1",
 		PromptConfig:   entity.JSONMap{},
@@ -608,7 +643,7 @@ func TestMessagesWithRetrievedKnowledgeExpandsChildChunks(t *testing.T) {
 		retrievalSvc:     retrieval,
 	}
 
-	ragMessages, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	ragMessages, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:           "dialog-1",
 		TenantID:     "tenant-1",
 		PromptConfig: entity.JSONMap{},
@@ -644,7 +679,7 @@ func TestMessagesWithRetrievedKnowledgeRejectsCrossTenantKnowledgebase(t *testin
 		retrievalSvc:     retrieval,
 	}
 
-	_, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:           "dialog-1",
 		TenantID:     "tenant-1",
 		PromptConfig: entity.JSONMap{},
@@ -676,7 +711,7 @@ func TestMessagesWithRetrievedKnowledgeAllowsAccessibleSharedKnowledgebase(t *te
 		retrievalSvc:     retrieval,
 	}
 
-	_, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:           "dialog-1",
 		TenantID:     "tenant-1",
 		PromptConfig: entity.JSONMap{},
@@ -691,6 +726,36 @@ func TestMessagesWithRetrievedKnowledgeAllowsAccessibleSharedKnowledgebase(t *te
 	}
 	if retrieval.req == nil || len(retrieval.req.TenantIDs) != 1 || retrieval.req.TenantIDs[0] != "tenant-2" {
 		t.Fatalf("expected retrieval to use shared KB tenant, got %#v", retrieval.req)
+	}
+}
+
+func TestMessagesWithRetrievedKnowledgeRejectsMixedEmbeddingModels(t *testing.T) {
+	retrieval := &fakeChatRetrievalService{result: &nlp.RetrievalResult{}}
+	svc := &ChatSessionService{
+		kbDAO: fakeChatKBStore{kbs: []*entity.Knowledgebase{
+			{ID: "kb-1", TenantID: "tenant-1", Name: "Manual", EmbdID: "embed-a@factory"},
+			{ID: "kb-2", TenantID: "tenant-1", Name: "FAQ", EmbdID: "embed-b@factory"},
+		}},
+		modelProviderSvc: fakeChatModelProvider{driver: &fakeChatModelDriver{}},
+		metadataSvc:      fakeChatMetadataService{},
+		retrievalSvc:     retrieval,
+	}
+
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+		ID:           "dialog-1",
+		TenantID:     "tenant-1",
+		PromptConfig: entity.JSONMap{},
+		KBIDs:        entity.JSONSlice{"kb-1", "kb-2"},
+		TopN:         3,
+		TopK:         32,
+	}, []map[string]interface{}{
+		{"role": "user", "content": "question"},
+	}, []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}})
+	if err == nil || !strings.Contains(err.Error(), "same embedding model") {
+		t.Fatalf("expected mixed embedding model error, got %v", err)
+	}
+	if retrieval.req != nil {
+		t.Fatal("retrieval should not run when knowledge bases use different embedding models")
 	}
 }
 
@@ -718,7 +783,7 @@ func TestMessagesWithRetrievedKnowledgePreservesMultimodalContent(t *testing.T) 
 		}},
 	}
 
-	got, emptyResponse, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	got, _, emptyResponse, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:           "dialog-1",
 		TenantID:     "tenant-1",
 		PromptConfig: entity.JSONMap{},
@@ -763,7 +828,7 @@ func TestMessagesWithRetrievedKnowledgePassesMessageDocIDs(t *testing.T) {
 		retrievalSvc:     retrieval,
 	}
 
-	_, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
 		ID:           "dialog-1",
 		TenantID:     "tenant-1",
 		PromptConfig: entity.JSONMap{},

@@ -294,7 +294,7 @@ func (h *ChatSessionHandler) Completion(c *gin.Context) {
 		streamChan := make(chan string)
 		go func() {
 			defer close(streamChan)
-			err := h.chatSessionService.CompletionStream(userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID, streamChan)
+			err := h.chatSessionService.CompletionStream(c.Request.Context(), userID, req.ConversationID, processedMessages, req.LLMID, chatModelConfig, messageID, streamChan)
 			if err != nil {
 				streamChan <- fmt.Sprintf("data: %s\n\n", err.Error())
 			}
