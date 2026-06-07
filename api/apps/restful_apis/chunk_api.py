@@ -149,6 +149,7 @@ def _deserialize_chunk_metadata(chunk):
         try:
             chunk["chunk_metadata"] = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
+            logging.warning("chunk_metadata_kwd contains invalid JSON for chunk %s; defaulting to {}", chunk.get("id", "unknown"))
             chunk["chunk_metadata"] = {}
     elif isinstance(raw, dict):
         chunk["chunk_metadata"] = raw
@@ -459,6 +460,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 try:
                     chunk_metadata = json.loads(raw_meta)
                 except (json.JSONDecodeError, ValueError):
+                    logging.warning("chunk_metadata_kwd contains invalid JSON for chunk %s; defaulting to {}", chunk_id)
                     chunk_metadata = {}
             elif isinstance(raw_meta, dict):
                 chunk_metadata = raw_meta

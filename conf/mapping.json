@@ -22,7 +22,8 @@
       },
       "chunk_metadata_kwd": {
         "type": "keyword",
-        "store": true
+        "store": true,
+        "index": false
       }
     },
     "date_detection": "true",

@@ -37,7 +37,7 @@ class InfinityConnection(InfinityConnectionBase):
         # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
         if field_name == "source_id" or (
                 field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd",
-                                                                   "question_kwd"]):
+                                                                   "question_kwd", "chunk_metadata_kwd"]):
             return True
         return False
 
