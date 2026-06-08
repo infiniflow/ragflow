@@ -1301,6 +1301,7 @@ class EvaluationRun(DataBaseModel):
     config_snapshot = JSONField(null=False, help_text="dialog config at time of evaluation")
     metrics_summary = JSONField(null=True, help_text="aggregated metrics")
     status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED")
+    run_type = CharField(max_length=32, null=False, default="user", help_text="user or benchmark")
     created_by = CharField(max_length=32, null=False, index=True, help_text="user who started the run")
     create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
     complete_time = BigIntegerField(null=True, help_text="completion timestamp")

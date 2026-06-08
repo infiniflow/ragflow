@@ -106,10 +106,15 @@ class ContextCompressor:
     async def rolling_compress(self) -> bool:
         """Identify and compress the oldest 40% uncompressed turns for this conversation.
 
-        Uses an advisory DB lock to prevent concurrent compression of the same
-        session.  Returns True if compression was performed, False otherwise.
+        Uses a two-phase approach: read state and decide what to compress without
+        holding the lock, then call the LLM, then re-acquire the lock to persist.
+        This avoids stalling concurrent requests while waiting for the model.
+
+        Returns True if compression was performed, False otherwise.
         """
         lock_name = f"ctx_compress:{self.conv_id}"
+
+        # Phase 1: read state under lock, release before the LLM call
         with DB.lock(lock_name):
             try:
                 conv = Conversation.get_by_id(self.conv_id)
@@ -118,6 +123,7 @@ class ContextCompressor:
 
             messages: list = conv.message or []
             cursor: int = conv.compression_cursor or 0
+            existing_compressed: dict = conv.compressed_message or {}
 
             # Only consider messages after the current cursor (already-uncompressed)
             uncompressed = messages[cursor:]
@@ -130,23 +136,25 @@ class ContextCompressor:
             # Round down to nearest even number so we compress whole turn pairs
             window_size = (window_size // 2) * 2
             to_compress = messages[cursor: cursor + window_size]
+            new_cursor = cursor + window_size
 
-            summary_payload = await self.compress(to_compress)
+        # Phase 2: call LLM outside the lock to avoid blocking concurrent requests
+        summary_payload = await self.compress(to_compress)
 
-            existing = conv.compressed_message or {}
+        # Phase 3: persist under lock
+        with DB.lock(lock_name):
             merged_summary = (
-                (existing.get("summary", "") + "\n\n" + summary_payload["summary"]).strip()
-                if existing.get("summary") else summary_payload["summary"]
+                (existing_compressed.get("summary", "") + "\n\n" + summary_payload["summary"]).strip()
+                if existing_compressed.get("summary") else summary_payload["summary"]
             )
-            merged_facts = list(existing.get("key_facts", [])) + summary_payload["key_facts"]
-            merged_questions = list(existing.get("open_questions", [])) + summary_payload["open_questions"]
+            merged_facts = list(existing_compressed.get("key_facts", [])) + summary_payload["key_facts"]
+            merged_questions = list(existing_compressed.get("open_questions", [])) + summary_payload["open_questions"]
 
             new_payload = {
                 "summary": merged_summary,
                 "key_facts": merged_facts,
                 "open_questions": merged_questions,
             }
-            new_cursor = cursor + window_size
 
             Conversation.update(
                 compressed_message=new_payload,

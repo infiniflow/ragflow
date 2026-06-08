@@ -125,15 +125,18 @@ class PromptOptimisationService(CommonService):
 
         variants = cls._parse_variants(raw, n)
 
-        # Preserve placeholders: any variant missing a placeholder from the
-        # original is patched by appending the placeholder.
+        # Preserve placeholders: reject variants that are missing any placeholder
+        # from the original rather than appending them (which creates malformed prompts).
         placeholders = re.findall(r"\{[^}]+\}", prompt_text)
         validated = []
         for v in variants:
-            for ph in placeholders:
-                if ph not in v:
-                    v = v + f"\n{ph}"
-            validated.append(v)
+            if all(ph in v for ph in placeholders):
+                validated.append(v)
+            else:
+                logger.warning(
+                    "generate_variants: dropping variant missing placeholder(s) %s",
+                    [ph for ph in placeholders if ph not in v],
+                )
 
         return validated[:n]
 
@@ -204,11 +207,12 @@ class PromptOptimisationService(CommonService):
                         config_snapshot={},
                         metrics_summary=None,
                         status="RUNNING",
+                        run_type="benchmark",
                         created_by="system",
                         create_time=now,
                         complete_time=None,
                     )
-                    EvaluationService._execute_evaluation(run_id, eval_dataset_id, variant_dialog)
+                    EvaluationService.execute_evaluation(run_id, eval_dataset_id, variant_dialog)
 
                     row = EvaluationRun.get_by_id(run_id)
                     metrics = row.metrics_summary or {}
@@ -266,7 +270,6 @@ class PromptOptimisationService(CommonService):
         t = threading.Thread(
             target=cls._run_pipeline,
             args=(run_id, source_type, source_id, eval_dataset_id, n_variants),
-            daemon=True,
         )
         t.start()
         return run_id
@@ -386,10 +389,7 @@ class PromptOptimisationService(CommonService):
         variants = list(
             PromptVariant
             .select()
-            .where(
-                (PromptVariant.source_id == run.source_id) &
-                (PromptVariant.status == "candidate")
-            )
+            .where(PromptVariant.source_id == run.source_id)
             .order_by(PromptVariant.score.desc(nulls="last"))
             .dicts()
         )

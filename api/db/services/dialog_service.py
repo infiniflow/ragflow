@@ -59,12 +59,15 @@ def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
 
 
-def _tally_tokens(kwargs: dict, prompt_tokens: int, answer: str) -> None:
+def _tally_tokens(kwargs: dict, question: str, answer: str) -> None:
     conv_id = kwargs.get("_conv_id")
     if not conv_id:
         return
     try:
-        delta = prompt_tokens + num_tokens_from_string(answer)
+        # Only charge for tokens actually produced this turn: the new answer
+        # tokens plus the user's question tokens, NOT the full packed prompt
+        # history which would double-count prior turns.
+        delta = num_tokens_from_string(question) + num_tokens_from_string(answer)
         from api.db.services.conversation_service import ConversationService
         ConversationService.increment_token_tally(conv_id, delta)
     except Exception as e:
@@ -781,6 +784,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # Context compression: roll up oldest turns when token budget is tight
     _conv_id = kwargs.get("_conv_id")
     _compression_cfg = prompt_config.get("context_compression", {})
+    _summary_msg = None
     if _conv_id and _compression_cfg.get("enabled"):
         try:
             from api.db.services.context_compressor import ContextCompressor
@@ -791,12 +795,40 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             _compressor = ContextCompressor(_conv_id, chat_mdl, _ctx_limit, _threshold)
             if _compressor.should_compress(_tally):
                 await _compressor.rolling_compress()
+                # Re-read compression state but keep in-flight messages (not yet
+                # committed to DB) so the latest user turn is never lost.
                 _conv = ConversationService.get_by_id(_conv_id)[1]
-                messages = _compressor.get_effective_history(_conv)
+                _new_cursor = _conv.compression_cursor or 0
+                _compressed = _conv.compressed_message
+                if _compressed:
+                    _parts = [_compressed.get("summary", "")]
+                    _kf = _compressed.get("key_facts", [])
+                    if _kf:
+                        _parts.append("Key facts established:\n" + "\n".join(f"- {f}" for f in _kf))
+                    _oq = _compressed.get("open_questions", [])
+                    if _oq:
+                        _parts.append("Open questions:\n" + "\n".join(f"- {q}" for q in _oq))
+                    _summary_msg = {
+                        "role": "assistant",
+                        "content": "[Earlier conversation summary]\n\n" + "\n\n".join(_parts),
+                        "_is_summary": True,
+                    }
+                # Only keep messages from the new cursor onward; the current
+                # `messages` argument already contains the latest in-flight turn.
+                messages = messages[_new_cursor:]
         except Exception as _ce:
             logging.warning("Context compression failed for conv %s: %s", _conv_id, _ce)
 
-    msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
+    # Build the outgoing message list; preserve synthetic summary (role=assistant
+    # with _is_summary marker) and exclude other system-role artefacts.
+    def _should_include(m):
+        if m.get("_is_summary"):
+            return True
+        return m["role"] != "system"
+
+    if _summary_msg:
+        msg.append({"role": _summary_msg["role"], "content": _summary_msg["content"]})
+    msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if _should_include(m)])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
@@ -863,7 +895,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         generate_result_time_cost = (finish_chat_ts - retrieval_ts) * 1000
 
         tk_num = num_tokens_from_string(think + answer)
-        _tally_tokens(kwargs, used_token_count, think + answer)
+        _tally_tokens(kwargs, questions[-1] if questions else "", think + answer)
         prompt += "\n\n### Query:\n%s" % " ".join(questions)
         prompt = (
             f"{prompt}\n\n"

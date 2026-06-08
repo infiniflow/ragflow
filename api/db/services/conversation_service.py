@@ -81,8 +81,9 @@ class ConversationService(CommonService):
     @classmethod
     @DB.connection_context()
     def increment_token_tally(cls, conv_id: str, delta: int) -> None:
+        from peewee import fn
         cls.model.update(
-            token_tally=cls.model.token_tally + delta
+            token_tally=fn.COALESCE(cls.model.token_tally, 0) + delta
         ).where(cls.model.id == conv_id).execute()
 
     @classmethod

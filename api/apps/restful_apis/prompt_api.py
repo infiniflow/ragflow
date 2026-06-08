@@ -56,7 +56,10 @@ async def start_optimise(chat_id):
 
         req = await request.get_json(force=True) or {}
         eval_dataset_id = req.get("eval_dataset_id")
-        n_variants = int(req.get("n_variants", 5))
+        try:
+            n_variants = int(req.get("n_variants", 5))
+        except (TypeError, ValueError):
+            return get_data_error_result(message="`n_variants` must be an integer.")
         if n_variants < 1 or n_variants > 10:
             return get_data_error_result(message="`n_variants` must be between 1 and 10.")
 

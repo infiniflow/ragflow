@@ -305,7 +305,7 @@ class EvaluationService(CommonService):
 
             # Execute evaluation asynchronously (in production, use task queue)
             # For now, we'll execute synchronously
-            cls._execute_evaluation(run_id, dataset_id, dialog)
+            cls.execute_evaluation(run_id, dataset_id, dialog)
 
             return True, run_id
         except Exception as e:
@@ -313,7 +313,7 @@ class EvaluationService(CommonService):
             return False, str(e)
 
     @classmethod
-    def _execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
+    def execute_evaluation(cls, run_id: str, dataset_id: str, dialog: Any):
         """
         Execute evaluation for all test cases.
 
