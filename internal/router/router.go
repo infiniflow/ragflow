@@ -42,7 +42,7 @@ type Router struct {
 	skillSearchHandler      *handler.SkillSearchHandler
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
-	relatedQuestionsHandler *handler.SearchbotHandler
+	searchBotHandler      *handler.SearchBotHandler
 	difyRetrievalHandler    *handler.DifyRetrievalHandler
 	pluginHandler           *handler.PluginHandler
 }
@@ -68,7 +68,7 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
-	relatedQuestionsHandler *handler.SearchbotHandler,
+	searchBotHandler *handler.SearchBotHandler,
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 ) *Router {
@@ -92,7 +92,7 @@ func NewRouter(
 		skillSearchHandler:      skillSearchHandler,
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
-		relatedQuestionsHandler: relatedQuestionsHandler,
+		searchBotHandler:      searchBotHandler,
 		difyRetrievalHandler:    difyRetrievalHandler,
 		pluginHandler:           pluginHandler,
 	}
@@ -226,7 +226,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.relatedQuestionsHandler.Handle)
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
