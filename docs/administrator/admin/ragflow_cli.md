@@ -16,6 +16,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
+   pip install ragflow-cli==0.25.4
    pip install ragflow-cli==0.25.6
    ```
 
@@ -26,7 +27,7 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
    ```
 
     You will be prompted to enter the superuser's password to log in.
-    The default password is admin.
+    The default password is `admin`.
 
     **Parameters:**
     
@@ -38,6 +39,10 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 
 - Username: admin@ragflow.io
 - Password: admin
+
+:::warning Security notice
+The default credentials are intended for initial bootstrap only. **Change the admin password immediately after first login** before exposing the service to any network. In production, always place the admin service behind a firewall or VPN — it should never be directly accessible from the public internet.
+:::
 
 ## Supported Commands
 
@@ -535,7 +540,7 @@ ragflow> list envs;
 | env                     | value            |
 +-------------------------+------------------+
 | DOC_ENGINE              | elasticsearch    |
-| DEFAULT_SUPERUSER_EMAIL | admin@ragflow.io |
+| DEFAULT_SUPERUSER_EMAIL | admin@example.com |
 | DB_TYPE                 | mysql            |
 | DEVICE                  | cpu              |
 | STORAGE_IMPL            | MINIO            |

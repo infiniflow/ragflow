@@ -1594,9 +1594,6 @@ func (s *Service) GetAllEnvironments() ([]map[string]interface{}, error) {
 
 	// DEFAULT_SUPERUSER_EMAIL
 	defaultSuperuserEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
-	if defaultSuperuserEmail == "" {
-		defaultSuperuserEmail = "admin@ragflow.io"
-	}
 	result = append(result, map[string]interface{}{
 		"env":   "DEFAULT_SUPERUSER_EMAIL",
 		"value": defaultSuperuserEmail,
@@ -1709,10 +1706,23 @@ func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
 // InitDefaultAdmin initialize default admin user
 // This matches Python's init_default_admin behavior
 func (s *Service) InitDefaultAdmin() error {
-	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
-	defaultNickname := "admin"
-	defaultEmail := "admin@ragflow.io"
-	defaultPassword := "admin"
+	defaultEmail := os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+	if defaultEmail == "" {
+		defaultEmail = "admin@ragflow.io"
+	}
+	defaultPassword := os.Getenv("DEFAULT_SUPERUSER_PASSWORD")
+	if defaultPassword == "" {
+		defaultPassword = "admin"
+	}
+	defaultNickname := os.Getenv("DEFAULT_SUPERUSER_NICKNAME")
+	if defaultNickname == "" {
+		defaultNickname = "admin"
+	}
+
+	if defaultEmail == "admin@ragflow.io" || defaultPassword == "admin" {
+		zap.L().Warn("RAGFlow is using default admin credentials. " +
+			"Change the admin password immediately after first login and place the admin service behind a firewall.")
+	}
 
 	// Query superusers
 	var users []*entity.User
@@ -1722,6 +1732,8 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
+		now := time.Now().Unix()
+		nowDate := time.Now().Truncate(time.Second)
 		userID := utility.GenerateToken()
 		accessToken := utility.GenerateToken()
 		status := "1"
@@ -1748,6 +1760,12 @@ func (s *Service) InitDefaultAdmin() error {
 			IsAnonymous:     "0",
 			LoginChannel:    &loginChannel,
 			IsSuperuser:     &isSuperuser,
+			BaseModel: entity.BaseModel{
+				CreateTime: &now,
+				CreateDate: &nowDate,
+				UpdateTime: &now,
+				UpdateDate: &nowDate,
+			},
 		}
 
 		if err := dao.DB.Create(user).Error; err != nil {

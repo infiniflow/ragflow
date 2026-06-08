@@ -3,7 +3,7 @@
 ## One-line command (run everything)
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin PW_FIXTURE_DEBUG=1 uv run pytest -q test/playwright -s --junitxml=/tmp/playwright-full.xml
+BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD=admin_pass_1234 PW_FIXTURE_DEBUG=1 uv run pytest -q test/playwright -s --junitxml=/tmp/playwright-full.xml
 ```
 
 ## Common commands
@@ -11,25 +11,25 @@ BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWO
 Run smoke subset:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright -m smoke -s --junitxml=/tmp/playwright-smoke.xml
+BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD=admin_pass_1234 uv run pytest -q test/playwright -m smoke -s --junitxml=/tmp/playwright-smoke.xml
 ```
 
 Run full suite:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright -s --junitxml=/tmp/playwright-full.xml
+BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD=admin_pass_1234 uv run pytest -q test/playwright -s --junitxml=/tmp/playwright-full.xml
 ```
 
 Run one file in isolation:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright/e2e/test_next_apps_agent.py -s --junitxml=/tmp/playwright-agent.xml
+BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD=admin_pass_1234 uv run pytest -q test/playwright/e2e/test_next_apps_agent.py -s --junitxml=/tmp/playwright-agent.xml
 ```
 
 Run one test case in isolation:
 
 ```bash
-BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@ragflow.io E2E_ADMIN_PASSWORD=admin uv run pytest -q test/playwright/e2e/test_next_apps_chat.py::test_chat_create_select_dataset_and_receive_answer_flow -s -x --junitxml=/tmp/playwright-chat-one.xml
+BASE_URL=http://localhost:9222 E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD=admin_pass_1234 uv run pytest -q test/playwright/e2e/test_next_apps_chat.py::test_chat_create_select_dataset_and_receive_answer_flow -s -x --junitxml=/tmp/playwright-chat-one.xml
 ```
 
 ## Argument reference

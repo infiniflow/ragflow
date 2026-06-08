@@ -307,7 +307,10 @@ func ParseConnectionArgs(args []string) (*ConnectionArgs, error) {
 	if result.AdminMode {
 		result.APIToken = ""
 		if result.UserName == "" {
-			result.UserName = "admin@ragflow.io"
+			result.UserName = os.Getenv("DEFAULT_SUPERUSER_EMAIL")
+			if result.UserName == "" {
+				result.UserName = "admin@ragflow.io"
+			}
 			result.Password = ""
 		}
 	} else {
