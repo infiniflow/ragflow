@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
+
 import aiohttp
 from abc import ABC
 
@@ -27,8 +29,10 @@ class Base(ABC):
     def _get_api_key(self):
         return self.api_key
 
+    _VERSION_SUFFIX_RE = re.compile(r"/v\d+$")
+
     def _normalize_base_url(self):
-        """Strip trailing /v1 (and optional slash) so URL construction is consistent.
+        """Strip trailing version suffix (e.g. /v1, /v2, /v3) so URL construction is consistent.
 
         Some callers pass ``http://host:port`` while others include ``/v1``.
         Stripping the suffix here lets every subclass append its own path
@@ -37,8 +41,7 @@ class Base(ABC):
         if not self.base_url:
             return ""
         url = self.base_url.rstrip("/")
-        if url.endswith("/v1"):
-            url = url[:-3]
+        url = self._VERSION_SUFFIX_RE.sub("", url)
         return url.rstrip("/")
 
     def _get_model_list_url(self):
