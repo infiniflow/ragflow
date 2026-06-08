@@ -153,28 +153,64 @@ class Xinference(Base):
 
 
 class LocalAI(Base):
+    """LocalAI exposes Ollama-compatible /api/tags and /api/show endpoints.
+
+    ``GET /api/tags`` returns model list with capabilities (completion, embedding, vision, tools, thinking).
+    ``POST /api/show`` returns ``model_info`` containing ``general.context_length``.
+    """
+
     _FACTORY_NAME = "LocalAI"
 
-    def _get_model_list_url(self):
-        if not self.base_url:
-            return None
-        return self.base_url.rstrip("/") + "/v1/models"
+    def _get_model_tags_url(self):
+        return self.base_url.rstrip("/") + "/api/tags"
 
-    def _format_model_list(self, raw_model_list):
-        """LocalAI exposes an OpenAI-compatible /v1/models endpoint."""
-        data = raw_model_list.get("data", [])
-        if not data:
+    def _get_model_detail_url(self):
+        return self.base_url.rstrip("/") + "/api/show"
+
+    async def get_model_list(self):
+        if not self.base_url:
             return []
-        return [
-            {
-                "name": model.get("id", ""),
-                "model_types": [LLMType.CHAT.value],
-                "features": None,
-                "max_tokens": 8192,
+        headers = {}
+        if self.api_key:
+            headers.update({"Authorization": f"Bearer {self._get_api_key()}"})
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self._get_model_tags_url(), headers=headers) as resp:
+                if resp.status != 200:
+                    return []
+                tags = await resp.json()
+                models = tags.get("models", [])
+                if not models:
+                    return []
+            res = []
+            capability_to_model_type_mapping = {
+                "completion": LLMType.CHAT.value,
+                "vision": LLMType.IMAGE2TEXT.value,
+                "embedding": LLMType.EMBEDDING.value,
             }
-            for model in data
-            if model.get("id")
-        ]
+            capability_to_feature_mapping = {
+                "thinking": "thinking",
+                "tools": "is_tools",
+            }
+
+            for model in models:
+                async with session.post(
+                    self._get_model_detail_url(),
+                    headers=headers,
+                    json={"model": model["name"]},
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    model_info = await resp.json()
+                    context_length = model_info.get("model_info", {}).get("general.context_length", 8192)
+                    res.append(
+                        {
+                            "name": model["name"],
+                            "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
+                            "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
+                            "max_tokens": context_length or 8192,
+                        }
+                    )
+        return res
 
 
 class BaiduYiyan(Base):
