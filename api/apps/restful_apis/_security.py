@@ -48,9 +48,15 @@ async def _validate_max_body_size(security_cfg):
     if limit > MAX_LIMIT:
         raise Exception("max_body_size exceeds maximum allowed size (10MB)")
 
-    content_length = request.content_length or 0
-    if content_length > limit:
-        raise Exception(f"Request body too large: {content_length} > {limit}")
+    content_length = request.content_length
+    if content_length is not None:
+        if content_length > limit:
+            raise Exception(f"Request body too large: {content_length} > {limit}")
+    else:
+        # Content-Length absent (e.g. chunked transfer encoding) — read body to enforce limit.
+        body = await request.get_data()
+        if len(body) > limit:
+            raise Exception(f"Request body too large: {len(body)} > {limit}")
 
 
 def _validate_ip_whitelist(security_cfg):
@@ -60,6 +66,8 @@ def _validate_ip_whitelist(security_cfg):
         return
 
     client_ip = request.remote_addr
+    if not client_ip:
+        raise Exception("Unable to determine client IP address")
 
     for rule in whitelist:
         if "/" in rule:
@@ -127,8 +135,11 @@ def _validate_token_auth(security_cfg):
     header = token_cfg.get("token_header")
     token_value = token_cfg.get("token_value")
 
+    if not header or not token_value:
+        raise Exception("Token auth is misconfigured: token_header and token_value are required")
+
     provided = request.headers.get(header)
-    if provided != token_value:
+    if not provided or provided != token_value:
         raise Exception("Invalid token authentication")
 
 
