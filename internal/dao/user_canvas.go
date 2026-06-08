@@ -200,3 +200,9 @@ func (dao *UserCanvasDAO) GetAllCanvasIDsByUserID(userID string) ([]string, erro
 		Pluck("id", &canvasIDs).Error
 	return canvasIDs, err
 }
+
+// UpdateTags updates a canvas's comma-separated tags by canvas ID.
+func (dao *UserCanvasDAO) UpdateTags(canvasID, tags string) (int64, error) {
+	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("tags", tags)
+	return result.RowsAffected, result.Error
+}

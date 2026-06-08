@@ -199,7 +199,7 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
 
 @manager.route("/providers/<provider_name>/models", methods=["GET"])  # noqa: F821
 @login_required
-def list_provider_models(provider_name: str):
+async def list_provider_models(provider_name: str):
     """
     List models for a provider.
     ---
@@ -230,7 +230,9 @@ def list_provider_models(provider_name: str):
                 type: object
     """
     try:
-        success, result = provider_api_service.list_provider_models(provider_name)
+        api_key = request.args.get("api_key")
+        base_url = request.args.get("base_url")
+        success, result = await provider_api_service.list_provider_models(provider_name, api_key, base_url)
         if success:
             return get_result(data=result)
         else:
@@ -321,6 +323,12 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
             api_key:
               type: string
               description: API key.
+            region:
+              type: string
+              description: Region.
+            model_info:
+              type: object
+              description: Model info.
     responses:
       200:
         description: Instance created successfully.
@@ -335,9 +343,78 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
     api_key = data["api_key"]
     base_url = data.get("base_url", "")
     region = data.get("region", "")
+    model_info = data.get("model_info", [])
 
     try:
-        success, msg = provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key, base_url, region)
+        success, msg = await provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key, base_url, region, model_info)
+        if success:
+            return get_result(message=msg)
+        else:
+            return get_error_data_result(message=msg)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/providers/<provider_name>/connection", methods=["POST"])  # noqa: F821
+@login_required
+async def verify_provider_api_key(provider_name: str = None):
+    """
+    Verify api key.
+    ---
+    tags:
+      - Providers
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: provider_name
+        type: string
+        required: true
+        description: Provider name.
+      - in: header
+        name: Authorization
+        type: string
+        required: true
+        description: Bearer token for authentication.
+      - in: body
+        name: body
+        description: Instance creation parameters.
+        required: true
+        schema:
+          type: object
+          required:
+            - api_key
+          properties:
+            api_key:
+              type: string
+              description: API key.
+            base_url:
+              type: string
+              description: Base URL.
+            region:
+              type: string
+              description: Region.
+            model_info:
+              type: object
+              description: Model info.
+    responses:
+      200:
+        description: Instance created successfully.
+        schema:
+          type: object
+    """
+    data = await request.get_json()
+    if not data or "api_key" not in data:
+        return get_error_argument_result(message="api_key is required")
+
+    base_url = data.get("base_url", "")
+    api_key = data["api_key"]
+    region = data.get("region", "default")
+    model_info = data.get("model_info", [])
+
+    try:
+        success, msg = await provider_api_service.verify_api_key(provider_name, api_key, base_url, region, model_info)
         if success:
             return get_result(message=msg)
         else:

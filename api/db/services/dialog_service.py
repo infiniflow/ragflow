@@ -1448,6 +1448,7 @@ class _ThinkStreamState:
         self.last_model_full = ""
         self.in_think = False
         self.buffer = ""
+        self.post_think_text = ""
 
 
 def _extract_visible_answer(text: str) -> str:
@@ -1481,6 +1482,10 @@ def _next_think_delta(state: _ThinkStreamState) -> str:
         state.endswith_think = True
     elif state.endswith_think:
         state.endswith_think = False
+        remainder = delta_ans[len("</think>") :]
+        if remainder:
+            state.post_think_text = remainder
+        state.last_idx = len(full_text)
         return "</think>"
 
     state.last_idx = len(full_text)
@@ -1516,6 +1521,12 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 state.buffer = ""
             state.in_think = delta == "<think>"
             yield ("marker", delta, state)
+            if delta == "</think>" and state.post_think_text:
+                state.buffer += state.post_think_text
+                state.post_think_text = ""
+                if num_tokens_from_string(state.buffer) >= min_tokens:
+                    yield ("text", state.buffer, state)
+                    state.buffer = ""
             continue
         state.buffer += delta
         if num_tokens_from_string(state.buffer) < min_tokens:
@@ -1526,6 +1537,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
     if state.buffer:
         yield ("text", state.buffer, state)
         state.buffer = ""
+    if state.post_think_text:
+        yield ("text", state.post_think_text, state)
+        state.post_think_text = ""
     if state.endswith_think:
         yield ("marker", "</think>", state)
 
