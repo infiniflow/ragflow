@@ -128,6 +128,18 @@ func (s *SiliconflowModel) ChatWithMessages(modelName string, messages []Message
 		if chatModelConfig.Stop != nil {
 			reqBody["stop"] = *chatModelConfig.Stop
 		}
+
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
+			}
+		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
