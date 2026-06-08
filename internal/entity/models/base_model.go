@@ -41,6 +41,19 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 	return nil
 }
 
+// BearerAuth returns the Bearer token for Authorization header,
+// or empty string if apiConfig or its ApiKey is nil/empty.
+func BearerAuth(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	if key == "" {
+		return ""
+	}
+	return fmt.Sprintf("Bearer %s", key)
+}
+
 func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	if apiConfig != nil && apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
 		return strings.TrimSuffix(*apiConfig.BaseURL, "/"), nil

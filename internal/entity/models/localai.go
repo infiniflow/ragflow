@@ -147,8 +147,8 @@ func (l *LocalAIModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
@@ -271,8 +271,8 @@ func (l *LocalAIModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
@@ -440,8 +440,8 @@ func (l *LocalAIModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
@@ -545,8 +545,8 @@ func (l *LocalAIModel) Rerank(modelName *string, query string, documents []strin
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := l.baseModel.httpClient.Do(req)
@@ -603,8 +603,8 @@ func (l *LocalAIModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := l.baseModel.httpClient.Do(req)

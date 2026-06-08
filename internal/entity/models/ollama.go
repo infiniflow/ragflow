@@ -381,8 +381,8 @@ func (o *OllamaModel) Embed(modelName *string, texts []string, apiConfig *APICon
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := o.baseModel.httpClient.Do(req)

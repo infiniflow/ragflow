@@ -176,8 +176,8 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
 
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
 	}
 
 	resp, err := p.baseModel.httpClient.Do(req)
@@ -212,9 +212,9 @@ func (p *PaddleOCRModel) OCRFile(modelName *string, content []byte, fileURL *str
 		}
 
 		pollReq, _ := http.NewRequestWithContext(ctx, "GET", pollUrl, nil)
-		if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-			pollReq.Header.Set("Authorization", fmt.Sprintf("bearer %s", *apiConfig.ApiKey))
-		}
+			if auth := BearerAuth(apiConfig); auth != "" {
+				pollReq.Header.Set("Authorization", auth)
+			}
 
 		pollResp, err := p.baseModel.httpClient.Do(pollReq)
 		if err != nil {
