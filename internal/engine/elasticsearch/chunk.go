@@ -2031,6 +2031,32 @@ func getDefaultSkillMapping() map[string]interface{} {
 	}
 }
 
+// rerankWindow returns the candidate-window size shared by retrieval's
+// block fetch and slice. Mirrors Dealer._rerank_window in rag/nlp/search.py.
+//
+// `size` is the per-page size; the window MUST be an exact multiple of it,
+// otherwise the block fetched (offset // window) and the in-block page slice
+// (offset % window) drift apart and deep pagination silently drops results.
+//
+// The window targets a provider-friendly pool of ~64 candidates, bounded by
+// `topK` when given (i.e. when an external reranker is active), and is always
+// rounded UP to a whole number of pages to preserve the alignment invariant.
+func rerankWindow(size, topK int) int {
+	if size <= 1 {
+		if topK > 0 {
+			return min(30, topK)
+		}
+		return 30
+	}
+	window := ((64 + size - 1) / size) * size // ceil(64/size) * size
+	if topK > 0 {
+		if aligned := ((topK + size - 1) / size) * size; window > aligned {
+			window = aligned
+		}
+	}
+	return window
+}
+
 // calculatePagination calculates offset and limit based on page, size and topK
 func calculatePagination(page, size, topK int) (int, int) {
 	if page < 1 {
@@ -2043,99 +2069,14 @@ func calculatePagination(page, size, topK int) (int, int) {
 		topK = 1024
 	}
 
-	RERANK_LIMIT := max(30, (64/size)*size)
-	if RERANK_LIMIT < size {
-		RERANK_LIMIT = size
-	}
-	if RERANK_LIMIT > topK {
-		RERANK_LIMIT = topK
-	}
+	window := rerankWindow(size, topK)
 
-	offset := (page - 1) * RERANK_LIMIT
+	offset := (page - 1) * window
 	if offset < 0 {
 		offset = 0
 	}
 
-	return offset, RERANK_LIMIT
-}
-
-// buildFilterClauses builds ES filter clauses from kb_ids and available_int
-// Reference: rag/utils/es_conn.py L60-L78
-// When available=0: available_int < 1
-// When available!=0: NOT (available_int < 1)
-func buildFilterClauses(datasetIDs []string, available int) []map[string]interface{} {
-	var filters []map[string]interface{}
-
-	if len(datasetIDs) > 0 {
-		filters = append(filters, map[string]interface{}{
-			"terms": map[string]interface{}{"kb_id": datasetIDs},
-		})
-	}
-
-	// Add available_int filter
-	// Reference: rag/utils/es_conn.py L63-L68
-	if available == 0 {
-		// available_int < 1
-		filters = append(filters, map[string]interface{}{
-			"range": map[string]interface{}{
-				"available_int": map[string]interface{}{
-					"lt": 1,
-				},
-			},
-		})
-	} else {
-		// must_not: available_int < 1 (i.e., available_int >= 1)
-		filters = append(filters, map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must_not": []map[string]interface{}{
-					{
-						"range": map[string]interface{}{
-							"available_int": map[string]interface{}{
-								"lt": 1,
-							},
-						},
-					},
-				},
-			},
-		})
-	}
-
-	return filters
-}
-
-// buildSkillFilterClauses builds ES filter clauses for skill index
-// Skill index uses 'status' field instead of 'available_int'
-func buildSkillFilterClauses() []map[string]interface{} {
-	// Filter for active skills (status = "1")
-	return []map[string]interface{}{
-		{
-			"term": map[string]interface{}{
-				"status": "1",
-			},
-		},
-	}
-}
-
-// buildFilterFromMap converts a generic filter map to ES filter clauses
-func buildFilterFromMap(filter map[string]interface{}) []map[string]interface{} {
-	var filters []map[string]interface{}
-	for field, value := range filter {
-		switch v := value.(type) {
-		case []string:
-			filters = append(filters, map[string]interface{}{
-				"terms": map[string]interface{}{field: v},
-			})
-		case []interface{}:
-			filters = append(filters, map[string]interface{}{
-				"terms": map[string]interface{}{field: v},
-			})
-		default:
-			filters = append(filters, map[string]interface{}{
-				"term": map[string]interface{}{field: v},
-			})
-		}
-	}
-	return filters
+	return offset, window
 }
 
 // convertESResponse converts ES SearchResponse to unified chunks format

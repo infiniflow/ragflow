@@ -164,6 +164,16 @@ func RerankByModel(
 		}
 	}
 
+	// Reranker drivers do not agree on a score scale: Cohere/Jina/Voyage emit
+	// calibrated [0, 1] relevance scores, but NVIDIA returns raw, often
+	// negative logits. The hybrid blend below (tkWeight * tksim + vtWeight *
+	// modelSim) lives on a fixed [0, 1] scale, so an un-normalized logit
+	// weighted by vtWeight=0.7 can sink a relevant chunk below pure keyword
+	// matches and dominate the blend. Centralize the normalization here so
+	// every provider contributes on the same scale. See
+	// NormalizeRerankScores for the contract.
+	modelSim = NormalizeRerankScores(modelSim)
+
 	// Combine token similarity with model similarity
 	// Model similarity is treated as vector similarity component
 	sim = make([]float64, len(insTw))
@@ -177,6 +187,68 @@ func RerankByModel(
 
 	common.Info("RerankByModel completed")
 	return sim, tsim, modelSim
+}
+
+// NormalizeRerankScores rescales reranker scores into [0, 1] for the
+// hybrid blend in RerankByModel. Mirrors the contract enforced by
+// Base.similarity / _normalize_rank in rag/llm/rerank_model.py.
+//
+// Providers that already return calibrated [0, 1] relevance scores
+// (Cohere, Jina, Voyage, ...) are returned unchanged, so
+// similarity_threshold filtering and reported vector_similarity keep
+// their absolute magnitudes. Only out-of-range output (e.g. NVIDIA's
+// unbounded, often negative logits) is rescaled: a batch with usable
+// spread is min-max mapped onto [0, 1] (which stops a negative logit
+// from dragging a relevant chunk below pure keyword matches once
+// weighted by vtweight), while a spreadless batch (including a single
+// candidate) is clamped per element so a lone high score is not silently
+// zeroed and no NaN leaks into the blend.
+//
+// An empty input is returned verbatim. Mutates the input slice in place
+// to keep the RerankByModel call site allocation-free; the returned
+// slice is the same backing array.
+func NormalizeRerankScores(scores []float64) []float64 {
+	n := len(scores)
+	if n == 0 {
+		return scores
+	}
+	minScore := scores[0]
+	maxScore := scores[0]
+	for _, s := range scores[1:] {
+		if s < minScore {
+			minScore = s
+		}
+		if s > maxScore {
+			maxScore = s
+		}
+	}
+
+	// Already in [0, 1]? Keep absolute magnitudes so calibrated providers
+	// and degenerate (but valid) batches are NOT collapsed to zero.
+	if minScore >= 0.0 && maxScore <= 1.0 {
+		return scores
+	}
+
+	// Spreadless out-of-range batch: clamp per element instead of
+	// collapsing to zero or dividing by ~0.
+	span := maxScore - minScore
+	if span < 1e-3 {
+		for i, s := range scores {
+			if s < 0.0 {
+				scores[i] = 0.0
+			} else if s > 1.0 {
+				scores[i] = 1.0
+			}
+		}
+		return scores
+	}
+
+	// Min-max rescale onto [0, 1].
+	invSpan := 1.0 / span
+	for i, s := range scores {
+		scores[i] = (s - minScore) * invSpan
+	}
+	return scores
 }
 
 // RerankStandard performs standard reranking without a reranker model
