@@ -157,7 +157,17 @@ func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
 	})
 }
 
-// Get retrieves a chunk by ID
+// Get retrieves a chunk by ID.
+// @Summary Get Chunk
+// @Description Retrieve a single chunk by its ID.
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param dataset_id path string true "Dataset ID"
+// @Param document_id path string true "Document ID"
+// @Param chunk_id path string true "Chunk ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [get]
 func (h *ChunkHandler) Get(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -194,7 +204,15 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	})
 }
 
-// List retrieves chunks for a document
+// List retrieves chunks for a document.
+// @Summary List Chunks
+// @Description Retrieve paginated chunks for a document with optional filtering.
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param request body service.ListChunksRequest true "List chunks parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/chunk/list [post]
 func (h *ChunkHandler) List(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

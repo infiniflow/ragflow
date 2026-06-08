@@ -17,7 +17,6 @@
 package service
 
 import (
-	"sort"
 	"testing"
 
 	"ragflow/internal/common"

@@ -183,7 +183,15 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 	})
 }
 
-// RetrievalTest handles POST /api/v1/searchbots/retrieval_test.
+// RetrievalTest performs a retrieval test against specified knowledge bases.
+// @Summary Retrieval Test
+// @Description Test document retrieval across knowledge bases with optional filters, reranking, and KG search.
+// @Tags searchbots
+// @Accept json
+// @Produce json
+// @Param request body SearchBotRetrievalTestRequest true "Retrieval test parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/retrieval_test [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
