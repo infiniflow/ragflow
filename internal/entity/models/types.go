@@ -130,9 +130,10 @@ type ChatConfig struct {
 }
 
 type APIConfig struct {
-	ApiKey  *string
-	Region  *string
-	BaseURL *string
+	ApiKey        *string
+	Region        *string
+	BaseURL       *string
+	ProviderClass *string
 }
 
 type EmbeddingConfig struct {
