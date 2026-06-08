@@ -141,6 +141,14 @@ jobs:
             sudo docker rm -f -v "${BUILDER_CONTAINER}"
           fi
 
+      - name: Run go test
+        run: |
+          # `go build` (above) never compiles _test.go files, so missing imports
+          # or type errors in test code slip through CI. `go test` compiles and
+          # runs them. CGO_ENABLED=1 + the C++ static library built in the step
+          # above are required to link the tokenizer bindings, same as the build.
+          GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 go test -count=1 ./internal/...
+
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
