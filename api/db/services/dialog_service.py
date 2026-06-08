@@ -1472,9 +1472,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
             return None
         state.answer_buffer += text
         if num_tokens_from_string(state.answer_buffer) >= min_tokens:
-                out = state.answer_buffer
-                state.answer_buffer = ""
-                return out
+            out = state.answer_buffer
+            state.answer_buffer = ""
+            return out
         return None
 
     def _flush_think_buffer():
