@@ -287,7 +287,18 @@ async def add_llm():
         api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "MinerU":
-        api_key = apikey_json(["api_key", "provider_order"])
+        if isinstance(req.get("api_key"), dict):
+            structured_api_key = req.get("api_key") or {}
+            logging.info(
+                "add_llm: MinerU structured api_key received keys=%s has_mineru_fields=%s",
+                sorted(structured_api_key.keys()),
+                any(k.startswith("mineru_") for k in structured_api_key.keys()),
+            )
+            api_key = json.dumps(structured_api_key)
+        else:
+            # Keep the legacy provider_order field for existing clients while
+            # still accepting the new structured api_key payload above.
+            api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "PaddleOCR":
         api_key = apikey_json(["api_key", "provider_order"])
