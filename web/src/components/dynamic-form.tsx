@@ -68,7 +68,7 @@ export interface FormFieldConfig {
   hidden?: boolean;
   required?: boolean;
   placeholder?: string;
-  options?: { label: string; value: string }[];
+  options?: { label: string; value: string | boolean | number }[];
   defaultValue?: any;
   validation?: {
     pattern?: RegExp;
