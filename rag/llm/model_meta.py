@@ -78,20 +78,25 @@ class VolcEngine(Base):
         res = []
         for model in serving_model:
 
-            modalities = model.get("modalities", {})
-            input_modalities = modalities.get("input_modalities", [])
-            output_modalities = modalities.get("output_modalities", [])
             model_types = []
-            if "text" in output_modalities:
-                model_types.append(LLMType.CHAT.value)
-            if "embeddings" in output_modalities:
+
+            if model.get("domain", "") == "Embedding":
                 model_types.append(LLMType.EMBEDDING.value)
-            if "image" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.IMAGE2TEXT.value)
-            if "audio" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.SPEECH2TEXT.value)
-            if "audio" in output_modalities:
-                model_types.append(LLMType.TTS.value)
+            else:
+                modalities = model.get("modalities", {})
+                input_modalities = modalities.get("input_modalities", [])
+                output_modalities = modalities.get("output_modalities", [])
+
+                if "text" in output_modalities:
+                    model_types.append(LLMType.CHAT.value)
+                if "embeddings" in output_modalities:
+                    model_types.append(LLMType.EMBEDDING.value)
+                if "image" in input_modalities and "text" in output_modalities:
+                    model_types.append(LLMType.IMAGE2TEXT.value)
+                if "audio" in input_modalities and "text" in output_modalities:
+                    model_types.append(LLMType.SPEECH2TEXT.value)
+                if "audio" in output_modalities:
+                    model_types.append(LLMType.TTS.value)
 
             if not model_types:
                 continue
