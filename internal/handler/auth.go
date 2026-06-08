@@ -71,6 +71,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 				"code":    common.CodeForbidden,
 				"message": "Super user shouldn't access the URL",
 			})
+			c.Abort()
 			return
 		}
 
@@ -83,6 +84,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 				"message": errMsg,
 				"data":    "No",
 			})
+			c.Abort()
 			return
 		}
 

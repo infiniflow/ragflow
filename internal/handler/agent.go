@@ -29,7 +29,6 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -359,34 +358,69 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 	})
 }
 
-// ListTemplates lists every canvas template available to authenticated users.
-// @Summary List Agent Templates
-// @Description List the catalogue of canvas templates that authenticated users can clone.
+// loadPromptFunc is overridden in tests; the production code path always
+// calls service.LoadPrompt.
+var loadPromptFunc = service.LoadPrompt
+
+// Prompts returns the canonical prompt templates the agent builder UI shows
+// when a user is choosing how to scaffold a new agent.
+//
+// Mirrors Python agent_api.prompts: returns
+//
+//	task_analysis        = ANALYZE_TASK_SYSTEM + "\n\n" + ANALYZE_TASK_USER
+//	plan_generation      = NEXT_STEP
+//	reflection           = REFLECT
+//	citation_guidelines  = CITATION_PROMPT_TEMPLATE
+//
+// All four are loaded from rag/prompts/*.md via service.LoadPrompt.
+//
+// @Summary Get default agent prompts
 // @Tags agents
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/agents/templates [get]
-func (h *AgentHandler) ListTemplates(c *gin.Context) {
+// @Router /api/v1/agents/prompts [get]
+func (h *AgentHandler) Prompts(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	templates, err := h.agentService.ListTemplates()
+	analyzeSystem, err := loadPromptFunc("analyze_task_system")
 	if err != nil {
 		jsonError(c, common.CodeServerError, err.Error())
 		return
 	}
-	if templates == nil {
-		// Ensure the JSON payload is always a list, never null.
-		templates = []*entity.CanvasTemplate{}
+	analyzeUser, err := loadPromptFunc("analyze_task_user")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	nextStep, err := loadPromptFunc("next_step")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	reflectPrompt, err := loadPromptFunc("reflect")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	citation, err := loadPromptFunc("citation_prompt")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
-		"data":    templates,
 		"message": "success",
+		"data": gin.H{
+			"task_analysis":       analyzeSystem + "\n\n" + analyzeUser,
+			"plan_generation":     nextStep,
+			"reflection":          reflectPrompt,
+			"citation_guidelines": citation,
+		},
 	})
 }
 
