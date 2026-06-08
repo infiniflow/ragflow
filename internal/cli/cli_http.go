@@ -22,7 +22,7 @@ import "fmt"
 // Returns benchmark result map for commands that support it (e.g., ping_server with iterations > 1)
 func (c *CLI) ExecuteCommand(cmd *Command) (ResponseIf, error) {
 	switch c.Config.CLIMode {
-	case UserMode:
+	case APIMode:
 		// Interactive mode: execute command with user privileges
 		return c.ExecuteUserCommand(cmd)
 	case AdminMode:

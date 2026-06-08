@@ -83,7 +83,7 @@ type ConnectionArgs struct {
 type CommandLineMode string
 
 const (
-	UserMode         CommandLineMode = "user"
+	APIMode          CommandLineMode = "api"
 	AdminMode        CommandLineMode = "admin"
 	IngestorMode     CommandLineMode = "ingestor"  // If we want to access ingestor
 	CollectorMode    CommandLineMode = "collector" // If we want to access collector
@@ -123,7 +123,7 @@ func (c *CommandLineConfig) Print() {
 
 func ParseArgs(args []string) (*CommandLineConfig, error) {
 	commandLineConfig := &CommandLineConfig{
-		CLIMode:           UserMode,
+		CLIMode:           APIMode,
 		AdminClientConfig: nil,
 		ShowHelp:          false,
 		Verbose:           false,
@@ -166,7 +166,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	var foundCommand bool
 
 	switch commandLineConfig.CLIMode {
-	case UserMode:
+	case APIMode:
 		defaultApiServerConfig := &APIServerConfig{
 			UserName:     nil,
 			UserPassword: nil,
@@ -539,7 +539,7 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 		Config: commandLineConfig,
 	}
 
-	if commandLineConfig.CLIMode == UserMode {
+	if commandLineConfig.CLIMode == APIMode {
 		apiServerConfig := commandLineConfig.APIClientConfig.APIServerMap[commandLineConfig.APIClientConfig.CurrentAPIServer]
 		httpClient := NewHTTPClient()
 		httpClient.Host = apiServerConfig.IP
@@ -580,7 +580,7 @@ func (c *CLI) NewRun() error {
 	// If username is provided without password, prompt for password
 	cliConfig := c.Config
 	switch cliConfig.CLIMode {
-	case UserMode:
+	case APIMode:
 		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
 		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.ApiToken == nil {
 			// provider username but no password or api token

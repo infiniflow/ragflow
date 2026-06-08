@@ -71,7 +71,7 @@ func (c *CLI) ShowServerVersion(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListConfigs(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 	// Get iterations from command params (for benchmark)
@@ -225,7 +225,7 @@ func GetHost(config *map[string]interface{}, serverType, address, port string) s
 }
 
 func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -257,7 +257,7 @@ func (c *CLI) SetLogLevel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -324,7 +324,7 @@ func (c *CLI) RegisterUser(cmd *Command) (ResponseIf, error) {
 // ListDatasets lists datasets for current user (user mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -380,7 +380,7 @@ func (c *CLI) ListDatasets(cmd *Command) (ResponseIf, error) {
 
 // ListDatasetDocumentUserCommand lists dataset documents
 func (c *CLI) ListDatasetDocumentUserCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -479,7 +479,7 @@ func (c *CLI) getDatasetID(datasetName string) (string, error) {
 
 // ListMetadata lists metadata for datasets
 func (c *CLI) ListMetadata(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -549,7 +549,7 @@ func formatEmptyArray(v interface{}) string {
 // SearchOnDatasets searches for chunks in specified datasets
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -666,7 +666,7 @@ func (c *CLI) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 
 // CreateToken creates a new API token
 func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -698,7 +698,7 @@ func (c *CLI) CreateToken(cmd *Command) (ResponseIf, error) {
 
 // ListTokens lists all API tokens for the current user
 func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -726,7 +726,7 @@ func (c *CLI) ListTokens(cmd *Command) (ResponseIf, error) {
 
 // DropToken deletes an API token
 func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -758,7 +758,7 @@ func (c *CLI) DropToken(cmd *Command) (ResponseIf, error) {
 
 // SetToken sets the API token after validating it
 func (c *CLI) SetToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -816,7 +816,7 @@ func (c *CLI) SetToken(cmd *Command) (ResponseIf, error) {
 
 // ShowToken displays the current API token
 func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -840,7 +840,7 @@ func (c *CLI) ShowToken(cmd *Command) (ResponseIf, error) {
 
 // UnsetToken removes the current API token
 func (c *CLI) UnsetToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -860,7 +860,7 @@ func (c *CLI) UnsetToken(cmd *Command) (ResponseIf, error) {
 
 // CreateChunkStore creates a chunk store in doc engine
 func (c *CLI) CreateChunkStore(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -917,7 +917,7 @@ func (c *CLI) CreateChunkStore(cmd *Command) (ResponseIf, error) {
 
 // DropChunkStore drops a chunk store in doc engine
 func (c *CLI) DropChunkStore(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -968,7 +968,7 @@ func (c *CLI) DropChunkStore(cmd *Command) (ResponseIf, error) {
 
 // CreateMetadataStore creates the document metadata store for the tenant
 func (c *CLI) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1004,7 +1004,7 @@ func (c *CLI) CreateMetadataStore(cmd *Command) (ResponseIf, error) {
 
 // DropMetadataStore drops the document metadata store for the tenant
 func (c *CLI) DropMetadataStore(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1042,7 +1042,7 @@ func (c *CLI) DropMetadataStore(cmd *Command) (ResponseIf, error) {
 // ADD PROVIDER <name>
 // ADD PROVIDER <name> <api_key>
 func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1081,7 +1081,7 @@ func (c *CLI) AddProvider(cmd *Command) (ResponseIf, error) {
 // ListProviders lists all providers
 // LIST PROVIDERS
 func (c *CLI) ListProviders(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1110,7 +1110,7 @@ func (c *CLI) ListProviders(cmd *Command) (ResponseIf, error) {
 // DeleteProvider deletes a provider
 // DELETE PROVIDER <name>
 func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1151,7 +1151,7 @@ func (c *CLI) DeleteProvider(cmd *Command) (ResponseIf, error) {
 // CreateProviderInstance creates a new provider instance
 // CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
 func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1214,7 +1214,7 @@ func (c *CLI) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 // ListProviderInstances lists all instances of a provider
 // LIST INSTANCES FROM PROVIDER <name>
 func (c *CLI) ListProviderInstances(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1250,7 +1250,7 @@ func (c *CLI) ListProviderInstances(cmd *Command) (ResponseIf, error) {
 // ShowProviderInstance shows details of a specific instance
 // SHOW INSTANCE <name> FROM PROVIDER <name>
 func (c *CLI) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1291,7 +1291,7 @@ func (c *CLI) ShowProviderInstance(cmd *Command) (ResponseIf, error) {
 // ShowInstanceBalance shows balance of a specific instance
 // SHOW BALANCE FROM PROVIDER <provider_name> <instance_name>
 func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1332,7 +1332,7 @@ func (c *CLI) ShowInstanceBalance(cmd *Command) (ResponseIf, error) {
 // AlterProviderInstance renames a provider instance
 // ALTER INSTANCE <name> NAME <new_name> FROM PROVIDER <name>
 func (c *CLI) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1382,7 +1382,7 @@ func (c *CLI) AlterProviderInstance(cmd *Command) (ResponseIf, error) {
 // DropProviderInstance deletes a provider instance
 // DROP INSTANCE <name> FROM PROVIDER <name>
 func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1427,7 +1427,7 @@ func (c *CLI) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 // DropInstanceModel deletes a provider instance, only works for local deployed model
 // DROP MODEL <name> FROM <provider_name> <instance_name>
 func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1475,7 +1475,7 @@ func (c *CLI) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListInstanceModels(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 	providerName, ok := cmd.Params["provider_name"].(string)
@@ -1512,7 +1512,7 @@ func (c *CLI) ListInstanceModels(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) EnableOrDisableModel(cmd *Command, status string) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1564,7 +1564,7 @@ func isValidURL(str string) bool {
 }
 
 func (c *CLI) ChatToModel(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1821,7 +1821,7 @@ func (c *CLI) EmbedUserText(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1888,7 +1888,7 @@ func (c *CLI) RerankUserDocument(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -1961,7 +1961,7 @@ func (c *CLI) TTSUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2153,7 +2153,7 @@ func (c *CLI) ASRUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2240,7 +2240,7 @@ func (c *CLI) OCRUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2322,7 +2322,7 @@ func (c *CLI) ParseFileUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2409,7 +2409,7 @@ func (c *CLI) ListTasksUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2452,7 +2452,7 @@ func (c *CLI) ShowTaskUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2500,7 +2500,7 @@ func (c *CLI) CheckProviderConnection(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2538,7 +2538,7 @@ func (c *CLI) CheckProviderWithKey(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2597,7 +2597,7 @@ func (c *CLI) UseModel(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2628,7 +2628,7 @@ func (c *CLI) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2699,7 +2699,7 @@ func (c *CLI) CECat(cmd *Command) (ResponseIf, error) {
 	if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2802,7 +2802,7 @@ func (c *CLI) CESearch(cmd *Command) (ResponseIf, error) {
 
 // InsertChunksFromFile inserts chunks from a JSON file
 func (c *CLI) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 	filePath, ok := cmd.Params["file_path"].(string)
@@ -2846,7 +2846,7 @@ func (c *CLI) InsertChunksFromFile(cmd *Command) (ResponseIf, error) {
 
 // InsertMetadataFromFile inserts metadata from a JSON file
 func (c *CLI) InsertMetadataFromFile(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2891,7 +2891,7 @@ func (c *CLI) InsertMetadataFromFile(cmd *Command) (ResponseIf, error) {
 
 // UpdateChunk updates a chunk in a dataset
 func (c *CLI) UpdateChunk(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -2964,7 +2964,7 @@ func (c *CLI) UpdateChunk(cmd *Command) (ResponseIf, error) {
 
 // GetChunk retrieves a chunk by ID
 func (c *CLI) GetChunk(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3007,7 +3007,7 @@ func (c *CLI) GetChunk(cmd *Command) (ResponseIf, error) {
 
 // SetMeta sets metadata for a document
 func (c *CLI) SetMeta(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3059,7 +3059,7 @@ func (c *CLI) SetMeta(cmd *Command) (ResponseIf, error) {
 // DeleteMeta deletes metadata for a document
 // If keys is provided, deletes specific keys; otherwise deletes entire document metadata
 func (c *CLI) DeleteMeta(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3109,7 +3109,7 @@ func (c *CLI) DeleteMeta(cmd *Command) (ResponseIf, error) {
 
 // RmTags removes tags from chunks in a dataset
 func (c *CLI) RmTags(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3164,7 +3164,7 @@ func (c *CLI) RmTags(cmd *Command) (ResponseIf, error) {
 
 // RemoveChunks removes chunks from a document
 func (c *CLI) RemoveChunks(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
@@ -3237,7 +3237,7 @@ func (c *CLI) ParseDocumentsUserCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("API token not set. Please login first")
 	}
 
-	if c.Config.CLIMode != UserMode {
+	if c.Config.CLIMode != APIMode {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
 
