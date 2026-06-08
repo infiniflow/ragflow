@@ -38,7 +38,15 @@ type XiaomiModel struct {
 }
 
 func NewXiaomiModel(baseURL map[string]string, urlSuffix URLSuffix) *XiaomiModel {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	var transport *http.Transport
+	if ok {
+		transport = defaultTransport.Clone()
+	} else {
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		}
+	}
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 10
 	transport.IdleConnTimeout = 90 * time.Second
@@ -67,6 +75,9 @@ func (x *XiaomiModel) Name() string {
 func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
+	}
+	if modelName == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
@@ -101,7 +112,7 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 		}
 
 		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+			reqBody["max_completion_tokens"] = *chatModelConfig.MaxTokens
 		}
 
 		if chatModelConfig.Temperature != nil {
@@ -187,21 +198,18 @@ func (x *XiaomiModel) ChatWithMessages(modelName string, messages []Message, api
 	}
 
 	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			// If reasoning_content not in response, try parsing from content tags
-			reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
-			if reasoning != nil {
-				reasonContent = *reasoning
-				content = *answer
-			}
-		} else {
-			// if first char of reasonContent is \n remove the '\n'
-			if reasonContent != "" && reasonContent[0] == '\n' {
-				reasonContent = reasonContent[1:]
-			}
+	reasonContent, _ = messageMap["reasoning_content"].(string)
+	if reasonContent == "" && chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
+		// If reasoning_content not in response, try parsing from content tags
+		reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
+		if reasoning != nil {
+			reasonContent = *reasoning
+			content = *answer
 		}
+	}
+	// if first char of reasonContent is \n remove the '\n'
+	if reasonContent != "" && reasonContent[0] == '\n' {
+		reasonContent = reasonContent[1:]
 	}
 
 	chatResponse := &ChatResponse{
@@ -217,6 +225,9 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return err
 	}
 
+	if modelName == "" {
+		return fmt.Errorf("model name is required")
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
@@ -246,7 +257,7 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 
 	if modelConfig != nil {
 		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
+			reqBody["max_completion_tokens"] = *modelConfig.MaxTokens
 		}
 
 		if modelConfig.Temperature != nil {
