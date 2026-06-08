@@ -2417,7 +2417,7 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 	if err != nil {
 		return nil, err
 	}
-	if pageSize > 0 {
+	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
 		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
 	}
 	return models, nil
