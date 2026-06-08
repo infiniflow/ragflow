@@ -833,6 +833,8 @@ async def graph_status_stream(tenant_id, dataset_id):
         resp.headers["X-Accel-Buffering"] = "no"
         return resp
 
+    logging.info("graph_status_stream: tenant=%s dataset=%s stream started", tenant_id, dataset_id)
+
     async def event_stream():
         try:
             docs, _ = DocumentService.get_by_kb_id(
@@ -855,7 +857,13 @@ async def graph_status_stream(tenant_id, dataset_id):
                     )
                 )
             except Exception:
+                logging.warning("graph_status_stream: get_graph_doc_ids timed out for dataset=%s, defaulting to empty", dataset_id)
                 graph_doc_ids = set()
+
+            logging.info(
+                "graph_status_stream: dataset=%s docs=%d dirty=%d in_graph=%d",
+                dataset_id, len(doc_ids), len(dirty_set), len(graph_doc_ids),
+            )
 
             for doc_id in doc_ids:
                 is_dirty = doc_id in dirty_set
@@ -882,6 +890,7 @@ async def graph_status_stream(tenant_id, dataset_id):
                 yield "data:" + json.dumps(event, ensure_ascii=False) + "\n\n"
                 await asyncio.sleep(0)
 
+            logging.info("graph_status_stream: dataset=%s stream complete", dataset_id)
             yield "data:" + json.dumps({"done": True}) + "\n\n"
         except Exception as exc:
             logging.exception("graph_status_stream error for dataset %s", dataset_id)

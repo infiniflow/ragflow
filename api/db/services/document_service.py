@@ -1103,7 +1103,13 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     return task["id"]
 
 
-_INCREMENTAL_THRESHOLD = float(os.environ.get("GRAPHRAG_INCREMENTAL_THRESHOLD", "0.20"))
+try:
+    _INCREMENTAL_THRESHOLD = float(os.environ.get("GRAPHRAG_INCREMENTAL_THRESHOLD", "0.20"))
+    if not (0.0 <= _INCREMENTAL_THRESHOLD <= 1.0):
+        raise ValueError(f"value {_INCREMENTAL_THRESHOLD!r} is not in [0, 1]")
+except (ValueError, TypeError) as _exc:
+    logging.warning("Invalid GRAPHRAG_INCREMENTAL_THRESHOLD: %s — using default 0.20", _exc)
+    _INCREMENTAL_THRESHOLD = 0.20
 
 
 def queue_graphrag_incremental_or_full(kb_id: str, sample_doc: dict, priority: int = 0) -> str:

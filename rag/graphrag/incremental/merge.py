@@ -43,6 +43,7 @@ def apply_delta(
     global_graph: nx.Graph,
     new_subgraph: nx.Graph,
     delta: GraphDelta,
+    old_subgraph: nx.Graph | None = None,
 ) -> set[str]:
     """Patch global_graph in place using delta + new_subgraph attributes.
 
@@ -124,7 +125,13 @@ def apply_delta(
         new_edge = dict(new_subgraph.get_edge_data(src, tgt))
         if global_graph.has_edge(src, tgt):
             existing_edge = global_graph[src][tgt]
-            existing_edge["weight"] = existing_edge.get("weight", 1.0) + new_edge.get("weight", 0.0)
+            # For updated edges, subtract the old weight contribution of this doc
+            # before adding the new one to prevent drift on repeated reprocessing.
+            old_subgraph_edge = old_subgraph.get_edge_data(src, tgt) if old_subgraph else None
+            old_weight = dict(old_subgraph_edge).get("weight", 0.0) if old_subgraph_edge else 0.0
+            existing_edge["weight"] = (
+                existing_edge.get("weight", 1.0) - old_weight + new_edge.get("weight", 0.0)
+            )
             existing_edge["description"] = (
                 existing_edge.get("description", "") + GRAPH_FIELD_SEP + new_edge.get("description", "")
             ).strip(GRAPH_FIELD_SEP)
@@ -141,10 +148,19 @@ def apply_delta(
 
     # ------------------------------------------------------------------
     # 5. Update the graph-level source_id list.
+    #    Add the doc if it still has nodes in the graph; remove it when all
+    #    its nodes were pruned (so stale entries don't accumulate).
     # ------------------------------------------------------------------
+    doc_still_present = any(
+        doc_id in global_graph.nodes[n].get("source_id", [])
+        for n in global_graph.nodes()
+    )
     graph_src = list(global_graph.graph.get("source_id", []))
-    if doc_id not in graph_src:
-        graph_src.append(doc_id)
+    if doc_still_present:
+        if doc_id not in graph_src:
+            graph_src.append(doc_id)
+    else:
+        graph_src = [d for d in graph_src if d != doc_id]
     global_graph.graph["source_id"] = graph_src
 
     # ------------------------------------------------------------------

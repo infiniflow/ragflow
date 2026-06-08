@@ -32,7 +32,6 @@ Invalidation rules (callers responsibility):
 
 from __future__ import annotations
 
-import json
 import logging
 
 from rag.utils.redis_conn import REDIS_CONN
@@ -106,16 +105,22 @@ def clear_phase_markers(kb_id: str, phases: tuple[str, ...] = ALL_PHASES) -> Non
 # ---------------------------------------------------------------------------
 
 def mark_document_dirty(kb_id: str, doc_id: str) -> bool:
-    """Add doc_id to the dirty set for kb_id.  Safe to call multiple times."""
+    """Add doc_id to the dirty set for kb_id.  Safe to call multiple times.
+
+    Uses a native Redis Set (SADD) so concurrent callers never overwrite each
+    other — no read-modify-write race.
+    """
     if not kb_id or not doc_id:
         return False
     key = _dirty_key(kb_id)
     try:
-        raw = REDIS_CONN.get(key)
-        dirty: list[str] = json.loads(raw) if raw else []
-        if doc_id not in dirty:
-            dirty.append(doc_id)
-        return bool(REDIS_CONN.set(key, json.dumps(dirty).encode(), _DIRTY_TTL_SECONDS))
+        ok = REDIS_CONN.sadd(key, doc_id)
+        # Refresh TTL on every write so the set outlives any single run.
+        try:
+            REDIS_CONN.REDIS.expire(key, _DIRTY_TTL_SECONDS)
+        except Exception:
+            pass
+        return bool(ok)
     except Exception:
         logging.exception("mark_document_dirty(%s, %s) failed", kb_id, doc_id)
         return False
@@ -126,17 +131,20 @@ def get_dirty_documents(kb_id: str) -> list[str]:
     if not kb_id:
         return []
     try:
-        raw = REDIS_CONN.get(_dirty_key(kb_id))
-        if not raw:
+        members = REDIS_CONN.smembers(_dirty_key(kb_id))
+        if not members:
             return []
-        return json.loads(raw)
+        return [m.decode() if isinstance(m, bytes) else m for m in members]
     except Exception:
         logging.exception("get_dirty_documents(%s) failed", kb_id)
         return []
 
 
 def clear_dirty_documents(kb_id: str, doc_ids: list[str] | None = None) -> bool:
-    """Remove doc_ids from the dirty set.  If doc_ids is None, wipe the whole set."""
+    """Remove doc_ids from the dirty set.  If doc_ids is None, wipe the whole set.
+
+    Uses SREM for targeted removal (atomic, no race) and DEL for a full wipe.
+    """
     if not kb_id:
         return False
     key = _dirty_key(kb_id)
@@ -144,13 +152,8 @@ def clear_dirty_documents(kb_id: str, doc_ids: list[str] | None = None) -> bool:
         if doc_ids is None:
             REDIS_CONN.delete(key)
             return True
-        raw = REDIS_CONN.get(key)
-        if not raw:
-            return True
-        remaining = [d for d in json.loads(raw) if d not in doc_ids]
-        if remaining:
-            return bool(REDIS_CONN.set(key, json.dumps(remaining).encode(), _DIRTY_TTL_SECONDS))
-        REDIS_CONN.delete(key)
+        for doc_id in doc_ids:
+            REDIS_CONN.srem(key, doc_id)
         return True
     except Exception:
         logging.exception("clear_dirty_documents(%s) failed", kb_id)

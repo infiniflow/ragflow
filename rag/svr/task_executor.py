@@ -1798,7 +1798,7 @@ async def handle_task():
         if not task.get("dataflow_id", ""):
             referred_document_id = None
             if task_type in ["graphrag", "graphrag_incremental", "raptor", "mindmap"]:
-                referred_document_id = task["doc_ids"][0]
+                referred_document_id = task["doc_ids"][0] if task.get("doc_ids") else None
             ret = PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
                                                                   task_type=pipeline_task_type,
                                                                   task_id=task_id, referred_document_id=referred_document_id)

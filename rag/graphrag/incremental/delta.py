@@ -111,7 +111,11 @@ def compute_graph_delta(
 
     added_nodes = frozenset(new_nodes - old_nodes)
     removed_nodes = frozenset(old_nodes - new_nodes)
-    updated_nodes = frozenset(old_nodes & new_nodes)  # may or may not have attr changes
+    # Only mark as updated when attributes actually differ.
+    updated_nodes = frozenset(
+        n for n in (old_nodes & new_nodes)
+        if dict(old_subgraph.nodes[n]) != dict(new_subgraph.nodes[n])  # type: ignore[union-attr]
+    )
 
     def _edges(g: nx.Graph | None) -> set[EdgeKey]:
         if g is None:
@@ -123,7 +127,11 @@ def compute_graph_delta(
 
     added_edges = frozenset(new_edges - old_edges)
     removed_edges = frozenset(old_edges - new_edges)
-    updated_edges = frozenset(old_edges & new_edges)
+    # Only mark as updated when edge attributes actually differ.
+    updated_edges = frozenset(
+        e for e in (old_edges & new_edges)
+        if dict(old_subgraph.get_edge_data(*e)) != dict(new_subgraph.get_edge_data(*e))  # type: ignore[union-attr]
+    )
 
     return GraphDelta(
         doc_id=doc_id,

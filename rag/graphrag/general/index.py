@@ -395,11 +395,14 @@ async def run_graphrag_for_kb(
         async with semaphore:
             # CHECKPOINT: bounded by semaphore so doc-store lookups respect max_parallel_docs
             _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before loading checkpoint for doc {doc_id}.", callback)
-            existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
-            if existing_sg:
-                subgraphs[doc_id] = existing_sg
-                callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
-                return
+            # Dirty docs must NOT reuse a stale cached subgraph — their content has changed.
+            is_dirty = dirty_set is not None and doc_id in dirty_set
+            if not is_dirty:
+                existing_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+                if existing_sg:
+                    subgraphs[doc_id] = existing_sg
+                    callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store, skipping LLM extraction.")
+                    return
             try:
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before loading chunks for doc {doc_id}.", callback)
                 chunks = load_doc_chunks(doc_id)
@@ -419,10 +422,12 @@ async def run_graphrag_for_kb(
                 _has_cancel_and_exit(task_id, f"Task {task_id} cancelled before subgraph generation for doc {doc_id}.", callback)
                 try:
                     async def build_subgraph_attempt():
-                        checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
-                        if checkpoint_sg:
-                            callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store during retry, skipping LLM extraction.")
-                            return checkpoint_sg
+                        # Only check checkpoint during retry if the doc is not dirty.
+                        if not is_dirty:
+                            checkpoint_sg = await load_subgraph_from_store(tenant_id, kb_id, doc_id)
+                            if checkpoint_sg:
+                                callback(msg=f"[GraphRAG] doc:{doc_id} subgraph found in store during retry, skipping LLM extraction.")
+                                return checkpoint_sg
                         return await generate_subgraph(
                             kg_extractor,
                             tenant_id,
@@ -525,7 +530,7 @@ async def run_graphrag_for_kb(
                         if current_graph is None:
                             # No global graph yet – fall back to regular merge.
                             return await merge_subgraph(tenant_id, kb_id, doc_id, sg, embedding_model, callback)
-                        dirty_comms = apply_delta(current_graph, sg, delta)
+                        dirty_comms = apply_delta(current_graph, sg, delta, old_subgraph=old_sg)
                         from rag.graphrag.utils import GraphChange
                         change = GraphChange(
                             added_updated_nodes=delta.added_nodes | delta.updated_nodes,
