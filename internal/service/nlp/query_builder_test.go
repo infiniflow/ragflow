@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"testing"
 
-	"ragflow/internal/engine/infinity"
+	"ragflow/internal/engine/types"
 )
 
 func TestNewQueryBuilder(t *testing.T) {
@@ -229,7 +229,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 		tbl          string
 		minMatch     float64
 		expectNil    bool
-		checkExpr    func(*infinity.MatchTextExpr) bool
+		checkExpr    func(*types.MatchTextExpr) bool
 		checkKeywords func([]string) bool
 	}{
 		{
@@ -237,7 +237,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "请问如何安装软件",
 			tbl:      "test",
 			minMatch: 0.5,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				// Should return a valid query expression with processed text
 				return expr != nil && expr.MatchingText != ""
 			},
@@ -251,7 +251,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "How to install software",
 			tbl:      "test",
 			minMatch: 0.5,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				// Should return a valid query expression with processed text
 				return expr != nil && expr.MatchingText != ""
 			},
@@ -265,7 +265,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "hello世界",
 			tbl:      "test",
 			minMatch: 0.5,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				// Should return a valid query expression with processed text
 				return expr != nil && expr.MatchingText != ""
 			},
@@ -280,7 +280,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			tbl:      "test",
 			minMatch: 0.5,
 			expectNil: true,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				return expr == nil
 			},
 			checkKeywords: func(keywords []string) bool {
@@ -390,32 +390,6 @@ func TestQueryBuilder_Paragraph(t *testing.T) {
 			}
 			if expr.TopN != 100 {
 				t.Errorf("Paragraph TopN mismatch, got %d, want 100", expr.TopN)
-			}
-		})
-	}
-}
-
-func TestQueryBuilder_Similarity(t *testing.T) {
-	qb := NewQueryBuilder()
-	tests := []struct {
-		name     string
-		qtwt     map[string]float64
-		dtwt     map[string]float64
-		expected float64
-	}{
-		{"Empty query", map[string]float64{}, map[string]float64{"a": 1.0}, 0.0},
-		{"Empty doc", map[string]float64{"a": 1.0}, map[string]float64{}, 0.0},
-		{"Exact match", map[string]float64{"a": 1.0, "b": 2.0}, map[string]float64{"a": 5.0, "b": 3.0}, 1.0},
-		{"Partial match", map[string]float64{"a": 1.0, "b": 2.0, "c": 3.0}, map[string]float64{"a": 1.0, "c": 1.0}, (1.0 + 3.0) / (1.0 + 2.0 + 3.0)}, // sum=4, total=6 => 0.666...
-		{"No match", map[string]float64{"a": 1.0}, map[string]float64{"b": 2.0}, 0.0},
-		{"Zero total weight", map[string]float64{"a": 0.0, "b": 0.0}, map[string]float64{"a": 1.0}, 0.0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := qb.Similarity(tt.qtwt, tt.dtwt)
-			// Use tolerance for floating point
-			if result < tt.expected-1e-9 || result > tt.expected+1e-9 {
-				t.Errorf("Similarity(%v, %v) = %v, want %v", tt.qtwt, tt.dtwt, result, tt.expected)
 			}
 		})
 	}

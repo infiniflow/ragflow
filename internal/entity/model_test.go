@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	modeldrivers "ragflow/internal/entity/models"
+	"strings"
 	"testing"
 )
 
@@ -120,6 +121,71 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
 		t.Errorf("PaddleOCR OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestProviderConfigsLoadURLSuffixKeys(t *testing.T) {
+	dir := t.TempDir()
+	for _, fileName := range []string{"cohere.json", "xai.json"} {
+		if err := os.WriteFile(filepath.Join(dir, fileName), readProviderConfig(t, fileName), 0o600); err != nil {
+			t.Fatalf("write %s config: %v", fileName, err)
+		}
+	}
+
+	pm, err := NewProviderManager(dir)
+	if err != nil {
+		t.Fatalf("NewProviderManager: %v", err)
+	}
+
+	cohere := pm.FindProvider("CoHere")
+	if cohere == nil {
+		t.Fatal("CoHere provider not found")
+	}
+	if cohere.URLSuffix.Embedding != "v2/embed" {
+		t.Errorf("CoHere embedding suffix=%q", cohere.URLSuffix.Embedding)
+	}
+
+	xAI := pm.FindProvider("xAI")
+	if xAI == nil {
+		t.Fatal("xAI provider not found")
+	}
+	if xAI.URLSuffix.ASR != "stt" {
+		t.Errorf("xAI ASR suffix=%q", xAI.URLSuffix.ASR)
+	}
+}
+
+func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
+	dir := t.TempDir()
+	config := []byte(`{
+  "name": "OpenAI",
+  "url": {
+    "default": "https://example.com"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "unknown_suffix": "ignored"
+  },
+  "models": [
+    {
+      "name": "test-model",
+      "max_tokens": 4096,
+      "model_types": ["chat"]
+    }
+  ]
+}`)
+	if err := os.WriteFile(filepath.Join(dir, "unknown_suffix.json"), config, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := NewProviderManager(dir)
+	if err == nil {
+		t.Fatal("NewProviderManager succeeded with unknown url_suffix key")
+	}
+	if !strings.Contains(err.Error(), `unknown field "unknown_suffix"`) {
+		t.Fatalf("error=%q, want unknown_suffix field", err)
+	}
+	if !strings.Contains(err.Error(), "unknown_suffix.json") {
+		t.Fatalf("error=%q, want config file context", err)
 	}
 }
 
