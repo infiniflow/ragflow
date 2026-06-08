@@ -65,3 +65,20 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 
 	return baseURL, nil
 }
+
+func (b *BaseModel) SetAuthorizationHeader(req *http.Request, apiConfig *APIConfig, scheme string) {
+	if req == nil || apiConfig == nil || apiConfig.ApiKey == nil {
+		return
+	}
+
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	if apiKey == "" {
+		return
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("%s %s", scheme, apiKey))
+}
+
+func (b *BaseModel) SetBearerAuthorizationHeader(req *http.Request, apiConfig *APIConfig) {
+	b.SetAuthorizationHeader(req, apiConfig, "Bearer")
+}

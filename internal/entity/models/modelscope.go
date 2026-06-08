@@ -190,9 +190,7 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -266,9 +264,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -423,9 +419,7 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {

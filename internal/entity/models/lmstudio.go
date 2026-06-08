@@ -148,9 +148,7 @@ func (l *LmStudioModel) ChatWithMessages(modelName string, messages []Message, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	l.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -298,9 +296,7 @@ func (l *LmStudioModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	l.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -432,9 +428,7 @@ func (l *LmStudioModel) Embed(modelName *string, texts []string, apiConfig *APIC
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	l.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -535,9 +529,7 @@ func (l *LmStudioModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	l.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := l.baseModel.httpClient.Do(req)
 	if err != nil {

@@ -152,9 +152,7 @@ func (m *MinerULocalModel) ParseFile(modelName *string, content []byte, document
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -220,9 +218,7 @@ func (m *MinerULocalModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskR
 		return nil, fmt.Errorf("failed to create status request: %w", err)
 	}
 
-	if apiConfig.ApiKey != nil && *apiConfig.ApiKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
