@@ -160,16 +160,6 @@ jobs:
           CGO_ENABLED=1 GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
             go test -count=1 ./internal/...
 
-      - name: Integration tests
-        if: false
-        run: |
-          set -euo pipefail
-          pkgs=$(find internal -name '*_test.go' \
-            -exec grep -l '//go:build integration' {} + | \
-            xargs -r dirname | sort -u | sed 's|^|./|;s|$|/...|')
-          CGO_ENABLED=1 GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
-            go test -count=1 -tags integration ${pkgs}
-
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
@@ -299,6 +289,15 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
+
+      - name: Go integration tests
+        run: |
+          set -euo pipefail
+          pkgs=$(find internal -name '*_test.go' \
+            -exec grep -l '//go:build integration' {} + | \
+            xargs -r dirname | sort -u | sed 's|^|./|;s|$|/...|')
+          CGO_ENABLED=1 GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
+            go test -count=1 -tags integration ${pkgs}
 
       - name: Run sdk tests against Infinity
         run: |
