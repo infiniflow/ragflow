@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -49,11 +50,12 @@ type vectorFetcher interface {
 func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tenantIDs, kbIDs []string, dim int) map[string][]float64 {
 	out := make(map[string][]float64, len(chunkIDs))
 
-	if len(chunkIDs) == 0 {
+	if len(chunkIDs) == 0 || dim <= 0 {
 		return out
 	}
 
-	// Infinity and OceanBase already ship vectors with chunks; no need to fetch.
+	// Infinity already ships vectors with chunks; no need to fetch.
+	// TODO: OceanBase engine is not yet implemented — add "oceanbase" here when it lands.
 	if engine.GetType() == "infinity" || engine.GetType() == "oceanbase" {
 		for _, cid := range chunkIDs {
 			out[cid] = zeroVector(dim)
@@ -63,6 +65,14 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 
 	vecField := fmt.Sprintf("q_%d_vec", dim)
 
+	// Convert chunkIDs to []interface{} because the ES filter builder
+	// (buildBoolQueryFromCondition) only handles []interface{} for the
+	// "id" key — passing []string would be silently dropped.
+	idList := make([]interface{}, len(chunkIDs))
+	for i, cid := range chunkIDs {
+		idList[i] = cid
+	}
+
 	// Query each tenant index for the requested chunk vectors.
 	for _, tid := range tenantIDs {
 		idxName := fmt.Sprintf("ragflow_%s", tid)
@@ -70,7 +80,7 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 			IndexNames:   []string{idxName},
 			KbIDs:        kbIDs,
 			SelectFields: []string{vecField},
-			Filter:       map[string]interface{}{"id": chunkIDs},
+			Filter:       map[string]interface{}{"id": idList},
 			Limit:        len(chunkIDs),
 		})
 		if err != nil {
@@ -125,7 +135,9 @@ func parseVectorField(chunk map[string]interface{}, field string, dim int) []flo
 		return parseVectorString(v, dim)
 	case []float64:
 		if len(v) == dim {
-			return v
+			out := make([]float64, dim)
+			copy(out, v)
+			return out
 		}
 	case []interface{}:
 		vec := make([]float64, len(v))
@@ -135,6 +147,12 @@ func parseVectorField(chunk map[string]interface{}, field string, dim int) []flo
 				vec[i] = fv
 			case float32:
 				vec[i] = float64(fv)
+			case json.Number:
+				f, err := fv.Float64()
+				if err != nil {
+					return nil
+				}
+				vec[i] = f
 			case string:
 				f, err := strconv.ParseFloat(fv, 64)
 				if err != nil {
