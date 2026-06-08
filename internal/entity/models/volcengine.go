@@ -285,7 +285,11 @@ func (v *VolcEngine) ChatStreamlyWithSender(modelName string, messages []Message
 	if modelConfig.Thinking != nil {
 		if *modelConfig.Thinking {
 			var thinkingFlag string
-			switch *modelConfig.Effort {
+			effort := "medium"
+			if modelConfig.Effort != nil {
+				effort = *modelConfig.Effort
+			}
+			switch effort {
 			case "none", "minimal":
 				thinkingFlag = "disabled"
 				reqBody["reasoning_effort"] = "minimal"
