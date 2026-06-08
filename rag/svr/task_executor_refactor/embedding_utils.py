@@ -136,6 +136,7 @@ class EmbeddingUtils:
         "image": "image",
         "video": "video",
         "audio": "audio",
+        "table": "table",
     }
 
     @classmethod
@@ -143,7 +144,7 @@ class EmbeddingUtils:
         """Infer chunk modality from existing metadata.
 
         Priority:
-          1. doc_type_kwd already set by the parser (image/video/audio).
+          1. doc_type_kwd already set by the parser (image/video/audio/table).
           2. HTML table markup in content_with_weight → "table".
           3. Fallback: "text".
         """

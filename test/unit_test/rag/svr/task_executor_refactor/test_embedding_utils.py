@@ -276,6 +276,27 @@ class TestEmbeddingUtilsCombineVectors:
         np.testing.assert_array_almost_equal(result, expected)
 
 
+class TestEmbeddingUtilsInferModality:
+    """Tests for _infer_modality class method."""
+
+    def test_infer_modality_from_doc_type_table(self):
+        """Table chunks stamped by parsers keep table modality after HTML flattening."""
+        doc = {"doc_type_kwd": "table", "content_with_weight": "Cell data"}
+        assert EmbeddingUtils._infer_modality(doc) == "table"
+
+    def test_infer_modality_from_doc_type_audio(self):
+        doc = {"doc_type_kwd": "audio", "content_with_weight": "transcript"}
+        assert EmbeddingUtils._infer_modality(doc) == "audio"
+
+    def test_infer_modality_from_html_table_markup(self):
+        doc = {"content_with_weight": "<table><tr><td>Cell</td></tr></table>"}
+        assert EmbeddingUtils._infer_modality(doc) == "table"
+
+    def test_infer_modality_defaults_to_text(self):
+        doc = {"content_with_weight": "plain text"}
+        assert EmbeddingUtils._infer_modality(doc) == "text"
+
+
 class TestEmbeddingUtilsInternals:
     """Tests for internal helper methods."""
 
