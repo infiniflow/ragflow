@@ -343,7 +343,7 @@ class OpenRouter(Base):
 class OpenAIAPICompatible(Base):
     _FACTORY_NAME = "OpenAI-API-Compatible"
 
-    _EMBEDDING_HINTS = ("embed", "embedding")
+    _EMBEDDING_HINTS = ("embed", "embedding", "bge")
     _RERANK_HINTS = ("rerank", "reranker")
     _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
     _TTS_HINTS = ("tts", "text-to-speech")
