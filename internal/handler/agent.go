@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 
@@ -35,19 +37,24 @@ import (
 
 // AgentHandler agent handler
 // fileUploader is the subset of FileService used by agent handlers.
-type fileUploader interface {
+type agentFileService interface {
 	UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	DownloadAgentFile(tenantID, location string) ([]byte, error)
 }
 
 // AgentHandler agent handler
 type AgentHandler struct {
 	agentService *service.AgentService
-	fileService  fileUploader
+	fileService  agentFileService
 }
 
 // NewAgentHandler create agent handler
+
 func NewAgentHandler(agentService *service.AgentService, fileService *service.FileService) *AgentHandler {
-	return &AgentHandler{agentService: agentService, fileService: fileService}
+	return &AgentHandler{
+		agentService: agentService,
+		fileService:  fileService,
+	}
 }
 
 // ListAgents lists agent canvases for the current user.
@@ -393,4 +400,48 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		"data":    data,
 		"message": "success",
 	})
+}
+
+// DownloadAgentFile handles agent file download.
+// @Summary Download Agent File
+// @Description Download a file associated with an agent by ID.
+// @Tags agents
+// @Produce octet-stream
+// @Param id query string true "file ID"
+// @Success 200 {file} binary "File stream"
+// @Router /api/v1/agents/download [get]
+func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	fileID := c.Query("id")
+	if fileID == "" {
+		jsonError(c, common.CodeArgumentError, "id parameter is required")
+		return
+	}
+
+	blob, err := h.fileService.DownloadAgentFile(user.ID, fileID)
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	ext := utility.GetFileExtension(fileID)
+	contentType := utility.GetContentType(ext, "")
+	if contentType != "" {
+		c.Header("Content-Type", contentType)
+	} else {
+		c.Header("Content-Type", "application/octet-stream")
+	}
+
+	if utility.ShouldForceAttachment(ext, contentType) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		encodedName := url.QueryEscape(fileID)
+		c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+encodedName)
+	}
+
+	c.Data(http.StatusOK, contentType, blob)
 }

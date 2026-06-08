@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"mime/multipart"
 	"testing"
 	"time"
 
@@ -521,5 +522,67 @@ func TestListAgentTemplates_RequiresAuth(t *testing.T) {
 	}
 	if code, _ := body["code"].(float64); int(code) == int(common.CodeSuccess) {
 		t.Errorf("expected non-success without auth, got body=%v", body)
+	}
+}
+
+type fakeAgentFileService struct {
+	blob []byte
+	err  error
+}
+
+func (f *fakeAgentFileService) UploadFile(tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+
+func (f *fakeAgentFileService) DownloadAgentFile(tenantID, location string) ([]byte, error) {
+	return f.blob, f.err
+}
+
+func TestDownloadAgentFile_Success(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/download?id=test-file.pdf")
+	
+	fakeFileSvc := &fakeAgentFileService{
+		blob: []byte("test content"),
+		err:  nil,
+	}
+	
+	h := &AgentHandler{
+		agentService: service.NewAgentService(),
+		fileService:  fakeFileSvc,
+	}
+	
+	h.DownloadAgentFile(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	
+	if w.Header().Get("Content-Type") != "application/pdf" {
+		t.Errorf("expected Content-Type application/pdf, got %s", w.Header().Get("Content-Type"))
+	}
+	
+	if w.Body.String() != "test content" {
+		t.Errorf("expected 'test content', got %s", w.Body.String())
+	}
+}
+
+func TestDownloadAgentFile_MissingID(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/download")
+	
+	h := &AgentHandler{
+		agentService: service.NewAgentService(),
+		fileService:  &fakeAgentFileService{},
+	}
+	
+	h.DownloadAgentFile(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (json error return), got %d", w.Code)
+	}
+	
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if code, _ := resp["code"].(float64); code != float64(common.CodeArgumentError) {
+		t.Errorf("expected code 102, got %v", code)
 	}
 }

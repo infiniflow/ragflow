@@ -376,6 +376,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				agents.GET("", r.agentHandler.ListAgents)
 				agents.GET("/templates", r.agentHandler.ListTemplates)
+				agents.GET("/download", r.agentHandler.DownloadAgentFile)
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
