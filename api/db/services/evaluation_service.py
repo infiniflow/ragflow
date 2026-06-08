@@ -723,6 +723,10 @@ class EvaluationService(CommonService):
                 )
                 .tuples()
             )
+            # _compute_summary_metrics stores per-metric averages as "avg_<metric>".
+            # Accept either the base name or the prefixed key so callers don't need
+            # to know the internal naming convention.
+            summary_key = metric if metric.startswith("avg_") else f"avg_{metric}"
             weighted_sum = 0.0
             total_cases_sum = 0
             for (metrics_summary,) in runs:
@@ -734,14 +738,14 @@ class EvaluationService(CommonService):
                         metrics_summary = json.loads(metrics_summary)
                     except Exception:
                         continue
-                v = metrics_summary.get(metric)
-                cases = int(metrics_summary.get("total_cases", 0))
-                if v is not None and cases > 0:
-                    try:
+                v = metrics_summary.get(summary_key)
+                try:
+                    cases = int(metrics_summary.get("total_cases", 0))
+                    if v is not None and cases > 0:
                         weighted_sum += float(v) * cases
                         total_cases_sum += cases
-                    except (TypeError, ValueError):
-                        pass
+                except (TypeError, ValueError):
+                    pass
             return weighted_sum / total_cases_sum if total_cases_sum > 0 else 0.0
         except Exception as e:
             logging.error(f"get_rolling_score failed for dialog {dialog_id}: {e}")
