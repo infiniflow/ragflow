@@ -42,10 +42,11 @@ type SearchbotRealLLM struct {
 }
 
 func (r *SearchbotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
+	driver, modelName, apiConfig, _, err := r.Svc.GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeChat, modelID)
 	if err != nil {
 		return nil, err
 	}
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
 }
 

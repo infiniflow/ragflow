@@ -43,7 +43,8 @@ type Router struct {
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
 	relatedQuestionsHandler *handler.SearchbotHandler
-	difyRetrievalHandler  *handler.DifyRetrievalHandler
+	difyRetrievalHandler    *handler.DifyRetrievalHandler
+	pluginHandler           *handler.PluginHandler
 }
 
 // NewRouter create router
@@ -68,7 +69,8 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
 	relatedQuestionsHandler *handler.SearchbotHandler,
-	difyRetrievalHandler  *handler.DifyRetrievalHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -91,7 +93,8 @@ func NewRouter(
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
 		relatedQuestionsHandler: relatedQuestionsHandler,
-			difyRetrievalHandler:  difyRetrievalHandler,
+		difyRetrievalHandler:    difyRetrievalHandler,
+		pluginHandler:           pluginHandler,
 	}
 }
 
@@ -207,6 +210,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -233,7 +238,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
 				// Dataset ingestion logs
@@ -247,6 +252,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
@@ -374,6 +380,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+			}
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
+			{
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
 			connector := v1.Group("/connectors")
