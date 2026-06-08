@@ -17,6 +17,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -41,6 +44,19 @@ type ChunkRetriever interface {
 	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
 }
 
+// streamingLLM abstracts streaming chat for the Ask endpoint.
+// The returned channel delivers raw text deltas from the LLM.
+type streamingLLM interface {
+	ChatStream(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error)
+}
+
+// SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
+type SearchBotAskRequest struct {
+	Question string              `json:"question" binding:"required"`
+	KbIDs    common.StringSlice  `json:"kb_ids" binding:"required"`
+	SearchID string              `json:"search_id,omitempty"`
+}
+
 // SearchBotRealLLM wraps ModelProviderService to implement searchbotLLM.
 type SearchBotRealLLM struct {
 	Svc *service.ModelProviderService
@@ -54,9 +70,31 @@ func (r *SearchBotRealLLM) Chat(tenantID, modelID string, messages []modelModule
 	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
 }
 
+// ChatStream implements streamingLLM.
+func (r *SearchBotRealLLM) ChatStream(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, error) {
+	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan string, 256)
+	go func() {
+		defer close(ch)
+		if err := chatModel.ModelDriver.ChatStreamlyWithSender(*chatModel.ModelName, messages, chatModel.APIConfig, config,
+			func(delta *string, _ *string) error {
+				if delta != nil {
+					ch <- *delta
+				}
+				return nil
+			}); err != nil {
+			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))
+		}
+	}()
+	return ch, nil
+}
+
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
 type SearchBotRetrievalTestRequest struct {
-	KbIDs                  common.StringSlice      `json:"kb_id" binding:"required"`
+	KbIDs                  common.StringSlice      `json:"kb_ids" binding:"required"`
 	Question               string                  `json:"question" binding:"required"`
 	Page                   *int                    `json:"page,omitempty"`
 	Size                   *int                    `json:"size,omitempty"`
@@ -87,17 +125,22 @@ type SearchBotRequest struct {
 // SearchBotHandler handles searchbot endpoints:
 //   POST /api/v1/searchbots/related_questions
 //   POST /api/v1/searchbots/retrieval_test
+//   POST /api/v1/searchbots/ask
 type SearchBotHandler struct {
-	searchSvc *service.SearchService
-	tenantSvc *service.TenantService
-	llm       searchbotLLM
-	chunkSvc  ChunkRetriever
+	searchSvc    *service.SearchService
+	tenantSvc    *service.TenantService
+	llm          searchbotLLM
+	streamLLM    streamingLLM
+	chunkSvc     ChunkRetriever
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
 func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
 	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc}
 }
+
+// SetStreamLLM sets the streaming LLM for the Ask endpoint.
+func (h *SearchBotHandler) SetStreamLLM(llm streamingLLM) { h.streamLLM = llm }
 
 // Handle generates related search questions based on a user query.
 // @Summary Generate Related Questions
@@ -238,6 +281,245 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": int(common.CodeSuccess), "data": result, "message": "success"})
 }
 
+// Ask performs a retrieval-augmented Q&A with streaming SSE response.
+// @Summary Ask with Knowledge Bases
+// @Description Retrieves chunks, builds prompt, and streams LLM answer with citations via SSE.
+// @Tags searchbots
+// @Accept json
+// @Produce text/event-stream
+// @Param request body SearchBotAskRequest true "Ask parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/ask [post]
+func (h *SearchBotHandler) Ask(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req SearchBotAskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		return
+	}
+
+	// Filter empty kb_ids.
+	filtered := make(common.StringSlice, 0, len(req.KbIDs))
+	for _, id := range req.KbIDs {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		filtered = append(filtered, id)
+	}
+	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_ids and question are required"})
+		return
+	}
+
+	// Resolve chat model ID.
+	modelID := ""
+	if req.SearchID != "" && h.searchSvc != nil {
+		if detail, err := h.searchSvc.GetDetail(req.SearchID); err == nil {
+			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
+				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
+					modelID = cid
+				}
+			}
+		}
+	}
+	if modelID == "" && h.tenantSvc != nil {
+		defaultModel, err := h.tenantSvc.GetDefaultModelName(user.ID, entity.ModelTypeChat)
+		if err == nil && defaultModel != "" {
+			modelID = defaultModel
+		}
+	}
+	if modelID == "" {
+		writeSSE(c, sseError("chat model not configured"))
+		return
+	}
+
+	// Phase 1: Retrieval.  Fixed defaults mirror Python bot_api.py:
+	// page=1, size=12, top_k=1024, similarity_threshold=0.1, vector_similarity_weight=0.3.
+	retrievalReq := &service.RetrievalTestRequest{
+		Datasets:               common.StringSlice(filtered),
+		Question:               req.Question,
+		TopK:                   intPtr(1024),
+		SimilarityThreshold:    floatPtr(0.1),
+		VectorSimilarityWeight: floatPtr(0.3),
+	}
+	defPage := 1
+	defSize := 12
+	retrievalReq.Page = &defPage
+	retrievalReq.Size = &defSize
+
+	result, err := h.chunkSvc.RetrievalTest(retrievalReq, user.ID)
+	if err != nil {
+		common.Warn("ask retrieval failed", zap.String("error", err.Error()))
+		writeSSE(c, sseError("retrieval failed"))
+		return
+	}
+	if result == nil || len(result.Chunks) == 0 {
+		writeSSE(c, sseAnswer("Sorry, no relevant information provided.", nil, true))
+		return
+	}
+
+	chunks := service.NewSourcedChunks(result.Chunks)
+
+	// Build system prompt.
+	knowledge := service.KbPrompt(chunks, 4096)
+	prompt, err := service.LoadPrompt("ask_summary")
+	if err != nil {
+		common.Warn("failed to load ask_summary prompt", zap.Error(err))
+		writeSSE(c, sseError("prompt configuration error"))
+		return
+	}
+	sysPrompt := service.RenderPrompt(prompt, map[string]interface{}{"knowledge": knowledge})
+
+	messages := []modelModule.Message{
+		{Role: "system", Content: sysPrompt},
+		{Role: "user", Content: req.Question},
+	}
+	genConf := &modelModule.ChatConfig{Temperature: floatPtr(0.1)}
+
+	// Streaming LLM call.
+	if h.streamLLM == nil {
+		writeSSE(c, sseError("streaming LLM not configured"))
+		return
+	}
+	ch, err := h.streamLLM.ChatStream(user.ID, modelID, messages, genConf)
+	if err != nil {
+		common.Warn("ask LLM stream failed", zap.String("error", err.Error()))
+		writeSSE(c, sseError("LLM call failed"))
+		return
+	}
+
+	// Phase 2: Stream LLM response via SSE.  Think tags are surfaced as
+	// structured markers; visible text is batched to 16-token chunks to
+	// balance responsiveness and overhead.
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	var fullAnswer string
+	ctx := c.Request.Context()
+	deltaCh := service.StreamThinkTagDelta(ctx, ch, 16)
+
+	for delta := range deltaCh {
+		switch delta.Kind {
+		case service.ThinkDeltaMarker:
+			// Emit marker as SSE with empty data but marker present.
+			writeSSE(c, sseMarker(delta.Value))
+		case service.ThinkDeltaText:
+			fullAnswer += delta.Value
+			writeSSE(c, sseAnswer(delta.Value, nil, false))
+		}
+	}
+
+	// Phase 3: Finalize — extract visible answer, format references.
+	//
+	// TODO(#15749): When FetchChunkVectors lands, insert citation [ID:n] markers:
+	//   vectors := FetchChunkVectors(ctx, engine, ...)
+	//   answer, cited := InsertCitations(visible, chunks, vectors, embdModel)
+	//   refs = filterByCited(refs, cited)
+	//   writeSSE(c, sseAnswer(answer, refs, true))
+	visible := service.ExtractVisibleAnswer(fullAnswer)
+	chunkRefs := service.ChunksFormat(chunks)
+	// Match Python: the final reference is {chunks: [...], doc_aggs: [...]}.
+	refs := map[string]interface{}{
+		"chunks":   chunkRefs,
+		"doc_aggs": result.DocAggs,
+	}
+	writeSSE(c, sseAnswer(visible, refs, true))
+
+	// Final SSE close marker.
+	c.Stream(func(w io.Writer) bool {
+		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+		return false
+	})
+}
+
+// ---- SSE helpers ----
+
+type ssePayload struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+// askSSEData is the inner data object for SSE events, matching Python bot_api.py.
+// The Reference field is always present (non-nil) so the frontend can safely
+// access .chunks or .reduce without a null guard.
+type askSSEData struct {
+	Answer        string      `json:"answer"`
+	Reference     interface{} `json:"reference"`
+	Final         bool        `json:"final"`
+	StartToThink  bool        `json:"start_to_think,omitempty"`
+	EndToThink    bool        `json:"end_to_think,omitempty"`
+}
+
+func sseAnswer(answer string, refs interface{}, final bool) string {
+	if refs == nil {
+		refs = map[string]interface{}{}
+	}
+	payload := ssePayload{
+		Code:    0,
+		Message: "",
+		Data: askSSEData{
+			Answer:    answer,
+			Reference: refs,
+			Final:     final,
+		},
+	}
+	b, _ := json.Marshal(payload)
+	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+// sseError matches Python bot_api.py error format:
+//
+//	{"code": 500, "message": "...", "data": {"answer": "**ERROR**: ...", "reference": []}}
+func sseError(message string) string {
+	payload := ssePayload{
+		Code:    int(common.CodeServerError),
+		Message: message,
+		Data: askSSEData{
+			Answer:    "**ERROR**: " + message,
+			Reference: []map[string]interface{}{},
+		},
+	}
+	b, _ := json.Marshal(payload)
+	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+// sseMarker matches Python dialog_service.py think-tag marker format:
+//
+//	{"answer": "", "reference": {}, "final": false, "start_to_think": true}
+func sseMarker(marker string) string {
+	d := askSSEData{
+		Answer:    "",
+		Reference: map[string]interface{}{},
+	}
+	if marker == "<think>" {
+		d.StartToThink = true
+	} else {
+		d.EndToThink = true
+	}
+	payload := ssePayload{Code: 0, Message: "", Data: d}
+	b, _ := json.Marshal(payload)
+	return fmt.Sprintf("data: %s\n\n", string(b))
+}
+
+// sseWriter is used to write SSE events to the client.  It is a variable
+// so that tests can replace it with a no-op or buffer-based implementation
+// without needing gin's CloseNotifier.
+var sseWriter = func(c *gin.Context, data string) {
+	c.Stream(func(w io.Writer) bool {
+		fmt.Fprint(w, data)
+		return true
+	})
+}
+
+func writeSSE(c *gin.Context, data string) { sseWriter(c, data) }
+
 // toRetrievalServiceRequest maps the handler DTO to the service DTO.
 // The two structs differ in KbIDs (StringSlice → []string) and
 // MetaDataFilter (→ Filter) to maintain Python API compatibility.
@@ -263,6 +545,9 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 
 // ptrFloat64 returns a pointer to a float64 value.
 func ptrFloat64(v float64) *float64 { return &v }
+
+func intPtr(v int) *int       { return &v }
+func floatPtr(v float64) *float64 { return &v }
 
 // applyRetrievalDefaults fills in default values for optional fields,
 // matching Python bot_api.py retrieval_test endpoint.

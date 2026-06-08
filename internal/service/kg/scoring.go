@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"ragflow/internal/service"
 )
 
 // AnalyzeNHopPaths decomposes N-hop paths into edges with distance-decayed scores.
@@ -148,7 +150,7 @@ func SortAndTrimRelations(relsFromText map[Edge]*KGRelation, topN int) []ScoredR
 // NumTokensFromString estimates the number of tokens in a string.
 // Uses a simple approximation: len/4 characters per token (roughly matching cl100k_base).
 func NumTokensFromString(s string) int {
-	return len(s) / 4
+	return service.NumTokensFromString(s)
 }
 
 // formatCSVLine formats fields as a single CSV record with trailing newline.
