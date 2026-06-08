@@ -309,10 +309,14 @@ func TestReplicateListModelsAndCheckConnection(t *testing.T) {
 
 func TestReplicateUnsupportedMethods(t *testing.T) {
 	m := newReplicateForTest("http://unused")
-	if _, err := m.Rerank(nil, "", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	apiKey := "test-key"
+	// Rerank IS implemented; with empty documents it short-circuits (no error).
+	// Pass non-empty docs + nil modelName to trigger model-name validation.
+	if _, err := m.Rerank(nil, "", []string{"d"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("Rerank error=%v", err)
 	}
-	if _, err := m.Balance(nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	// Balance IS a stub → "no such method"
+	if _, err := m.Balance(&APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance error=%v", err)
 	}
 }

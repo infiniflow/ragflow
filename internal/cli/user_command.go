@@ -498,8 +498,8 @@ func (c *RAGFlowClient) getDatasetID(datasetName string) (string, error) {
 	return "", fmt.Errorf("dataset '%s' not found", datasetName)
 }
 
-// ListMetadata lists metadata for datasets
-func (c *RAGFlowClient) ListMetadata(cmd *Command) (ResponseIf, error) {
+// GetMetadata gets metadata for one or more datasets
+func (c *RAGFlowClient) GetMetadata(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
 	}
@@ -606,6 +606,68 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 		"question":                 question,
 		"similarity_threshold":     0.2,
 		"vector_similarity_weight": 0.3,
+	}
+
+	// Add optional parameters from command
+	if val, ok := cmd.Params["top_k"]; ok {
+		payload["top_k"] = val
+	}
+	if val, ok := cmd.Params["similarity_threshold"]; ok {
+		payload["similarity_threshold"] = val
+	}
+	if val, ok := cmd.Params["vector_similarity_weight"]; ok {
+		payload["vector_similarity_weight"] = val
+	}
+	if val, ok := cmd.Params["keyword"]; ok {
+		payload["keyword"] = val
+	}
+	if val, ok := cmd.Params["use_kg"]; ok {
+		payload["use_kg"] = val
+	}
+	if val, ok := cmd.Params["rerank_id"]; ok {
+		payload["rerank_id"] = val
+	}
+	if val, ok := cmd.Params["tenant_rerank_id"]; ok {
+		payload["tenant_rerank_id"] = val
+	}
+	if val, ok := cmd.Params["page_size"]; ok {
+		payload["page_size"] = val
+	}
+	if val, ok := cmd.Params["page"]; ok {
+		payload["page"] = val
+	}
+	if val, ok := cmd.Params["search_id"]; ok {
+		if s, ok := val.(string); ok {
+			payload["search_id"] = s
+		}
+	}
+	if val, ok := cmd.Params["cross_languages"]; ok {
+		if list, ok := val.([]string); ok {
+			payload["cross_languages"] = list
+		}
+	}
+	if val, ok := cmd.Params["doc_ids"]; ok {
+		if list, ok := val.([]string); ok {
+			payload["doc_ids"] = list
+		}
+	}
+	if val, ok := cmd.Params["meta_data_filter"]; ok {
+		// Accept either a raw JSON string from the CLI or a pre-decoded
+		// map[string]interface{} (future-proofing for callers that
+		// construct the command programmatically). The string form is
+		// the public CLI surface; the map form is for unit tests.
+		switch v := val.(type) {
+		case string:
+			var decoded map[string]interface{}
+			if err := json.Unmarshal([]byte(v), &decoded); err != nil {
+				return nil, fmt.Errorf("invalid meta_data_filter JSON: %w", err)
+			}
+			payload["meta_data_filter"] = decoded
+		case map[string]interface{}:
+			payload["meta_data_filter"] = v
+		default:
+			return nil, fmt.Errorf("meta_data_filter must be JSON string or object")
+		}
 	}
 
 	if iterations > 1 {
@@ -1166,7 +1228,7 @@ func (c *RAGFlowClient) DeleteProvider(cmd *Command) (ResponseIf, error) {
 }
 
 // CreateProviderInstance creates a new provider instance
-// CREATE PROVIDER <name> INSTANCE <instance_name> <api_key>
+// CREATE PROVIDER <name> INSTANCE <instance_name> KEY <api_key> URL <base_url> REGION <region>
 func (c *RAGFlowClient) CreateProviderInstance(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1442,7 +1504,8 @@ func (c *RAGFlowClient) DropProviderInstance(cmd *Command) (ResponseIf, error) {
 }
 
 // DropInstanceModel deletes a provider instance, only works for local deployed model
-// DROP MODEL <name> FROM <provider_name> <instance_name>
+// DROP MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
+// Remove MODEL <name1 name2 name3> FROM <provider_name> <instance_name>
 func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 	if c.ServerType != "user" {
 		return nil, fmt.Errorf("this command is only allowed in USER mode")
@@ -1458,13 +1521,13 @@ func (c *RAGFlowClient) DropInstanceModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("provider name not provided")
 	}
 
-	modelName, ok := cmd.Params["model_name"].(string)
+	modelNames, ok := cmd.Params["model_names"].([]string)
 	if !ok {
 		return nil, fmt.Errorf("model name not provided")
 	}
 
 	payload := map[string]interface{}{
-		"models": []string{modelName},
+		"models": modelNames,
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
@@ -2681,20 +2744,9 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("instance name not provided")
 	}
 
-	modelName, ok := cmd.Params["model_name"].(string)
+	models, ok := cmd.Params["models"].([]map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("model name not provided")
-	}
-
-	// chat, vision, embedding, rerank, tts, asr, ocr
-	modelTypes, ok := cmd.Params["model_types"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("model type not provided")
-	}
-
-	maxTokens, ok := cmd.Params["max_tokens"].(int)
-	if !ok {
-		return nil, fmt.Errorf("max tokens not provided")
 	}
 
 	url := fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
@@ -2702,14 +2754,7 @@ func (c *RAGFlowClient) AddCustomModel(cmd *Command) (ResponseIf, error) {
 	payload := map[string]interface{}{
 		"provider_name": providerName,
 		"instance_name": instanceName,
-		"model_name":    modelName,
-		"model_types":   modelTypes,
-		"max_tokens":    maxTokens,
-	}
-
-	supportThink, ok := cmd.Params["support_think"].(bool)
-	if ok {
-		payload["thinking"] = supportThink
+		"models":        models,
 	}
 
 	resp, err := c.HTTPClient.Request("POST", url, "web", nil, payload)

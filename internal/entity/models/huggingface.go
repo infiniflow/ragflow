@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package models
 
 import (
@@ -14,25 +30,21 @@ import (
 
 // HuggingFaceModel implements ModelDriver for HuggingFace
 type HuggingFaceModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	baseModel BaseModel
 }
 
 // NewHuggingFaceModel creates a new huggingFace model instance
 func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *HuggingFaceModel {
 	return &HuggingFaceModel{
-		BaseURL:    baseURL,
-		URLSuffix:  urlSuffix,
-		httpClient: &http.Client{},
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: &http.Client{},
+		},
 	}
 }
 func (h *HuggingFaceModel) NewInstance(baseURL map[string]string) ModelDriver {
-	return &HuggingFaceModel{
-		BaseURL:    baseURL,
-		URLSuffix:  h.URLSuffix,
-		httpClient: &http.Client{},
-	}
+	return NewHuggingFaceModel(baseURL, h.baseModel.URLSuffix)
 }
 
 func (h *HuggingFaceModel) Name() string {
@@ -40,16 +52,19 @@ func (h *HuggingFaceModel) Name() string {
 }
 
 func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 
 	// Convert messages to the format expected by API
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -116,11 +131,9 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -182,16 +195,19 @@ func (h *HuggingFaceModel) ChatWithMessages(modelName string, messages []Message
 }
 
 func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
 
-	var region = "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -261,7 +277,7 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -343,21 +359,16 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(modelName string, messages []M
 }
 
 func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
 
-	region := "default"
-	if apiConfig != nil && apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
-	}
-
 	if modelName == nil || *modelName == "" {
 		return nil, fmt.Errorf("model name is required")
-	}
-
-	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
-		return nil, fmt.Errorf("api key is required")
 	}
 
 	reqBody := map[string]interface{}{
@@ -369,7 +380,11 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s/%s", h.BaseURL[region], h.URLSuffix.Embedding, *modelName)
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Embedding, *modelName)
 
 	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
 	defer cancel()
@@ -382,7 +397,7 @@ func (h *HuggingFaceModel) Embed(modelName *string, texts []string, apiConfig *A
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -422,8 +437,8 @@ func (h *HuggingFaceModel) TranscribeAudio(modelName *string, file *string, apiC
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (z *HuggingFaceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", h.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -431,8 +446,8 @@ func (h *HuggingFaceModel) AudioSpeech(modelName *string, audioContent *string, 
 	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (z *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", h.Name())
 }
 
 // OCRFile OCR file
@@ -441,17 +456,20 @@ func (h *HuggingFaceModel) OCRFile(modelName *string, content []byte, url *strin
 }
 
 // ParseFile parse file
-func (z *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
 func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	var region = "default"
-	if apiConfig.Region != nil && *apiConfig.Region != "" {
-		region = *apiConfig.Region
+	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/%s", h.BaseURL[region], h.URLSuffix.Models)
+	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -472,7 +490,7 @@ func (h *HuggingFaceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
-	resp, err := h.httpClient.Do(req)
+	resp, err := h.baseModel.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
@@ -512,10 +530,10 @@ func (h *HuggingFaceModel) CheckConnection(apiConfig *APIConfig) error {
 	return err
 }
 
-func (z *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }
 
-func (z *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+func (h *HuggingFaceModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", h.Name())
 }

@@ -9,6 +9,7 @@ export const useWarnEmptyModel = (
   showEmptyModelWarn: boolean,
   embdId?: string,
   llmId?: string,
+  loading?: boolean,
 ) => {
   const { t } = useTranslation();
   const warnedRef = useRef(false);
@@ -18,6 +19,7 @@ export const useWarnEmptyModel = (
     if (
       showEmptyModelWarn &&
       !warnedRef.current &&
+      !loading &&
       (isEmpty(embdId) || isEmpty(llmId)) &&
       typeof embdId === 'string' &&
       typeof llmId === 'string'
@@ -39,5 +41,5 @@ export const useWarnEmptyModel = (
         },
       });
     }
-  }, [showEmptyModelWarn, embdId, llmId, navigateToModelSetting, t]);
+  }, [showEmptyModelWarn, embdId, llmId, loading, navigateToModelSetting, t]);
 };

@@ -67,9 +67,10 @@ func (dao *DocumentDAO) UpdateByID(id string, updates map[string]interface{}) er
 	return DB.Model(&entity.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete delete document
-func (dao *DocumentDAO) Delete(id string) error {
-	return DB.Delete(&entity.Document{}, "id = ?", id).Error
+// Delete hard-deletes document by ID. Returns rows affected.
+func (dao *DocumentDAO) Delete(id string) (int64, error) {
+	result := DB.Where("id = ?", id).Delete(&entity.Document{})
+	return result.RowsAffected, result.Error
 }
 
 // List list documents
@@ -134,6 +135,9 @@ func (dao *DocumentDAO) GetAllDocIDsByKBIDs(kbIDs []string) ([]map[string]string
 
 // GetByIDs retrieves documents by multiple IDs
 func (dao *DocumentDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	var documents []*entity.Document
 	err := DB.Where("id IN ?", ids).Find(&documents).Error
 	if err != nil {
