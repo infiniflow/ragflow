@@ -43,6 +43,7 @@ type Router struct {
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
 	relatedQuestionsHandler *handler.SearchbotHandler
+	difyRetrievalHandler  *handler.DifyRetrievalHandler
 }
 
 // NewRouter create router
@@ -67,6 +68,7 @@ func NewRouter(
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
 	relatedQuestionsHandler *handler.SearchbotHandler,
+	difyRetrievalHandler  *handler.DifyRetrievalHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -89,6 +91,7 @@ func NewRouter(
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
 		relatedQuestionsHandler: relatedQuestionsHandler,
+			difyRetrievalHandler:  difyRetrievalHandler,
 	}
 }
 
@@ -204,6 +207,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
+				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
+				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -244,6 +249,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
+				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
@@ -301,14 +307,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// 	message.GET("", r.memoryHandler.GetMessages)
 			// 	message.GET("/:memory_id/:message_id/content", r.memoryHandler.GetMessageContent)
 			// }
-
-			mcp := v1.Group("/mcp")
-			{
-				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
-				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
-				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
-				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
-			}
 
 			// Skill search routes
 			skills := v1.Group("/skills")
@@ -378,7 +376,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions", r.agentHandler.ListAgentVersions)
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
-
+				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
 			}
 
 			connector := v1.Group("/connectors")
@@ -392,6 +390,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connector.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 				connector.POST("/:connector_id/test", r.connectorHandler.TestConnector)
+			}
+
+			// MCP server routes. Per-server CRUD ships via separate PRs that
+			// share the same handler/service: GET list (#15253), GET by id
+			// (#15254), POST create (#15260, merged), PUT (#15261), DELETE
+			// (#15262, merged). This PR adds only the non-overlapping
+			// endpoints: import and test.
+			mcp := v1.Group("/mcp")
+			{
+				mcp.POST("/servers", r.mcpHandler.CreateMCPServer)
+				mcp.GET("/servers", r.mcpHandler.ListMCPServers)
+				mcp.PUT("/servers/:mcp_id", r.mcpHandler.UpdateMCPServer)
+				mcp.DELETE("/servers/:mcp_id", r.mcpHandler.DeleteMCPServer)
+				mcp.POST("/servers/import", r.mcpHandler.ImportMCPServers)
+				mcp.POST("/servers/:mcp_id/test", r.mcpHandler.TestMCPServer)
 			}
 
 			system := v1.Group("/system")
@@ -509,6 +522,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		}
 
 	}
+
+	// Dify retrieval routes
+	dify := authorized.Group("/api/v1/dify")
+	{
+		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
+		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
+	}
+	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)

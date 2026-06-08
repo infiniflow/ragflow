@@ -278,26 +278,6 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
-    @retry_db_operation
-    def update_by_id_if_update_time(cls, pid, update_time, data):
-        # Update a single record by ID only if update_time matches the expected value.
-        # Args:
-        #     pid: Record ID
-        #     update_time: Expected update_time value for optimistic locking
-        #     data: Updated field values
-        # Returns:
-        #     Number of records updated
-        data["update_time"] = current_timestamp()
-        data["update_date"] = datetime_format(datetime.now())
-        num = (
-            cls.model.update(data)
-            .where(cls.model.id == pid, cls.model.update_time == update_time)
-            .execute()
-        )
-        return num
-
-    @classmethod
-    @DB.connection_context()
     def get_by_id(cls, pid):
         # Get a record by ID
         # Args:
