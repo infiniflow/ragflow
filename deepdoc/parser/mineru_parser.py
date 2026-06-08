@@ -88,7 +88,13 @@ LANGUAGE_TO_MINERU_MAP = {
 class MinerUBackend(StrEnum):
     """MinerU processing backend options."""
 
+    # Current MinerU backends (fixes #15244).
     PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
+    VLM_AUTO_ENGINE = "vlm-auto-engine"  # MinerU's auto-selected VLM engine
+    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Hybrid pipeline + auto VLM engine
+    # Legacy backends — retained for users still pointing at older MinerU
+    # servers that accept these fine-grained values. New deployments should
+    # use one of the three above.
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
     VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
@@ -232,7 +238,9 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        # Derived from MinerUBackend so a new enum value is automatically
+        # accepted without having to update this list (fixes #15244).
+        valid_backends = [b.value for b in MinerUBackend]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
