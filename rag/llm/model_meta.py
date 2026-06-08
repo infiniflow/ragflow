@@ -263,37 +263,6 @@ class BaiduYiyan(Base):
         return res
 
 
-class TencentHunyuan(Base):
-    """Tencent Hunyuan provides an OpenAI-compatible API at ``https://api.hunyuan.cloud.tencent.com/v1``.
-
-    ``GET /v1/models`` returns the standard OpenAI model list format (id, object, created, owned_by).
-    Model type and max_tokens are not included in the response, so all models default to ``chat``
-    with ``max_tokens=8192``. The static config in ``llm_factories.json`` provides accurate values
-    for known models and takes precedence via the merge logic in ``list_provider_models``.
-    """
-
-    _FACTORY_NAME = "Tencent Hunyuan"
-
-    def _format_model_list(self, raw_model_list):
-        data = raw_model_list.get("data", [])
-        if not data:
-            return []
-        res = []
-        for model in data:
-            model_id = model.get("id")
-            if not model_id:
-                continue
-            res.append(
-                {
-                    "name": model_id,
-                    "model_types": [LLMType.CHAT.value],
-                    "features": None,
-                    "max_tokens": 8192,
-                }
-            )
-        return res
-
-
 class TencentCloud(Base):
     """Tencent Cloud is used for ASR (speech-to-text) only.
 
@@ -356,12 +325,14 @@ class FishAudio(Base):
                     model_name = model.get("title") or model.get("_id")
                     if not model_name:
                         continue
-                    model_list.append({
-                        "name": model_name,
-                        "model_types": [LLMType.TTS.value],
-                        "features": [],
-                        "max_tokens": 8192,
-                    })
+                    model_list.append(
+                        {
+                            "name": model_name,
+                            "model_types": [LLMType.TTS.value],
+                            "features": [],
+                            "max_tokens": 8192,
+                        }
+                    )
                 return model_list
 
 
@@ -403,12 +374,14 @@ class MinerU(Base):
                     model_name = model.get("title") or model.get("name") or model.get("id") or model.get("_id")
                     if not model_name:
                         continue
-                    model_list.append({
-                        "name": model_name,
-                        "model_types": [LLMType.OCR.value],
-                        "features": [],
-                        "max_tokens": model.get("max_tokens", 8192),
-                    })
+                    model_list.append(
+                        {
+                            "name": model_name,
+                            "model_types": [LLMType.OCR.value],
+                            "features": [],
+                            "max_tokens": model.get("max_tokens", 8192),
+                        }
+                    )
                 return model_list
 
 
@@ -475,19 +448,16 @@ class OpenRouter(Base):
             if supported_parameters & {"reasoning", "include_reasoning"}:
                 features.append("thinking")
 
-            max_tokens = (
-                (model.get("top_provider") or {}).get("max_completion_tokens")
-                or model.get("context_length")
-                or (model.get("top_provider") or {}).get("context_length")
-                or 8192
-            )
+            max_tokens = (model.get("top_provider") or {}).get("max_completion_tokens") or model.get("context_length") or (model.get("top_provider") or {}).get("context_length") or 8192
 
-            model_list.append({
-                "name": model_name,
-                "model_types": list(dict.fromkeys(model_types)),
-                "features": features,
-                "max_tokens": max_tokens,
-            })
+            model_list.append(
+                {
+                    "name": model_name,
+                    "model_types": list(dict.fromkeys(model_types)),
+                    "features": features,
+                    "max_tokens": max_tokens,
+                }
+            )
 
         return model_list
 
@@ -547,18 +517,14 @@ class OpenAIAPICompatible(Base):
                 continue
 
             model_name_lower = model_name.lower()
-            model_list.append({
-                "name": model_name,
-                "model_types": self._infer_model_types(model_name_lower),
-                "features": [],
-                "max_tokens": (
-                    model.get("max_tokens")
-                    or model.get("max_completion_tokens")
-                    or model.get("context_length")
-                    or model.get("max_model_len")
-                    or 8192
-                ),
-            })
+            model_list.append(
+                {
+                    "name": model_name,
+                    "model_types": self._infer_model_types(model_name_lower),
+                    "features": [],
+                    "max_tokens": (model.get("max_tokens") or model.get("max_completion_tokens") or model.get("context_length") or model.get("max_model_len") or 8192),
+                }
+            )
 
         return model_list
 
