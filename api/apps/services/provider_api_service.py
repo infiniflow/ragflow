@@ -234,7 +234,7 @@ def show_provider_model(provider_name: str, model_name: str):
     }
 
 
-async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: dict=None):
+async def create_provider_instance(tenant_id: str, provider_name: str, instance_name: str, api_key: str|dict, base_url: str, region: str, model_info: list[dict]=None):
     """
     Create a provider instance.
 
@@ -247,7 +247,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     :param api_key: API key
     :param base_url: base url
     :param region: region
-    :param model_info: model info, {
+    :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
         "model_name": "name"，
         "max_tokens": 4096,
@@ -255,7 +255,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
             "field1": "value1",
             "field2": "'value2"
         }
-    }
+    }]
     :return: (success, result_or_error_message)
     """
     if not provider_name:
@@ -290,8 +290,12 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
         extra_fields["region"] = region
     TenantModelInstanceService.create_instance(provider_id=provider_obj.id,instance_name=instance_name,api_key=api_key_str, extra=json.dumps(extra_fields))
     if model_info:
-        success, msg = add_model_to_instance(tenant_id, provider_name, instance_name, **model_info)
-        if not success:
+        msg = ""
+        for model in model_info:
+            success, _msg = add_model_to_instance(tenant_id, provider_name, instance_name, **model)
+            if not success:
+                msg += _msg
+        if msg:
             return False, msg
 
     return True, "success"
@@ -331,7 +335,7 @@ def list_provider_instances(tenant_id: str, provider_name: str):
     return True, active_instances + inactive_instances
 
 
-async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: dict=None):
+async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=None, region: str=None, model_info: list[dict]=None):
     """
     Verify API key for a provider.
 
@@ -339,7 +343,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     :param api_key: API key
     :param base_url: base url
     :param region: region
-    :param model_info: model info, {
+    :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
         "model_name": "name"，
         "max_tokens": 4096,
@@ -347,7 +351,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
             "field1": "value1",
             "field2": "'value2"
         }
-    }
+    }]
     :return: (success, result_or_error_message)
     """
     if not provider_name:
@@ -368,8 +372,8 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
             return False, f"No models found for provider '{provider_name}'"
         factory_llms = [{
             "model_type": _type,
-            "llm_name": model_info.get("model_name", ""),
-        } for _type in model_info.get("model_type", [])]
+            "llm_name": model.get("model_name", ""),
+        } for model in model_info if model for _type in model.get("model_type", []) ]
 
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
