@@ -344,5 +344,135 @@ func TestGetVersion_NotFound(t *testing.T) {
 	}
 }
 
+// TestGetAgent_Success verifies that GetAgent fetches the canvas, latest version time, and normalizes DSL.
+func TestGetAgent_Success(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+		&entity.UserCanvasVersion{},
+		&entity.CanvasTemplate{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	// Insert owner
+	testDB.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"})
+
+	// Setup Canvas (owned by the user)
+	title := "My Test Agent"
+	canvas := &entity.UserCanvas{
+		ID:             "canvas-123",
+		UserID:         "user-1",
+		Title:          &title,
+		CanvasCategory: "agent_canvas",
+		DSL: entity.JSONMap{
+			"components": map[string]interface{}{
+				"Splitter:1": map[string]interface{}{
+					"obj": map[string]interface{}{
+						"component_name": "Splitter",
+					},
+				},
+			},
+		},
+	}
+	if err := testDB.Create(canvas).Error; err != nil {
+		t.Fatalf("failed to create canvas: %v", err)
+	}
+
+	// Setup latest released version
+	publishTime := time.Now().Unix()
+	version := &entity.UserCanvasVersion{
+		ID:           "version-1",
+		UserCanvasID: "canvas-123",
+		Release:      true,
+		BaseModel: entity.BaseModel{
+			UpdateTime: ptr(publishTime),
+		},
+	}
+	if err := testDB.Create(version).Error; err != nil {
+		t.Fatalf("failed to create version: %v", err)
+	}
+
+	svc := NewAgentService()
+	detail, err := svc.GetAgent("user-1", "canvas-123")
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+
+	if detail == nil {
+		t.Fatalf("expected AgentDetailItem, got nil")
+	}
+
+	if detail.ID != "canvas-123" {
+		t.Errorf("expected canvas ID 'canvas-123', got '%s'", detail.ID)
+	}
+
+	if detail.LastPublishTime == nil || *detail.LastPublishTime != publishTime {
+		t.Errorf("expected publish time %d, got %v", publishTime, detail.LastPublishTime)
+	}
+
+	// Verify DSL normalization (Splitter -> TokenChunker)
+	components, ok := detail.DSL["components"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("DSL components missing or invalid type")
+	}
+
+	if _, exists := components["TokenChunker:1"]; !exists {
+		t.Errorf("expected TokenChunker:1 in normalized DSL, got %v", components)
+	}
+}
+
+// TestGetAgent_AccessDenied verifies that requesting another user's private canvas is denied.
+func TestGetAgent_AccessDenied(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.UserTenant{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = testDB
+	t.Cleanup(func() { dao.DB = orig })
+
+	// Create owner and requester
+	testDB.Create(&entity.User{ID: "user-owner", Nickname: "owner", Email: "owner@test.com"})
+	testDB.Create(&entity.User{ID: "user-requester", Nickname: "req", Email: "req@test.com"})
+
+	// Setup Canvas owned by another user without team permission
+	title := "Private Agent"
+	canvas := &entity.UserCanvas{
+		ID:         "canvas-456",
+		UserID:     "user-owner",
+		Title:      &title,
+		Permission: "me", // private
+	}
+	if err := testDB.Create(canvas).Error; err != nil {
+		t.Fatalf("failed to create canvas: %v", err)
+	}
+
+	svc := NewAgentService()
+	_, err := svc.GetAgent("user-requester", "canvas-456")
+	if err == nil {
+		t.Fatalf("expected access denied error, got nil")
+	}
+
+	if err.Error() != "canvas not found" {
+		t.Errorf("expected 'canvas not found' error, got '%v'", err)
+	}
+}
+
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
