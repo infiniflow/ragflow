@@ -1797,6 +1797,9 @@ async def report_status():
 
         # Report heartbeat to Redis
         try:
+            # Re-assert membership each cycle so a transient eviction from TASKEXE
+            # self-heals and our in-flight messages aren't reclaimed as orphans.
+            REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
             REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now_ts)
         except Exception as e:
             logging.warning(f"Failed to report heartbeat: {e}")
@@ -1819,6 +1822,7 @@ async def report_status():
         if lock_acquired:
             try:
                 task_executors = REDIS_CONN.smembers("TASKEXE") or set()
+                live_workers = {CONSUMER_NAME}
                 for worker_name in task_executors:
                     if worker_name == CONSUMER_NAME:
                         continue
@@ -1832,6 +1836,23 @@ async def report_status():
                         logging.info(f"{worker_name} expired, removed")
                         REDIS_CONN.srem("TASKEXE", worker_name)
                         REDIS_CONN.delete(worker_name)
+                    else:
+                        live_workers.add(worker_name)
+
+                # Reclaim in-flight messages orphaned by dead consumers, which would
+                # otherwise sit in the PEL forever (e.g. on scale-down/rescheduling).
+                # Live workers are skipped and min_idle_ms avoids stealing fresh work.
+                try:
+                    reclaimed = REDIS_CONN.reclaim_pending_msg(
+                        settings.get_svr_queue_names(TASK_TYPE),
+                        SVR_CONSUMER_GROUP_NAME,
+                        live_workers,
+                        min_idle_ms=WORKER_HEARTBEAT_TIMEOUT * 1000,
+                    )
+                    if reclaimed:
+                        logging.info(f"Reclaimed {reclaimed} orphaned pending message(s) from dead consumers")
+                except Exception as e:
+                    logging.warning(f"Failed to reclaim orphaned pending messages: {e}")
             except Exception as e:
                 logging.warning(f"Failed to clean other executors: {e}")
             finally:

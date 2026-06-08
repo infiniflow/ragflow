@@ -455,14 +455,17 @@ class RedisDB:
         return None
 
     def get_unacked_iterator(self, queue_names: list[str], group_name, consumer_name):
-        try:
-            for queue_name in queue_names:
+        # Isolate each queue so one queue's failure can't skip the others' replay.
+        for queue_name in queue_names:
+            try:
                 try:
                     group_info = self.REDIS.xinfo_groups(queue_name)
-                except Exception as e:
-                    if str(e) == 'no such key':
+                except redis.exceptions.ResponseError as e:
+                    if "no such key" in str(e).lower():
                         logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} doesn't exist")
-                        continue
+                    else:
+                        logging.exception(f"RedisDB.get_unacked_iterator queue {queue_name} xinfo_groups failed")
+                    continue
                 if not any(gi["name"] == group_name for gi in group_info):
                     logging.warning(f"RedisDB.get_unacked_iterator queue {queue_name} group {group_name} doesn't exist")
                     continue
@@ -474,35 +477,96 @@ class RedisDB:
                     current_min = payload.get_msg_id()
                     logging.info(f"RedisDB.get_unacked_iterator {queue_name} {consumer_name} {current_min}")
                     yield payload
-        except Exception:
-            logging.exception(
-                "RedisDB.get_unacked_iterator got exception: "
-            )
-            self.__open__()
+            except Exception:
+                logging.exception(f"RedisDB.get_unacked_iterator queue {queue_name} got exception")
+                self.__open__()
+                continue
 
-    def get_pending_msg(self, queue, group_name):
+    def get_pending_msg(self, queue, group_name, consumer_name=None, min_idle_ms=None, count=256):
+        """List a group's pending (delivered-but-unacked) messages, paging through
+        the whole PEL. Optionally filter by ``consumer_name`` and/or ``min_idle_ms``.
+        Returns dicts with keys ``message_id``/``consumer``/``time_since_delivered``/
+        ``times_delivered`` (empty on error or missing stream/group).
+        """
+        pending = []
+        start = "-"
+        last_id = None
         try:
-            messages = self.REDIS.xpending_range(queue, group_name, '-', '+', 10)
-            return messages
-        except Exception as e:
-            if 'No such key' not in (str(e) or ''):
+            while True:
+                batch = self.REDIS.xpending_range(
+                    queue,
+                    group_name,
+                    min=start,
+                    max="+",
+                    count=count,
+                    consumername=consumer_name,
+                    idle=min_idle_ms,
+                )
+                if not batch:
+                    break
+                pending.extend(batch)
+                if len(batch) < count:
+                    break
+                batch_last_id = str(batch[-1]["message_id"])
+                if batch_last_id == last_id:  # boundary didn't advance: stop, don't spin
+                    break
+                last_id = batch_last_id
+                start = "(" + batch_last_id  # exclusive: page strictly past the last id
+        except redis.exceptions.ResponseError as e:
+            # Missing stream/group means no PEL; anything else is worth logging.
+            err = str(e).lower()
+            if "no such key" not in err and "nogroup" not in err:
                 logging.warning(
                     "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
                 )
-        return []
+        except Exception as e:
+            logging.warning(
+                "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+            )
+            self.__open__()
+        return pending
 
-    def requeue_msg(self, queue: str, group_name: str, msg_id: str):
+    def requeue_msg(self, queue: str, group_name: str, msg_id: str) -> bool:
+        """Re-deliver a pending message: copy it to the stream tail for a fresh
+        pickup, then ack the original to drain the PEL. The ack is unconditional
+        so already-trimmed entries still leave the PEL. Idempotent; returns True
+        once the original is acked.
+        """
         for _ in range(3):
             try:
                 messages = self.REDIS.xrange(queue, msg_id, msg_id)
                 if messages:
                     self.REDIS.xadd(queue, messages[0][1])
-                    self.REDIS.xack(queue, group_name, msg_id)
+                self.REDIS.xack(queue, group_name, msg_id)
+                return True
             except Exception as e:
                 logging.warning(
-                    "RedisDB.get_pending_msg " + str(queue) + " got exception: " + str(e)
+                    "RedisDB.requeue_msg " + str(queue) + " got exception: " + str(e)
                 )
                 self.__open__()
+        return False
+
+    def reclaim_pending_msg(self, queue_names: list[str], group_name: str, live_consumers, min_idle_ms: int = 0) -> int:
+        """Requeue pending messages owned by consumers not in ``live_consumers``,
+        rescuing in-flight work from crashed workers that would otherwise sit in
+        the PEL forever. ``min_idle_ms`` skips just-delivered entries. Idempotent
+        (requeue_msg acks the original). Returns the count reclaimed.
+        """
+        reclaimed = 0
+        live = set(live_consumers or [])
+        for queue_name in queue_names:
+            for msg in self.get_pending_msg(queue_name, group_name, min_idle_ms=min_idle_ms or None):
+                consumer = msg.get("consumer")
+                if consumer in live:
+                    continue
+                msg_id = msg["message_id"]
+                if self.requeue_msg(queue_name, group_name, msg_id):
+                    reclaimed += 1
+                    logging.info(
+                        f"RedisDB.reclaim_pending_msg requeued {queue_name} {msg_id} "
+                        f"orphaned by dead consumer {consumer}"
+                    )
+        return reclaimed
 
     def queue_info(self, queue, group_name) -> dict | None:
         for _ in range(3):
