@@ -579,8 +579,8 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 	switch c.Config.CLIMode {
 	case AdminMode:
 		if c.Config.AdminClientConfig != nil {
-			result.Data["admin_host"] = c.Config.AdminClientConfig.AdminHost
-			result.Data["admin_port"] = c.Config.AdminClientConfig.AdminPort
+			result.Data["admin_server_ip"] = c.Config.AdminClientConfig.AdminHost
+			result.Data["admin_server_port"] = c.Config.AdminClientConfig.AdminPort
 			if c.Config.AdminClientConfig.AdminName != nil {
 				result.Data["admin_name"] = *c.Config.AdminClientConfig.AdminName
 			}
@@ -596,9 +596,10 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 
 	case UserMode:
 		if c.Config.APIClientConfig.APIServerMap != nil && c.Config.APIClientConfig.CurrentAPIServer != "" {
+			result.Data["api_server_name"] = c.Config.APIClientConfig.CurrentAPIServer
 			apiServerConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
-			result.Data["api_host"] = apiServerConfig.ApiHost
-			result.Data["api_port"] = apiServerConfig.ApiPort
+			result.Data["api_server_ip"] = apiServerConfig.IP
+			result.Data["api_server_port"] = apiServerConfig.Port
 			if apiServerConfig.UserName != nil {
 				result.Data["user_name"] = *apiServerConfig.UserName
 			}
