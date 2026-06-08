@@ -146,6 +146,8 @@ func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
 			result.Code = 1
 			result.Message = "Ping failed"
 		}
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	result.Duration = resp.Duration
@@ -228,6 +230,19 @@ func (c *CLI) Logout() (ResponseIf, error) {
 		return nil, fmt.Errorf("login failed: %s", result.Message)
 	}
 
+	switch c.Config.CLIMode {
+	case AdminMode:
+		c.AdminServerClient.LoginToken = nil
+		c.Config.AdminClientConfig.AdminName = nil
+		c.Config.AdminClientConfig.AdminPassword = nil
+	case APIMode:
+		c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken = nil
+		c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].UserName = nil
+		c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer].UserPassword = nil
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
 	return &result, nil
 }
 
@@ -237,7 +252,6 @@ func (c *CLI) ListAvailableProviders(cmd *Command) (ResponseIf, error) {
 	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-
 		resp, err = c.AdminServerClient.Request("GET", "/admin/providers?available=true", "web", nil, nil)
 	case APIMode:
 		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/providers?available=true", "web", nil, nil)
@@ -594,6 +608,8 @@ func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
 			result.Data["model_instance"] = c.CurrentModel.Instance
 			result.Data["model_model"] = c.CurrentModel.Model
 		}
+	default:
+		return nil, fmt.Errorf("invalid server type")
 	}
 
 	if result == nil {
@@ -625,6 +641,146 @@ func (c *CLI) ShowAPIServer(cmd *Command) (ResponseIf, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (c *CLI) ListAPIServer(cmd *Command) (ResponseIf, error) {
+
+	var result CommonResponse
+	result.Data = make([]map[string]interface{}, 0)
+
+	for serverName, apiServerConfig := range c.Config.APIClientConfig.APIServerMap {
+		element := map[string]interface{}{
+			"api_server": serverName,
+		}
+		element["api_server_ip"] = apiServerConfig.IP
+		element["api_server_port"] = apiServerConfig.Port
+		if apiServerConfig.UserName != nil {
+			element["user_name"] = *apiServerConfig.UserName
+		}
+		if apiServerConfig.UserPassword != nil {
+			element["user_password"] = strings.Repeat("*", len(*apiServerConfig.UserPassword))
+		}
+		if c.APIServerClientMap[serverName].LoginToken != nil {
+			element["auth"] = "login"
+		} else if apiServerConfig.ApiToken != nil {
+			element["auth"] = "api token"
+		} else {
+			element["auth"] = "no auth"
+		}
+		result.Data = append(result.Data, element)
+	}
+
+	return &result, nil
+}
+
+func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
+	apiServerName, ok := cmd.Params["server_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("server name not provided")
+	}
+	if c.Config.APIClientConfig.APIServerMap[apiServerName] != nil {
+		return nil, fmt.Errorf("api server already exists")
+	}
+
+	apiServerIP, ok := cmd.Params["server_ip"].(string)
+	if !ok {
+		return nil, fmt.Errorf("server ip not provided")
+	}
+	apiServerPort, ok := cmd.Params["server_port"].(int)
+	if !ok {
+		return nil, fmt.Errorf("server port not provided")
+	}
+	apiServerToken, ok := cmd.Params["server_token"].(string)
+	if !ok {
+		return nil, fmt.Errorf("server token not provided")
+	}
+
+	c.Config.APIClientConfig.APIServerMap[apiServerName].IP = apiServerIP
+	c.Config.APIClientConfig.APIServerMap[apiServerName].Port = apiServerPort
+	c.Config.APIClientConfig.APIServerMap[apiServerName].ApiToken = &apiServerToken
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "api server deleted successfully"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) DeleteAPIServer(cmd *Command) (ResponseIf, error) {
+	apiServerName, ok := cmd.Params["server_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("server name not provided")
+	}
+	if apiServerName == c.Config.APIClientConfig.CurrentAPIServer {
+		return nil, fmt.Errorf("cannot delete current api server")
+	}
+	delete(c.Config.APIClientConfig.APIServerMap, apiServerName)
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "api server deleted successfully"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) AddAdminServer(cmd *Command) (ResponseIf, error) {
+
+	if c.AdminServerClient.LoginToken != nil {
+		return nil, fmt.Errorf("admin server already login, please logout")
+	}
+
+	adminServerIP, ok := cmd.Params["server_ip"].(string)
+	if !ok {
+		return nil, fmt.Errorf("server ip not provided")
+	}
+	adminServerPort, ok := cmd.Params["server_port"].(int)
+	if !ok {
+		return nil, fmt.Errorf("server port not provided")
+	}
+	if adminServerIP != "" {
+		c.Config.AdminClientConfig.AdminHost = adminServerIP
+	}
+	if adminServerPort != 0 {
+		c.Config.AdminClientConfig.AdminPort = adminServerPort
+	}
+
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "admin server added successfully"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) DeleteAdminServer(cmd *Command) (ResponseIf, error) {
+
+	if c.AdminServerClient.LoginToken != nil {
+		return nil, fmt.Errorf("admin server already login, please logout")
+	}
+
+	c.Config.AdminClientConfig.AdminHost = ""
+	c.Config.AdminClientConfig.AdminPort = 0
+	var result SimpleResponse
+	result.Code = 0
+	result.Message = "admin server deleted successfully"
+	result.Duration = 0
+	return &result, nil
+}
+
+func (c *CLI) SaveServerConfig(cmd *Command) (ResponseIf, error) {
+
+	switch c.Config.CLIMode {
+	case AdminMode:
+		if c.AdminServerClient.LoginToken == nil {
+			return nil, fmt.Errorf("admin server isn't already login")
+		}
+	case APIMode:
+		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].APIToken == nil && c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+			return nil, fmt.Errorf("API token not set. Please login first")
+		}
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	return nil, nil
 }
 
 func (c *CLI) GetAdminServerInfo() (ResponseIf, error) {

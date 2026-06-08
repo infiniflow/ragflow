@@ -169,6 +169,8 @@ func (p *Parser) parseListCommand() (*Command, error) {
 		return p.parseListFiles()
 	case TokenQuotedString:
 		return p.parseListQuotedStringCommand()
+	case TokenAPI:
+		return p.parseListApiCommand()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -633,6 +635,10 @@ func (p *Parser) parseAddCommand() (*Command, error) {
 		return p.parseAddProvider()
 	case TokenModel:
 		return p.parseAddModel()
+	case TokenAPI:
+		return p.parseAddAPIServer()
+	case TokenAdmin:
+		return p.parseAddAdminServer()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
@@ -955,6 +961,180 @@ func (p *Parser) parseAddModel() (*Command, error) {
 		cmd.Params["support_think"] = *supportThink
 	}
 	cmd.Params["max_tokens"] = maxTokens
+
+	return cmd, nil
+}
+
+// syntax: add admin server host '127.0.0.1:9333' user 'ccc' password 'ppp'
+func (p *Parser) parseAddAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	if p.curToken.Type != TokenServer {
+		return nil, fmt.Errorf("expected server name")
+	}
+	p.nextToken() // consume SERVER
+
+	if p.curToken.Type != TokenHost {
+		return nil, fmt.Errorf("expected TO")
+	}
+	p.nextToken()
+
+	host, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	ip, port, err := parseHostPort(host)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("add_admin_server")
+	cmd.Params["server_ip"] = ip
+	cmd.Params["server_port"] = port
+
+	return cmd, nil
+}
+
+// syntax: add api server 'abc' host '127.0.0.1:9333' token 'xxx' user 'ccc' password 'ppp'
+func (p *Parser) parseAddAPIServer() (*Command, error) {
+	p.nextToken() // consume API
+
+	if p.curToken.Type != TokenServer {
+		return nil, fmt.Errorf("expected server name")
+	}
+	p.nextToken() // consume SERVER
+
+	serverName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume model name
+
+	if p.curToken.Type != TokenHost {
+		return nil, fmt.Errorf("expected TO")
+	}
+	p.nextToken()
+
+	host, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	ip, port, err := parseHostPort(host)
+	if err != nil {
+		return nil, err
+	}
+
+	var token string
+
+optionsLoop:
+	for {
+		switch p.curToken.Type {
+		case TokenToken:
+			p.nextToken()
+			token, err = p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+		case TokenSemicolon:
+			p.nextToken()
+			break optionsLoop // done
+		default:
+			// No more options to process
+			break optionsLoop
+		}
+	}
+
+	cmd := NewCommand("add_api_server")
+	cmd.Params["server_name"] = serverName
+	cmd.Params["server_ip"] = ip
+	cmd.Params["server_port"] = port
+	if token != "" {
+		cmd.Params["server_token"] = token
+	}
+
+	return cmd, nil
+}
+
+// syntax: delete api server 'abc'
+func (p *Parser) parseDeleteAPIServer() (*Command, error) {
+	p.nextToken() // consume API
+
+	if p.curToken.Type != TokenServer {
+		return nil, fmt.Errorf("expected server name")
+	}
+	p.nextToken() // consume SERVER
+
+	serverName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken() // consume model name
+
+	cmd := NewCommand("delete_api_server")
+	cmd.Params["server_name"] = serverName
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// syntax: delete admin server 'abc'
+func (p *Parser) parseDeleteAdminServer() (*Command, error) {
+	p.nextToken() // consume ADMIN
+
+	if p.curToken.Type != TokenServer {
+		return nil, fmt.Errorf("expected server name")
+	}
+	p.nextToken() // consume SERVER
+
+	cmd := NewCommand("delete_admin_server")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseUserSaveCommand() (*Command, error) {
+	p.nextToken() // consume SAVE
+	switch p.curToken.Type {
+	case TokenConfig:
+		return p.parseSaveConfig()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
+}
+
+// syntax: save config as 'path'
+func (p *Parser) parseSaveConfig() (*Command, error) {
+	p.nextToken() // consume CONFIG
+
+	if p.curToken.Type != TokenAs {
+		return nil, fmt.Errorf("expected AS after CONFIG")
+	}
+	p.nextToken() // consume AS
+
+	path, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := NewCommand("save_config_command")
+	cmd.Params["path"] = path
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
 
 	return cmd, nil
 }
@@ -3885,7 +4065,7 @@ func (p *Parser) parseUserShowAdmin() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenServer:
 		p.nextToken()
-		cmd = NewCommand("user_show_admin_server")
+		cmd = NewCommand("show_admin_server")
 	default:
 		return nil, fmt.Errorf("expected SERVER after ADMIN")
 	}
@@ -3905,13 +4085,36 @@ func (p *Parser) parseUserShowAPI() (*Command, error) {
 	switch p.curToken.Type {
 	case TokenServer:
 		p.nextToken()
-		cmd = NewCommand("user_show_api_server")
+		cmd = NewCommand("show_api_server")
 
 		serverName, err := p.parseQuotedString()
 		if err != nil {
 			return nil, fmt.Errorf("expected dataset_name: %w", err)
 		}
 		cmd.Params["api_server_name"] = serverName
+		p.nextToken()
+
+	default:
+		return nil, fmt.Errorf("expected SERVER after API")
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseListApiCommand() (*Command, error) {
+	p.nextToken() // consume API
+
+	var cmd *Command
+	switch p.curToken.Type {
+	case TokenServer:
+		p.nextToken()
+
+		cmd = NewCommand("list_api_server")
 		p.nextToken()
 
 	default:

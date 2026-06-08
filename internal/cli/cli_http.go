@@ -107,6 +107,22 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminShutdownIngestor(cmd)
 	case "list_admin_ingestion_tasks":
 		return c.ListAdminIngestionTasks(cmd)
+	case "show_admin_server":
+		return c.ShowAdminServer(cmd)
+	case "show_api_server":
+		return c.ShowAPIServer(cmd)
+	case "list_api_server":
+		return c.ListAPIServer(cmd)
+	case "add_api_server":
+		return c.AddAPIServer(cmd)
+	case "delete_api_server":
+		return c.DeleteAPIServer(cmd)
+	case "add_admin_server":
+		return c.AddAdminServer(cmd)
+	case "delete_admin_server":
+		return c.DeleteAdminServer(cmd)
+	case "save_config_command":
+		return c.SaveServerConfig(cmd)
 	// TODO: Implement other commands
 	default:
 		return nil, fmt.Errorf("command '%s' would be executed with API", cmd.Type)
@@ -251,10 +267,22 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
-	case "user_show_admin_server":
+	case "show_admin_server":
 		return c.ShowAdminServer(cmd)
-	case "user_show_api_server":
+	case "show_api_server":
 		return c.ShowAPIServer(cmd)
+	case "list_api_server":
+		return c.ListAPIServer(cmd)
+	case "add_api_server":
+		return c.AddAPIServer(cmd)
+	case "delete_api_server":
+		return c.DeleteAPIServer(cmd)
+	case "add_admin_server":
+		return c.AddAdminServer(cmd)
+	case "delete_admin_server":
+		return c.DeleteAdminServer(cmd)
+	case "save_config_command":
+		return c.SaveServerConfig(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

@@ -196,6 +196,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListIngestors()
 	case TokenIngestion:
 		return p.parseAdminListIngestionTasks()
+	case TokenAPI:
+		return p.parseListApiCommand()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -436,6 +438,10 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return p.parseShowProvider()
 	case TokenModel:
 		return p.parseShowModel()
+	case TokenAdmin:
+		return p.parseUserShowAdmin()
+	case TokenAPI:
+		return p.parseUserShowAPI()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1632,6 +1638,40 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+func (p *Parser) parseAdminAddCommand() (*Command, error) {
+	p.nextToken() // consume ADD
+	switch p.curToken.Type {
+	case TokenAPI:
+		return p.parseAddAPIServer()
+	case TokenAdmin:
+		return p.parseAddAdminServer()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminDeleteCommand() (*Command, error) {
+	p.nextToken() // consume DELETE
+	switch p.curToken.Type {
+	case TokenAPI:
+		return p.parseDeleteAPIServer()
+	case TokenAdmin:
+		return p.parseDeleteAdminServer()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminSaveCommand() (*Command, error) {
+	p.nextToken() // consume SAVE
+	switch p.curToken.Type {
+	case TokenConfig:
+		return p.parseSaveConfig()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
 }
 
 func (p *Parser) parseStartIngestion() (*Command, error) {

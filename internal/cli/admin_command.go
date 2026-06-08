@@ -94,8 +94,8 @@ func (c *CLI) ShowAdminVersion(cmd *Command) (ResponseIf, error) {
 
 // ListRoles to list roles (admin mode only)
 func (c *CLI) ListRoles(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	// Check for benchmark iterations
@@ -137,8 +137,8 @@ func (c *CLI) ListRoles(cmd *Command) (ResponseIf, error) {
 
 // ShowRole to show role (admin mode only)
 func (c *CLI) ShowRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	roleName := cmd.Params["role_name"].(string)
@@ -180,8 +180,8 @@ func (c *CLI) ShowRole(cmd *Command) (ResponseIf, error) {
 
 // CreateRole creates a new role (admin mode only)
 func (c *CLI) CreateRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	roleName, ok := cmd.Params["role_name"].(string)
@@ -221,8 +221,8 @@ func (c *CLI) CreateRole(cmd *Command) (ResponseIf, error) {
 
 // DropRole deletes the role (admin mode only)
 func (c *CLI) DropRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	roleName, ok := cmd.Params["role_name"].(string)
@@ -254,8 +254,8 @@ func (c *CLI) DropRole(cmd *Command) (ResponseIf, error) {
 
 // AlterRole alters the role rights (admin mode only)
 func (c *CLI) AlterRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	roleName, ok := cmd.Params["role_name"].(string)
@@ -295,8 +295,8 @@ func (c *CLI) AlterRole(cmd *Command) (ResponseIf, error) {
 
 // GrantAdmin grants admin privileges to a user (admin mode only)
 func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -328,8 +328,8 @@ func (c *CLI) GrantAdmin(cmd *Command) (ResponseIf, error) {
 
 // RevokeAdmin revokes admin privileges from a user (admin mode only)
 func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -361,8 +361,8 @@ func (c *CLI) RevokeAdmin(cmd *Command) (ResponseIf, error) {
 
 // CreateUser creates a new user (admin mode only)
 func (c *CLI) CreateUser(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -411,8 +411,8 @@ func (c *CLI) CreateUser(cmd *Command) (ResponseIf, error) {
 
 // ActivateUser activates or deactivates a user (admin mode only)
 func (c *CLI) ActivateUser(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -458,8 +458,8 @@ func (c *CLI) ActivateUser(cmd *Command) (ResponseIf, error) {
 
 // AlterUserPassword changes a user's password (admin mode only)
 func (c *CLI) AlterUserPassword(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -512,8 +512,8 @@ type listServicesResponse struct {
 
 // ListServices lists all services (admin mode only)
 func (c *CLI) ListServices(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	// Check for benchmark iterations
@@ -555,8 +555,8 @@ func (c *CLI) ListServices(cmd *Command) (ResponseIf, error) {
 
 // Show service show service (admin mode only)
 func (c *CLI) ShowService(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	serviceIndex := cmd.Params["number"].(int)
@@ -611,8 +611,8 @@ func normalizeVariableRows(rows []map[string]interface{}) {
 
 // ListVariables lists all system variables (admin mode only).
 func (c *CLI) ListVariables(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	iterations := 1
@@ -649,8 +649,8 @@ func (c *CLI) ListVariables(cmd *Command) (ResponseIf, error) {
 
 // ShowVariable shows system variables by exact name or name prefix (admin mode only).
 func (c *CLI) ShowVariable(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	varName, ok := cmd.Params["var_name"].(string)
@@ -693,8 +693,8 @@ func (c *CLI) ShowVariable(cmd *Command) (ResponseIf, error) {
 
 // SetVariable updates a system variable (admin mode only).
 func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	varName, ok := cmd.Params["var_name"].(string)
@@ -735,8 +735,8 @@ func (c *CLI) SetVariable(cmd *Command) (ResponseIf, error) {
 // ListUsers lists all users (admin mode only)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) ListUsers(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	// Check for benchmark iterations
@@ -778,8 +778,8 @@ func (c *CLI) ListUsers(cmd *Command) (ResponseIf, error) {
 
 // DropUser deletes a user (admin mode only)
 func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -811,8 +811,8 @@ func (c *CLI) DropUser(cmd *Command) (ResponseIf, error) {
 
 // Show user show user (admin mode only)
 func (c *CLI) ShowUser(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -845,8 +845,8 @@ func (c *CLI) ShowUser(cmd *Command) (ResponseIf, error) {
 // ListUserDatasets lists datasets for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -900,8 +900,8 @@ func (c *CLI) ListUserDatasets(cmd *Command) (ResponseIf, error) {
 // ListAgents lists agents for a specific user (admin mode)
 // Returns (result_map, error) - result_map is non-nil for benchmark mode
 func (c *CLI) ListAgents(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -954,8 +954,8 @@ func (c *CLI) ListAgents(cmd *Command) (ResponseIf, error) {
 
 // GrantPermission grants permission to a role (admin mode only)
 func (c *CLI) GrantPermission(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -992,8 +992,8 @@ func (c *CLI) GrantPermission(cmd *Command) (ResponseIf, error) {
 
 // RevokePermission revokes permission from a role (admin mode only)
 func (c *CLI) RevokePermission(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	roleName, ok := cmd.Params["role_name"].(string)
@@ -1052,8 +1052,8 @@ func (c *CLI) RevokePermission(cmd *Command) (ResponseIf, error) {
 
 // AlterUserRole alters user's role (admin mode only)
 func (c *CLI) AlterUserRole(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -1099,8 +1099,8 @@ func (c *CLI) AlterUserRole(cmd *Command) (ResponseIf, error) {
 
 // ShowUserPermission shows user's permissions (admin mode only)
 func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -1137,8 +1137,8 @@ func (c *CLI) ShowUserPermission(cmd *Command) (ResponseIf, error) {
 
 // GenerateAdminToken generates an API token for a user (admin mode only)
 func (c *CLI) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -1174,8 +1174,8 @@ func (c *CLI) GenerateAdminToken(cmd *Command) (ResponseIf, error) {
 
 // ListAdminTokens lists all API tokens for a user (admin mode only)
 func (c *CLI) ListAdminTokens(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -1216,8 +1216,8 @@ func (c *CLI) ListAdminTokens(cmd *Command) (ResponseIf, error) {
 
 // DropToken drops an API token for a user (admin mode only)
 func (c *CLI) DropAdminToken(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	userName, ok := cmd.Params["user_name"].(string)
@@ -1256,8 +1256,8 @@ func (c *CLI) DropAdminToken(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListAdminTasks(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/tasks", "admin", nil, nil)
@@ -1283,8 +1283,8 @@ func (c *CLI) ListAdminTasks(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 	resp, err := c.AdminServerClient.Request("GET", "/admin/ingestors", "admin", nil, nil)
 	if err != nil {
@@ -1308,8 +1308,8 @@ func (c *CLI) ListAdminIngestors(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	resp, err := c.AdminServerClient.Request("GET", "/admin/ingestion/tasks", "admin", nil, nil)
@@ -1335,8 +1335,8 @@ func (c *CLI) ListAdminIngestionTasks(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	fileURI, ok := cmd.Params["uri"].(string)
@@ -1371,8 +1371,8 @@ func (c *CLI) AdminStartIngestionCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	taskID, ok := cmd.Params["task_id"].(string)
@@ -1407,8 +1407,8 @@ func (c *CLI) AdminStopIngestionCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) AdminShutdownIngestor(cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode")
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
 	ingestorName, ok := cmd.Params["ingestor_name"].(string)
