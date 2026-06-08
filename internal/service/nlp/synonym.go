@@ -160,7 +160,7 @@ func (s *Synonym) Lookup(tk string, topN int) []string {
 	}
 
 	// 1) Check the custom dictionary first
-	//s.lookupNum++
+	s.lookupNum++
 	//s.load()
 
 	key := regexp.MustCompile(`[ \t]+`).ReplaceAllString(strings.TrimSpace(tk), " ")

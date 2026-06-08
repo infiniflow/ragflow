@@ -463,7 +463,7 @@ func TestHunyuanEmbedValidatesInputs(t *testing.T) {
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
 
-	if embeddings, err := newHunyuanForTest("http://unused").Embed(nil, nil, nil, nil); err != nil || len(embeddings) != 0 {
+	if embeddings, err := newHunyuanForTest("http://unused").Embed(nil, nil, &APIConfig{ApiKey: &apiKey}, nil); err != nil || len(embeddings) != 0 {
 		t.Errorf("empty input: embeddings=%+v err=%v", embeddings, err)
 	}
 	if _, err := newHunyuanForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil); err == nil || !strings.Contains(err.Error(), "model name is required") {
