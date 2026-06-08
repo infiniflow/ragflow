@@ -184,7 +184,14 @@ async def list_provider_models(provider_name: str, api_key: str = None, base_url
             "name": llm["name"],
             "max_tokens": llm["max_tokens"],
             "model_types": [llm["model_type"]],
-            "features": None
+            "features": (
+                llm.get("features")
+                if llm.get("features") is not None
+                else (
+                    (["is_tools"] if llm.get("is_tools") else [])
+                    + (["thinking"] if llm.get("thinking") else [])
+                )
+            )
         } for llm in factory_info[0]["llm"]]
 
     model_base_url = base_url or factory_info[0].get("url", "")

@@ -83,6 +83,24 @@ func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(provide
 	return &model, nil
 }
 
+func (dao *TenantModelDAO) GetModelsByProviderIDAndInstanceIDAndModelName(providerID, instanceID, modelName string) ([]*entity.TenantModel, error) {
+	var models []*entity.TenantModel
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+func (dao *TenantModelDAO) GetByProviderIDAndInstanceIDAndModelTypeAndModelName(providerID, instanceID, modelType, modelName string) (*entity.TenantModel, error) {
+	var model entity.TenantModel
+	err := DB.Where("provider_id = ? AND instance_id = ? AND model_type = ? AND model_name = ?", providerID, instanceID, modelType, modelName).First(&model).Error
+	if err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
 // GetModelsByInstanceID get all models by instance ID
 func (dao *TenantModelDAO) GetModelsByInstanceID(instanceID string) ([]*entity.TenantModel, error) {
 	var models []*entity.TenantModel

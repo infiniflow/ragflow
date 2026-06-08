@@ -30,7 +30,7 @@ import (
 
 func init() {
 	// Initialize logger for tests
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", ""); err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 	}
 }
