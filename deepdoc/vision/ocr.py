@@ -751,7 +751,7 @@ class OCR:
         return texts
 
     def __call__(self, img, device_id = 0, cls=True):
-        """End-to-end OCR on ``img``: detect boxes, recognise each, return ``(filtered_boxes, [(text, score), ...], time_dict)``."""
+        """End-to-end OCR on ``img``: detect boxes, recognise each, return ``[(box_as_list, (text, score)), ...]`` (boxes below ``drop_score`` are filtered out)."""
         time_dict = {'det': 0, 'rec': 0, 'cls': 0, 'all': 0}
         if device_id is None:
             device_id = 0
