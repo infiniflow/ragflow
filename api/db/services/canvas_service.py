@@ -344,7 +344,11 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
             branch_id = branch.id
             logging.info("A/B routing: session=%s agent=%s → branch=%s", session_id, agent_id, branch_id)
         else:
-            logging.info("A/B routing: session=%s agent=%s → control (no active branch)", session_id, agent_id)
+            has_active_branches = await thread_pool_exec(CanvasBranchService.has_active_branches, agent_id)
+            if has_active_branches:
+                logging.info("A/B routing: session=%s agent=%s → control (weighted fallthrough)", session_id, agent_id)
+            else:
+                logging.info("A/B routing: session=%s agent=%s → control (no active branch)", session_id, agent_id)
 
         canvas = Canvas(
             dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header, branch_id=branch_id

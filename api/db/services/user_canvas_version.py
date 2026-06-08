@@ -274,6 +274,20 @@ class CanvasBranchService(CommonService):
         return True
 
     @staticmethod
+    def has_active_branches(canvas_id: str) -> bool:
+        """Return True if the canvas has at least one active branch with weight > 0."""
+        with DB.connection_context():
+            return (
+                CanvasBranch.select()
+                .where(
+                    CanvasBranch.canvas_id == canvas_id,
+                    CanvasBranch.is_active == True,  # noqa: E712
+                    CanvasBranch.traffic_weight > 0,
+                )
+                .exists()
+            )
+
+    @staticmethod
     def resolve_branch_for_session(session_id: str, canvas_id: str) -> "CanvasBranch | None":
         """
         Deterministic, sticky branch selection based on session_id hash.
