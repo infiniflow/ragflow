@@ -185,18 +185,27 @@ class BaiduYiyan(Base):
 
         The ``models()`` class method returns all supported model names
         without requiring AK/SK credentials.
+        ``get_model_info()`` returns ``max_input_tokens`` for each model.
         """
         import qianfan
 
         res = []
-        chat_models = qianfan.ChatCompletion.models()
+        real = qianfan.ChatCompletion._real_base("1")
+        chat_models = real.models()
         for name in chat_models:
+            max_tokens = 8192
+            try:
+                info = real.get_model_info(name)
+                if info.max_input_tokens:
+                    max_tokens = info.max_input_tokens
+            except Exception:
+                pass
             res.append(
                 {
                     "name": name,
                     "model_types": [LLMType.CHAT.value],
                     "features": None,
-                    "max_tokens": 8192,
+                    "max_tokens": max_tokens,
                 }
             )
 
