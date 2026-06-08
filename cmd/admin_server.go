@@ -45,7 +45,7 @@ func main() {
 	flag.Parse()
 
 	// Initialize logger
-	if err := common.Init("info"); err != nil {
+	if err := common.Init("info", "admin_server.log"); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -59,7 +59,7 @@ func main() {
 
 	// Reinitialize logger with configured level if different
 	if cfg.Log.Level != "" && cfg.Log.Level != "info" {
-		if err := common.Init(cfg.Log.Level); err != nil {
+		if err := common.Init(cfg.Log.Level, "admin_server.log"); err != nil {
 			common.Error("Failed to reinitialize logger with configured level", err)
 		}
 	}

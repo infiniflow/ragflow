@@ -14,6 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/infiniflow/infinity-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/iromli/go-itsdangerous v0.0.0-20220223194502-9c8bef8dac6a
+	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.99
 	github.com/peterh/liner v1.2.2
 	github.com/redis/go-redis/v9 v9.18.0
@@ -78,7 +79,6 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
