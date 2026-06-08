@@ -104,7 +104,7 @@ export function ToggleList<V = unknown>({
   className,
   btnText,
   options,
-  closeOnOutsideClick = true,
+  closeOnOutsideClick = false,
   maxHeight = 500,
   listClassName,
   itemClassName,
