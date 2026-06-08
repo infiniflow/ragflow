@@ -256,7 +256,7 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     :param region: region
     :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
-        "model_name": "name"，
+        "model_name": "name",
         "max_tokens": 4096,
         "extra": {
             "field1": "value1",
@@ -352,7 +352,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     :param region: region
     :param model_info: model info, [{
         "model_type": ["chat"],  # support multiple
-        "model_name": "name"，
+        "model_name": "name",
         "max_tokens": 4096,
         "extra": {
             "field1": "value1",
