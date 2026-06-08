@@ -29,6 +29,16 @@ type BaseModel struct {
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
+	if apiConfig != nil &&
+		apiConfig.ProviderClass != nil &&
+		strings.EqualFold(strings.TrimSpace(*apiConfig.ProviderClass), "local") {
+		if apiConfig.ApiKey == nil {
+			emptyAPIKey := ""
+			apiConfig.ApiKey = &emptyAPIKey
+		}
+		return nil
+	}
+
 	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
 		return fmt.Errorf("api key is required")
 	}
