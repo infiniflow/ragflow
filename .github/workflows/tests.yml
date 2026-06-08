@@ -146,8 +146,7 @@ jobs:
           RESOURCE_REPO=https://github.com/infiniflow/resource.git
           RESOURCE_REF=549feaaf998954d668667f009125bc84a9c5e
           rm -rf /tmp/resource
-          git clone --depth 1 "${RESOURCE_REPO}" /tmp/resource
-          git -C /tmp/resource fetch --depth 1 origin "${RESOURCE_REF}"
+          git clone "${RESOURCE_REPO}" /tmp/resource
           git -C /tmp/resource checkout "${RESOURCE_REF}"
           sudo mkdir -p /usr/share/infinity
           sudo ln -sf /tmp/resource /usr/share/infinity/resource
