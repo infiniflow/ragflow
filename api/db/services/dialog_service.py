@@ -59,6 +59,19 @@ def _chunk_kb_id_for_doc(row_dict, kb_ids, doc_id):
     return row_dict.get("kb_id") or row_dict.get("kb_id_kwd")
 
 
+def _tally_tokens(kwargs: dict, prompt_tokens: int, answer: str) -> None:
+    """Increment the session token tally after a completed LLM call."""
+    conv_id = kwargs.get("_conv_id")
+    if not conv_id:
+        return
+    try:
+        completion_tokens = num_tokens_from_string(answer) if isinstance(answer, str) else 0
+        from api.db.services.conversation_service import ConversationService
+        ConversationService.increment_token_tally(conv_id, prompt_tokens + completion_tokens)
+    except Exception as _e:
+        logging.warning("_tally_tokens failed for session %s: %s", conv_id, _e)
+
+
 async def _hydrate_chunk_vectors(retriever, chunks, tenant_ids, kb_ids):
     """
     Citation prep: on the ES backend the main retrieval call deliberately
@@ -761,6 +774,26 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
+    # --- Adaptive context compression ---
+    compression_cfg = prompt_config.get("context_compression", {})
+    if compression_cfg.get("enabled") and kwargs.get("_conv_id"):
+        from api.db.services.context_compressor import ContextCompressor
+        from api.db.services.conversation_service import ConversationService
+        ctx_limit = compression_cfg.get("model_ctx_limit", max_tokens)
+        threshold_pct = float(compression_cfg.get("threshold_pct", 0.80))
+        token_tally = ConversationService.get_token_tally(kwargs["_conv_id"])
+        compressor = ContextCompressor(kwargs["_conv_id"], chat_mdl, ctx_limit, threshold_pct)
+        if compressor.should_compress(token_tally):
+            try:
+                await compressor.rolling_compress()
+                ok, conv_obj = ConversationService.get_by_id(kwargs["_conv_id"])
+                if ok:
+                    messages = compressor.get_effective_history(conv_obj)
+                    logging.info("async_chat: applied compression for session %s", kwargs["_conv_id"])
+            except Exception as _compress_exc:
+                logging.warning("async_chat: compression failed for %s: %s", kwargs["_conv_id"], _compress_exc)
+    # --- end compression ---
+
     msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs) + attachments_}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
@@ -896,6 +929,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             final = await decorate_answer(_extract_visible_answer(thought + full_answer))
             final["final"] = True
             final["audio_binary"] = None
+            _tally_tokens(kwargs, used_token_count, full_answer)
             yield final
     else:
         if llm_model_config["model_type"] == "chat":
@@ -906,6 +940,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = await decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
+        _tally_tokens(kwargs, used_token_count, answer)
         yield res
 
     return
