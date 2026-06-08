@@ -1625,7 +1625,15 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
-                DocumentService.update_by_id(doc_id, {"run": str(TaskStatus.CANCEL.value)})
+                DocumentService.update_by_id(
+                    doc_id,
+                    {
+                        "run": str(TaskStatus.CANCEL.value),
+                        "progress": 0,
+                        "chunk_num": 0,
+                    },
+                )
+                settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
                 success_count += 1
 
             result = {"success_count": success_count}
