@@ -2423,15 +2423,6 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 	return models, nil
 }
 
-func (m *ModelProviderService) ShowModel(modelName string) (map[string]interface{}, error) {
-	models, err := dao.GetModelProviderManager().ListAllModels()
-	if err != nil {
-		return nil, err
-	}
-	for _, model := range models {
-		if model["name"] == modelName {
-			return model, nil
-		}
-	}
-	return nil, fmt.Errorf("model %s not found", modelName)
+func (m *ModelProviderService) ShowModel(modelName string) (*entity.Model, error) {
+	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }
