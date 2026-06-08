@@ -11,11 +11,11 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.26.0
 
-Released on June 8, 2026.
+Released on June 9, 2026.
 
 ### New features
 
-- **Model providers**: Allows configuring multiple API keys for the same model provider. [#15516](https://github.com/infiniflow/ragflow/pull/15516)
+- **Model providers**: Allows configuring multiple API keys for the same model provider.
 - **Data source connectors**: Implements new data source connectors for Outlook, OneDrive, Microsoft Teams, Slack, and SharePoint. [#15333](https://github.com/infiniflow/ragflow/pull/15333)[#15330](https://github.com/infiniflow/ragflow/pull/15330)[#15332](https://github.com/infiniflow/ragflow/pull/15332)[#15188](https://github.com/infiniflow/ragflow/pull/15188)[#15190](https://github.com/infiniflow/ragflow/pull/15190)
 
 ### Improvements
