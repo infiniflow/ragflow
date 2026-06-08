@@ -347,7 +347,11 @@ class MarkdownElementExtractor:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            atomic_ranges = self._atomic_region_ranges(text)
+            # Use the broader _protected_ranges so Markdown pipe tables and
+            # raw <table>...</table> blocks survive delimiter splitting in
+            # addition to fenced code. _atomic_region_ranges was an earlier
+            # fence-only variant landed for #15482 — see #15526 review.
+            atomic_ranges = self._protected_ranges(text)
             logger.debug(
                 "Delimiter extraction enabled: atomic_regions=%d delimiter=%s",
                 len(atomic_ranges),
