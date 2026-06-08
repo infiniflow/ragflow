@@ -576,12 +576,12 @@ class KnowledgebaseService(CommonService):
         update: dict = {"update_time": current_timestamp()}
 
         if published_doc_tags is not None:
-            # Validate tags exist in the KB's documents
-            from api.db.db_models import Document
-            existing_tags: set[str] = set()
-            for doc in Document.select(Document.meta_fields).where(Document.kb_id == kb_id):
-                for tag in (doc.meta_fields or {}).get("doc_tags", []):
-                    existing_tags.add(tag)
+            # Validate requested tags exist in the KB's doc store (chunks layer),
+            # not in Document.meta_fields which doesn't exist on the model.
+            from api import settings
+            existing_tags: set[str] = set(
+                settings.retriever.all_tags(kb.tenant_id, [kb_id])
+            )
             unknown = set(published_doc_tags) - existing_tags
             if unknown:
                 raise ValueError(
@@ -591,7 +591,13 @@ class KnowledgebaseService(CommonService):
             update["published_doc_tags"] = published_doc_tags
 
         if federation_enabled is not None:
-            if federation_enabled and not (published_doc_tags or kb.published_doc_tags):
+            # Compute the effective published_doc_tags after this request so that
+            # setting published_doc_tags=[] and federation_enabled=True in the
+            # same call is correctly rejected.
+            effective_tags = (
+                published_doc_tags if published_doc_tags is not None else kb.published_doc_tags
+            )
+            if federation_enabled and not effective_tags:
                 raise ValueError(
                     "Cannot enable federation without at least one published_doc_tag. "
                     "Set published_doc_tags first."

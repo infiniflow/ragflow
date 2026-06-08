@@ -24,6 +24,8 @@ Routes:
   PATCH  /datasets/<kb_id>/federation                — toggle federation + published_doc_tags
 """
 
+import logging
+
 from quart import request
 
 from api.apps import current_user, login_required
@@ -35,10 +37,13 @@ from api.utils.api_utils import (
     get_json_result,
     server_error_response,
 )
+from common.constants import StatusEnum
+
+logger = logging.getLogger(__name__)
 
 
 def _tenant_id():
-    tenants = UserTenantService.query(user_id=current_user.id)
+    tenants = UserTenantService.query(user_id=current_user.id, status=StatusEnum.VALID.value)
     if not tenants:
         return None
     return tenants[0].tenant_id
@@ -59,8 +64,8 @@ async def create_grant():
         kb_id = req.get("kb_id", "").strip()
         grantee_tenant_id = req.get("grantee_tenant_id", "").strip()
         policy_json = req.get("policy_json") or []
-        valid_until = req.get("valid_until")
-        valid_from = req.get("valid_from")
+        valid_until_raw = req.get("valid_until")
+        valid_from_raw = req.get("valid_from")
 
         if not kb_id:
             return get_data_error_result(message="`kb_id` is required.")
@@ -69,13 +74,23 @@ async def create_grant():
         if not isinstance(policy_json, list):
             return get_data_error_result(message="`policy_json` must be a list.")
 
+        try:
+            valid_until = int(valid_until_raw) if valid_until_raw is not None else None
+            valid_from = int(valid_from_raw) if valid_from_raw is not None else None
+        except (TypeError, ValueError):
+            return get_data_error_result(message="`valid_until` and `valid_from` must be integers (epoch ms).")
+
+        logger.info(
+            "federation create_grant: tenant=%s kb=%s grantee=%s",
+            tenant_id, kb_id, grantee_tenant_id,
+        )
         grant = FederationService.create_grant(
             owner_tenant_id=tenant_id,
             grantee_tenant_id=grantee_tenant_id,
             kb_id=kb_id,
             policy_json=policy_json,
-            valid_until=int(valid_until) if valid_until else None,
-            valid_from=int(valid_from) if valid_from else None,
+            valid_until=valid_until,
+            valid_from=valid_from,
         )
         return get_json_result(data=grant)
     except (LookupError, ValueError) as ex:
@@ -95,6 +110,7 @@ async def revoke_grant(grant_id):
         if not tenant_id:
             return get_data_error_result(message="Tenant not found!")
 
+        logger.info("federation revoke_grant: tenant=%s grant=%s", tenant_id, grant_id)
         ok = FederationService.revoke_grant(grant_id, tenant_id)
         if not ok:
             return get_data_error_result(message="Grant not found.")
@@ -125,6 +141,7 @@ async def list_grants():
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 20))
 
+        logger.debug("federation list_grants: tenant=%s role=%s", tenant_id, role)
         grants = FederationService.list_grants(tenant_id, role, page, page_size)
         return get_json_result(data=grants)
     except Exception as ex:
@@ -145,6 +162,7 @@ async def get_audit_log(grant_id):
         page = int(request.args.get("page", 1))
         page_size = int(request.args.get("page_size", 50))
 
+        logger.debug("federation get_audit_log: tenant=%s grant=%s", tenant_id, grant_id)
         logs = FederationService.get_audit_log(grant_id, tenant_id, page, page_size)
         return get_json_result(data=logs)
     except PermissionError as ex:
@@ -166,6 +184,7 @@ async def list_accessible_kbs():
         if not tenant_id:
             return get_data_error_result(message="Tenant not found!")
 
+        logger.debug("federation list_accessible_kbs: tenant=%s", tenant_id)
         kbs = FederationService.list_accessible_kbs(tenant_id)
         return get_json_result(data=kbs)
     except Exception as ex:
@@ -196,6 +215,10 @@ async def update_federation(kb_id):
                 message="Provide at least one of `federation_enabled` or `published_doc_tags`."
             )
 
+        logger.info(
+            "federation update_federation: tenant=%s kb=%s enabled=%s tags=%s",
+            tenant_id, kb_id, federation_enabled, published_doc_tags,
+        )
         KnowledgebaseService.update_federation_settings(
             kb_id=kb_id,
             tenant_id=tenant_id,

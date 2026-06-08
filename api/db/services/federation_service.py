@@ -218,11 +218,17 @@ class FederationService(CommonService):
         """Translate a grant's ``policy_json`` rules into a doc-store condition
         dict.  Only allowlisted fields are emitted.
 
+        Multiple rules on the same field are collected as a list so all
+        constraints are preserved (e.g. gte + lte for a date range).
         The returned dict is merged into the ``condition`` passed to
         ``Dealer.search()`` via the ``extra_filters`` parameter.
         """
-        result: dict[str, Any] = {}
+        # Collect constraints per field as a list to avoid overwriting.
+        per_field: dict[str, list[dict]] = {}
         for rule in (grant.policy_json or []):
+            if not isinstance(rule, dict):
+                logger.warning("FederationService: skipping non-dict policy rule %r", rule)
+                continue
             field = rule.get("field", "")
             op = rule.get("op", "eq")
             value = rule.get("value")
@@ -236,12 +242,43 @@ class FederationService(CommonService):
                     "FederationService: skipping policy rule with unknown op %r", op
                 )
                 continue
-            result.update(_OP_MAP[op](field, value))
+            per_field.setdefault(field, []).append(_OP_MAP[op](field, value))
 
-        # Always enforce published_doc_tags if the KB has them
+        # Merge per-field constraints: a single constraint is used directly;
+        # multiple constraints on the same field are merged into one dict so
+        # that e.g. {"create_time": {"gte": X}} + {"create_time": {"lte": Y}}
+        # becomes {"create_time": {"gte": X, "lte": Y}}.
+        result: dict[str, Any] = {}
+        for field, constraints in per_field.items():
+            if len(constraints) == 1:
+                result.update(constraints[0])
+            else:
+                merged_value: Any = {}
+                for c in constraints:
+                    v = c[field]
+                    if isinstance(v, dict) and isinstance(merged_value, dict):
+                        merged_value.update(v)
+                    else:
+                        # Non-dict constraints (eq/in): last one wins but this
+                        # combination is semantically invalid; keep first only.
+                        if not merged_value:
+                            merged_value = v
+                result[field] = merged_value
+
+        # Always enforce published_doc_tags if the KB has them; intersect with
+        # any grant-specific doc_tags rule rather than replacing it.
         kb = Knowledgebase.get_or_none(Knowledgebase.id == grant.kb_id)
         if kb and kb.published_doc_tags:
-            result["doc_tags"] = kb.published_doc_tags
+            kb_tags = set(kb.published_doc_tags)
+            if "doc_tags" in result:
+                existing = result["doc_tags"]
+                if isinstance(existing, list):
+                    # Keep only tags that satisfy both the grant rule and the KB gate.
+                    result["doc_tags"] = [t for t in existing if t in kb_tags]
+                else:
+                    result["doc_tags"] = kb.published_doc_tags
+            else:
+                result["doc_tags"] = kb.published_doc_tags
 
         return result
 
@@ -342,10 +379,14 @@ class FederationService(CommonService):
 # ─────────────────────────── helpers ───────────────────────────────────────
 
 def _validate_policy(policy_json: list[dict]) -> None:
-    """Raise ``ValueError`` if any rule references a non-allowlisted field or
-    unknown operator.
+    """Raise ``ValueError`` if any rule is not a dict, references a
+    non-allowlisted field, or uses an unknown operator.
     """
-    for rule in policy_json:
+    for i, rule in enumerate(policy_json):
+        if not isinstance(rule, dict):
+            raise ValueError(
+                f"Policy rule at index {i} must be a JSON object, got {type(rule).__name__!r}."
+            )
         field = rule.get("field", "")
         op = rule.get("op", "eq")
         if field not in POLICY_FIELD_ALLOWLIST:

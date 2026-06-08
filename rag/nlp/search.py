@@ -249,17 +249,19 @@ class Dealer:
         Formula: ``score(d) = Σ_k  weight_k / (60 + rank_k(d))``
 
         Chunks that appear in multiple KB result sets are deduplicated by
-        ``chunk_id`` (the ``id`` field in ``field``), keeping the entry with
-        the highest merged RRF score.  The merged ``SearchResult`` carries the
+        chunk_id (the key in the ``field`` dict), keeping the entry with the
+        highest merged RRF score.  The merged ``SearchResult`` carries the
         combined ``ids``, ``field``, ``keywords``, and ``aggregation``; the
         ``query_vector`` and ``highlight`` from the first non-empty result set
         are preserved.
+
+        ``SearchResult.field`` is a ``dict`` keyed by chunk_id throughout the
+        codebase, so this method never uses DataFrame APIs.
         """
         if not result_sets:
-            import pandas as _pd
             return Dealer.SearchResult(
                 total=0, ids=[], query_vector=[], aggregation={},
-                highlight={}, field=_pd.DataFrame(), keywords=[],
+                highlight={}, field={}, keywords=[],
             )
 
         n = len(result_sets)
@@ -268,26 +270,21 @@ class Dealer:
         if len(weights) != n:
             weights = (list(weights) + [1.0] * n)[:n]
 
-        # Build per-result-set rank maps: chunk_id → (0-based rank, weight)
+        # Build per-result-set rank maps: chunk_id → accumulated RRF score
         rrf_scores: dict[str, float] = {}
         chunk_rows: dict[str, dict] = {}
 
         for rs, w in zip(result_sets, weights):
-            if rs.field is None or rs.field.empty:
+            if not rs.field:
                 continue
-            for rank, (_, row) in enumerate(rs.field.iterrows()):
-                cid = str(row.get("id", row.name))
+            for rank, cid in enumerate(rs.ids):
                 rrf_scores[cid] = rrf_scores.get(cid, 0.0) + w / (60 + rank)
-                if cid not in chunk_rows:
-                    chunk_rows[cid] = row.to_dict()
+                if cid not in chunk_rows and cid in rs.field:
+                    chunk_rows[cid] = rs.field[cid]
 
         # Sort by RRF score descending
         sorted_ids = sorted(rrf_scores, key=lambda c: rrf_scores[c], reverse=True)
-
-        import pandas as _pd
-        merged_field = _pd.DataFrame(
-            [chunk_rows[cid] for cid in sorted_ids]
-        ) if sorted_ids else _pd.DataFrame()
+        merged_field = {cid: chunk_rows[cid] for cid in sorted_ids if cid in chunk_rows}
 
         # Merge aggregations
         merged_agg: dict = {}
@@ -712,8 +709,10 @@ class Dealer:
                             extra_filters=policy_filter,
                         )
                         # Tag each federated chunk with its grant id
-                        if not fed_sres.field.empty and "federation_grant_id" not in fed_sres.field.columns:
-                            fed_sres.field["federation_grant_id"] = grant.id
+                        if fed_sres.field:
+                            for chunk in fed_sres.field.values():
+                                if isinstance(chunk, dict):
+                                    chunk.setdefault("federation_grant_id", grant.id)
                         fed_result_sets.append(fed_sres)
                         fed_weights.append(
                             float((grant.policy_json or [{}])[0].get("weight", 1.0))
