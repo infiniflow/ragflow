@@ -659,7 +659,16 @@ class Discord(SyncBase):
             items = list(raw)
         else:
             items = [raw]
-        return [str(item).strip() for item in items if str(item).strip()]
+        # Drop None explicitly so it doesn't survive as the literal string
+        # "None" (str(None) == "None") — only stringify real values.
+        cleaned: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                cleaned.append(text)
+        return cleaned
 
     async def _generate(self, task: dict):
         server_ids_raw = self.conf.get("server_ids", None)
