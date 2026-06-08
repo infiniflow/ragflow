@@ -145,6 +145,7 @@ RerankModel = globals().get("RerankModel", {})
 Seq2txtModel = globals().get("Seq2txtModel", {})
 TTSModel = globals().get("TTSModel", {})
 OcrModel = globals().get("OcrModel", {})
+ModelMeta = globals().get("ModelMeta", {})
 
 
 MODULE_MAPPING = {
@@ -155,6 +156,7 @@ MODULE_MAPPING = {
     "sequence2txt_model": Seq2txtModel,
     "tts_model": TTSModel,
     "ocr_model": OcrModel,
+    "model_meta": ModelMeta,
 }
 
 package_name = __name__
@@ -188,7 +190,6 @@ for module_name, mapping_dict in MODULE_MAPPING.items():
                 else:
                     mapping_dict[obj._FACTORY_NAME] = obj
 
-
 __all__ = [
     "ChatModel",
     "CvModel",
@@ -197,4 +198,5 @@ __all__ = [
     "Seq2txtModel",
     "TTSModel",
     "OcrModel",
+    "ModelMeta",
 ]
