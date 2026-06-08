@@ -12,9 +12,9 @@ from dataclasses import dataclass
 import tiktoken
 
 from rag.graphrag.general.extractor import Extractor, ENTITY_EXTRACTION_MAX_GLEANINGS
+from rag.graphrag.llm_protocol import GraphRAGCompletionLLM
 from rag.graphrag.general.graph_prompt import GRAPH_EXTRACTION_PROMPT, CONTINUE_PROMPT, LOOP_PROMPT
 from rag.graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_limiter, split_string_by_multi_markers
-from rag.llm.chat_model import Base as CompletionLLM
 import networkx as nx
 from common.token_utils import num_tokens_from_string
 
@@ -50,7 +50,7 @@ class GraphExtractor(Extractor):
 
     def __init__(
         self,
-        llm_invoker: CompletionLLM,
+        llm_invoker: GraphRAGCompletionLLM,
         language: str | None = "English",
         entity_types: list[str] | None = None,
         tuple_delimiter_key: str | None = None,
