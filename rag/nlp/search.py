@@ -560,6 +560,31 @@ class Dealer:
                                            rag_tokenizer.tokenize(ans).split(),
                                            rag_tokenizer.tokenize(inst).split())
 
+    @staticmethod
+    def _rerank_window(page_size: int, top: int = 0) -> int:
+        """Candidate-window size shared by retrieval's block fetch and slice.
+
+        ``retrieval`` reuses this value BOTH as the backend block size and as
+        the modulus for extracting a single page from a (re)ranked block::
+
+            req["page"] = global_offset // window   # which block to fetch
+            begin       = global_offset %  window   # where the page starts
+
+        For those two to agree the window MUST be an exact multiple of
+        ``page_size``; otherwise blocks and pages drift apart and deep
+        pagination silently drops results and returns short pages.
+
+        The window targets a provider-friendly pool of ~64 candidates, bounded
+        by ``top`` when given (i.e. when an external reranker is active), and is
+        always rounded UP to a whole number of pages to preserve the invariant.
+        """
+        if page_size <= 1:
+            return min(30, top) if top > 0 else 30
+        window = math.ceil(64 / page_size) * page_size
+        if top > 0:
+            window = min(window, math.ceil(top / page_size) * page_size)
+        return window
+
     async def retrieval(
             self,
             question,
@@ -582,12 +607,12 @@ class Dealer:
         if not question:
             return ranks
 
-        # Keep the historical windowing strategy by default, but when an external
-        # reranker is enabled cap candidate count by both top_k and provider-safe 64.
-        RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
-        RERANK_LIMIT = max(30, RERANK_LIMIT)
-        if rerank_mdl and top > 0:
-            RERANK_LIMIT = min(RERANK_LIMIT, top, 64)
+        # Candidate window for block-based pagination. It MUST stay a multiple
+        # of page_size so the block fetched (global_offset // RERANK_LIMIT) and
+        # the in-block page slice (global_offset % RERANK_LIMIT) stay aligned;
+        # see _rerank_window. When an external reranker is active the pool is
+        # also bounded by top.
+        RERANK_LIMIT = self._rerank_window(page_size, top if rerank_mdl else 0)
         page = max(page, 1)
         global_offset = (page - 1) * page_size
         req = {
