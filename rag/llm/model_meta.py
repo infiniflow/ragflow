@@ -20,8 +20,7 @@ from common.constants import LLMType
 
 
 class Base(ABC):
-
-    def __init__(self, api_key: str, base_url: str=None):
+    def __init__(self, api_key: str, base_url: str = None):
         self.api_key = api_key
         self.base_url = base_url
 
@@ -87,15 +86,8 @@ class Ollama(Base):
                 if not models:
                     return []
             res = []
-            capability_to_model_type_mapping = {
-                "completion": LLMType.CHAT.value,
-                "vision": LLMType.IMAGE2TEXT.value,
-                "embedding": LLMType.EMBEDDING.value
-            }
-            capability_to_feature_mapping = {
-                "thinking": "thinking",
-                "tools": "is_tools"
-            }
+            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.IMAGE2TEXT.value, "embedding": LLMType.EMBEDDING.value}
+            capability_to_feature_mapping = {"thinking": "thinking", "tools": "is_tools"}
 
             for model in models:
                 async with session.post(self._get_model_detail_url(), headers=headers, json={"model": model["name"]}) as resp:
@@ -103,10 +95,80 @@ class Ollama(Base):
                         continue
                     model_info = await resp.json()
                     max_tokens_key = "{}.context_length".format(model_info.get("details", {}).get("family", ""))
-                    res.append({
-                        "name": model["name"],
-                        "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
-                        "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
-                        "max_tokens": model_info["model_info"].get(max_tokens_key, 8192)
-                    })
+                    res.append(
+                        {
+                            "name": model["name"],
+                            "model_types": [capability_to_model_type_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_model_type_mapping],
+                            "features": [capability_to_feature_mapping[c] for c in model_info.get("capabilities", []) if c in capability_to_feature_mapping],
+                            "max_tokens": model_info["model_info"].get(max_tokens_key, 8192),
+                        }
+                    )
         return res
+
+
+class Xinference(Base):
+    _FACTORY_NAME = "Xinference"
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            return None
+        return self.base_url.rstrip("/") + "/v1/models"
+
+    def _format_model_list(self, raw_model_list):
+        """Xinference exposes an OpenAI-compatible /v1/models endpoint."""
+        data = raw_model_list.get("data", [])
+        if not data:
+            return []
+        return [
+            {
+                "name": model.get("id", ""),
+                "model_types": [LLMType.CHAT.value],
+                "features": None,
+                "max_tokens": 8192,
+            }
+            for model in data
+            if model.get("id")
+        ]
+
+
+class LocalAI(Base):
+    _FACTORY_NAME = "LocalAI"
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            return None
+        return self.base_url.rstrip("/") + "/v1/models"
+
+    def _format_model_list(self, raw_model_list):
+        """LocalAI exposes an OpenAI-compatible /v1/models endpoint."""
+        data = raw_model_list.get("data", [])
+        if not data:
+            return []
+        return [
+            {
+                "name": model.get("id", ""),
+                "model_types": [LLMType.CHAT.value],
+                "features": None,
+                "max_tokens": 8192,
+            }
+            for model in data
+            if model.get("id")
+        ]
+
+
+class BaiduYiyan(Base):
+    _FACTORY_NAME = "BaiduYiyan"
+
+    def get_model_list(self):
+        # BaiduYiyan uses the Qianfan SDK with AK/SK authentication.
+        # Model listing requires a non-trivial auth flow (AK/SK -> access token).
+        raise NotImplementedError
+
+
+class TencentCloud(Base):
+    _FACTORY_NAME = "Tencent Cloud"
+
+    def get_model_list(self):
+        # Tencent Cloud uses SDK-based authentication (SID/SK with HMAC signing).
+        # Model listing is not available through a simple REST endpoint.
+        raise NotImplementedError
