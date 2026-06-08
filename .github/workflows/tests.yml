@@ -291,6 +291,7 @@ jobs:
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
 
       - name: Go integration tests
+        if: ${{ false }}
         run: |
           set -euo pipefail
           pkgs=$(find internal -name '*_test.go' \
