@@ -235,7 +235,7 @@ export function TreeSelect({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="p-0 w-[var(--radix-popover-trigger-width)]"
+        className="p-0 w-auto min-w-[var(--radix-popover-trigger-width)]"
         align="start"
         sideOffset={4}
       >

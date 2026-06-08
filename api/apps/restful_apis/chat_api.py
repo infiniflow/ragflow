@@ -459,10 +459,6 @@ async def list_chats():
         page_number = int(request.args.get("page", 0))
         items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        authorized_owner_ids = {member["tenant_id"] for member in tenants}
-        authorized_owner_ids.add(current_user.id)
-
         if owner_ids:
             requested_owner_ids = set(owner_ids)
             unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
@@ -478,13 +474,20 @@ async def list_chats():
                     code=RetCode.OPERATING_ERROR,
                 )
             effective_owner_ids = list(requested_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
+            )
+            chats = [chat for chat in chats if chat["tenant_id"] in owner_ids]
+            total = len(chats)
+            if page_number and items_per_page:
+                start = (page_number - 1) * items_per_page
+                chats = chats[start : start + items_per_page]
         else:
-            effective_owner_ids = list(authorized_owner_ids)
-
-        chats, total = await thread_pool_exec(
-            DialogService.get_by_tenant_ids,
-            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
-        )
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                [], current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
+            )
 
         return get_result(
             data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}

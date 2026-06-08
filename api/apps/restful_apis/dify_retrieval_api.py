@@ -30,6 +30,8 @@ from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import get_result, apikey_required, get_request_json
+from api.apps import login_required
+from api.utils.api_utils import add_tenant_id_to_kwargs, build_error_result, get_request_json, get_json_result
 from rag.app.tag import label_question
 from common.constants import RetCode, LLMType
 from common import settings
@@ -108,7 +110,8 @@ def _parse_retrieval_options(retrieval_setting):
 
 
 @manager.route('/dify/retrieval', methods=['POST', 'GET'])  # noqa: F821
-@apikey_required
+@login_required
+@add_tenant_id_to_kwargs
 async def retrieval(tenant_id):
     """
     Dify-compatible retrieval API

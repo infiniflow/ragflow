@@ -39,6 +39,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
+from common.connection_utils import timeout
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID
@@ -111,6 +112,7 @@ class TaskHandler:
                     logging.exception(
                         f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
+    @timeout(60 * 60 * 3, 1)
     async def handle(self) -> None:
         """Handle a document processing task."""
         ctx = self._task_context
@@ -125,14 +127,6 @@ class TaskHandler:
             else:
                 # actual run - not dry run
                 await handle_save_to_memory_task(ctx.raw_task)
-
-        # Handle dataflow debug mode
-        if task_type == "dataflow" and ctx.doc_id == CANVAS_DEBUG_DOC_ID:
-            await self._run_dataflow()
-            return
-
-        if task_type.startswith("dataflow"):
-            await self._run_dataflow()
             return
 
         # Check if task is canceled
@@ -140,14 +134,24 @@ class TaskHandler:
             ctx.progress_cb(-1, msg="Task has been canceled.")
             return
 
-        # Bind embedding model
-        embedding_model = await self._bind_embedding_model()
-        if embedding_model is None:
+        # Language defaults to "Chinese" via TaskContext._DEFAULTS — safe to bind model directly.
+        # Bind embedding model (matching original do_handle_task order: bind + init_kb before routing)
+        result = await self._bind_embedding_model()
+        if result is None:
             return
+        embedding_model, vector_size = result
 
         with embedding_model:
-            vector_size = self._get_vector_size(embedding_model)
             self._init_kb(vector_size)
+
+            # Handle dataflow tasks (after init_kb, matching original behavior)
+            if task_type == "dataflow" and ctx.doc_id == CANVAS_DEBUG_DOC_ID:
+                await self._run_dataflow()
+                return
+
+            if task_type.startswith("dataflow"):
+                await self._run_dataflow()
+                return
 
             # Route to appropriate handler
             if task_type == "raptor":
@@ -165,12 +169,6 @@ class TaskHandler:
             else:
                 await self._run_standard_chunking(embedding_model)
 
-
-    @classmethod
-    def _get_vector_size(cls, embedding_model: LLMBundle) -> int:
-        """Get vector size from embedding model."""
-        vts, _ = embedding_model.encode(["ok"])
-        return len(vts[0])
 
     def _init_kb(self, vector_size: int) -> None:
         """Initialize knowledge base index."""
@@ -203,8 +201,12 @@ class TaskHandler:
         ctx = self._task_context
         ctx.progress_cb(1, "Clone task placeholder")
 
-    async def _bind_embedding_model(self) -> Optional[LLMBundle]:
-        """Bind embedding model to task."""
+    async def _bind_embedding_model(self) -> Optional[tuple]:
+        """Bind embedding model to task.
+
+        Returns:
+            Tuple of (embedding_model, vector_size) on success, or None on failure.
+        """
         ctx = self._task_context
         task_tenant_id = ctx.tenant_id
         task_embedding_id = ctx.embd_id
@@ -221,7 +223,7 @@ class TaskHandler:
                 )
             embedding_model = LLMBundle(task_tenant_id, embd_model_config, lang=task_language)
             vts, _ = embedding_model.encode(["ok"])
-            return embedding_model
+            return embedding_model, len(vts[0])
         except Exception as e:
             error_message = f'Fail to bind embedding model: {str(e)}'
             ctx.progress_cb(-1, msg=error_message)
@@ -340,8 +342,24 @@ class TaskHandler:
             kb_parser_config.update({
                 "graphrag": {
                     "use_graphrag": True,
-                    "entity_types": ["organization", "person", "geo", "event", "category"],
+                    "entity_types": [
+                        "organization",
+                        "person",
+                        "geo",
+                        "event",
+                        "category",
+                    ],
                     "method": "light",
+                    "batch_chunk_token_size": 4096,
+                    "retry_attempts": 2,
+                    "retry_backoff_seconds": 2.0,
+                    "retry_backoff_max_seconds": 60.0,
+                    "build_subgraph_timeout_per_chunk_seconds": 300,
+                    "build_subgraph_min_timeout_seconds": 600,
+                    "merge_timeout_seconds": 180,
+                    "resolution_timeout_seconds": 1800,
+                    "community_timeout_seconds": 1800,
+                    "lock_acquire_timeout_seconds": 600,
                 }
             })
             if ctx.write_interceptor:
@@ -400,6 +418,10 @@ class TaskHandler:
         # Get storage binary
         bucket, name = File2DocumentService.get_storage_address(doc_id=ctx.doc_id)
         binary = await self._get_storage_binary(bucket, name)
+        if binary is None:
+            raise FileNotFoundError(
+                f"Can not find file <{ctx.name}> from minio. Could you try it again."
+            )
 
         chunks = await chunk_service.build_chunks(binary)
         ctx.recording_context.record("chunks", chunks)
@@ -418,7 +440,7 @@ class TaskHandler:
         start_ts = timer()
         embedding_service = EmbeddingService(ctx=ctx)
         try:
-            token_count, vector_size = embedding_service.embed_chunks(
+            token_count, vector_size = await embedding_service.embed_chunks(
                 chunks, embedding_model, ctx.parser_config
             )
         except TaskCanceledException:

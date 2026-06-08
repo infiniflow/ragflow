@@ -1175,6 +1175,7 @@
             "logo": "",
             "tags": "LLM, TEXT EMBEDDING, IMAGE2TEXT",
             "status": "1",
+            "url": "https://ark.cn-beijing.volces.com/api/v3",
             "llm": []
         },
         {
@@ -2554,47 +2555,69 @@
         {
             "name": "Cohere",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING, TEXT RE-RANK",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT",
             "status": "1",
             "rank": "990",
             "llm": [
                 {
-                    "llm_name": "command-r-plus",
+                    "llm_name": "command-a-plus-05-2026",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "command-r",
+                    "llm_name": "command-a-03-2025",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "command-r7b-12-2024",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "command",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
+                    "llm_name": "command-a-translate-08-2025",
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "command-nightly",
+                    "llm_name": "command-a-reasoning-08-2025",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "command-a-vision-07-2025",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 131072,
                     "model_type": "chat"
                 },
                 {
-                    "llm_name": "command-light",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
+                    "llm_name": "command-r-plus-08-2024",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
                 },
                 {
-                    "llm_name": "command-light-nightly",
-                    "tags": "LLM,CHAT,4k",
-                    "max_tokens": 4096,
-                    "model_type": "chat"
+                    "llm_name": "command-r-08-2024",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "embed-v4.0",
+                    "tags": "TEXT EMBEDDING,128k",
+                    "max_tokens": 131072,
+                    "model_type": "embedding"
                 },
                 {
                     "llm_name": "embed-english-v3.0",
@@ -2621,22 +2644,22 @@
                     "model_type": "embedding"
                 },
                 {
-                    "llm_name": "embed-english-v2.0",
-                    "tags": "TEXT EMBEDDING",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
+                    "llm_name": "rerank-v4.0-pro",
+                    "tags": "RE-RANK,32k",
+                    "max_tokens": 32768,
+                    "model_type": "rerank"
                 },
                 {
-                    "llm_name": "embed-english-light-v2.0",
-                    "tags": "TEXT EMBEDDING",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
+                    "llm_name": "rerank-v4.0-fast",
+                    "tags": "RE-RANK,32k",
+                    "max_tokens": 32768,
+                    "model_type": "rerank"
                 },
                 {
-                    "llm_name": "embed-multilingual-v2.0",
-                    "tags": "TEXT EMBEDDING",
-                    "max_tokens": 256,
-                    "model_type": "embedding"
+                    "llm_name": "rerank-v3.5",
+                    "tags": "RE-RANK,4k",
+                    "max_tokens": 4096,
+                    "model_type": "rerank"
                 },
                 {
                     "llm_name": "rerank-english-v3.0",
@@ -2651,16 +2674,10 @@
                     "model_type": "rerank"
                 },
                 {
-                    "llm_name": "rerank-english-v2.0",
-                    "tags": "RE-RANK,512",
-                    "max_tokens": 512,
-                    "model_type": "rerank"
-                },
-                {
-                    "llm_name": "rerank-multilingual-v2.0",
-                    "tags": "RE-RANK,512",
-                    "max_tokens": 512,
-                    "model_type": "rerank"
+                    "llm_name": "cohere-transcribe-03-2026",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 8192,
+                    "model_type": "speech2text"
                 }
             ]
         },
@@ -3900,7 +3917,56 @@
             "logo": "",
             "tags": "LLM,TTS",
             "status": "1",
-            "llm": []
+            "llm": [
+                {
+                    "llm_name": "Spark-Max",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Max-32K",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Lite",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Pro",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-Pro-128K",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                },
+                {
+                    "llm_name": "Spark-4.0-Ultra",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": ["is_tools", "thinking"]
+                }
+            ]
         },
         {
             "name": "BaiduYiyan",
@@ -6778,6 +6844,36 @@
             "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,IMAGE2TEXT",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Xiaomi",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "url": "https://api.xiaomimimo.com/v1",
+            "llm": [
+                {
+                    "llm_name": "mimo-v2.5-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "mimo-v2.5",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "mimo-v2-flash",
+                    "tags": "LLM,CHAT,256K",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
         },
         {
             "name": "Perplexity",

@@ -50,6 +50,11 @@ from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, TaskService, queue
 from api.db.services.user_service import TenantService, UserService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
+    add_tenant_id_to_kwargs,
+    check_duplicate_ids,
+    get_data_error_result,
+    get_error_data_result,
+    get_json_result,
     get_result,
     add_tenant_id_to_kwargs,
     get_request_json,
@@ -127,6 +132,29 @@ def _normalize_agent_reference_entry(reference):
     }
 
 
+def _normalize_agent_reference_chunk(chunk):
+    if not isinstance(chunk, dict):
+        return {
+            "id": chunk,
+            "content": str(chunk),
+            "document_id": None,
+            "document_name": None,
+            "dataset_id": None,
+            "image_id": None,
+            "positions": None,
+        }
+
+    return {
+        "id": chunk.get("chunk_id", chunk.get("id")),
+        "content": chunk.get("content_with_weight", chunk.get("content")),
+        "document_id": chunk.get("doc_id", chunk.get("document_id")),
+        "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+        "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+        "image_id": chunk.get("image_id", chunk.get("img_id")),
+        "positions": chunk.get("positions", chunk.get("position_int")),
+    }
+
+
 def _normalize_agent_session(conv):
     conv["message"] = conv.get("message", [])
     for info in conv["message"]:
@@ -147,18 +175,7 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [
-                {
-                    "id": chunk.get("chunk_id", chunk.get("id")),
-                    "content": chunk.get("content_with_weight", chunk.get("content")),
-                    "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                    "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                    "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                    "image_id": chunk.get("image_id", chunk.get("img_id")),
-                    "positions": chunk.get("positions", chunk.get("position_int")),
-                }
-                for chunk in chunks
-            ]
+            message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
     del conv["reference"]
     return conv
 
@@ -438,6 +455,61 @@ def get_agent_session(agent_id, session_id, tenant_id):
 @_require_canvas_access_sync
 def delete_agent_session_item(agent_id, session_id, tenant_id):
     return get_result(data=API4ConversationService.delete_by_id(session_id))
+
+
+@manager.route("/agents/<agent_id>/sessions", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+@_require_canvas_access_async
+async def delete_agent_session(tenant_id, agent_id):
+    errors = []
+    success_count = 0
+    req = await get_request_json()
+    cvs = await thread_pool_exec(UserCanvasService.query, user_id=tenant_id, id=agent_id)
+    if not cvs:
+        return get_error_data_result(f"You don't own the agent {agent_id}")
+
+    if not req:
+        return get_result()
+
+    ids = req.get("ids")
+    if not ids:
+        if req.get("delete_all") is True:
+            ids = [conv.id for conv in await thread_pool_exec(API4ConversationService.query, dialog_id=agent_id)]
+            if not ids:
+                return get_result()
+        else:
+            return get_result()
+
+    conv_list = ids
+
+    unique_conv_ids, duplicate_messages = check_duplicate_ids(conv_list, "session")
+    conv_list = unique_conv_ids
+
+    for session_id in conv_list:
+        conv = await thread_pool_exec(API4ConversationService.query, id=session_id, dialog_id=agent_id)
+        if not conv:
+            errors.append(f"The agent doesn't own the session {session_id}")
+            continue
+        await thread_pool_exec(API4ConversationService.delete_by_id, session_id)
+        success_count += 1
+
+    if errors:
+        if success_count > 0:
+            return get_result(data={"success_count": success_count, "errors": errors},
+                              message=f"Partially deleted {success_count} sessions with {len(errors)} errors")
+        else:
+            return get_error_data_result(message="; ".join(errors))
+
+    if duplicate_messages:
+        if success_count > 0:
+            return get_result(
+                message=f"Partially deleted {success_count} sessions with {len(duplicate_messages)} errors",
+                data={"success_count": success_count, "errors": duplicate_messages})
+        else:
+            return get_error_data_result(message=";".join(duplicate_messages))
+
+    return get_result()
 
 
 @manager.route("/agents/download", methods=["GET"])  # noqa: F821

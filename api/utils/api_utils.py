@@ -19,7 +19,6 @@ import functools
 import inspect
 import json
 import logging
-import os
 import sys
 import time
 from copy import deepcopy
@@ -32,7 +31,7 @@ from quart import (
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest, Unauthorized as WerkzeugUnauthorized
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -42,7 +41,6 @@ except ImportError:  # pragma: no cover - optional dependency
 from peewee import OperationalError
 
 from common.constants import ActiveEnum, LLMType
-from api.db.db_models import APIToken
 from api.utils.json_encode import CustomJSONEncoder
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from api.db.services.tenant_llm_service import LLMFactoriesService
@@ -356,6 +354,7 @@ def get_result(code=RetCode.SUCCESS, message="success", data=None, total=None):
 
     All four fields are always present so clients can parse a single shape.
     ``total`` is null when pagination does not apply.
+def get_result(code=RetCode.SUCCESS, message="", data=None, total=None):
     """
     response: dict = {
         "code": code,
