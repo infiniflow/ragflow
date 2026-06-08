@@ -679,3 +679,45 @@ class EvaluationService(CommonService):
         except Exception as e:
             logging.error(f"Error generating recommendations for run {run_id}: {e}")
             return []
+
+    @classmethod
+    def get_rolling_score(cls, dialog_id: str, metric: str = "avg_answer_relevancy",
+                          window_days: int = 7) -> float:
+        """Return the rolling average of ``metric`` across completed evaluation runs
+        for ``dialog_id`` in the last ``window_days`` days.
+
+        Returns 0.0 when no runs exist in the window.
+        """
+        try:
+            from common.time_utils import current_timestamp
+            cutoff = current_timestamp() - window_days * 86400 * 1000
+            runs = (
+                EvaluationRun
+                .select(EvaluationRun.metrics_summary)
+                .where(
+                    (EvaluationRun.dialog_id == dialog_id) &
+                    (EvaluationRun.status == "COMPLETED") &
+                    (EvaluationRun.create_time >= cutoff)
+                )
+                .tuples()
+            )
+            scores = []
+            for (metrics_summary,) in runs:
+                if not metrics_summary:
+                    continue
+                if isinstance(metrics_summary, str):
+                    import json
+                    try:
+                        metrics_summary = json.loads(metrics_summary)
+                    except Exception:
+                        continue
+                v = metrics_summary.get(metric)
+                if v is not None:
+                    try:
+                        scores.append(float(v))
+                    except (TypeError, ValueError):
+                        pass
+            return sum(scores) / len(scores) if scores else 0.0
+        except Exception as e:
+            logging.error(f"get_rolling_score failed for dialog {dialog_id}: {e}")
+            return 0.0

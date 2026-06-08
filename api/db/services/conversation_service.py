@@ -69,6 +69,36 @@ class ConversationService(CommonService):
             offset += limit
         return res
 
+    @classmethod
+    @DB.connection_context()
+    def get_token_tally(cls, conv_id: str) -> int:
+        try:
+            row = cls.model.get_by_id(conv_id)
+            return int(row.token_tally or 0)
+        except cls.model.DoesNotExist:
+            return 0
+
+    @classmethod
+    @DB.connection_context()
+    def increment_token_tally(cls, conv_id: str, delta: int) -> None:
+        cls.model.update(
+            token_tally=cls.model.token_tally + delta
+        ).where(cls.model.id == conv_id).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def get_effective_history(cls, conv_id: str, chat_mdl=None) -> list:
+        """Return the effective message list for the LLM, applying any compression."""
+        from api.db.services.context_compressor import ContextCompressor
+        try:
+            conv = cls.model.get_by_id(conv_id)
+        except cls.model.DoesNotExist:
+            return []
+        if not conv.compressed_message and not conv.compression_cursor:
+            return conv.message or []
+        compressor = ContextCompressor(conv_id, chat_mdl)
+        return compressor.get_effective_history(conv)
+
 
 def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]
