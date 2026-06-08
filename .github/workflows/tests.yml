@@ -144,7 +144,7 @@ jobs:
       - name: Prepare test resources
         run: |
           RESOURCE_REPO=https://github.com/infiniflow/resource.git
-          RESOURCE_REF=549feaaf998954d668667f009125bc84a9c5e
+          RESOURCE_REF=549feaaf998954d65b668667f009125bc84a9c5e
           rm -rf /tmp/resource
           git clone "${RESOURCE_REPO}" /tmp/resource
           git -C /tmp/resource checkout "${RESOURCE_REF}"
