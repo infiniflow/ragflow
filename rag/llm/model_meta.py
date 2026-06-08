@@ -13,8 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import aiohttp
 from abc import ABC
+from urllib.parse import urlparse
+from json.decoder import JSONDecodeError
 
 from common.constants import LLMType
 
@@ -58,9 +61,30 @@ class Base(ABC):
 class VolcEngine(Base):
     _FACTORY_NAME = "VolcEngine"
 
-    def get_model_list(self):
-        # todo implement access token auth
-        raise NotImplementedError
+    def _get_api_key(self):
+        try:
+            api_key = json.loads(self.api_key).get("ark_api_key", "")
+        except JSONDecodeError:
+            api_key = self.api_key
+        return api_key
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            return None
+        parsed = urlparse(self.base_url)
+        return f"{parsed.scheme}://{parsed.netloc}/api/v3/models"
+
+    def _format_model_list(self, raw_model_list):
+        serving_model = [model for model in raw_model_list if model.get("status", "") != "Shutdown"]
+        res = []
+        for model in serving_model:
+            res.append({
+                "name": model["id"],
+                "model_types": [],
+                "features": ["is_tools"] if model.get("features", {}).get("tools", {}).get("function_calling", False) else [],
+                "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192)
+            })
+        return res
 
 
 class Ollama(Base):
