@@ -223,6 +223,9 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
+	case "search_help":
+		printSearchHelp()
+		return nil, nil
 	case "create_token":
 		return c.CreateToken(cmd)
 	case "list_tokens":
@@ -295,6 +298,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ParseFileUserCommand(cmd)
 	case "check_provider_connection":
 		return c.CheckProviderConnection(cmd)
+	case "check_provider_with_key":
+		return c.CheckProviderWithKey(cmd)
 	case "use_model":
 		return c.UseModel(cmd)
 	case "show_current_model":
@@ -333,8 +338,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RmTags(cmd)
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
-	case "list_metadata":
-		return c.ListMetadata(cmd)
+	case "get_metadata":
+		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
 	// ContextEngine commands

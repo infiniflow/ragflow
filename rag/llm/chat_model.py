@@ -25,6 +25,7 @@ from copy import deepcopy
 from urllib.parse import urljoin
 
 import json_repair
+from json.decoder import JSONDecodeError
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
@@ -125,6 +126,10 @@ def _apply_model_family_policies(
     if backend == "litellm":
         if provider in {SupportedLiteLLMProvider.OpenAI, SupportedLiteLLMProvider.Azure_OpenAI} and "gpt-5" in model_name_lower:
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
+                sanitized_gen_conf.pop(key, None)
+                sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Anthropic and model_name_lower in {"claude-opus-4-7", "claude-opus-4-8"}:
+            for key in ("temperature", "top_p", "top_k"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
 
@@ -827,9 +832,12 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
-        super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        try:
+            ark_api_key = json.loads(key).get("ark_api_key", "")
+            model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+            super().__init__(ark_api_key, model_name, base_url, **kwargs)
+        except JSONDecodeError:
+            super().__init__(key, model_name, base_url, **kwargs)
 
 
 class MistralChat(Base):

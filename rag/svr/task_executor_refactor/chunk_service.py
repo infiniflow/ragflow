@@ -34,6 +34,7 @@ from typing import Any, Dict, List
 
 import xxhash
 from common import settings
+from common.connection_utils import timeout
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.misc_utils import thread_pool_exec
 from common.float_utils import normalize_overlapped_percent
@@ -85,6 +86,7 @@ class ChunkService:
         """
         self._task_context = ctx
 
+    @timeout(60 * 80, 1)
     async def build_chunks(
         self,
         storage_binary: bytes,
@@ -190,6 +192,7 @@ class ChunkService:
 
         st = timer()
 
+        @timeout(60)
         async def upload_to_minio(document, chunk):
             try:
                 d = copy.deepcopy(document)

@@ -15,7 +15,7 @@ import {
   VerifyResult,
 } from '@/pages/user-setting/setting-model/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
@@ -212,6 +212,12 @@ const BedrockModal = ({
     },
     [verifyParamsFunc, onVerify],
   );
+
+  useEffect(() => {
+    if (!visible) {
+      form.reset();
+    }
+  }, [visible, form]);
 
   return (
     <Modal

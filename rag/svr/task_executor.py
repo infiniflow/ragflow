@@ -1728,6 +1728,7 @@ async def handle_task():
         elif run_mode == "0": # use refactor-ed version
             # switch to refactor-ed version
             logging.info(f"-----run refactor-ed task executor:{task_id}, {task.get('name', '')}, doc id:{task.get('doc_id', '')}")
+            set_recording_context(NullRecordingContext())
             await TaskManager.run_refactored_task(task, chat_limiter, minio_limiter, chunk_limiter,
                                embed_limiter,kg_limiter, set_progress, has_canceled)
         else: # original version
