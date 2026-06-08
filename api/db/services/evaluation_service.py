@@ -33,7 +33,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from timeit import default_timer as timer
 
-from api.db.db_models import EvaluationDataset, EvaluationCase, EvaluationRun, EvaluationResult
+from api.db.db_models import DB, EvaluationDataset, EvaluationCase, EvaluationRun, EvaluationResult
 from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService
 from common.misc_utils import get_uuid
@@ -697,10 +697,15 @@ class EvaluationService(CommonService):
         """
         from api.db.db_models import CanvasBranch
 
-        try:
-            dataset = EvaluationDataset.get_by_id(dataset_id)
-        except Exception:
-            dataset = None
+        dataset = (
+            EvaluationDataset.select()
+            .where(
+                (EvaluationDataset.id == dataset_id)
+                & (EvaluationDataset.tenant_id == tenant_id)
+                & (EvaluationDataset.status == StatusEnum.VALID.value)
+            )
+            .first()
+        )
         if dataset is None:
             return False, "Dataset not found."
 
@@ -730,66 +735,95 @@ class EvaluationService(CommonService):
             )
             return run_id
 
-        run_a_id = _make_run(branch_a, "A")
-        run_b_id = _make_run(branch_b, "B")
+        def _mark_runs_failed(run_ids: List[str], error: str):
+            EvaluationRun.update(
+                status="FAILED",
+                metrics_summary={"error": error},
+                complete_time=current_timestamp(),
+            ).where(EvaluationRun.id.in_(run_ids)).execute()
+
+        try:
+            with DB.atomic():
+                run_a_id = _make_run(branch_a, "A")
+                run_b_id = _make_run(branch_b, "B")
+        except Exception as e:
+            logging.error("create_ab_run failed to create evaluation runs: %s", e)
+            return False, str(e)
 
         def _run_branch_cases(branch, run_id: str):
             """Evaluate all cases for a single branch synchronously."""
             from agent.canvas import Canvas
 
-            dsl = branch.dsl_snapshot
-            if not isinstance(dsl, str):
-                import json as _json
-                dsl = _json.dumps(dsl, ensure_ascii=False)
+            try:
+                dsl = branch.dsl_snapshot
+                if not isinstance(dsl, str):
+                    import json as _json
+                    dsl = _json.dumps(dsl, ensure_ascii=False)
 
-            results_summary: List[dict] = []
-            for case in cases:
-                start = timer()
-                generated = ""
-                retrieved: List[dict] = []
-                token_usage: Dict[str, int] = {}
-                try:
-                    canvas = Canvas(dsl, tenant_id, canvas_id=str(branch.canvas_id), branch_id=branch.id)
-                    canvas.reset()
+                results: List[dict] = []
+                for case in cases:
+                    start = timer()
+                    generated = ""
+                    retrieved: List[dict] = []
+                    token_usage: Dict[str, int] = {}
+                    try:
+                        canvas = Canvas(dsl, tenant_id, canvas_id=str(branch.canvas_id), branch_id=branch.id)
+                        canvas.reset()
 
-                    async def _collect():
-                        nonlocal generated, retrieved
-                        async for ans in canvas.run(query=case.question, user_id=user_id):
-                            if ans.get("event") == "message":
-                                generated += ans["data"].get("content", "")
-                            if ans.get("data", {}).get("reference"):
-                                ref = ans["data"]["reference"]
-                                retrieved.extend(ref.get("chunks", {}).values() if isinstance(ref.get("chunks"), dict) else ref.get("chunks", []))
+                        async def _collect():
+                            nonlocal generated, retrieved
+                            async for ans in canvas.run(query=case.question, user_id=user_id):
+                                if ans.get("event") == "message":
+                                    generated += ans["data"].get("content", "")
+                                if ans.get("data", {}).get("reference"):
+                                    ref = ans["data"]["reference"]
+                                    retrieved.extend(
+                                        ref.get("chunks", {}).values()
+                                        if isinstance(ref.get("chunks"), dict)
+                                        else ref.get("chunks", [])
+                                    )
 
-                    asyncio.run(_collect())
-                except Exception as exc:
-                    logging.warning("create_ab_run case %s branch %s failed: %s", case.id, branch.id, exc)
-                    generated = f"ERROR: {exc}"
+                        asyncio.run(_collect())
+                    except Exception as exc:
+                        logging.warning("create_ab_run case %s branch %s failed: %s", case.id, branch.id, exc)
+                        generated = f"ERROR: {exc}"
 
-                elapsed = timer() - start
-                metrics = {
-                    "elapsed": elapsed,
-                    "retrieved_count": len(retrieved),
-                }
-                EvaluationResult.create(
-                    id=get_uuid(),
-                    run_id=run_id,
-                    case_id=case.id,
-                    generated_answer=generated,
-                    retrieved_chunks=retrieved,
-                    metrics=metrics,
-                    execution_time=elapsed,
-                    token_usage=token_usage,
-                    create_time=current_timestamp(),
-                )
-                results_summary.append(metrics)
+                    elapsed = timer() - start
+                    metrics = cls._compute_metrics(
+                        question=case.question,
+                        generated_answer=generated,
+                        reference_answer=case.reference_answer,
+                        retrieved_chunks=retrieved,
+                        relevant_chunk_ids=case.relevant_chunk_ids,
+                        dialog=None,
+                    )
+                    result = {
+                        "id": get_uuid(),
+                        "run_id": run_id,
+                        "case_id": case.id,
+                        "generated_answer": generated,
+                        "retrieved_chunks": retrieved,
+                        "metrics": metrics,
+                        "execution_time": elapsed,
+                        "token_usage": token_usage,
+                        "create_time": current_timestamp(),
+                    }
+                    EvaluationResult.create(**result)
+                    results.append(result)
 
-            avg_elapsed = sum(r["elapsed"] for r in results_summary) / max(len(results_summary), 1)
-            EvaluationRun.update(
-                status="COMPLETED",
-                metrics_summary={"avg_elapsed": avg_elapsed, "case_count": len(results_summary)},
-                complete_time=current_timestamp(),
-            ).where(EvaluationRun.id == run_id).execute()
+                metrics_summary = cls._compute_summary_metrics(results)
+                EvaluationRun.update(
+                    status="COMPLETED",
+                    metrics_summary=metrics_summary,
+                    complete_time=current_timestamp(),
+                ).where(EvaluationRun.id == run_id).execute()
+            except Exception as exc:
+                logging.error("create_ab_run branch %s run %s failed: %s", branch.id, run_id, exc)
+                EvaluationRun.update(
+                    status="FAILED",
+                    metrics_summary={"error": str(exc)},
+                    complete_time=current_timestamp(),
+                ).where(EvaluationRun.id == run_id).execute()
 
         try:
             thread_a = threading.Thread(target=_run_branch_cases, args=(branch_a, run_a_id), daemon=True)
@@ -798,6 +832,7 @@ class EvaluationService(CommonService):
             thread_b.start()
         except Exception as e:
             logging.error("create_ab_run thread start failed: %s", e)
+            _mark_runs_failed([run_a_id, run_b_id], str(e))
             return False, str(e)
 
         return True, {"run_a": run_a_id, "run_b": run_b_id}

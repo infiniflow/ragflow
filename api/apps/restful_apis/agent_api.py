@@ -1497,7 +1497,10 @@ async def create_agent_branch(agent_id, tenant_id):
     branch_name = (req.get("branch_name") or "").strip()
     if not branch_name:
         return get_data_error_result(message="`branch_name` is required.")
-    traffic_weight = int(req.get("traffic_weight", 0))
+    try:
+        traffic_weight = int(req.get("traffic_weight", 0))
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`traffic_weight` must be an integer.")
     if not (0 <= traffic_weight <= 100):
         return get_data_error_result(message="`traffic_weight` must be between 0 and 100.")
 
@@ -1531,7 +1534,7 @@ async def update_branch_weight(agent_id, branch_id, tenant_id):
     if not (0 <= weight <= 100):
         return get_data_error_result(message="`traffic_weight` must be between 0 and 100.")
 
-    ok = await thread_pool_exec(CanvasBranchService.set_traffic_split, branch_id, weight)
+    ok = await thread_pool_exec(CanvasBranchService.set_traffic_split, agent_id, branch_id, weight)
     if not ok:
         return get_data_error_result(message="Branch not found.")
     return get_json_result(data=True)
@@ -1577,8 +1580,23 @@ async def rollback_agent_branch(agent_id, branch_id, tenant_id):
 @_require_canvas_access_async
 async def get_branch_metrics(agent_id, branch_id, tenant_id):
     """Return recent per-turn metrics for branch_id (latency, turns)."""
-    since = float(request.args.get("since", 0))
-    limit = min(int(request.args.get("limit", 200)), 1000)
+    exists, branch = await thread_pool_exec(CanvasBranchService.get_by_id, branch_id)
+    if not exists or str(branch.canvas_id) != str(agent_id):
+        return get_data_error_result(message="Branch not found or does not belong to this agent.")
+
+    try:
+        since = float(request.args.get("since", 0))
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`since` must be a number.")
+    if since < 0:
+        since = 0.0
+
+    try:
+        limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        return get_data_error_result(message="`limit` must be an integer.")
+    limit = max(1, min(limit, 1000))
+
     from rag.utils.redis_conn import REDIS_CONN
 
     metrics = await thread_pool_exec(REDIS_CONN.read_branch_metrics, branch_id, since, limit)

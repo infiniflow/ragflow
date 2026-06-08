@@ -223,10 +223,14 @@ class CanvasBranchService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def set_traffic_split(cls, branch_id: str, weight: int) -> bool:
+    def set_traffic_split(cls, canvas_id: str, branch_id: str, weight: int) -> bool:
         """Update a branch's traffic weight (0-100). No server restart required."""
         weight = max(0, min(100, weight))
-        rows = cls.model.update(traffic_weight=weight).where(cls.model.id == branch_id).execute()
+        rows = (
+            cls.model.update(traffic_weight=weight)
+            .where(cls.model.id == branch_id, cls.model.canvas_id == canvas_id)
+            .execute()
+        )
         return rows > 0
 
     @classmethod
@@ -275,9 +279,10 @@ class CanvasBranchService(CommonService):
         Deterministic, sticky branch selection based on session_id hash.
 
         Branches are sorted by create_time ascending and treated as buckets
-        sized by their traffic_weight. A hash of the session_id maps the
-        session to exactly one bucket.  If no active branch has weight > 0
-        the function returns None (use the live canvas DSL).
+        sized by their traffic_weight on a 0-100 scale. A hash of the
+        session_id maps the session to exactly one bucket; any remainder
+        below 100 routes to the live canvas DSL (control group). If no
+        active branch has weight > 0 the function returns None.
         """
         with DB.connection_context():
             branches = list(
@@ -298,7 +303,13 @@ class CanvasBranchService(CommonService):
             return None
 
         digest = int(hashlib.sha256(session_id.encode()).hexdigest(), 16)
-        slot = digest % total
+        if total < 100:
+            slot = digest % 100
+            if slot >= total:
+                return None
+        else:
+            slot = digest % total
+
         cumulative = 0
         for branch in branches:
             cumulative += branch.traffic_weight

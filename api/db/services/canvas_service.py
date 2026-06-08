@@ -343,9 +343,9 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
             dsl = branch_dsl
             branch_id = branch.id
 
-        canvas = Canvas(dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header)
-        if branch_id:
-            canvas.globals["sys.branch_id"] = branch_id
+        canvas = Canvas(
+            dsl, tenant_id, agent_id, canvas_id=cvs.id, custom_header=custom_header, branch_id=branch_id
+        )
         canvas.reset()
         # Get the version title based on release_mode
         version_title = await thread_pool_exec(UserCanvasVersionService.get_latest_version_title, cvs.id, release_mode=release_mode == "true")
