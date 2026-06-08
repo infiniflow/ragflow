@@ -100,7 +100,6 @@ class Ollama(Base):
             for model in models:
                 async with session.post(self._get_model_detail_url(), headers=headers, json={"model": model["name"]}) as resp:
                     if resp.status != 200:
-                        print(resp, flush=True)
                         continue
                     model_info = await resp.json()
                     max_tokens_key = "{}.context_length".format(model_info.get("details", {}).get("family", ""))
