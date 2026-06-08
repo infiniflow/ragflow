@@ -42,8 +42,9 @@ type Router struct {
 	skillSearchHandler      *handler.SkillSearchHandler
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
-	relatedQuestionsHandler *handler.SearchbotHandler
-	difyRetrievalHandler  *handler.DifyRetrievalHandler
+	searchBotHandler      *handler.SearchBotHandler
+	difyRetrievalHandler    *handler.DifyRetrievalHandler
+	pluginHandler           *handler.PluginHandler
 }
 
 // NewRouter create router
@@ -67,8 +68,9 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
-	relatedQuestionsHandler *handler.SearchbotHandler,
-	difyRetrievalHandler  *handler.DifyRetrievalHandler,
+	searchBotHandler *handler.SearchBotHandler,
+	difyRetrievalHandler *handler.DifyRetrievalHandler,
+	pluginHandler *handler.PluginHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -90,8 +92,9 @@ func NewRouter(
 		skillSearchHandler:      skillSearchHandler,
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
-		relatedQuestionsHandler: relatedQuestionsHandler,
-			difyRetrievalHandler:  difyRetrievalHandler,
+		searchBotHandler:      searchBotHandler,
+		difyRetrievalHandler:    difyRetrievalHandler,
+		pluginHandler:           pluginHandler,
 	}
 }
 
@@ -223,7 +226,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.relatedQuestionsHandler.Handle)
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -235,7 +239,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
 				// Dataset ingestion logs
@@ -377,6 +381,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
+				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
+				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+			}
+
+			// Plugin routes
+			plugin := v1.Group("/plugin")
+			{
+				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
 			connector := v1.Group("/connectors")
