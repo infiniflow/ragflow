@@ -225,6 +225,9 @@ func (x *XiaomiModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return err
 	}
 
+	if modelName == "" {
+		return fmt.Errorf("model name is required")
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
