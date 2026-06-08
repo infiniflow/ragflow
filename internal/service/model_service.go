@@ -228,6 +228,7 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 	region := extra["region"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
+	apiConfig.ProviderClass = &providerInfo.Class
 
 	driver := providerInfo.ModelDriver
 
@@ -430,6 +431,7 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 	baseURL := extra["base_url"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
+	apiConfig.ProviderClass = &providerInfo.Class
 	apiConfig.BaseURL = &baseURL
 
 	var result map[string]interface{}
@@ -467,8 +469,9 @@ func (m *ModelProviderService) CheckConnection(providerName, apiKey, region, bas
 	}
 
 	apiConfig := &modelModule.APIConfig{
-		ApiKey: &apiKey,
-		Region: &region,
+		ApiKey:        &apiKey,
+		Region:        &region,
+		ProviderClass: &providerInfo.Class,
 	}
 
 	err := driver.CheckConnection(apiConfig)
@@ -523,6 +526,7 @@ func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceNam
 	region := extra["region"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
+	apiConfig.ProviderClass = &providerInfo.Class
 
 	driver := providerInfo.ModelDriver
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
@@ -583,6 +587,7 @@ func (m *ModelProviderService) ListTasks(providerName, instanceName, userID stri
 	region := extra["region"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
+	apiConfig.ProviderClass = &providerInfo.Class
 
 	driver := providerInfo.ModelDriver
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
@@ -644,6 +649,7 @@ func (m *ModelProviderService) ShowTask(providerName, instanceName, taskID, user
 	region := extra["region"]
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
+	apiConfig.ProviderClass = &providerInfo.Class
 
 	driver := providerInfo.ModelDriver
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
@@ -941,6 +947,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response *modelModule.ChatResponse
 		response, err = providerInfo.ModelDriver.ChatWithMessages(modelName, messages, apiConfig, modelConfig)
@@ -973,6 +980,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		modelConfig.ModelClass = &providerInfo.Class
 
@@ -1047,6 +1055,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		err = providerInfo.ModelDriver.ChatStreamlyWithSender(modelName, messages, apiConfig, modelConfig, sender)
 		if err != nil {
@@ -1075,6 +1084,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		modelConfig.ModelClass = &providerInfo.Class
 
@@ -1151,6 +1161,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response []modelModule.EmbeddingData
 		response, err = providerInfo.ModelDriver.Embed(&modelName, texts, apiConfig, modelConfig)
@@ -1183,6 +1194,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1262,6 +1274,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response *modelModule.RerankResponse
 		response, err = providerInfo.ModelDriver.Rerank(&modelName, query, documents, apiConfig, modelConfig)
@@ -1291,6 +1304,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1367,6 +1381,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response *modelModule.ASRResponse
 		response, err = providerInfo.ModelDriver.TranscribeAudio(&modelName, audioFile, apiConfig, asrConfig)
@@ -1399,6 +1414,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1470,6 +1486,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		err = providerInfo.ModelDriver.TranscribeAudioWithSender(&modelName, audioFile, apiConfig, asrConfig, sender)
 		if err != nil {
@@ -1498,6 +1515,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1572,6 +1590,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response *modelModule.TTSResponse
 		response, err = providerInfo.ModelDriver.AudioSpeech(&modelName, audioContent, apiConfig, ttsConfig)
@@ -1604,6 +1623,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1675,6 +1695,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		err = providerInfo.ModelDriver.AudioSpeechWithSender(&modelName, audioContent, apiConfig, ttsConfig, sender)
 		if err != nil {
@@ -1703,6 +1724,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1776,6 +1798,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response *modelModule.OCRFileResponse
 		response, err = providerInfo.ModelDriver.OCRFile(&modelName, content, url, apiConfig, ocrConfig)
@@ -1808,6 +1831,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, us
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -1886,6 +1910,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		var response *modelModule.ParseFileResponse
 		response, err = providerInfo.ModelDriver.ParseFile(&modelName, content, url, apiConfig, parseFileConfig)
@@ -1918,6 +1943,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 		region := extra["region"]
 		apiConfig.Region = &region
 		apiConfig.ApiKey = &instance.APIKey
+		apiConfig.ProviderClass = &providerInfo.Class
 
 		newProviderInfo, err := newModelDriverForBaseURL(providerInfo.ModelDriver, providerName, region, extra["base_url"])
 		if err != nil {
@@ -2275,7 +2301,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
 			maxTokens = mi.MaxTokens
 		}
-		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
+		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL, ProviderClass: &providerInfo.Class}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
 	case errors.Is(modelErr, gorm.ErrRecordNotFound):
 		// Tenant hasn't enrolled this model. Fall through to the factory catalog.
@@ -2321,7 +2347,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	if driverErr != nil {
 		return nil, "", nil, 0, driverErr
 	}
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
+	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL, ProviderClass: &targetProvider.Class}
 	return driver, llmInfo.Name, apiConfig, llmInfo.MaxTokens, nil
 }
 
@@ -2405,6 +2431,6 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 		apiKey = instance.APIKey
 	}
 
-	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
+	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, ProviderClass: &providerInfo.Class}
 	return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
 }
