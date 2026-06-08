@@ -22,7 +22,8 @@ from timeit import default_timer as timer
 from quart import jsonify
 
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_json_result, get_data_error_result, server_error_response, generate_confirmation_token
+from api.utils.api_utils import get_result, generate_confirmation_token, server_error_response
+from common.constants import RetCode
 from api.utils.health_utils import run_health_checks, get_oceanbase_status
 from common.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
@@ -57,7 +58,7 @@ def version():
               type: string
               description: Version number.
     """
-    return get_json_result(data=get_ragflow_version())
+    return get_result(data=get_ragflow_version())
 
 
 @manager.route("/system/status", methods=["GET"])  # noqa: F821
@@ -166,7 +167,7 @@ def status():
         logging.exception("get task executor heartbeats failed!")
     res["task_executor_heartbeats"] = task_executor_heartbeats
 
-    return get_json_result(data=res)
+    return get_result(data=res)
 
 
 @manager.route("/system/oceanbase/status", methods=["GET"])  # noqa: F821
@@ -194,9 +195,9 @@ def oceanbase_status():
     """
     try:
         status_info = get_oceanbase_status()
-        return get_json_result(data=status_info)
+        return get_result(data=status_info)
     except Exception as e:
-        return get_json_result(
+        return get_result(
             data={
                 "status": "error",
                 "message": f"Failed to get OceanBase status: {str(e)}"
@@ -222,7 +223,7 @@ def get_config():
                         type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
-    return get_json_result(data={
+    return get_result(data={
         "registerEnabled": settings.REGISTER_ENABLED,
         "disablePasswordLogin": settings.DISABLE_PASSWORD_LOGIN,
     })
@@ -266,7 +267,7 @@ def token_list():
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
-            return get_data_error_result(message="Tenant not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found!")
 
         tenant_id = [tenant for tenant in tenants if tenant.role == "owner"][0].tenant_id
         objs = APITokenService.query(tenant_id=tenant_id)
@@ -275,7 +276,7 @@ def token_list():
             if not o["beta"]:
                 o["beta"] = generate_confirmation_token().replace("ragflow-", "")[:32]
                 APITokenService.filter_update([APIToken.tenant_id == tenant_id, APIToken.token == o["token"]], o)
-        return get_json_result(data=objs)
+        return get_result(data=objs)
     except Exception as e:
         return server_error_response(e)
 
@@ -309,7 +310,7 @@ def new_token():
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
-            return get_data_error_result(message="Tenant not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found!")
 
         tenant_id = [tenant for tenant in tenants if tenant.role == "owner"][0].tenant_id
         obj = {
@@ -323,9 +324,9 @@ def new_token():
         }
 
         if not APITokenService.save(**obj):
-            return get_data_error_result(message="Fail to new a dialog!")
+            return get_result(code=RetCode.DATA_ERROR, message="Fail to new a dialog!")
 
-        return get_json_result(data=obj)
+        return get_result(data=obj)
     except Exception as e:
         return server_error_response(e)
 
@@ -359,11 +360,11 @@ def rm(token):
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
-            return get_data_error_result(message="Tenant not found!")
+            return get_result(code=RetCode.DATA_ERROR, message="Tenant not found!")
 
         tenant_id = tenants[0].tenant_id
         APITokenService.filter_delete([APIToken.tenant_id == tenant_id, APIToken.token == token])
-        return get_json_result(data=True)
+        return get_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
@@ -380,7 +381,7 @@ async def get_logger_levels():
         200:
             description: Return current log levels
     """
-    return get_json_result(data=get_log_levels())
+    return get_result(data=get_log_levels())
 
 
 @manager.route("/system/config/log", methods=["PUT"])  # noqa: F821
@@ -411,11 +412,11 @@ async def set_logger_level():
     from quart import request
     data = await request.get_json()
     if not data or "pkg_name" not in data or "level" not in data:
-        return get_data_error_result(message="pkg_name and level are required")
+        return get_result(code=RetCode.DATA_ERROR, message="pkg_name and level are required")
     pkg_name = data["pkg_name"]
     level = data["level"]
     success = set_log_level(pkg_name, level)
     if success:
-        return get_json_result(data={"pkg_name": pkg_name, "level": level})
+        return get_result(data={"pkg_name": pkg_name, "level": level})
     else:
-        return get_data_error_result(message=f"Invalid log level: {level}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Invalid log level: {level}")

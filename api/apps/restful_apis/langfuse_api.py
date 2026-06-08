@@ -20,7 +20,8 @@ from langfuse import Langfuse
 
 from api.db.db_models import DB
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.utils.api_utils import get_error_data_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import get_result, get_request_json, server_error_response, validate_request
+from common.constants import RetCode
 
 
 @manager.route("/langfuse/api-key", methods=["POST", "PUT"])  # noqa: F821
@@ -32,7 +33,7 @@ async def set_api_key():
     public_key = req.get("public_key", "")
     host = req.get("host", "")
     if not all([secret_key, public_key, host]):
-        return get_error_data_result(message="Missing required fields")
+        return get_result(code=RetCode.DATA_ERROR, message="Missing required fields")
 
     current_user_id = current_user.id
     langfuse_keys = dict(
@@ -44,7 +45,7 @@ async def set_api_key():
 
     langfuse = Langfuse(public_key=langfuse_keys["public_key"], secret_key=langfuse_keys["secret_key"], host=langfuse_keys["host"])
     if not langfuse.auth_check():
-        return get_error_data_result(message="Invalid Langfuse keys")
+        return get_result(code=RetCode.DATA_ERROR, message="Invalid Langfuse keys")
 
     langfuse_entry = TenantLangfuseService.filter_by_tenant(tenant_id=current_user_id)
     with DB.atomic():
@@ -53,7 +54,7 @@ async def set_api_key():
                 TenantLangfuseService.save(**langfuse_keys)
             else:
                 TenantLangfuseService.update_by_tenant(tenant_id=current_user_id, langfuse_keys=langfuse_keys)
-            return get_json_result(data=langfuse_keys)
+            return get_result(data=langfuse_keys)
         except Exception as e:
             return server_error_response(e)
 
@@ -65,21 +66,21 @@ def get_api_key():
     current_user_id = current_user.id
     langfuse_entry = TenantLangfuseService.filter_by_tenant_with_info(tenant_id=current_user_id)
     if not langfuse_entry:
-        return get_json_result(message="Have not record any Langfuse keys.")
+        return get_result(message="Have not record any Langfuse keys.")
 
     langfuse = Langfuse(public_key=langfuse_entry["public_key"], secret_key=langfuse_entry["secret_key"], host=langfuse_entry["host"])
     try:
         if not langfuse.auth_check():
-            return get_error_data_result(message="Invalid Langfuse keys loaded")
+            return get_result(code=RetCode.DATA_ERROR, message="Invalid Langfuse keys loaded")
     except langfuse.api.core.api_error.ApiError as api_err:
-        return get_json_result(message=f"Error from Langfuse: {api_err}")
+        return get_result(message=f"Error from Langfuse: {api_err}")
     except Exception as e:
         return server_error_response(e)
 
     langfuse_entry["project_id"] = langfuse.api.projects.get().dict()["data"][0]["id"]
     langfuse_entry["project_name"] = langfuse.api.projects.get().dict()["data"][0]["name"]
 
-    return get_json_result(data=langfuse_entry)
+    return get_result(data=langfuse_entry)
 
 
 @manager.route("/langfuse/api-key", methods=["DELETE"])  # noqa: F821
@@ -89,11 +90,11 @@ def delete_api_key():
     current_user_id = current_user.id
     langfuse_entry = TenantLangfuseService.filter_by_tenant(tenant_id=current_user_id)
     if not langfuse_entry:
-        return get_json_result(message="Have not record any Langfuse keys.")
+        return get_result(message="Have not record any Langfuse keys.")
 
     with DB.atomic():
         try:
             TenantLangfuseService.delete_model(langfuse_entry)
-            return get_json_result(data=True)
+            return get_result(data=True)
         except Exception as e:
             return server_error_response(e)

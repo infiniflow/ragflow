@@ -29,7 +29,7 @@ from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
-from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import get_result, get_request_json, server_error_response, validate_request
 from api.utils.pagination_utils import validate_rest_api_page_size
 
 
@@ -47,14 +47,14 @@ async def create():
     search_name = req["name"]
     description = req.get("description", "")
     if not isinstance(search_name, str):
-        return get_data_error_result(message="Search name must be string.")
+        return get_result(code=RetCode.DATA_ERROR, message="Search name must be string.")
     if search_name.strip() == "":
-        return get_data_error_result(message="Search name can't be empty.")
+        return get_result(code=RetCode.DATA_ERROR, message="Search name can't be empty.")
     if len(search_name.encode("utf-8")) > 255:
-        return get_data_error_result(message=f"Search name length is {len(search_name)} which is large than 255.")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Search name length is {len(search_name)} which is large than 255.")
     e, _ = TenantService.get_by_id(current_user.id)
     if not e:
-        return get_data_error_result(message="Authorized identity.")
+        return get_result(code=RetCode.DATA_ERROR, message="Authorized identity.")
 
     search_name = search_name.strip()
     search_name = duplicate_name(SearchService.query, name=search_name, tenant_id=current_user.id, status=StatusEnum.VALID.value)
@@ -67,8 +67,8 @@ async def create():
     with DB.atomic():
         try:
             if not SearchService.save(**req):
-                return get_data_error_result()
-            return get_json_result(data={"search_id": req["id"]})
+                return get_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!")
+            return get_result(data={"search_id": req["id"]})
         except Exception as e:
             return server_error_response(e)
 
@@ -97,7 +97,7 @@ def list_searches():
                     current_user.id,
                     sorted(unauthorized_owner_ids),
                 )
-                return get_json_result(
+                return get_result(
                     data=False,
                     message="Only authorized owner_ids can be queried.",
                     code=RetCode.OPERATING_ERROR,
@@ -109,7 +109,7 @@ def list_searches():
         search_apps, total = SearchService.get_by_tenant_ids(
             effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords
         )
-        return get_json_result(data={"search_apps": search_apps, "total": total})
+        return get_result(data={"search_apps": search_apps, "total": total})
     except Exception as e:
         return server_error_response(e)
 
@@ -123,12 +123,12 @@ def detail(search_id):
             if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
+            return get_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:
-            return get_data_error_result(message="Can't find this Search App!")
-        return get_json_result(data=search)
+            return get_result(code=RetCode.DATA_ERROR, message="Can't find this Search App!")
+        return get_result(data=search)
     except Exception as e:
         return server_error_response(e)
 
@@ -139,32 +139,32 @@ def detail(search_id):
 async def update(search_id):
     req = await get_request_json()
     if not isinstance(req["name"], str):
-        return get_data_error_result(message="Search name must be string.")
+        return get_result(code=RetCode.DATA_ERROR, message="Search name must be string.")
     if req["name"].strip() == "":
-        return get_data_error_result(message="Search name can't be empty.")
+        return get_result(code=RetCode.DATA_ERROR, message="Search name can't be empty.")
     if len(req["name"].encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(message=f"Search name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Search name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
     req["name"] = req["name"].strip()
 
     e, _ = TenantService.get_by_id(current_user.id)
     if not e:
-        return get_data_error_result(message="Authorized identity.")
+        return get_result(code=RetCode.DATA_ERROR, message="Authorized identity.")
 
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
         if not search_app:
-            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
+            return get_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
 
         if req["name"].lower() != search_app.name.lower() and len(SearchService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) >= 1:
-            return get_data_error_result(message="Duplicated search name.")
+            return get_result(code=RetCode.DATA_ERROR, message="Duplicated search name.")
 
         current_config = search_app.search_config or {}
         new_config = req["search_config"]
         if not isinstance(new_config, dict):
-            return get_data_error_result(message="search_config must be a JSON object")
+            return get_result(code=RetCode.DATA_ERROR, message="search_config must be a JSON object")
         req["search_config"] = {**current_config, **new_config}
         logging.debug(
             "Search update weight: search_id=%s user_id=%s "
@@ -182,13 +182,13 @@ async def update(search_id):
 
         updated = SearchService.update_by_id(search_id, req)
         if not updated:
-            return get_data_error_result(message="Failed to update search")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to update search")
 
         e, updated_search = SearchService.get_by_id(search_id)
         if not e:
-            return get_data_error_result(message="Failed to fetch updated search")
+            return get_result(code=RetCode.DATA_ERROR, message="Failed to fetch updated search")
 
-        return get_json_result(data=updated_search.to_dict())
+        return get_result(data=updated_search.to_dict())
 
     except Exception as e:
         return server_error_response(e)
@@ -198,12 +198,12 @@ async def update(search_id):
 @login_required
 def delete_search(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not SearchService.delete_by_id(search_id):
-            return get_data_error_result(message=f"Failed to delete search App {search_id}")
-        return get_json_result(data=True)
+            return get_result(code=RetCode.DATA_ERROR, message=f"Failed to delete search App {search_id}")
+        return get_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
@@ -214,7 +214,7 @@ def delete_search(search_id):
 @validate_request("question")
 async def completion(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(
+        return get_result(
             data=False,
             message="No authorization.",
             code=RetCode.AUTHENTICATION_ERROR,
@@ -224,7 +224,7 @@ async def completion(search_id):
     uid = current_user.id
     search_app = SearchService.get_detail(search_id)
     if not search_app:
-        return get_data_error_result(message=f"Cannot find search {search_id}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Cannot find search {search_id}")
 
     search_config = search_app.get("search_config", {})
     logging.debug(
@@ -237,7 +237,7 @@ async def completion(search_id):
     )
     kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
     if not kb_ids:
-        return get_data_error_result(message="`kb_ids` is required.")
+        return get_result(code=RetCode.DATA_ERROR, message="`kb_ids` is required.")
 
     async def stream():
         nonlocal req, uid, kb_ids, search_config

@@ -19,11 +19,11 @@ from quart import request
 
 from api.apps import login_required
 from api.utils.api_utils import (
-    add_tenant_id_to_kwargs,
-    get_error_argument_result,
-    get_error_data_result,
     get_result,
+    add_tenant_id_to_kwargs,
 )
+from common.constants import RetCode
+
 from api.apps.services import provider_api_service
 
 
@@ -62,10 +62,10 @@ def list_providers(tenant_id: str = None):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers", methods=["PUT"])  # noqa: F821
@@ -105,7 +105,7 @@ async def add_provider(tenant_id: str = None):
     """
     data = await request.get_json()
     if not data or "provider_name" not in data:
-        return get_error_argument_result(message="provider_name is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="provider_name is required")
 
     provider_name = data["provider_name"]
 
@@ -114,10 +114,10 @@ async def add_provider(tenant_id: str = None):
         if success:
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>", methods=["GET"])  # noqa: F821
@@ -152,10 +152,10 @@ def show_provider(provider_name: str):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>", methods=["DELETE"])  # noqa: F821
@@ -191,10 +191,10 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
         if success:
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/models", methods=["GET"])  # noqa: F821
@@ -234,10 +234,10 @@ def list_provider_models(provider_name: str):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/models/<path:model_name>", methods=["GET"])  # noqa: F821
@@ -277,10 +277,10 @@ def show_provider_model(provider_name: str, model_name: str):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances", methods=["POST"])  # noqa: F821
@@ -329,7 +329,7 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
     """
     data = await request.get_json()
     if not data or "instance_name" not in data or "api_key" not in data:
-        return get_error_argument_result(message="instance_name and api_key are required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="instance_name and api_key are required")
 
     instance_name = data["instance_name"]
     api_key = data["api_key"]
@@ -341,10 +341,10 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
         if success:
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/connection", methods=["POST"])  # noqa: F821
@@ -391,7 +391,7 @@ async def verify_provider_api_key(provider_name: str = None):
     """
     data = await request.get_json()
     if not data or "api_key" not in data:
-        return get_error_argument_result(message="api_key is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="api_key is required")
 
     base_url = data.get("base_url", "")
     api_key = data["api_key"]
@@ -402,10 +402,10 @@ async def verify_provider_api_key(provider_name: str = None):
         if success:
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances", methods=["GET"])  # noqa: F821
@@ -446,10 +446,10 @@ def list_provider_instances(tenant_id: str = None, provider_name: str = None):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances/<instance_name>", methods=["GET"])  # noqa: F821
@@ -490,10 +490,10 @@ def show_provider_instance(tenant_id: str = None, provider_name: str = None, ins
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances", methods=["DELETE"])  # noqa: F821
@@ -540,21 +540,21 @@ async def drop_provider_instances(tenant_id: str = None, provider_name: str = No
     """
     data = await request.get_json()
     if not data or "instances" not in data:
-        return get_error_argument_result(message="instances is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="instances is required")
 
     instances = data["instances"]
     if not instances:
-        return get_error_argument_result(message="instances is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="instances is required")
 
     try:
         success, msg = provider_api_service.drop_provider_instances(tenant_id, provider_name, instances)
         if success:
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["GET"])  # noqa: F821
@@ -608,10 +608,10 @@ def list_instance_models(tenant_id: str = None, provider_name: str = None, insta
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances/<instance_name>/models", methods=["POST"])  # noqa: F821
@@ -669,7 +669,7 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
     """
     data = await request.get_json()
     if not data or "model_name" not in data or "model_type" not in data:
-        return get_error_argument_result(message="model_name and model_type are required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="model_name and model_type are required")
 
     model_name = data["model_name"]
     model_type = data["model_type"]
@@ -683,10 +683,10 @@ async def add_model_to_instance(tenant_id: str, provider_name: str, instance_nam
         if success:
             return get_result(message=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["PATCH"])  # noqa: F821
@@ -742,21 +742,21 @@ async def enable_or_disable_model(tenant_id: str = None, provider_name: str = No
     """
     data = await request.get_json()
     if not data or "status" not in data:
-        return get_error_argument_result(message="status is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="status is required")
 
     status = data["status"]
     if status not in ("active", "inactive"):
-        return get_error_argument_result(message="status must be 'active' or 'inactive'")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="status must be 'active' or 'inactive'")
 
     try:
         success, msg = provider_api_service.update_model_status(tenant_id, provider_name, instance_name, model_name, status)
         if success:
             return get_result(message=msg)
         else:
-            return get_error_data_result(message=msg)
+            return get_result(code=RetCode.DATA_ERROR, message=msg)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/providers/<provider_name>/instances/<instance_name>/models/<path:model_name>", methods=["POST"])  # noqa: F821
@@ -817,7 +817,7 @@ async def chat_to_model(tenant_id: str = None, provider_name: str = None, instan
     """
     data = await request.get_json()
     if not data or "message" not in data:
-        return get_error_argument_result(message="message is required")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="message is required")
 
     message = data["message"]
     stream = data.get("stream", False)
@@ -828,7 +828,7 @@ async def chat_to_model(tenant_id: str = None, provider_name: str = None, instan
             tenant_id, provider_name, instance_name, model_name, message, stream, thinking
         )
         if not success:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
 
         if stream and isinstance(result, dict) and result.get("type") == "stream":
             # Streaming response using SSE
@@ -854,4 +854,4 @@ async def chat_to_model(tenant_id: str = None, provider_name: str = None, instan
         return get_result(data=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")

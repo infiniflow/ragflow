@@ -19,10 +19,11 @@ from datetime import datetime
 from api.apps import login_required
 from api.db.services.task_service import TaskService, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.utils.api_utils import (
-    get_json_result,
+    get_result,
     get_request_json,
     validate_request,
 )
+
 from common.constants import RetCode, TaskStatus
 from rag.utils.redis_conn import REDIS_CONN
 
@@ -43,7 +44,7 @@ async def patch_task(task_id):
     action = req.get("action")
 
     if action != "stop":
-        return get_json_result(
+        return get_result(
             code=RetCode.ARGUMENT_ERROR,
             message=f"Invalid action '{action}'. Only 'stop' is supported.",
         )
@@ -60,14 +61,14 @@ async def _cancel_task(task_id):
         REDIS_CONN.set(f"{task_id}-cancel", "x")
     except Exception as e:
         logging.exception("Failed to set cancel flag for task %s: %s", task_id, str(e))
-        return get_json_result(
+        return get_result(
             code=RetCode.CONNECTION_ERROR,
             message="Failed to stop task",
         )
 
     exists, task = TaskService.get_by_id(task_id)
     if not exists:
-        return get_json_result(data=True)
+        return get_result(data=True)
 
     # Append a cancellation message so the user can see it in progress_msg.
     try:
@@ -98,4 +99,4 @@ async def _cancel_task(task_id):
         logging.warning("Failed to update document run status for task %s: %s", task_id, str(e))
 
     logging.info(f"Cancel task succeeded: task_id={task_id} doc_id={task.doc_id}")
-    return get_json_result(data=True)
+    return get_result(data=True)

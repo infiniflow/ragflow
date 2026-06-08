@@ -19,7 +19,7 @@ from peewee import OperationalError
 from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
-from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
+from api.utils.api_utils import get_result, add_tenant_id_to_kwargs
 from api.utils.pagination_utils import validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
@@ -41,19 +41,19 @@ def aggregate_tags(tenant_id):
     dataset_ids = request.args.get("dataset_ids", "").split(",")
     dataset_ids = [d for d in dataset_ids if d]
     if not dataset_ids:
-        return get_error_data_result(message="Lack of dataset_ids in query parameters")
+        return get_result(code=RetCode.DATA_ERROR, message="Lack of dataset_ids in query parameters")
 
     try:
         success, result = dataset_api_service.aggregate_tags(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/metadata/flattened", methods=["GET"])  # noqa: F821
@@ -63,19 +63,19 @@ def get_flattened_metadata(tenant_id):
     dataset_ids = request.args.get("dataset_ids", "").split(",")
     dataset_ids = [d for d in dataset_ids if d]
     if not dataset_ids:
-        return get_error_data_result(message="Lack of dataset_ids in query parameters")
+        return get_result(code=RetCode.DATA_ERROR, message="Lack of dataset_ids in query parameters")
 
     try:
         success, result = dataset_api_service.get_flattened_metadata(dataset_ids, tenant_id)
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -139,7 +139,7 @@ async def create(tenant_id: str = None):
     """
     req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
 
     try:
         if not tenant_id:
@@ -148,14 +148,14 @@ async def create(tenant_id: str = None):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except LookupError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821
@@ -201,20 +201,20 @@ async def delete(tenant_id):
     """
     req, err = await validate_and_parse_json_request(request, DeleteDatasetReq)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
 
     try:
         success, result = await dataset_api_service.delete_datasets(tenant_id, req.get("ids"), req.get("delete_all", False))
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except OperationalError as e:
         logging.exception(e)
-        return get_error_data_result(message="Database operation failed")
+        return get_result(code=RetCode.DATA_ERROR, message="Database operation failed")
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
@@ -288,20 +288,20 @@ async def update(tenant_id, dataset_id):
     extras = {"dataset_id": dataset_id}
     req, err = await validate_and_parse_json_request(request, UpdateDatasetReq, extras=extras, exclude_unset=True)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
 
     try:
         success, result = await dataset_api_service.update_dataset(tenant_id, dataset_id, req)
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except OperationalError as e:
         logging.exception(e)
-        return get_error_data_result(message="Database operation failed")
+        return get_result(code=RetCode.DATA_ERROR, message="Database operation failed")
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets", methods=["GET"])  # noqa: F821
@@ -365,20 +365,20 @@ def list_datasets(tenant_id):
     """
     args, err = validate_and_parse_request_args(request, ListDatasetReq)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
 
     try:
         success, result = dataset_api_service.list_datasets(tenant_id, args)
         if success:
             return get_result(data=result.get("data"), total=result.get("total"))
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except OperationalError as e:
         logging.exception(e)
-        return get_error_data_result(message="Database operation failed")
+        return get_result(code=RetCode.DATA_ERROR, message="Database operation failed")
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>", methods=["GET"])  # noqa: F821
@@ -390,12 +390,12 @@ def get_dataset(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/ingestions/summary", methods=["GET"])  # noqa: F821
@@ -407,12 +407,12 @@ def get_ingestion_summary(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/tags", methods=["GET"])  # noqa: F821
@@ -424,12 +424,12 @@ def list_tags(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/tags", methods=["DELETE"])  # noqa: F821
@@ -438,21 +438,21 @@ def list_tags(tenant_id, dataset_id):
 async def delete_tags(tenant_id, dataset_id):
     req = await request.get_json()
     if not req or "tags" not in req:
-        return get_error_data_result(message="Lack of tags in request body")
+        return get_result(code=RetCode.DATA_ERROR, message="Lack of tags in request body")
     if not isinstance(req["tags"], list) or not all(isinstance(t, str) for t in req["tags"]):
-        return get_error_argument_result("tags must be a list of strings")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="tags must be a list of strings")
 
     try:
         success, result = dataset_api_service.delete_tags(dataset_id, tenant_id, req["tags"])
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/tags", methods=["PUT"])  # noqa: F821
@@ -461,24 +461,24 @@ async def delete_tags(tenant_id, dataset_id):
 async def rename_tag(tenant_id, dataset_id):
     req = await request.get_json()
     if not req or "from_tag" not in req or "to_tag" not in req:
-        return get_error_data_result(message="Lack of from_tag or to_tag in request body")
+        return get_result(code=RetCode.DATA_ERROR, message="Lack of from_tag or to_tag in request body")
     if not isinstance(req["from_tag"], str) or not isinstance(req["to_tag"], str):
-        return get_error_argument_result("from_tag and to_tag must be strings")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="from_tag and to_tag must be strings")
 
     if not req["from_tag"].strip() or not req["to_tag"].strip():
-        return get_error_argument_result("from_tag and to_tag must not be empty")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="from_tag and to_tag must not be empty")
 
     try:
         success, result = dataset_api_service.rename_tag(dataset_id, tenant_id, req["from_tag"], req["to_tag"])
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/search", methods=["POST"])  # noqa: F821
@@ -496,12 +496,12 @@ async def search_datasets(tenant_id):
     """
     req, err = await validate_and_parse_json_request(request, SearchDatasetsReq)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
     success, result = await dataset_api_service.search_datasets(tenant_id, req)
     if success:
         return get_result(data=result)
     else:
-        return get_error_data_result(message=result)
+        return get_result(code=RetCode.DATA_ERROR, message=result)
 
 
 @manager.route("/datasets/<dataset_id>/search", methods=["POST"])  # noqa: F821
@@ -519,19 +519,19 @@ async def search(tenant_id, dataset_id):
     """
     req, err = await validate_and_parse_json_request(request, SearchDatasetReq)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
     req['dataset_ids'] = [dataset_id]
     try:
         success, result = await dataset_api_service.search_datasets(tenant_id, req)
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
         if "not_found" in str(e):
-            return get_error_data_result(message="No chunk found! Check the chunk status please!")
-        return get_error_data_result(message="Internal server error")
+            return get_result(code=RetCode.DATA_ERROR, message="No chunk found! Check the chunk status please!")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/graph", methods=["GET"])  # noqa: F821
@@ -553,7 +553,7 @@ async def get_knowledge_graph(tenant_id, dataset_id):
             return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/index", methods=["POST"])  # noqa: F821
@@ -567,12 +567,12 @@ async def run_index(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/index", methods=["GET"])  # noqa: F821
@@ -586,12 +586,12 @@ def trace_index(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/<index_type>", methods=["DELETE"])  # noqa: F821
@@ -601,7 +601,7 @@ def trace_index(tenant_id, dataset_id):
 def delete_index(tenant_id, dataset_id, index_type=None):
     index_type = (index_type or request.args.get("type", "")).lower()
     if index_type not in dataset_api_service._VALID_INDEX_TYPES:
-        return get_error_argument_result(f"Invalid index type '{index_type}'")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=f"Invalid index type '{index_type}'")
     # `wipe` controls whether the persisted index artefacts (graph rows /
     # raptor summaries) are removed. Default true preserves historical
     # behaviour; pass wipe=false to cancel the running task while keeping
@@ -613,12 +613,12 @@ def delete_index(tenant_id, dataset_id, index_type=None):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/embedding", methods=["POST"])  # noqa: F821
@@ -630,10 +630,10 @@ async def run_embedding(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/embedding/check", methods=["POST"])  # noqa: F821
@@ -643,17 +643,17 @@ async def check_embedding(tenant_id, dataset_id):
     try:
         req = await request.get_json()
         if not req or not req.get("embd_id"):
-            return get_error_data_result(message="`embd_id` is required.")
+            return get_result(code=RetCode.DATA_ERROR, message="`embd_id` is required.")
         status, result = dataset_api_service.check_embedding(dataset_id, tenant_id, req)
         if status is True:
             return get_result(data=result)
         elif status == "not_effective":
-            return get_json_result(code=result["code"], message=result["message"], data=result["data"])
+            return get_result(code=result["code"], message=result["message"], data=result["data"])
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/ingestions", methods=["GET"])  # noqa: F821
@@ -674,12 +674,12 @@ def list_ingestion_logs(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/ingestions/<log_id>", methods=["GET"])  # noqa: F821
@@ -691,12 +691,12 @@ def get_ingestion_log(tenant_id, dataset_id, log_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/metadata/config", methods=["GET"])  # noqa: F821
@@ -732,12 +732,12 @@ def get_auto_metadata(tenant_id, dataset_id):
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")
 
 
 @manager.route("/datasets/<dataset_id>/metadata/config", methods=["PUT"])  # noqa: F821
@@ -778,16 +778,16 @@ async def update_auto_metadata(tenant_id, dataset_id):
 
     cfg, err = await validate_and_parse_json_request(request, AutoMetadataConfig)
     if err is not None:
-        return get_error_argument_result(err)
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=err)
 
     try:
         success, result = await dataset_api_service.update_auto_metadata(dataset_id, tenant_id, cfg)
         if success:
             return get_result(data=result)
         else:
-            return get_error_data_result(message=result)
+            return get_result(code=RetCode.DATA_ERROR, message=result)
     except ValueError as e:
-        return get_error_argument_result(str(e))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(e))
     except Exception as e:
         logging.exception(e)
-        return get_error_data_result(message="Internal server error")
+        return get_result(code=RetCode.DATA_ERROR, message="Internal server error")

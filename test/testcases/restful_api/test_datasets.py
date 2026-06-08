@@ -81,7 +81,7 @@ def test_dataset_crud_cycle(rest_client, clear_datasets):
     assert list_payload["code"] == 0, list_payload
     assert len(list_payload["data"]) == 1, list_payload
     assert list_payload["data"][0]["id"] == dataset_id, list_payload
-    assert list_payload.get("total_datasets", 0) >= 1, list_payload
+    assert list_payload.get("total", 0) >= 1, list_payload
 
     delete_res = rest_client.delete("/datasets", json={"ids": [dataset_id]})
     assert delete_res.status_code == 200
@@ -1759,7 +1759,7 @@ def test_dataset_list_ordering_and_pagination(rest_client, clear_datasets):
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
     assert len(list_payload["data"]) == 2, list_payload
-    assert list_payload.get("total_datasets", 0) >= 3, list_payload
+    assert list_payload.get("total", 0) >= 3, list_payload
 
 
 @pytest.mark.p2

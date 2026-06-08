@@ -24,7 +24,8 @@ from api.db.services.file_service import FileService
 
 from api.apps import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import get_result, get_request_json, server_error_response, validate_request
+from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services.document_service import DocumentService
@@ -98,7 +99,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="File not found!")
+                return get_result(code=RetCode.DATA_ERROR, message="File not found!")
 
         # Validate all kb_ids exist before scheduling background work
         kb_map = {}
@@ -112,7 +113,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="Can't find this dataset!")
+                return get_result(code=RetCode.DATA_ERROR, message="Can't find this dataset!")
             kb_map[kb_id] = kb
 
         # Expand folders to their innermost file IDs
@@ -135,7 +136,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="File not found!")
+                return get_result(code=RetCode.DATA_ERROR, message="File not found!")
             if not check_file_team_permission(file, user_id):
                 logger.warning(
                     "user_id=%s resource_type=file resource_id=%s action=authorize_file result=denied file_ids=%s kb_ids=%s",
@@ -144,7 +145,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="No authorization.")
+                return get_result(code=RetCode.DATA_ERROR, message="No authorization.")
 
         for kb_id, kb in kb_map.items():
             if not check_kb_team_permission(kb, user_id):
@@ -155,7 +156,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="No authorization.")
+                return get_result(code=RetCode.DATA_ERROR, message="No authorization.")
 
         # Run the blocking DB work in a thread so the event loop is not blocked.
         # For large folders this prevents 504 Gateway Timeout by returning as
@@ -171,6 +172,6 @@ async def convert():
             all_file_ids,
             kb_ids,
         )
-        return get_json_result(data=True)
+        return get_result(data=True)
     except Exception as e:
         return server_error_response(e)

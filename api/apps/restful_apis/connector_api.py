@@ -26,7 +26,7 @@ from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
-from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
+from api.utils.api_utils import get_result, get_request_json, validate_request
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
@@ -43,7 +43,7 @@ LOGGER = logging.getLogger(__name__)
 def _connector_auth_error(connector_id: str, user_id: str):
     """Return the connector authorization failure response and log the denial."""
     LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
-    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    return get_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
 
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
@@ -59,7 +59,7 @@ async def update_connector(connector_id):
 
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
-        return get_data_error_result(message="Can't find this Connector!")
+        return get_result(code=RetCode.DATA_ERROR, message="Can't find this Connector!")
 
     should_sleep = False
     if req:
@@ -81,9 +81,9 @@ async def update_connector(connector_id):
         await asyncio.sleep(1)
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
-        return get_data_error_result(message="Can't find this Connector!")
+        return get_result(code=RetCode.DATA_ERROR, message="Can't find this Connector!")
 
-    return get_json_result(data=conn.to_dict())
+    return get_result(data=conn.to_dict())
 
 
 @manager.route("/connectors", methods=["POST"])  # noqa: F821
@@ -110,14 +110,14 @@ async def create_connector():
     await asyncio.sleep(1)
     e, conn = ConnectorService.get_by_id(req["id"])
 
-    return get_json_result(data=conn.to_dict())
+    return get_result(data=conn.to_dict())
 
 
 @manager.route("/connectors", methods=["GET"])  # noqa: F821
 @login_required
 def list_connector():
     """List connectors owned by the current tenant."""
-    return get_json_result(data=ConnectorService.list(current_user.id))
+    return get_result(data=ConnectorService.list(current_user.id))
 
 
 @manager.route("/connectors/<connector_id>", methods=["GET"])  # noqa: F821
@@ -129,8 +129,8 @@ def get_connector(connector_id):
 
     e, conn = ConnectorService.get_by_id(connector_id)
     if not e:
-        return get_data_error_result(message="Can't find this Connector!")
-    return get_json_result(data=conn.to_dict())
+        return get_result(code=RetCode.DATA_ERROR, message="Can't find this Connector!")
+    return get_result(data=conn.to_dict())
 
 
 @manager.route("/connectors/<connector_id>/logs", methods=["GET"])  # noqa: F821
@@ -146,7 +146,7 @@ def list_logs(connector_id):
         int(req.get("page", 1)),
         validate_rest_api_page_size(int(req.get("page_size", 15))),
     )
-    return get_json_result(data={"total": total, "logs": arr})
+    return get_result(data={"total": total, "logs": arr})
 
 
 @manager.route("/connectors/<connector_id>/rebuild", methods=["POST"])  # noqa: F821
@@ -158,12 +158,12 @@ async def rebuild(connector_id):
 
     req = await get_request_json()
     if "kb_id" not in req:
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="required argument is missing: kb_id")
 
     err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
-        return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
-    return get_json_result(data=True)
+        return get_result(data=False, message=err, code=RetCode.SERVER_ERROR)
+    return get_result(data=True)
 
 
 @manager.route("/connectors/<connector_id>", methods=["DELETE"])  # noqa: F821
@@ -175,7 +175,7 @@ def rm_connector(connector_id):
 
     ConnectorService.cancel_tasks(connector_id)
     ConnectorService.delete_by_id(connector_id)
-    return get_json_result(data=True)
+    return get_result(data=True)
 
 
 @manager.route("/connectors/<connector_id>/test", methods=["POST"])  # noqa: F821
@@ -194,10 +194,10 @@ async def test_connector(connector_id):
 
     ok, conn = ConnectorService.get_by_id(connector_id)
     if not ok:
-        return get_data_error_result(message="Can't find this Connector!")
+        return get_result(code=RetCode.DATA_ERROR, message="Can't find this Connector!")
 
     if conn.source != DocumentSource.REST_API:
-        return get_json_result(
+        return get_result(
             code=RetCode.ARGUMENT_ERROR,
             message="Test endpoint currently supports only REST API connectors.",
             data=False,
@@ -213,20 +213,20 @@ async def test_connector(connector_id):
             credentials=credentials,
         )
     except (ConnectorValidationError, ConnectorMissingCredentialError) as exc:
-        return get_json_result(
+        return get_result(
             code=RetCode.DATA_ERROR,
             message=str(exc),
             data=False,
         )
     except Exception as exc:
         logging.exception("REST API connector validation failed: %s", exc)
-        return get_json_result(
+        return get_result(
             code=RetCode.SERVER_ERROR,
             message="REST API connector validation failed, please check logs.",
             data=False,
         )
 
-    return get_json_result(data=True)
+    return get_result(data=True)
 
 
 WEB_FLOW_TTL_SECS = 15 * 60
@@ -318,7 +318,7 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
 async def start_google_web_oauth():
     source = request.args.get("type", "google-drive")
     if source not in ("google-drive", "gmail"):
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
 
     req = await get_request_json()
 
@@ -334,7 +334,7 @@ async def start_google_web_oauth():
         redirect_uri = redirect_uri.strip()
 
     if not redirect_uri:
-        return get_json_result(
+        return get_result(
             code=RetCode.SERVER_ERROR,
             message="Google OAuth redirect URI is not configured on the server.",
         )
@@ -345,10 +345,10 @@ async def start_google_web_oauth():
         credentials = _load_credentials(raw_credentials)
         print(credentials)
     except ValueError as exc:
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
 
     if credentials.get("refresh_token"):
-        return get_json_result(
+        return get_result(
             code=RetCode.ARGUMENT_ERROR,
             message="Uploaded credentials already include a refresh token.",
         )
@@ -356,7 +356,7 @@ async def start_google_web_oauth():
     try:
         client_config = _get_web_client_config(credentials)
     except ValueError as exc:
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
+        return get_result(code=RetCode.ARGUMENT_ERROR, message=str(exc))
 
     flow_id = str(uuid.uuid4())
     try:
@@ -370,7 +370,7 @@ async def start_google_web_oauth():
         )
     except Exception as exc:  # pragma: no cover - defensive
         logging.exception("Failed to create Google OAuth flow: %s", exc)
-        return get_json_result(
+        return get_result(
             code=RetCode.SERVER_ERROR,
             message="Failed to initialize Google OAuth flow. Please verify the uploaded client configuration.",
         )
@@ -384,7 +384,7 @@ async def start_google_web_oauth():
     }
     REDIS_CONN.set_obj(_web_state_cache_key(flow_id, source), cache_payload, WEB_FLOW_TTL_SECS)
 
-    return get_json_result(
+    return get_result(
         data={
             "flow_id": flow_id,
             "authorization_url": authorization_url,
@@ -509,18 +509,18 @@ async def poll_google_web_result():
     req = await request.json or {}
     source = request.args.get("type")
     if source not in ("google-drive", "gmail"):
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
     flow_id = req.get("flow_id")
     cache_raw = REDIS_CONN.get(_web_result_cache_key(flow_id, source))
     if not cache_raw:
-        return get_json_result(code=RetCode.RUNNING, message="Authorization is still pending.")
+        return get_result(code=RetCode.RUNNING, message="Authorization is still pending.")
 
     result = json.loads(cache_raw)
     if result.get("user_id") != current_user.id:
-        return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
+        return get_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
 
     REDIS_CONN.delete(_web_result_cache_key(flow_id, source))
-    return get_json_result(data={"credentials": result.get("credentials")})
+    return get_result(data={"credentials": result.get("credentials")})
 
 @manager.route("/connectors/box/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
@@ -532,7 +532,7 @@ async def start_box_web_oauth():
     redirect_uri = req.get("redirect_uri", BOX_WEB_OAUTH_REDIRECT_URI)
 
     if not client_id or not client_secret:
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Box client_id and client_secret are required.")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="Box client_id and client_secret are required.")
 
     flow_id = str(uuid.uuid4())
 
@@ -558,7 +558,7 @@ async def start_box_web_oauth():
         "created_at": int(time.time()),
     }
     REDIS_CONN.set_obj(_web_state_cache_key(flow_id, "box"), cache_payload, WEB_FLOW_TTL_SECS)
-    return get_json_result(
+    return get_result(
         data = {
             "flow_id": flow_id,
             "authorization_url": auth_url,
@@ -577,7 +577,7 @@ async def box_web_oauth_callback():
 
     cache_payload = json.loads(REDIS_CONN.get(_web_state_cache_key(flow_id, "box")))
     if not cache_payload:
-        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Box OAuth session expired or invalid.")
+        return get_result(code=RetCode.ARGUMENT_ERROR, message="Box OAuth session expired or invalid.")
 
     error = request.args.get("error")
     error_description = request.args.get("error_description") or error
@@ -616,12 +616,12 @@ async def poll_box_web_result():
 
     cache_blob = REDIS_CONN.get(_web_result_cache_key(flow_id, "box"))
     if not cache_blob:
-        return get_json_result(code=RetCode.RUNNING, message="Authorization is still pending.")
+        return get_result(code=RetCode.RUNNING, message="Authorization is still pending.")
 
     cache_raw = json.loads(cache_blob)
     if cache_raw.get("user_id") != current_user.id:
-        return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
+        return get_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
     
     REDIS_CONN.delete(_web_result_cache_key(flow_id, "box"))
 
-    return get_json_result(data={"credentials": cache_raw})
+    return get_result(data={"credentials": cache_raw})
