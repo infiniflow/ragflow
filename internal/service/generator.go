@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"regexp"
 	"strings"
 
@@ -94,9 +95,45 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 }
 
 // CrossLanguages translates a question into multiple languages using LLM.
-func CrossLanguages(ctx context.Context, chatModel *modelModule.ChatModel, query string, languages []string) (string, error) {
+// The model is fetched internally based on llmID:
+//   - If llmID is empty, fetches tenant's default chat model
+//   - If llmID is not empty, fetches the specified model (or image2text if type matches)
+func CrossLanguages(ctx context.Context, tenantID string, llmID string, query string, languages []string) (string, error) {
+	common.Debug("CrossLanguages invoked",
+		zap.String("tenantID", tenantID),
+		zap.String("llmID", llmID),
+		zap.Strings("languages", languages))
+
+	modelProviderSvc := NewModelProviderService()
+	var chatModel *modelModule.ChatModel
+	var err error
+
+	if llmID != "" {
+		modelTypes, err := modelProviderSvc.GetModelTypeByName(tenantID, llmID)
+		if err != nil {
+			return query, fmt.Errorf("failed to get model type: %w", err)
+		}
+		resolvedType := entity.ModelTypeChat
+		for _, mt := range modelTypes {
+			if mt == entity.ModelTypeImage2Text {
+				resolvedType = entity.ModelTypeImage2Text
+				break
+			}
+		}
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantID, resolvedType, llmID)
+		if err != nil {
+			return query, fmt.Errorf("failed to get chat model: %w", err)
+		}
+		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+	} else {
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+		if err != nil {
+			return query, fmt.Errorf("failed to get default chat model: %w", err)
+		}
+		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+	}
 	if chatModel == nil {
-		return "", fmt.Errorf("chat model is nil")
+		return query, fmt.Errorf("failed to get chat model: nil chat model")
 	}
 
 	if query == "" {
@@ -149,20 +186,15 @@ func CrossLanguages(ctx context.Context, chatModel *modelModule.ChatModel, query
 	result := *response.Answer
 
 	// Clean up response - remove think tags and trim
-	result = strings.TrimSpace(result)
 	result = thinkBlockRE.ReplaceAllString(result, "")
-	result = strings.TrimSpace(result)
 
 	if strings.Contains(result, "**ERROR**") {
 		return query, nil
 	}
 
 	// Parse response
-	result = strings.TrimPrefix(result, "Output:")
-	result = strings.TrimPrefix(result, "output:")
 	result = regexp.MustCompile(`(?i)^output:\s*`).ReplaceAllString(result, "")
 	result = regexp.MustCompile(`\n+`).ReplaceAllString(result, "")
-	result = strings.TrimSpace(result)
 
 	parts := strings.Split(result, "===")
 	var translations []string

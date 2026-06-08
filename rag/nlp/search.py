@@ -522,6 +522,7 @@ class Dealer:
                 sres.field[i]["important_kwd"] = [sres.field[i]["important_kwd"]]
         ins_tw = []
         for i in sres.ids:
+            #content_ltks = list(OrderedDict.fromkeys(sres.field[i][cfield].split()))
             content_ltks = sres.field[i][cfield].split()
             title_tks = [t for t in sres.field[i].get("title_tks", "").split() if t]
             important_kwd = sres.field[i].get("important_kwd", [])
@@ -673,7 +674,8 @@ class Dealer:
             ranks["doc_aggs"] = []
             return ranks
 
-        sorted_idx = np.argsort(sim_np * -1)
+        # Use stable sort for deterministic ordering when scores are tied
+        sorted_idx = np.argsort(sim_np * -1, kind='stable')
 
         # When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores.
         post_threshold = 0.0 if vector_similarity_weight <= 0 else similarity_threshold

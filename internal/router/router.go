@@ -235,7 +235,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.chunkHandler.RetrievalTest)
+				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
 				// Dataset ingestion logs
