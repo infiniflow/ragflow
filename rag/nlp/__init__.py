@@ -1134,6 +1134,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
                 continue
             add_chunk("\n" + sub_sec, pos)
 
+    logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
     return cks
 
 
@@ -1211,7 +1212,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         else:
             text_str = text or ""
             text_pos = ""
-        if not dels:
+        if not dels or num_tokens_from_string(text_str) < chunk_token_num:
             add_chunk("\n" + text_str, image, text_pos)
             continue
         for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
@@ -1219,6 +1220,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
                 continue
             add_chunk("\n" + sub_sec, image, text_pos)
 
+    logging.debug("naive_merge_with_images: %d texts -> %d chunks (delimiter=%r)", len(texts), len(cks), delimiter)
     return cks, result_images
 
 

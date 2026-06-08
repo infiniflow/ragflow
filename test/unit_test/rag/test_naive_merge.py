@@ -60,6 +60,7 @@ def _nonempty(chunks):
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.p2
 def test_oversized_section_is_split_at_sentence_boundaries():
     # One section far larger than chunk_token_num, sentences separated by '\n'.
     sentence = " ".join(["word"] * 10)  # 10 tokens
@@ -77,6 +78,7 @@ def test_oversized_section_is_split_at_sentence_boundaries():
     assert "".join(chunks).count("word") == 200
 
 
+@pytest.mark.p2
 def test_small_sections_are_merged_not_oversplit():
     sentences = ["alpha beta gamma delta" for _ in range(8)]  # 4 tokens each
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER))
@@ -85,6 +87,7 @@ def test_small_sections_are_merged_not_oversplit():
     assert _tok(chunks[0]) == 32
 
 
+@pytest.mark.p2
 def test_default_delimiters_are_honored_without_backticks():
     # Sentences delimited by '?' and '!' (part of the default set) must split.
     section = ("q " * 10).strip() + "?" + ("r " * 10).strip() + "!" + ("s " * 10).strip()
@@ -92,6 +95,7 @@ def test_default_delimiters_are_honored_without_backticks():
     assert len(chunks) >= 2
 
 
+@pytest.mark.p2
 def test_empty_delimiter_falls_back_to_token_size_merge():
     # token_chunker.py calls naive_merge with delimiter="" as a size-only fallback.
     sections = [f"sentence number {i} here" for i in range(30)]  # 4 tokens each
@@ -101,6 +105,7 @@ def test_empty_delimiter_falls_back_to_token_size_merge():
     assert len(chunks) < len(sections)
 
 
+@pytest.mark.p2
 def test_overlap_prefix_is_counted_in_token_budget():
     # With overlap, each chunk = overlap-prefix + new content. The fix recomputes
     # the chunk's token count after prepending the prefix, so chunks stay bounded.
@@ -122,6 +127,7 @@ def test_overlap_prefix_is_counted_in_token_budget():
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.p2
 def test_custom_delimiter_ignores_chunk_size():
     text = "partA##partB##partC"
     # Backtick-wrapped custom delimiter -> every segment is its own chunk,
@@ -130,6 +136,7 @@ def test_custom_delimiter_ignores_chunk_size():
     assert chunks == ["partA", "partB", "partC"]
 
 
+@pytest.mark.p2
 def test_custom_delimiter_does_not_size_merge():
     parts = [f"seg{i}" for i in range(5)]
     text = "##".join(parts)
@@ -142,6 +149,7 @@ def test_custom_delimiter_does_not_size_merge():
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.p2
 def test_images_oversized_section_is_split():
     sentence = " ".join(["word"] * 10)
     section = "\n".join([sentence] * 20)  # 200 tokens
@@ -158,6 +166,7 @@ def test_images_oversized_section_is_split():
     assert all(_tok(c) <= 50 + 10 for c in nonempty)
 
 
+@pytest.mark.p2
 def test_images_custom_delimiter_preserved():
     chunks, imgs = naive_merge_with_images(
         [("x##y##z", "")], [None], chunk_token_num=1000, delimiter="`##`"
@@ -166,6 +175,7 @@ def test_images_custom_delimiter_preserved():
     assert len(chunks) == len(imgs)
 
 
+@pytest.mark.p2
 def test_images_plain_string_input():
     # texts may be plain strings (not tuples).
     sentence = " ".join(["word"] * 10)
@@ -177,10 +187,12 @@ def test_images_plain_string_input():
     assert len(chunks) == len(imgs)
 
 
+@pytest.mark.p2
 def test_images_mismatched_lengths_returns_empty():
     assert naive_merge_with_images(["a"], [], chunk_token_num=50) == ([], [])
 
 
+@pytest.mark.p2
 def test_images_shared_lazyimage_not_stacked_across_split_sentences():
     # A single section carries one LazyImage. After splitting into sentences that
     # merge back into one chunk, the shared image must NOT be duplicated/stacked
@@ -198,6 +210,7 @@ def test_images_shared_lazyimage_not_stacked_across_split_sentences():
             assert len(im._blobs) == 1  # never grows beyond the single source blob
 
 
+@pytest.mark.p2
 def test_images_distinct_lazyimages_are_concatenated():
     # Two different sections (small enough to land in one chunk) with distinct
     # images must still be merged together.
