@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"testing"
 
-	"ragflow/internal/engine/infinity"
+	"ragflow/internal/engine/types"
 )
 
 func TestNewQueryBuilder(t *testing.T) {
@@ -229,7 +229,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 		tbl          string
 		minMatch     float64
 		expectNil    bool
-		checkExpr    func(*infinity.MatchTextExpr) bool
+		checkExpr    func(*types.MatchTextExpr) bool
 		checkKeywords func([]string) bool
 	}{
 		{
@@ -237,7 +237,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "请问如何安装软件",
 			tbl:      "test",
 			minMatch: 0.5,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				// Should return a valid query expression with processed text
 				return expr != nil && expr.MatchingText != ""
 			},
@@ -251,7 +251,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "How to install software",
 			tbl:      "test",
 			minMatch: 0.5,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				// Should return a valid query expression with processed text
 				return expr != nil && expr.MatchingText != ""
 			},
@@ -265,7 +265,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			txt:      "hello世界",
 			tbl:      "test",
 			minMatch: 0.5,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				// Should return a valid query expression with processed text
 				return expr != nil && expr.MatchingText != ""
 			},
@@ -280,7 +280,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 			tbl:      "test",
 			minMatch: 0.5,
 			expectNil: true,
-			checkExpr: func(expr *infinity.MatchTextExpr) bool {
+			checkExpr: func(expr *types.MatchTextExpr) bool {
 				return expr == nil
 			},
 			checkKeywords: func(keywords []string) bool {

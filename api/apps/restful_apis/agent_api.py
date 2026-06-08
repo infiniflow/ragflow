@@ -130,6 +130,29 @@ def _normalize_agent_reference_entry(reference):
     }
 
 
+def _normalize_agent_reference_chunk(chunk):
+    if not isinstance(chunk, dict):
+        return {
+            "id": chunk,
+            "content": str(chunk),
+            "document_id": None,
+            "document_name": None,
+            "dataset_id": None,
+            "image_id": None,
+            "positions": None,
+        }
+
+    return {
+        "id": chunk.get("chunk_id", chunk.get("id")),
+        "content": chunk.get("content_with_weight", chunk.get("content")),
+        "document_id": chunk.get("doc_id", chunk.get("document_id")),
+        "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
+        "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
+        "image_id": chunk.get("image_id", chunk.get("img_id")),
+        "positions": chunk.get("positions", chunk.get("position_int")),
+    }
+
+
 def _normalize_agent_session(conv):
     conv["message"] = conv.get("message", [])
     for info in conv["message"]:
@@ -150,18 +173,7 @@ def _normalize_agent_session(conv):
         messages = [message for i, message in enumerate(conv["message"]) if i != 0 and message["role"] != "user"]
         for message, reference in zip(messages, conv["reference"]):
             chunks = reference.get("chunks", [])
-            message["reference"] = [
-                {
-                    "id": chunk.get("chunk_id", chunk.get("id")),
-                    "content": chunk.get("content_with_weight", chunk.get("content")),
-                    "document_id": chunk.get("doc_id", chunk.get("document_id")),
-                    "document_name": chunk.get("docnm_kwd", chunk.get("document_name")),
-                    "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
-                    "image_id": chunk.get("image_id", chunk.get("img_id")),
-                    "positions": chunk.get("positions", chunk.get("position_int")),
-                }
-                for chunk in chunks
-            ]
+            message["reference"] = [_normalize_agent_reference_chunk(chunk) for chunk in chunks]
     del conv["reference"]
     return conv
 
