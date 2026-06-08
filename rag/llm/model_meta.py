@@ -13,8 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import re
-
 import aiohttp
 from abc import ABC
 
@@ -29,26 +27,12 @@ class Base(ABC):
     def _get_api_key(self):
         return self.api_key
 
-    _VERSION_SUFFIX_RE = re.compile(r"/v\d+$")
-
-    def _normalize_base_url(self):
-        """Strip trailing version suffix (e.g. /v1, /v2, /v3) so URL construction is consistent.
-
-        Some callers pass ``http://host:port`` while others include ``/v1``.
-        Stripping the suffix here lets every subclass append its own path
-        without producing doubled segments like ``/v1/v1/models``.
-        """
-        if not self.base_url:
-            return ""
-        url = self.base_url.rstrip("/")
-        url = self._VERSION_SUFFIX_RE.sub("", url)
-        return url.rstrip("/")
-
     def _get_model_list_url(self):
-        base = self._normalize_base_url()
-        if not base:
+        if not self.base_url:
             return None
-        return base + "/v1/models"
+        if "/v1" in self.base_url:
+            return self.base_url.split("/v1")[0].rstrip("/") + "/v1/models"
+        return self.base_url.rstrip("/") + "/v1/models"
 
     async def _get_raw_model_list(self):
         url = self._get_model_list_url()
@@ -82,10 +66,10 @@ class Ollama(Base):
     _FACTORY_NAME = "Ollama"
 
     def _get_model_tags_url(self):
-        return self._normalize_base_url() + "/api/tags"
+        return self.base_url.rstrip("/") + "/api/tags"
 
     def _get_model_detail_url(self):
-        return self._normalize_base_url() + "/api/show"
+        return self.base_url.rstrip("/") + "/api/show"
 
     async def get_model_list(self):
         if not self.base_url:
@@ -126,10 +110,9 @@ class Xinference(Base):
     _FACTORY_NAME = "Xinference"
 
     def _get_model_list_url(self):
-        base = self._normalize_base_url()
-        if not base:
+        if not self.base_url:
             return None
-        return base + "/v1/models"
+        return self.base_url.rstrip("/") + "/v1/models"
 
     @staticmethod
     def _xinference_model_type_to_llm_type(model_type_str):
@@ -157,7 +140,7 @@ class Xinference(Base):
                 continue
             model_type_str = model.get("model_type", "")
             model_type = self._xinference_model_type_to_llm_type(model_type_str) if model_type_str else LLMType.CHAT.value
-            max_tokens = model.get("context_length", 8192) or 8192
+            max_tokens = model.get("context_length") or model.get("max_tokens") or 8192
             res.append(
                 {
                     "name": model_id,
@@ -179,10 +162,10 @@ class LocalAI(Base):
     _FACTORY_NAME = "LocalAI"
 
     def _get_model_tags_url(self):
-        return self._normalize_base_url() + "/api/tags"
+        return self.base_url.rstrip("/") + "/api/tags"
 
     def _get_model_detail_url(self):
-        return self._normalize_base_url() + "/api/show"
+        return self.base_url.rstrip("/") + "/api/show"
 
     async def get_model_list(self):
         if not self.base_url:
