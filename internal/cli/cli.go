@@ -51,7 +51,7 @@ type ConfigFile struct {
 	APIToken     string                      `yaml:"api_token"` // default API server api token
 	UserName     string                      `yaml:"user_name"` // default API server user name
 	Password     string                      `yaml:"password"`  // default API server password
-	APIServerMap map[string]*APIServerConfig `yaml:"api_server"`
+	APIServerMap map[string]*APIServerConfig `yaml:"api_servers"`
 }
 
 // OutputFormat represents the output format type
@@ -291,7 +291,13 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			defaultApiServerConfig.Port = 9384
 		}
 
-		commandLineConfig.APIClientConfig.APIServerMap = make(map[string]*APIServerConfig)
+		commandLineConfig.APIClientConfig.APIServerMap = config.APIServerMap
+		if commandLineConfig.APIClientConfig.APIServerMap == nil {
+			commandLineConfig.APIClientConfig.APIServerMap = make(map[string]*APIServerConfig)
+		}
+		if commandLineConfig.APIClientConfig.APIServerMap[DefaultAPIServer] != nil {
+			return nil, fmt.Errorf("'Default' API server config should be in api_servers")
+		}
 		commandLineConfig.APIClientConfig.APIServerMap[DefaultAPIServer] = defaultApiServerConfig
 		commandLineConfig.APIClientConfig.CurrentAPIServer = DefaultAPIServer
 	case AdminMode:

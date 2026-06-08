@@ -251,6 +251,10 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
+	case "user_show_admin_server":
+		return c.ShowAdminServer(cmd)
+	case "user_show_api_server":
+		return c.ShowAPIServer(cmd)
 	// ContextEngine commands
 	case "ce_ls":
 		return c.CEList(cmd)

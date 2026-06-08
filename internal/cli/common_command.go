@@ -569,57 +569,113 @@ func (c *CLI) ListDefaultModels(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) ShowCommonCurrent(cmd *Command) (ResponseIf, error) {
-	var result CommonDataResponse
-	result.Code = 0
-	result.Data = make(map[string]interface{})
+	var result *CommonDataResponse
+
+	switch c.Config.CLIMode {
+	case AdminMode:
+		response, err := c.GetAdminServerInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to show current: %w", err)
+		}
+		result = response.(*CommonDataResponse)
+
+	case UserMode:
+		response, err := c.GetAPIServerInfo(c.Config.APIClientConfig.CurrentAPIServer)
+		if err != nil {
+			return nil, err
+		}
+		result = response.(*CommonDataResponse)
+
+		if c.CurrentModel != nil {
+			if result.Data == nil {
+				result.Data = make(map[string]interface{})
+			}
+			result.Data["model_provider"] = c.CurrentModel.Provider
+			result.Data["model_instance"] = c.CurrentModel.Instance
+			result.Data["model_model"] = c.CurrentModel.Model
+		}
+	}
+
+	if result == nil {
+		result = &CommonDataResponse{}
+		if result.Data == nil {
+			result.Data = make(map[string]interface{})
+		}
+	}
+
 	result.Data["mode"] = c.Config.CLIMode
 	result.Data["output"] = c.Config.OutputFormat
 	result.Data["interactive"] = c.Config.Interactive
 	result.Data["verbose"] = c.Config.Verbose
-	switch c.Config.CLIMode {
-	case AdminMode:
-		if c.Config.AdminClientConfig != nil {
-			result.Data["admin_server_ip"] = c.Config.AdminClientConfig.AdminHost
-			result.Data["admin_server_port"] = c.Config.AdminClientConfig.AdminPort
-			if c.Config.AdminClientConfig.AdminName != nil {
-				result.Data["admin_name"] = *c.Config.AdminClientConfig.AdminName
-			}
-			if c.Config.AdminClientConfig.AdminPassword != nil {
-				result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
-			}
-			if c.AdminServerClient.LoginToken == nil {
-				result.Data["auth"] = "no auth"
-			} else {
-				result.Data["auth"] = "login"
-			}
+
+	return result, nil
+}
+
+func (c *CLI) ShowAdminServer(cmd *Command) (ResponseIf, error) {
+	return c.GetAdminServerInfo()
+}
+
+func (c *CLI) ShowAPIServer(cmd *Command) (ResponseIf, error) {
+	apiServerName, ok := cmd.Params["api_server_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("api_server_name not provided")
+	}
+	result, err := c.GetAPIServerInfo(apiServerName)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *CLI) GetAdminServerInfo() (ResponseIf, error) {
+	var result CommonDataResponse
+	result.Data = make(map[string]interface{})
+
+	if c.Config.AdminClientConfig == nil {
+		result.Data["admin_server"] = "N/A"
+	} else {
+		result.Data["admin_server_ip"] = c.Config.AdminClientConfig.AdminHost
+		result.Data["admin_server_port"] = c.Config.AdminClientConfig.AdminPort
+		if c.Config.AdminClientConfig.AdminName != nil {
+			result.Data["admin_name"] = *c.Config.AdminClientConfig.AdminName
+		}
+		if c.Config.AdminClientConfig.AdminPassword != nil {
+			result.Data["admin_password"] = strings.Repeat("*", len(*c.Config.AdminClientConfig.AdminPassword))
+		}
+		if c.AdminServerClient.LoginToken == nil {
+			result.Data["auth"] = "no auth"
+		} else {
+			result.Data["auth"] = "login"
+		}
+	}
+
+	return &result, nil
+}
+
+func (c *CLI) GetAPIServerInfo(serverName string) (ResponseIf, error) {
+	var result CommonDataResponse
+	result.Data = make(map[string]interface{})
+
+	if c.Config.APIClientConfig.APIServerMap == nil || c.Config.APIClientConfig.APIServerMap[serverName] == nil {
+		result.Data["api_server"] = "N/A"
+	} else {
+		result.Data["api_server"] = serverName
+		apiServerConfig := c.Config.APIClientConfig.APIServerMap[serverName]
+		result.Data["api_server_ip"] = apiServerConfig.IP
+		result.Data["api_server_port"] = apiServerConfig.Port
+		if apiServerConfig.UserName != nil {
+			result.Data["user_name"] = *apiServerConfig.UserName
 		}
 
-	case UserMode:
-		if c.Config.APIClientConfig.APIServerMap != nil && c.Config.APIClientConfig.CurrentAPIServer != "" {
-			result.Data["api_server_name"] = c.Config.APIClientConfig.CurrentAPIServer
-			apiServerConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
-			result.Data["api_server_ip"] = apiServerConfig.IP
-			result.Data["api_server_port"] = apiServerConfig.Port
-			if apiServerConfig.UserName != nil {
-				result.Data["user_name"] = *apiServerConfig.UserName
-			}
-
-			if apiServerConfig.UserPassword != nil {
-				result.Data["user_password"] = strings.Repeat("*", len(*apiServerConfig.UserPassword))
-			}
-			if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken != nil {
-				result.Data["auth"] = "login"
-			} else if apiServerConfig.ApiToken != nil {
-				result.Data["auth"] = "api token"
-			} else {
-				result.Data["auth"] = "no auth"
-			}
+		if apiServerConfig.UserPassword != nil {
+			result.Data["user_password"] = strings.Repeat("*", len(*apiServerConfig.UserPassword))
 		}
-
-		if c.CurrentModel != nil {
-			result.Data["model_provider"] = c.CurrentModel.Provider
-			result.Data["model_instance"] = c.CurrentModel.Instance
-			result.Data["model_model"] = c.CurrentModel.Model
+		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken != nil {
+			result.Data["auth"] = "login"
+		} else if apiServerConfig.ApiToken != nil {
+			result.Data["auth"] = "api token"
+		} else {
+			result.Data["auth"] = "no auth"
 		}
 	}
 

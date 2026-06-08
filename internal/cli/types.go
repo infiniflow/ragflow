@@ -42,6 +42,8 @@ const (
 	TokenAlter
 	TokenActive
 	TokenAdmin
+	TokenServer
+	TokenAPI
 	TokenAdd
 	TokenDelete
 	TokenPassword
