@@ -168,11 +168,7 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 
 	versions, err := h.agentService.ListVersions(agentID)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
-			"data":    nil,
-			"message": err.Error(),
-		})
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -199,7 +195,7 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 
 	templates, err := h.agentService.ListTemplates()
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 	if templates == nil {

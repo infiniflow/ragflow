@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // KnowledgebaseHandler handles knowledge base HTTP requests
@@ -57,6 +58,17 @@ func jsonError(c *gin.Context, code common.ErrorCode, message string) {
 		"data":    nil,
 		"message": message,
 	})
+}
+
+// jsonInternalError logs the original error while returning a generic message
+// to avoid exposing internal implementation details in API responses.
+func jsonInternalError(c *gin.Context, err error) {
+	common.Warn("handler internal error",
+		zap.Error(err),
+		zap.String("method", c.Request.Method),
+		zap.String("path", c.Request.URL.Path),
+	)
+	jsonError(c, common.CodeServerError, common.CodeServerError.Message())
 }
 
 // HTTPError represents an HTTP error
@@ -187,7 +199,7 @@ func (h *KnowledgebaseHandler) GetDetail(c *gin.Context) {
 		return
 	}
 
-		jsonResponse(c, common.CodeSuccess, result, "success")
+	jsonResponse(c, common.CodeSuccess, result, "success")
 }
 
 // ListTags handles the list tags request for a knowledge base

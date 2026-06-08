@@ -104,7 +104,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 
 	result, err := h.fileService.ListFiles(userID, parentID, page, pageSize, orderby, desc, keywords)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	// Get root folder
 	rootFolder, err := h.fileService.GetRootFolder(userID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	// Get parent folder with permission check
 	parentFolder, err := h.fileService.GetParentFolder(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -210,7 +210,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -247,7 +247,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	// Get all parent folders with permission check
 	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
 	if err != nil {
-		jsonError(c, common.CodeServerError, err.Error())
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -301,7 +301,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		if parentID == "" {
 			rootFolder, err := h.fileService.GetRootFolder(userID)
 			if err != nil {
-				jsonError(c, common.CodeServerError, err.Error())
+				jsonInternalError(c, err)
 				return
 			}
 			parentID = rootFolder["id"].(string)
@@ -348,7 +348,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		if parentID == "" {
 			rootFolder, err := h.fileService.GetRootFolder(userID)
 			if err != nil {
-				jsonError(c, common.CodeServerError, err.Error())
+				jsonInternalError(c, err)
 				return
 			}
 			parentID = rootFolder["id"].(string)
