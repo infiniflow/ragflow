@@ -94,6 +94,12 @@ func (l *Lexer) NextToken() Token {
 	case '-':
 		tok = newToken(TokenDash, l.ch)
 		l.readChar()
+	case '[':
+		tok = newToken(TokenLBracket, l.ch)
+		l.readChar()
+	case ']':
+		tok = newToken(TokenRBracket, l.ch)
+		l.readChar()
 	case '\'':
 		tok.Type = TokenQuotedString
 		tok.Value = l.readQuotedString('\'')
