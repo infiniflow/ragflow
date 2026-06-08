@@ -80,12 +80,17 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 	// Convert messages to API format
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
+		var text string
+		switch c := msg.Content.(type) {
+		case string:
+			text = c
+		case []interface{}:
+			if len(c) > 0 {
+				if first, ok := c[0].(map[string]interface{}); ok {
+					text, _ = first["text"].(string)
+				}
+			}
+		}
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
 			"content": text,
@@ -178,10 +183,7 @@ func (o *OllamaModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, fmt.Errorf("failed to parse response: content not found")
 	}
 
-	reasonContent, ok := message["thinking"].(string)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse response: thinking not found")
-	}
+	reasonContent, _ := message["thinking"].(string)
 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
@@ -209,12 +211,17 @@ func (o *OllamaModel) ChatStreamlyWithSender(modelName string, messages []Messag
 	// Convert messages to API format (supporting multimodal content)
 	apiMessages := make([]map[string]interface{}, len(messages))
 	for i, msg := range messages {
-		arr, _ := msg.Content.([]interface{})
-
-		first, _ := arr[0].(map[string]interface{})
-
-		text, _ := first["text"].(string)
-
+		var text string
+		switch c := msg.Content.(type) {
+		case string:
+			text = c
+		case []interface{}:
+			if len(c) > 0 {
+				if first, ok := c[0].(map[string]interface{}); ok {
+					text, _ = first["text"].(string)
+				}
+			}
+		}
 		apiMessages[i] = map[string]interface{}{
 			"role":    msg.Role,
 			"content": text,
