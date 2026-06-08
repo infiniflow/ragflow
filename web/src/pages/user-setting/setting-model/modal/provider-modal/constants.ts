@@ -14,9 +14,7 @@ import { LLMFactory } from '@/constants/llm';
  * 4 model_* fields directly.
  */
 export const LIST_MODEL_PROVIDERS = new Set<string>([
-  LLMFactory.HuggingFace,
   LLMFactory.Ollama,
-  LLMFactory.GoogleCloud,
   LLMFactory.OpenRouter,
   LLMFactory.VLLM,
   LLMFactory.OpenAiAPICompatible,
@@ -25,12 +23,15 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.Xinference,
   LLMFactory.LocalAI,
   LLMFactory.BaiduYiYan,
-  LLMFactory.TencentCloud,
-  LLMFactory.XunFeiSpark,
-  LLMFactory.GPUStack,
-  LLMFactory.FishAudio,
-  LLMFactory.MinerU,
-  LLMFactory.PaddleOCR,
+
+  // LLMFactory.HuggingFace,
+  // LLMFactory.GoogleCloud,
+  // LLMFactory.TencentCloud,
+  // LLMFactory.XunFeiSpark,
+  // LLMFactory.GPUStack,
+  // LLMFactory.FishAudio,
+  // LLMFactory.MinerU,
+  // LLMFactory.PaddleOCR,
 ]);
 
 /**
