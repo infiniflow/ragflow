@@ -114,21 +114,42 @@ class Xinference(Base):
             return None
         return self.base_url.rstrip("/") + "/v1/models"
 
+    @staticmethod
+    def _xinference_model_type_to_llm_type(model_type_str):
+        """Map Xinference model type strings to RAGFlow LLMType values."""
+        mapping = {
+            "LLM": LLMType.CHAT.value,
+            "chat": LLMType.CHAT.value,
+            "embedding": LLMType.EMBEDDING.value,
+            "rerank": LLMType.RERANK.value,
+            "image": LLMType.IMAGE2TEXT.value,
+            "TTS": LLMType.TTS.value,
+            "speech2text": LLMType.SPEECH2TEXT.value,
+        }
+        return mapping.get(model_type_str, LLMType.CHAT.value)
+
     def _format_model_list(self, raw_model_list):
-        """Xinference exposes an OpenAI-compatible /v1/models endpoint."""
+        """Xinference /v1/models returns model_type and context_length in addition to OpenAI-standard fields."""
         data = raw_model_list.get("data", [])
         if not data:
             return []
-        return [
-            {
-                "name": model.get("id", ""),
-                "model_types": [LLMType.CHAT.value],
-                "features": None,
-                "max_tokens": 8192,
-            }
-            for model in data
-            if model.get("id")
-        ]
+        res = []
+        for model in data:
+            model_id = model.get("id")
+            if not model_id:
+                continue
+            model_type_str = model.get("model_type", "")
+            model_type = self._xinference_model_type_to_llm_type(model_type_str) if model_type_str else LLMType.CHAT.value
+            max_tokens = model.get("context_length", 8192) or 8192
+            res.append(
+                {
+                    "name": model_id,
+                    "model_types": [model_type],
+                    "features": None,
+                    "max_tokens": max_tokens,
+                }
+            )
+        return res
 
 
 class LocalAI(Base):
@@ -159,10 +180,41 @@ class LocalAI(Base):
 class BaiduYiyan(Base):
     _FACTORY_NAME = "BaiduYiyan"
 
-    def get_model_list(self):
-        # BaiduYiyan uses the Qianfan SDK with AK/SK authentication.
-        # Model listing requires a non-trivial auth flow (AK/SK -> access token).
-        raise NotImplementedError
+    async def get_model_list(self):
+        """BaiduYiyan uses the Qianfan SDK which provides static model catalogs.
+
+        The ``models()`` class method returns all supported model names
+        without requiring AK/SK credentials.
+        """
+        import qianfan
+
+        res = []
+        chat_models = qianfan.ChatCompletion.models()
+        for name in chat_models:
+            res.append(
+                {
+                    "name": name,
+                    "model_types": [LLMType.CHAT.value],
+                    "features": None,
+                    "max_tokens": 8192,
+                }
+            )
+
+        try:
+            embed_models = qianfan.Embedding.models()
+            for name in embed_models:
+                res.append(
+                    {
+                        "name": name,
+                        "model_types": [LLMType.EMBEDDING.value],
+                        "features": None,
+                        "max_tokens": 8192,
+                    }
+                )
+        except Exception:
+            pass
+
+        return res
 
 
 class TencentCloud(Base):
