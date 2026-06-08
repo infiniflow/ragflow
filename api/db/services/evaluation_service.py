@@ -715,6 +715,9 @@ class EvaluationService(CommonService):
         except Exception:
             return False, "One or both branches not found."
 
+        if str(branch_a.tenant_id) != str(tenant_id) or str(branch_b.tenant_id) != str(tenant_id):
+            return False, "One or both branches do not belong to this tenant."
+
         cases = list(EvaluationCase.select().where(EvaluationCase.dataset_id == dataset_id))
         if not cases:
             return False, "Dataset has no evaluation cases."
@@ -784,6 +787,15 @@ class EvaluationService(CommonService):
                                     )
 
                         asyncio.run(_collect())
+                        # Canvas runs don't expose a structured token API; approximate
+                        # using tiktoken the same way as the regular evaluation path.
+                        prompt_tokens = num_tokens_from_string(case.question or "")
+                        completion_tokens = num_tokens_from_string(generated or "")
+                        token_usage = {
+                            "prompt_tokens": prompt_tokens,
+                            "completion_tokens": completion_tokens,
+                            "total_tokens": prompt_tokens + completion_tokens,
+                        }
                     except Exception as exc:
                         logging.warning("create_ab_run case %s branch %s failed: %s", case.id, branch.id, exc)
                         generated = f"ERROR: {exc}"
