@@ -32,7 +32,7 @@ from quart_auth import Unauthorized as QuartAuthUnauthorized
 from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 from quart_schema import QuartSchema
 from common import settings
-from api.utils.api_utils import server_error_response, get_result
+from api.utils.api_utils import server_error_response, get_result, get_json_result
 from api.constants import API_VERSION
 from api.exceptions import RAGFlowError
 from common.exceptions import ModelException
