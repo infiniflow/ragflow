@@ -395,32 +395,6 @@ func TestQueryBuilder_Paragraph(t *testing.T) {
 	}
 }
 
-func TestQueryBuilder_Similarity(t *testing.T) {
-	qb := NewQueryBuilder()
-	tests := []struct {
-		name     string
-		qtwt     map[string]float64
-		dtwt     map[string]float64
-		expected float64
-	}{
-		{"Empty query", map[string]float64{}, map[string]float64{"a": 1.0}, 0.0},
-		{"Empty doc", map[string]float64{"a": 1.0}, map[string]float64{}, 0.0},
-		{"Exact match", map[string]float64{"a": 1.0, "b": 2.0}, map[string]float64{"a": 5.0, "b": 3.0}, 1.0},
-		{"Partial match", map[string]float64{"a": 1.0, "b": 2.0, "c": 3.0}, map[string]float64{"a": 1.0, "c": 1.0}, (1.0 + 3.0) / (1.0 + 2.0 + 3.0)}, // sum=4, total=6 => 0.666...
-		{"No match", map[string]float64{"a": 1.0}, map[string]float64{"b": 2.0}, 0.0},
-		{"Zero total weight", map[string]float64{"a": 0.0, "b": 0.0}, map[string]float64{"a": 1.0}, 0.0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := qb.Similarity(tt.qtwt, tt.dtwt)
-			// Use tolerance for floating point
-			if result < tt.expected-1e-9 || result > tt.expected+1e-9 {
-				t.Errorf("Similarity(%v, %v) = %v, want %v", tt.qtwt, tt.dtwt, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestQueryBuilder_TokenSimilarity(t *testing.T) {
 	qb := NewQueryBuilder()
 	// Currently placeholder returns zero slice

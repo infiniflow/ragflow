@@ -29,6 +29,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -182,6 +183,37 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 	})
 }
 
+// ListTemplates lists every canvas template available to authenticated users.
+// @Summary List Agent Templates
+// @Description List the catalogue of canvas templates that authenticated users can clone.
+// @Tags agents
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/templates [get]
+func (h *AgentHandler) ListTemplates(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	templates, err := h.agentService.ListTemplates()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	if templates == nil {
+		// Ensure the JSON payload is always a list, never null.
+		templates = []*entity.CanvasTemplate{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    templates,
+		"message": "success",
+	})
+}
+
 // UploadAgentFile uploads one or more files associated with an agent.
 // @Summary Upload Agent File
 // @Description Upload one or more files for an agent canvas.
@@ -309,7 +341,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
+			"code": common.CodeOperatingError,
 
 			"data":    nil,
 			"message": err.Error(),
@@ -318,9 +350,47 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    uploaded,
+		"code": common.CodeSuccess,
+		"data": uploaded,
 
 		"message": "",
+	})
+}
+
+type updateAgentTagsRequest struct {
+	Tags interface{} `json:"tags"`
+}
+
+func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req updateAgentTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.agentService.UpdateAgentTags(user.ID, c.Param("agent_id"), req.Tags)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
 	})
 }
