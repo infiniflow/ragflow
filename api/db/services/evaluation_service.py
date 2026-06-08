@@ -500,15 +500,37 @@ class EvaluationService(CommonService):
 
         # Generation metrics
         if generated_answer:
-            # Basic metrics
             metrics["answer_length"] = len(generated_answer)
             metrics["has_answer"] = 1.0 if generated_answer.strip() else 0.0
 
-            # TODO: Implement advanced metrics using LLM-as-judge
-            # - Faithfulness (hallucination detection)
-            # - Answer relevance
-            # - Context relevance
-            # - Semantic similarity (if reference answer provided)
+            # answer_relevancy: heuristic proxy — 1.0 when answer is non-trivial
+            # (≥10 chars) and shares at least one content word with the question.
+            # Replace with an LLM-as-judge call when available.
+            question_words = set(question.lower().split())
+            answer_words = set(generated_answer.lower().split())
+            overlap = len(question_words & answer_words)
+            metrics["answer_relevancy"] = (
+                1.0 if len(generated_answer.strip()) >= 10 and overlap > 0 else 0.0
+            )
+
+            # Semantic similarity vs reference answer (simple word-overlap F1)
+            if reference_answer:
+                ref_words = set(reference_answer.lower().split())
+                if ref_words and answer_words:
+                    prec = len(answer_words & ref_words) / len(answer_words)
+                    rec = len(answer_words & ref_words) / len(ref_words)
+                    metrics["answer_similarity"] = (
+                        2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+                    )
+
+        # citation_hit_rate: fraction of relevant chunks that were retrieved.
+        # Mirrors hit_rate but is named explicitly for the optimisation pipeline.
+        if relevant_chunk_ids and retrieved_chunks:
+            retrieved_ids = {c.get("chunk_id") for c in retrieved_chunks}
+            relevant_set = set(relevant_chunk_ids)
+            metrics["citation_hit_rate"] = (
+                len(retrieved_ids & relevant_set) / len(relevant_set)
+            )
 
         return metrics
 
@@ -701,7 +723,8 @@ class EvaluationService(CommonService):
                 )
                 .tuples()
             )
-            scores = []
+            weighted_sum = 0.0
+            total_cases_sum = 0
             for (metrics_summary,) in runs:
                 if not metrics_summary:
                     continue
@@ -712,12 +735,14 @@ class EvaluationService(CommonService):
                     except Exception:
                         continue
                 v = metrics_summary.get(metric)
-                if v is not None:
+                cases = int(metrics_summary.get("total_cases", 0))
+                if v is not None and cases > 0:
                     try:
-                        scores.append(float(v))
+                        weighted_sum += float(v) * cases
+                        total_cases_sum += cases
                     except (TypeError, ValueError):
                         pass
-            return sum(scores) / len(scores) if scores else 0.0
+            return weighted_sum / total_cases_sum if total_cases_sum > 0 else 0.0
         except Exception as e:
             logging.error(f"get_rolling_score failed for dialog {dialog_id}: {e}")
             return 0.0

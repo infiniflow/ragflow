@@ -301,7 +301,7 @@ class DialogService(CommonService):
         return list(objs)
 
 
-async def async_chat_solo(dialog, messages, stream=True):
+async def async_chat_solo(dialog, messages, stream=True, **kwargs):
     llm_types = get_model_type_by_name(dialog.tenant_id, dialog.llm_id)
     attachments = ""
     image_attachments = []
@@ -331,17 +331,23 @@ async def async_chat_solo(dialog, messages, stream=True):
         msg[-1]["content"] += attachments
     if "chat" in llm_types and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+
+    question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+
     if stream:
         if "chat" in llm_types:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
         else:
             stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+        full_answer = ""
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
                 yield {"answer": "", "reference": {}, "audio_binary": None, "prompt": "", "created_at": time.time(), "final": False, **flags}
                 continue
+            full_answer += value
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
+        _tally_tokens(kwargs, question, full_answer)
     else:
         if "chat" in llm_types:
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
@@ -349,6 +355,7 @@ async def async_chat_solo(dialog, messages, stream=True):
             answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
+        _tally_tokens(kwargs, question, answer)
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
 
 
@@ -559,7 +566,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     if not dialog.kb_ids and not use_web_search:
-        async for ans in async_chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream, **kwargs):
             yield ans
         return
 
@@ -809,7 +816,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     if _oq:
                         _parts.append("Open questions:\n" + "\n".join(f"- {q}" for q in _oq))
                     _summary_msg = {
-                        "role": "assistant",
+                        "role": "system",
                         "content": "[Earlier conversation summary]\n\n" + "\n\n".join(_parts),
                         "_is_summary": True,
                     }
@@ -819,16 +826,11 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         except Exception as _ce:
             logging.warning("Context compression failed for conv %s: %s", _conv_id, _ce)
 
-    # Build the outgoing message list; preserve synthetic summary (role=assistant
-    # with _is_summary marker) and exclude other system-role artefacts.
-    def _should_include(m):
-        if m.get("_is_summary"):
-            return True
-        return m["role"] != "system"
-
+    # Insert the compression summary as a second system message right after the
+    # existing system prompt so the LLM treats it as high-priority context.
     if _summary_msg:
-        msg.append({"role": _summary_msg["role"], "content": _summary_msg["content"]})
-    msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if _should_include(m)])
+        msg.insert(1, {"role": "system", "content": _summary_msg["content"]})
+    msg.extend([{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"])
     used_token_count, msg = message_fit_in(msg, int(max_tokens * 0.95))
     if llm_model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
