@@ -173,7 +173,7 @@ Rules:
   by the text).
 - Be exhaustive — include all named entities, defined terms, and factual claims.
 - For ``concepts``, extract BOTH (a) named terms with definitions AND (b)
-  coherent thematic sub-topics that could become their own artifact page.
+  coherent thematic sub-topics that could become their own artifacts page.
 - Extract ``claims`` LIBERALLY: every factual sentence about an entity is a
   claim. Definitions, attributes, ownership, locations, dates, actions,
   events, financial figures, regulations cited — all qualify. If you
@@ -1241,11 +1241,41 @@ Produce a JSON compilation plan:
 
 Rules:
 - action must be "CREATE" or "UPDATE".
-- For UPDATE, slug MUST be an existing artifact page slug from the KB
+- For UPDATE, slug MUST be an existing artifacts page slug from the KB
   reconciliation list above.
-- For CREATE, slug must be new (type-prefixed, lowercase, hyphenated). Use
-  English/Latin characters even when the source language differs.
 - page_type is one of: entity | concept | topic. Do NOT use "source".
+
+# Slug format (CRITICAL — every slug must follow this shape exactly)
+- The slug is ``<page_type>/<short-descriptive-name>``. The separator
+  between the type and the name MUST be a forward slash ``/``. Do NOT use a
+  hyphen here.
+- The descriptive part is lowercase, English/Latin only (transliterate
+  non-English names), and uses hyphens to join multi-word names. Keep it
+  short — 1 to 4 words is ideal.
+- The descriptive part MUST be unique to that page's specific subject. Do
+  NOT prefix every slug with the same KB-wide topic word. If the KB is
+  about logistics, do NOT emit ``concept/logistics-channels``,
+  ``concept/logistics-warehousing``, ``concept/logistics-fleet`` — emit
+  ``concept/distribution-channels``, ``concept/warehousing``,
+  ``concept/fleet-management`` instead.
+- Do NOT append numeric suffixes (``-1``, ``-2``, ``-v2``) or random hex
+  tags to make slugs distinct. If two candidate slugs collide, rename one
+  to use a different descriptive word.
+
+Examples of GOOD slugs:
+  - ``entity/jane-doe``               (entity page about a person)
+  - ``entity/acme-corp``               (entity page about a company)
+  - ``concept/fire-safety``            (concept page about a topic)
+  - ``concept/expense-approval``       (concept page about a process)
+  - ``topic/water-treatment``          (topic page grouping related items)
+
+Examples of BAD slugs (do NOT produce):
+  - ``concept-fire-safety``            (missing the ``/`` between type and name)
+  - ``concept/logistics-channels-1``   (numeric suffix to distinguish pages)
+  - ``concept/logistics-channels-abc`` (random hex tag)
+  - ``logistics/concept-channels``     (type and topic order swapped)
+
+# Other rules
 - Group closely related small entities onto the same page (max 3-4 per page).
   BUT if a primary entity is described through several distinct thematic
   sections that appear as concepts above, prefer a separate ``concept`` page
@@ -2155,7 +2185,6 @@ async def _artifact_load_chunks_by_id(
                 0, len(batch_ids), index, [kb_id],
             )
             field_map = settings.docStoreConn.get_fields(res, select_fields)
-            print(condition, kb_id, index, field_map, flush=True)
         except Exception:
             logging.exception("artifact_refine: batch chunk fetch failed (%d ids)", len(batch_ids))
             field_map = {}
