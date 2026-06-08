@@ -90,7 +90,7 @@ export const useFetchTenantInfo = (
     },
   });
 
-  useWarnEmptyModel(showEmptyModelWarn, data?.embd_id, data?.llm_id);
+  useWarnEmptyModel(showEmptyModelWarn, data?.embd_id, data?.llm_id, loading);
 
   return { data, loading };
 };

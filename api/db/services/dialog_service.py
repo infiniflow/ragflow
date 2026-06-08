@@ -1478,6 +1478,7 @@ def _next_think_delta(state: _ThinkStreamState) -> str:
         remainder = delta_ans[len("</think>") :]
         if remainder:
             state.post_think_text = remainder
+        state.last_idx = len(full_text)
         return "</think>"
 
     state.last_idx = len(full_text)
