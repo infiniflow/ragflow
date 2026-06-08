@@ -32,6 +32,7 @@ Invalidation rules (callers responsibility):
 
 from __future__ import annotations
 
+import json
 import logging
 
 from rag.utils.redis_conn import REDIS_CONN
@@ -46,9 +47,17 @@ ALL_PHASES = (PHASE_RESOLUTION, PHASE_COMMUNITY)
 # and keeps stale markers self-pruning if invalidation paths are missed.
 _DEFAULT_TTL_SECONDS = 7 * 24 * 3600
 
+# Dirty-document set TTL: 30 days, much longer than a single run, so a crash
+# mid-delta never silently forgets which docs still need processing.
+_DIRTY_TTL_SECONDS = 30 * 24 * 3600
+
 
 def _phase_key(kb_id: str, phase: str) -> str:
     return f"graphrag:phase:{kb_id}:{phase}"
+
+
+def _dirty_key(kb_id: str) -> str:
+    return f"graphrag:dirty:{kb_id}"
 
 
 def has_phase_marker(kb_id: str, phase: str) -> bool:
@@ -83,3 +92,66 @@ def clear_phase_markers(kb_id: str, phases: tuple[str, ...] = ALL_PHASES) -> Non
             REDIS_CONN.delete(_phase_key(kb_id, phase))
         except Exception:
             logging.exception("clear_phase_markers(%s, %s) failed", kb_id, phase)
+
+
+# ---------------------------------------------------------------------------
+# Dirty-document tracking
+#
+# A document is "dirty" when it has been added or re-parsed since the last
+# successful GraphRAG run on the KB.  The set is stored as a JSON list in
+# Redis under graphrag:dirty:{kb_id}.  Callers must:
+#   1. mark_document_dirty() whenever a document content changes.
+#   2. clear_dirty_documents() after a successful incremental run to remove
+#      exactly the docs that were processed.
+# ---------------------------------------------------------------------------
+
+def mark_document_dirty(kb_id: str, doc_id: str) -> bool:
+    """Add doc_id to the dirty set for kb_id.  Safe to call multiple times."""
+    if not kb_id or not doc_id:
+        return False
+    key = _dirty_key(kb_id)
+    try:
+        raw = REDIS_CONN.get(key)
+        dirty: list[str] = json.loads(raw) if raw else []
+        if doc_id not in dirty:
+            dirty.append(doc_id)
+        return bool(REDIS_CONN.set(key, json.dumps(dirty).encode(), _DIRTY_TTL_SECONDS))
+    except Exception:
+        logging.exception("mark_document_dirty(%s, %s) failed", kb_id, doc_id)
+        return False
+
+
+def get_dirty_documents(kb_id: str) -> list[str]:
+    """Return the list of dirty doc_ids for kb_id (empty list on miss/error)."""
+    if not kb_id:
+        return []
+    try:
+        raw = REDIS_CONN.get(_dirty_key(kb_id))
+        if not raw:
+            return []
+        return json.loads(raw)
+    except Exception:
+        logging.exception("get_dirty_documents(%s) failed", kb_id)
+        return []
+
+
+def clear_dirty_documents(kb_id: str, doc_ids: list[str] | None = None) -> bool:
+    """Remove doc_ids from the dirty set.  If doc_ids is None, wipe the whole set."""
+    if not kb_id:
+        return False
+    key = _dirty_key(kb_id)
+    try:
+        if doc_ids is None:
+            REDIS_CONN.delete(key)
+            return True
+        raw = REDIS_CONN.get(key)
+        if not raw:
+            return True
+        remaining = [d for d in json.loads(raw) if d not in doc_ids]
+        if remaining:
+            return bool(REDIS_CONN.set(key, json.dumps(remaining).encode(), _DIRTY_TTL_SECONDS))
+        REDIS_CONN.delete(key)
+        return True
+    except Exception:
+        logging.exception("clear_dirty_documents(%s) failed", kb_id)
+        return False

@@ -13,10 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+import json
 import logging
 
 from peewee import OperationalError
-from quart import request
+from quart import request, Response
 from common.constants import RetCode
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
@@ -791,3 +793,102 @@ async def update_auto_metadata(tenant_id, dataset_id):
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/datasets/<dataset_id>/graph/status", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def graph_status_stream(tenant_id, dataset_id):
+    """Stream per-document GraphRAG build status as Server-Sent Events.
+
+    GET /api/v1/datasets/<dataset_id>/graph/status
+
+    Each SSE event carries a JSON payload:
+    {
+        "doc_id": "<id>",
+        "phase": "extract" | "resolve" | "community" | "done" | "dirty" | "pending",
+        "dirty": true | false,
+        "in_graph": true | false,
+        "last_updated": "<date string or empty>"
+    }
+
+    A final {"done": true} event is emitted once all documents have been
+    reported.
+    """
+    from api.db.services.knowledgebase_service import KnowledgebaseService
+    from api.db.services.document_service import DocumentService
+    from rag.graphrag.phase_markers import (
+        get_dirty_documents,
+        has_phase_marker,
+        PHASE_RESOLUTION,
+        PHASE_COMMUNITY,
+    )
+    from rag.graphrag.utils import get_graph_doc_ids
+
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        async def _denied():
+            yield "data:" + json.dumps({"code": 401, "message": "No authorization."}) + "\n\n"
+        resp = Response(_denied(), mimetype="text/event-stream")
+        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["X-Accel-Buffering"] = "no"
+        return resp
+
+    async def event_stream():
+        try:
+            docs, _ = DocumentService.get_by_kb_id(
+                kb_id=dataset_id, page_number=0, items_per_page=0,
+                orderby="create_time", desc=False, keywords="",
+                run_status=[], types=[], suffix=[],
+            )
+            doc_ids = [d["id"] for d in docs]
+            doc_update_map = {d["id"]: d.get("update_date") for d in docs}
+
+            dirty_set = set(get_dirty_documents(dataset_id))
+            resolution_done = has_phase_marker(dataset_id, PHASE_RESOLUTION)
+            community_done = has_phase_marker(dataset_id, PHASE_COMMUNITY)
+
+            try:
+                graph_doc_ids = set(
+                    await asyncio.wait_for(
+                        get_graph_doc_ids(tenant_id, dataset_id),
+                        timeout=10,
+                    )
+                )
+            except Exception:
+                graph_doc_ids = set()
+
+            for doc_id in doc_ids:
+                is_dirty = doc_id in dirty_set
+                in_graph = doc_id in graph_doc_ids
+
+                if is_dirty:
+                    phase = "dirty"
+                elif not in_graph:
+                    phase = "pending"
+                elif community_done:
+                    phase = "done"
+                elif resolution_done:
+                    phase = "community"
+                else:
+                    phase = "extract"
+
+                event = {
+                    "doc_id": doc_id,
+                    "phase": phase,
+                    "dirty": is_dirty,
+                    "in_graph": in_graph,
+                    "last_updated": str(doc_update_map.get(doc_id) or ""),
+                }
+                yield "data:" + json.dumps(event, ensure_ascii=False) + "\n\n"
+                await asyncio.sleep(0)
+
+            yield "data:" + json.dumps({"done": True}) + "\n\n"
+        except Exception as exc:
+            logging.exception("graph_status_stream error for dataset %s", dataset_id)
+            yield "data:" + json.dumps({"error": str(exc)}) + "\n\n"
+
+    resp = Response(event_stream(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    resp.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    return resp

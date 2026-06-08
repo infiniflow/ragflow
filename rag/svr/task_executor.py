@@ -135,6 +135,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "dataflow": PipelineTaskType.PARSE,
     "raptor": PipelineTaskType.RAPTOR,
     "graphrag": PipelineTaskType.GRAPH_RAG,
+    "graphrag_incremental": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
     "memory": PipelineTaskType.MEMORY,
 }
@@ -1533,6 +1534,42 @@ async def do_handle_task(task):
         get_recording_context().record("graphrag_result", result)
         progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
         return
+    elif task_type == "graphrag_incremental":
+        ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
+        if not ok:
+            progress_callback(prog=-1.0, msg="Cannot found valid dataset for GraphRAG incremental task")
+            return
+
+        kb_parser_config = kb.parser_config
+        if not kb_parser_config.get("graphrag", {}).get("use_graphrag", False):
+            progress_callback(prog=-1.0, msg="GraphRAG is not enabled for this dataset; cannot run incremental update.")
+            return
+
+        graphrag_conf = kb_parser_config.get("graphrag", {})
+        start_ts = timer()
+        chat_model_config = get_model_config_from_provider_instance(task_tenant_id, LLMType.CHAT, kb_task_llm_id)
+        chat_model = LLMBundle(task_tenant_id, chat_model_config, lang=task_language)
+        with_resolution = graphrag_conf.get("resolution", False)
+        with_community = graphrag_conf.get("community", False)
+        dirty_doc_ids = task.get("doc_ids", [])
+        async with kg_limiter:
+            from rag.graphrag.general.index import run_graphrag_for_kb
+            result = await run_graphrag_for_kb(
+                row=task,
+                doc_ids=task.get("doc_ids", []),
+                language=task_language,
+                kb_parser_config=kb_parser_config,
+                chat_model=chat_model,
+                embedding_model=embedding_model,
+                callback=progress_callback,
+                with_resolution=with_resolution,
+                with_community=with_community,
+                dirty_doc_ids=dirty_doc_ids,
+            )
+            logging.info(f"GraphRAG incremental task result for task {task}:\n{result}")
+        get_recording_context().record("graphrag_incremental_result", result)
+        progress_callback(prog=1.0, msg="Knowledge Graph incremental update done ({:.2f}s)".format(timer() - start_ts))
+        return
     elif task_type == "mindmap":
         progress_callback(1, "place holder")
         pass
@@ -1760,7 +1797,7 @@ async def handle_task():
     finally:
         if not task.get("dataflow_id", ""):
             referred_document_id = None
-            if task_type in ["graphrag", "raptor", "mindmap"]:
+            if task_type in ["graphrag", "graphrag_incremental", "raptor", "mindmap"]:
                 referred_document_id = task["doc_ids"][0]
             ret = PipelineOperationLogService.record_pipeline_operation(document_id=task["doc_id"], pipeline_id="",
                                                                   task_type=pipeline_task_type,

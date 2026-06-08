@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import os
 import random
 from datetime import datetime
 
@@ -972,7 +973,7 @@ class DocumentService(CommonService):
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
-                    if msg.endswith("created task graphrag") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
+                    if msg.endswith("created task graphrag") or msg.endswith("created task graphrag_incremental") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..." % get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..." % get_queue_length(priority)
@@ -1071,7 +1072,7 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     """
     if doc_ids is None:
         doc_ids = []
-    assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
+    assert ty in ["graphrag", "graphrag_incremental", "raptor", "mindmap"], "type should be graphrag, graphrag_incremental, raptor or mindmap"
 
     chunking_config = DocumentService.get_chunking_config(sample_doc["id"])
     hasher = xxhash.xxh64()
@@ -1100,6 +1101,56 @@ def queue_raptor_o_graphrag_tasks(sample_doc, ty, priority, fake_doc_id="", doc_
     DocumentService.begin2parse(task["doc_id"], keep_progress=True)
     assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, ty), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
+
+
+_INCREMENTAL_THRESHOLD = float(os.environ.get("GRAPHRAG_INCREMENTAL_THRESHOLD", "0.20"))
+
+
+def queue_graphrag_incremental_or_full(kb_id: str, sample_doc: dict, priority: int = 0) -> str:
+    """Choose between an incremental GraphRAG run and a full rebuild.
+
+    * If the fraction of dirty documents in the KB is below
+      ``GRAPHRAG_INCREMENTAL_THRESHOLD`` (default 20%), enqueue a
+      ``graphrag_incremental`` task that only re-processes the changed docs.
+    * Otherwise fall back to a full ``graphrag`` rebuild.
+
+    Returns the queued task id.
+    """
+    from rag.graphrag.phase_markers import get_dirty_documents
+
+    dirty_ids = get_dirty_documents(kb_id)
+    total_count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[], types=[])
+
+    if total_count > 0 and len(dirty_ids) / total_count < _INCREMENTAL_THRESHOLD:
+        logging.info(
+            "GraphRAG incremental run for kb=%s: %d dirty / %d total (%.1f%%)",
+            kb_id, len(dirty_ids), total_count, 100.0 * len(dirty_ids) / total_count,
+        )
+        return queue_raptor_o_graphrag_tasks(
+            sample_doc=sample_doc,
+            ty="graphrag_incremental",
+            priority=priority,
+            fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID,
+            doc_ids=dirty_ids,
+        )
+    else:
+        logging.info(
+            "GraphRAG full rebuild for kb=%s: %d dirty / %d total",
+            kb_id, len(dirty_ids), total_count,
+        )
+        all_docs, _ = DocumentService.get_by_kb_id(
+            kb_id=kb_id, page_number=0, items_per_page=0,
+            orderby="create_time", desc=False, keywords="",
+            run_status=[], types=[], suffix=[],
+        )
+        all_doc_ids = [d["id"] for d in all_docs]
+        return queue_raptor_o_graphrag_tasks(
+            sample_doc=sample_doc,
+            ty="graphrag",
+            priority=priority,
+            fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID,
+            doc_ids=all_doc_ids,
+        )
 
 
 def get_queue_length(priority, suffix="common"):

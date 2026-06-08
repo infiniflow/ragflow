@@ -438,6 +438,17 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         task["progress"] = 0.0
         task["priority"] = priority
 
+    # If this KB has GraphRAG enabled, mark the document dirty so the next
+    # graphrag run can use the cheaper incremental path.
+    try:
+        from api.db.services.knowledgebase_service import KnowledgebaseService as _KBS
+        _ok, _kb = _KBS.get_by_id(doc.get("kb_id", ""))
+        if _ok and _kb and _kb.parser_config.get("graphrag", {}).get("use_graphrag", False):
+            from rag.graphrag.phase_markers import mark_document_dirty
+            mark_document_dirty(_kb.id, doc["id"])
+    except Exception:
+        logging.exception("mark_document_dirty failed during queue_tasks for doc %s", doc.get("id"))
+
     prev_tasks = TaskService.get_tasks(doc["id"])
     ck_num = 0
     if prev_tasks:
