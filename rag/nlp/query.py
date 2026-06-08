@@ -223,7 +223,7 @@ class FulltextQueryer(QueryBase):
 
     def paragraph(self, content_tks: str, keywords: list = [], keywords_topn=30):
         if isinstance(content_tks, str):
-            content_tks = [c.strip() for c in content_tks.strip() if c.strip()]
+            content_tks = [c.strip() for c in content_tks.split() if c.strip()]
         tks_w = self.tw.weights(content_tks, preprocess=False)
 
         origin_keywords = keywords.copy()

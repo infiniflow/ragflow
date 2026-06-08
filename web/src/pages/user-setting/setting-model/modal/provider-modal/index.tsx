@@ -128,7 +128,7 @@ const ProviderModal = ({
           <ToggleList
             className="w-full"
             buttonClassName="self-end"
-            // searchable
+            searchable={listModelsOptions.length > 10}
             btnText={hasModelNameField ? t('listModels') : 'Select an option'}
             options={
               hasModelNameField
@@ -142,7 +142,6 @@ const ProviderModal = ({
             searchLoading={listLoading}
             onOpenChange={handleListOpenChange}
             maxHeight={400}
-            closeOnOutsideClick
           />
         )}
 
