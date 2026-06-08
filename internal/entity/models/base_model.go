@@ -23,12 +23,17 @@ import (
 )
 
 type BaseModel struct {
-	BaseURL    map[string]string
-	URLSuffix  URLSuffix
-	httpClient *http.Client
+	BaseURL          map[string]string
+	URLSuffix        URLSuffix
+	httpClient       *http.Client
+	AllowEmptyAPIKey bool
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
+	if b.AllowEmptyAPIKey {
+		return nil
+	}
+
 	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
 		return fmt.Errorf("api key is required")
 	}
