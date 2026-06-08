@@ -43,9 +43,11 @@ type vectorFetcher interface {
 //
 // Degrades gracefully: if the engine returns an error, zero vectors are
 // returned for all chunk IDs rather than failing the caller.
-func FetchChunkVectors(engine vectorFetcher, chunkIDs, tenantIDs, kbIDs []string, dim int) map[string][]float64 {
+//
+// The returned map has an entry for every requested chunkID.  Each vector
+// slice is independently allocated — callers may safely modify them.
+func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tenantIDs, kbIDs []string, dim int) map[string][]float64 {
 	out := make(map[string][]float64, len(chunkIDs))
-	zero := make([]float64, dim)
 
 	if len(chunkIDs) == 0 {
 		return out
@@ -54,7 +56,7 @@ func FetchChunkVectors(engine vectorFetcher, chunkIDs, tenantIDs, kbIDs []string
 	// Infinity and OceanBase already ship vectors with chunks; no need to fetch.
 	if engine.GetType() == "infinity" || engine.GetType() == "oceanbase" {
 		for _, cid := range chunkIDs {
-			out[cid] = zero
+			out[cid] = newZero(dim)
 		}
 		return out
 	}
@@ -64,7 +66,7 @@ func FetchChunkVectors(engine vectorFetcher, chunkIDs, tenantIDs, kbIDs []string
 	// Query each tenant index for the requested chunk vectors.
 	for _, tid := range tenantIDs {
 		idxName := fmt.Sprintf("ragflow_%s", tid)
-		res, err := engine.Search(context.Background(), &types.SearchRequest{
+		res, err := engine.Search(ctx, &types.SearchRequest{
 			IndexNames:   []string{idxName},
 			KbIDs:        kbIDs,
 			SelectFields: []string{vecField},
@@ -86,30 +88,41 @@ func FetchChunkVectors(engine vectorFetcher, chunkIDs, tenantIDs, kbIDs []string
 			if _, exists := out[cid]; exists {
 				continue
 			}
-			out[cid] = parseVectorField(chunk, vecField, dim, zero)
+			if v := parseVectorField(chunk, vecField, dim); v != nil {
+				out[cid] = v
+			} else {
+				out[cid] = newZero(dim)
+			}
 		}
 	}
 
-	// Fill any chunk IDs not found across all indices.
+	// Fill any chunk IDs not found across all indices with independently
+	// allocated zero vectors so callers cannot corrupt each other.
 	for _, cid := range chunkIDs {
 		if _, exists := out[cid]; !exists {
-			out[cid] = zero
+			out[cid] = newZero(dim)
 		}
 	}
 
 	return out
 }
 
+// newZero returns a freshly allocated zero vector of the given dimension.
+func newZero(dim int) []float64 {
+	return make([]float64, dim)
+}
+
 // parseVectorField extracts a vector from a chunk map. ES stores vectors
 // as tab-separated strings; Infinity stores them as []float64 / []interface{}.
-func parseVectorField(chunk map[string]interface{}, field string, dim int, zero []float64) []float64 {
+// Returns nil when the vector cannot be extracted or has the wrong dimension.
+func parseVectorField(chunk map[string]interface{}, field string, dim int) []float64 {
 	raw, ok := chunk[field]
 	if !ok {
-		return zero
+		return nil
 	}
 	switch v := raw.(type) {
 	case string:
-		return parseVectorString(v, dim, zero)
+		return parseVectorString(v, dim)
 	case []float64:
 		if len(v) == dim {
 			return v
@@ -125,31 +138,32 @@ func parseVectorField(chunk map[string]interface{}, field string, dim int, zero 
 			case string:
 				f, err := strconv.ParseFloat(fv, 64)
 				if err != nil {
-					return zero
+					return nil
 				}
 				vec[i] = f
 			default:
-				return zero
+				return nil
 			}
 		}
 		if len(vec) == dim {
 			return vec
 		}
 	}
-	return zero
+	return nil
 }
 
 // parseVectorString parses a tab-separated vector string from ES.
-func parseVectorString(s string, dim int, zero []float64) []float64 {
+// Returns nil when parsing fails or the dimension does not match.
+func parseVectorString(s string, dim int) []float64 {
 	parts := strings.Split(s, "\t")
 	if len(parts) != dim {
-		return zero
+		return nil
 	}
 	vec := make([]float64, dim)
 	for i, p := range parts {
 		f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
 		if err != nil {
-			return zero
+			return nil
 		}
 		vec[i] = f
 	}
