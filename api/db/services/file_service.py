@@ -345,9 +345,9 @@ class FileService(CommonService):
         if file.count():
             e, file = cls.get_by_id(file[0].parent_id)
             if not e:
-                raise ValidationError("Database error (File retrieval)!")
+                raise ServiceUnavailableError("Database error (File retrieval)!")
         else:
-            raise ServiceUnavailableError("Database error (File doesn't exist)!")
+            raise NotFoundError("Database error (File doesn't exist)!")
         return file
 
     @classmethod
@@ -379,7 +379,7 @@ class FileService(CommonService):
         # Returns:
         #     Created file object
         if not cls.save(**file):
-            raise NotFoundError("Database error (File)!")
+            raise ServiceUnavailableError("Database error (File)!")
         return File(**file)
 
     @classmethod
@@ -513,7 +513,7 @@ class FileService(CommonService):
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
                 filetype = filename_type(filename)
                 if filetype == FileType.OTHER.value:
-                    raise ServiceUnavailableError("This type of file has not been supported yet!")
+                    raise ValidationError("This type of file has not been supported yet!")
 
                 location = filename if not safe_parent_path else f"{safe_parent_path}/{filename}"
                 while settings.STORAGE_IMPL.obj_exist(kb.id, location):
@@ -565,7 +565,7 @@ class FileService(CommonService):
             return list(files)
         except Exception:
             logging.exception("list_by_parent_id failed")
-            raise ValidationError("Database error (list_by_parent_id)!")
+            raise ServiceUnavailableError("Database error (list_by_parent_id)!")
 
     @staticmethod
     def parse_docs(file_objs, user_id):

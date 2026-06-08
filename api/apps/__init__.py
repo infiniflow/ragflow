@@ -424,7 +424,7 @@ async def unauthorized_werkzeug(error):
 @app.errorhandler(ModelException)
 async def handle_model_exception(error):
     logging.warning("ModelException: %s", error)
-    return get_result(code=RetCode.BAD_REQUEST, message=str(error)), 200
+    return get_result(code=RetCode.BAD_REQUEST, message=repr(error)), 200
 
 
 @app.teardown_request

@@ -117,7 +117,7 @@ class DocumentService(CommonService):
 
         MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
         if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(tenant_id):
-            raise NotFoundError("Exceed the maximum file number of a free user!")
+            raise ValidationError("Exceed the maximum file number of a free user!")
         if len(filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             raise ValidationError("Exceed the maximum length of file name!")
         return True
@@ -440,7 +440,7 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
-            raise ValidationError("Database error (Document)!")
+            raise ServiceUnavailableError("Database error (Document)!")
         if not KnowledgebaseService.atomic_increase_doc_num_by_id(doc["kb_id"]):
             raise ServiceUnavailableError("Database error (Knowledgebase)!")
         return Document(**doc)

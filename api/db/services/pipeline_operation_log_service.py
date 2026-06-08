@@ -142,7 +142,7 @@ class PipelineOperationLogService(CommonService):
             # query task to get progress information from task
             ok, task = TaskService.get_by_id(task_id)
             if not ok:
-                raise RAGFlowError(f"Task not found for dataset {document.kb_id}")
+                raise NotFoundError(f"Task not found for dataset {document.kb_id}")
             title = task_type
             document_name = task_type
             operation_status = TaskStatus.DONE if task.progress == 1 else TaskStatus.FAIL

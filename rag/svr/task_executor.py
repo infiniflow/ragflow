@@ -1733,7 +1733,7 @@ async def handle_task():
                 f"handle_task RetryableError for task {task_id} (attempt {retry_count}/{max_retries}): {e}"
             )
             task["retry_count"] = retry_count
-            queue_name = settings.get_svr_queue_name(0)
+            queue_name = settings.get_svr_queue_name(task.get("priority", 0), TASK_TYPE)
             REDIS_CONN.queue_product(queue_name, task)
         else:
             FAILED_TASKS += 1
