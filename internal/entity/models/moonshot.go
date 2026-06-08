@@ -59,13 +59,6 @@ func (m *MoonshotModel) Name() string {
 	return "moonshot"
 }
 
-func validateMoonshotAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return "", fmt.Errorf("api key is required")
-	}
-	return strings.TrimSpace(*apiConfig.ApiKey), nil
-}
-
 func validateMoonshotModelName(modelName string) (string, error) {
 	if strings.TrimSpace(modelName) == "" {
 		return "", fmt.Errorf("model name is required")
@@ -74,11 +67,11 @@ func validateMoonshotModelName(modelName string) (string, error) {
 }
 
 func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateMoonshotAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	modelName, err = validateMoonshotModelName(modelName)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	modelName, err := validateMoonshotModelName(modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -215,11 +208,11 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
-	apiKey, err := validateMoonshotAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	modelName, err = validateMoonshotModelName(modelName)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	modelName, err := validateMoonshotModelName(modelName)
 	if err != nil {
 		return err
 	}
@@ -393,10 +386,10 @@ func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIC
 }
 
 func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := validateMoonshotAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -454,10 +447,10 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 }
 
 func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
-	apiKey, err := validateMoonshotAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
