@@ -56,7 +56,7 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 	// Infinity and OceanBase already ship vectors with chunks; no need to fetch.
 	if engine.GetType() == "infinity" || engine.GetType() == "oceanbase" {
 		for _, cid := range chunkIDs {
-			out[cid] = newZero(dim)
+			out[cid] = zeroVector(dim)
 		}
 		return out
 	}
@@ -91,7 +91,7 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 			if v := parseVectorField(chunk, vecField, dim); v != nil {
 				out[cid] = v
 			} else {
-				out[cid] = newZero(dim)
+				out[cid] = zeroVector(dim)
 			}
 		}
 	}
@@ -100,15 +100,15 @@ func FetchChunkVectors(ctx context.Context, engine vectorFetcher, chunkIDs, tena
 	// allocated zero vectors so callers cannot corrupt each other.
 	for _, cid := range chunkIDs {
 		if _, exists := out[cid]; !exists {
-			out[cid] = newZero(dim)
+			out[cid] = zeroVector(dim)
 		}
 	}
 
 	return out
 }
 
-// newZero returns a freshly allocated zero vector of the given dimension.
-func newZero(dim int) []float64 {
+// zeroVector returns a freshly allocated zero vector of the given dimension.
+func zeroVector(dim int) []float64 {
 	return make([]float64, dim)
 }
 
