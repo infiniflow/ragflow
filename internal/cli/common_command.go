@@ -18,10 +18,13 @@ package cli
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -692,12 +695,35 @@ func (c *CLI) AddAPIServer(cmd *Command) (ResponseIf, error) {
 	}
 	apiServerToken, ok := cmd.Params["server_token"].(string)
 	if !ok {
-		return nil, fmt.Errorf("server token not provided")
+		apiServerToken = ""
 	}
 
+	c.Config.APIClientConfig.APIServerMap[apiServerName] = &APIServerConfig{
+		Name: apiServerName,
+		IP:   apiServerIP,
+		Port: apiServerPort,
+	}
 	c.Config.APIClientConfig.APIServerMap[apiServerName].IP = apiServerIP
 	c.Config.APIClientConfig.APIServerMap[apiServerName].Port = apiServerPort
-	c.Config.APIClientConfig.APIServerMap[apiServerName].ApiToken = &apiServerToken
+	if apiServerToken != "" {
+		c.Config.APIClientConfig.APIServerMap[apiServerName].ApiToken = &apiServerToken
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	c.APIServerClientMap[apiServerName] = &HTTPClient{
+		Host:           apiServerIP,
+		Port:           apiServerPort,
+		APIVersion:     "v1",
+		ConnectTimeout: 5 * time.Second,
+		ReadTimeout:    60 * time.Second,
+		VerifySSL:      false,
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   300 * time.Second,
+		},
+	}
 
 	var result SimpleResponse
 	result.Code = 0
