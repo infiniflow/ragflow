@@ -19,25 +19,142 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"ragflow/internal/common"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/service"
 )
 
+// chunkService is the consumer-side interface for ChunkHandler's service dependency.
+type chunkService interface {
+	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+	Get(req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error)
+	List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
+	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
+	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
+}
+
 // ChunkHandler chunk handler
 type ChunkHandler struct {
-	chunkService *service.ChunkService
+	chunkService chunkService
 	userService  *service.UserService
 }
 
 // NewChunkHandler create chunk handler
-func NewChunkHandler(chunkService *service.ChunkService, userService *service.UserService) *ChunkHandler {
+func NewChunkHandler(chunkService chunkService, userService *service.UserService) *ChunkHandler {
 	return &ChunkHandler{
 		chunkService: chunkService,
 		userService:  userService,
 	}
+}
+
+// RetrievalTest performs retrieval test for chunks
+// @Summary Retrieval Test
+// @Description Test retrieval of chunks based on question and knowledge base
+// @Tags chunks
+// @Accept json
+// @Produce json
+// @Param request body service.RetrievalTestRequest true "retrieval test parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/datasets/search [post]
+func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	// Bind JSON request
+	var req service.RetrievalTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Set default values for optional parameters
+	if req.Page == nil {
+		defaultPage := 1
+		req.Page = &defaultPage
+	}
+	if req.Size == nil {
+		defaultSize := 30
+		req.Size = &defaultSize
+	}
+	if req.TopK == nil {
+		defaultTopK := 1024
+		req.TopK = &defaultTopK
+	}
+	if req.UseKG == nil {
+		defaultUseKG := false
+		req.UseKG = &defaultUseKG
+	}
+
+	// Strip and validate question.  Matching Python chunk_api.py which returns
+	// an empty result for blank questions rather than an error.
+	if strings.TrimSpace(req.Question) == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    int(common.CodeSuccess),
+			"data": &service.RetrievalTestResponse{
+				Chunks:  []map[string]interface{}{},
+				DocAggs: []map[string]interface{}{},
+				Total:   0,
+			},
+			"message": "success",
+		})
+		return
+	}
+
+	// Validate required fields
+	if req.Datasets == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "kb_id is required",
+		})
+		return
+	}
+
+	if len(req.Datasets) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "kb_id array cannot be empty",
+		})
+		return
+	}
+	if req.TopK != nil && *req.TopK <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "top_k must be greater than 0",
+		})
+		return
+	}
+
+	// Call service with user ID for permission checks
+	resp, err := h.chunkService.RetrievalTest(&req, user.ID)
+	if err != nil {
+		common.Warn("dataset search failed", zap.String("error", err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    common.CodeServerError,
+			"data":    nil,
+			"message": "dataset search failed",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    int(common.CodeSuccess),
+		"data":    resp,
+		"message": "success",
+	})
 }
 
 // Get retrieves a chunk by ID
@@ -49,20 +166,16 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	}
 
 	chunkID := c.Param("chunk_id")
-	datasetID := c.Param("dataset_id")
-	documentID := c.Param("document_id")
-	if chunkID == "" || datasetID == "" || documentID == "" {
+	if chunkID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "dataset_id, document_id and chunk_id are required",
+			"message": "chunk_id is required",
 		})
 		return
 	}
 
 	req := &service.GetChunkRequest{
-		ChunkID:    chunkID,
-		DocumentID: documentID,
-		DatasetID:  datasetID,
+		ChunkID: chunkID,
 	}
 
 	resp, err := h.chunkService.Get(req, user.ID)

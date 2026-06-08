@@ -42,9 +42,8 @@ type Router struct {
 	skillSearchHandler      *handler.SkillSearchHandler
 	providerHandler         *handler.ProviderHandler
 	agentHandler            *handler.AgentHandler
-	relatedQuestionsHandler *handler.SearchbotHandler
-	difyRetrievalHandler    *handler.DifyRetrievalHandler
-	pluginHandler           *handler.PluginHandler
+	searchBotHandler      *handler.SearchBotHandler
+	difyRetrievalHandler  *handler.DifyRetrievalHandler
 }
 
 // NewRouter create router
@@ -68,9 +67,8 @@ func NewRouter(
 	skillSearchHandler *handler.SkillSearchHandler,
 	providerHandler *handler.ProviderHandler,
 	agentHandler *handler.AgentHandler,
-	relatedQuestionsHandler *handler.SearchbotHandler,
-	difyRetrievalHandler *handler.DifyRetrievalHandler,
-	pluginHandler *handler.PluginHandler,
+	searchBotHandler *handler.SearchBotHandler,
+	difyRetrievalHandler  *handler.DifyRetrievalHandler,
 ) *Router {
 	return &Router{
 		authHandler:             authHandler,
@@ -92,9 +90,8 @@ func NewRouter(
 		skillSearchHandler:      skillSearchHandler,
 		providerHandler:         providerHandler,
 		agentHandler:            agentHandler,
-		relatedQuestionsHandler: relatedQuestionsHandler,
-		difyRetrievalHandler:    difyRetrievalHandler,
-		pluginHandler:           pluginHandler,
+		searchBotHandler: searchBotHandler,
+			difyRetrievalHandler:  difyRetrievalHandler,
 	}
 }
 
@@ -153,6 +150,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// Google redirects here after Gmail / Google Drive web OAuth completes.
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
+
+		// Dify health check (no auth required)
+		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 	}
 
 	// Protected routes
@@ -210,8 +210,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				documents.POST("", r.documentHandler.CreateDocument)
 				documents.GET("", r.documentHandler.ListDocuments)
-				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
-				documents.GET("/:id/preview", r.documentHandler.GetDocumentPreview)
 				documents.GET("/:id", r.documentHandler.GetDocumentByID)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
@@ -226,7 +224,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Searchbot routes
-			v1.POST("/searchbots/related_questions", r.relatedQuestionsHandler.Handle)
+			v1.POST("/searchbots/related_questions", r.searchBotHandler.Handle)
+			v1.POST("/searchbots/retrieval_test", r.searchBotHandler.RetrievalTest)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets")
@@ -238,7 +237,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/graph", r.datasetsHandler.DeleteKnowledgeGraph)
 				datasets.POST("", r.datasetsHandler.CreateDataset)
 				datasets.DELETE("", r.datasetsHandler.DeleteDatasets)
-				datasets.POST("/search", r.datasetsHandler.SearchDatasets)
+				datasets.POST("/search", r.chunkHandler.RetrievalTest)
 				datasets.GET("/metadata/flattened", r.datasetsHandler.ListMetadataFlattened)
 
 				// Dataset ingestion logs
@@ -252,7 +251,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 				// Dataset documents
 				datasets.GET("/:dataset_id/documents", r.documentHandler.ListDocuments)
-				datasets.GET("/:dataset_id/documents/:document_id", r.documentHandler.DownloadDocument)
 				datasets.DELETE("/:dataset_id/documents", r.documentHandler.DeleteDocuments)
 
 				// Dataset document chunk
@@ -380,12 +378,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
-			}
-
-			// Plugin routes
-			plugin := v1.Group("/plugin")
-			{
-				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
 			connector := v1.Group("/connectors")
@@ -529,16 +521,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			file.GET("/parent_folder", r.fileHandler.GetParentFolder)
 			file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 		}
+		// Dify retrieval routes
+		dify := authorized.Group("/api/v1/dify")
+		{
+			dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
+			dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
+		}
+
 
 	}
-
-	// Dify retrieval routes
-	dify := authorized.Group("/api/v1/dify")
-	{
-		dify.POST("/retrieval", r.difyRetrievalHandler.Retrieval)
-		dify.GET("/retrieval", r.difyRetrievalHandler.Retrieval)
-	}
-	apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)
