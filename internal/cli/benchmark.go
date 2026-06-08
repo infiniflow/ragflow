@@ -179,7 +179,7 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 				return
 			}
 			workerClient.AdminServerClient = c.AdminServerClient
-			workerClient.APIServerClient = c.APIServerClient
+			workerClient.APIServerClientMap = c.APIServerClientMap
 
 			// Execute benchmark silently (no output)
 			responseList := workerClient.executeBenchmarkSilent(nestedCmd, iterations)
@@ -226,18 +226,20 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 	responseList := make([]*Response, 0, iterations)
 
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
 	for i := 0; i < iterations; i++ {
 		var resp *Response
 		var err error
 
 		switch cmd.Type {
 		case "ping":
-			resp, err = c.APIServerClient.Request("GET", "/system/ping", "web", nil, nil)
+			resp, err = httpClient.Request("GET", "/system/ping", "web", nil, nil)
 		case "list_user_datasets":
-			resp, err = c.APIServerClient.Request("POST", "/kb/list", "web", nil, nil)
+			resp, err = httpClient.Request("POST", "/kb/list", "web", nil, nil)
 		case "list_datasets":
 			userName, _ := cmd.Params["user_name"].(string)
-			resp, err = c.APIServerClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
+			resp, err = httpClient.Request("GET", fmt.Sprintf("/admin/users/%s/datasets", userName), "admin", nil, nil)
 		case "search_on_datasets":
 			question, _ := cmd.Params["question"].(string)
 			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)
@@ -247,7 +249,7 @@ func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
 				"similarity_threshold":     0.2,
 				"vector_similarity_weight": 0.3,
 			}
-			resp, err = c.APIServerClient.Request("POST", "/datasets/search", "web", nil, payload)
+			resp, err = httpClient.Request("POST", "/datasets/search", "web", nil, payload)
 		default:
 			// For other commands, we would need to add specific handling
 			// For now, mark as failed

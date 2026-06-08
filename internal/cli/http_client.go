@@ -121,6 +121,10 @@ func (r *Response) JSON() (map[string]interface{}, error) {
 
 // Request makes an HTTP request
 func (c *HTTPClient) Request(method, path string, authKind string, headers map[string]string, jsonBody map[string]interface{}) (*Response, error) {
+	if c == nil {
+		return nil, fmt.Errorf("HTTP Client is nil")
+	}
+
 	url := c.BuildURL(path)
 	mergedHeaders := c.Headers(authKind, headers)
 

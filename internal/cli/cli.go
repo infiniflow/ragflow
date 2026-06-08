@@ -72,16 +72,17 @@ type ConnectionArgs struct {
 type CommandLineMode string
 
 const (
-	UserMode      CommandLineMode = "user"
-	AdminMode     CommandLineMode = "admin"
-	IngestorMode  CommandLineMode = "ingestor"  // If we want to access ingestor
-	CollectorMode CommandLineMode = "collector" // If we want to access collector
+	UserMode         CommandLineMode = "user"
+	AdminMode        CommandLineMode = "admin"
+	IngestorMode     CommandLineMode = "ingestor"  // If we want to access ingestor
+	CollectorMode    CommandLineMode = "collector" // If we want to access collector
+	DefaultAPIServer                 = "default"
 )
 
 type CommandLineConfig struct {
 	CLIMode           CommandLineMode
 	AdminClientConfig *AdminModeConfig
-	APIClientConfig   *UserModeConfig
+	APIClientConfig   APIModeConfig
 	ShowHelp          bool
 	Verbose           bool
 	Interactive       bool
@@ -97,13 +98,23 @@ type AdminModeConfig struct {
 	//AdminCommand  *string
 }
 
-type UserModeConfig struct {
+type APIServerConfig struct {
 	ApiHost      string
 	ApiPort      int
-	UserName     *string // Check username and password firstly, then check api token
+	UserName     *string
 	UserPassword *string
 	ApiToken     *string
-	//ApiCommand   *string
+}
+
+type APIModeConfig struct {
+	CurrentAPIServer string
+	APIServerMap     map[string]*APIServerConfig
+	//ApiHost      string
+	//ApiPort      int
+	//UserName     *string // Check username and password firstly, then check api token
+	//UserPassword *string
+	//ApiToken     *string
+	////ApiCommand   *string
 }
 
 func (c *CommandLineConfig) Print() {
@@ -117,7 +128,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	commandLineConfig := &CommandLineConfig{
 		CLIMode:           UserMode,
 		AdminClientConfig: nil,
-		APIClientConfig:   nil,
 		ShowHelp:          false,
 		Verbose:           false,
 		Interactive:       true,
@@ -160,7 +170,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 
 	switch commandLineConfig.CLIMode {
 	case UserMode:
-		APIClientConfig := &UserModeConfig{
+		apiServerConfig := &APIServerConfig{
 			ApiHost:      "127.0.0.1",
 			ApiPort:      9384,
 			UserName:     nil,
@@ -186,23 +196,23 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					if err != nil {
 						return nil, fmt.Errorf("invalid host format: %v", err)
 					}
-					APIClientConfig.ApiHost = h
-					APIClientConfig.ApiPort = port
+					apiServerConfig.ApiHost = h
+					apiServerConfig.ApiPort = port
 					i++
 				}
 			case "-t", "--token":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					APIClientConfig.ApiToken = &args[i+1]
+					apiServerConfig.ApiToken = &args[i+1]
 					i++
 				}
 			case "-u", "--user":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					APIClientConfig.UserName = &args[i+1]
+					apiServerConfig.UserName = &args[i+1]
 					i++
 				}
 			case "-p", "--password":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					APIClientConfig.UserPassword = &args[i+1]
+					apiServerConfig.UserPassword = &args[i+1]
 					i++
 				}
 			case "-f", "--config":
@@ -250,17 +260,17 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 				if err != nil {
 					return nil, fmt.Errorf("invalid host in config file: %v", err)
 				}
-				APIClientConfig.ApiHost = h
-				APIClientConfig.ApiPort = port
+				apiServerConfig.ApiHost = h
+				apiServerConfig.ApiPort = port
 			}
 			if config.UserName != "" {
-				APIClientConfig.UserName = &config.UserName
+				apiServerConfig.UserName = &config.UserName
 			}
 			if config.Password != "" {
-				APIClientConfig.UserPassword = &config.Password
+				apiServerConfig.UserPassword = &config.Password
 			}
 			if config.APIToken != "" {
-				APIClientConfig.ApiToken = &config.APIToken
+				apiServerConfig.ApiToken = &config.APIToken
 			}
 		} else {
 			if configFile == "rf.yml" && os.IsNotExist(err) {
@@ -269,7 +279,9 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			}
 		}
 
-		commandLineConfig.APIClientConfig = APIClientConfig
+		commandLineConfig.APIClientConfig.APIServerMap = make(map[string]*APIServerConfig)
+		commandLineConfig.APIClientConfig.APIServerMap[DefaultAPIServer] = apiServerConfig
+		commandLineConfig.APIClientConfig.CurrentAPIServer = DefaultAPIServer
 	case AdminMode:
 		AdminConfig := &AdminModeConfig{
 			AdminHost: "127.0.0.1",
@@ -706,12 +718,12 @@ type CLI struct {
 	args          *ConnectionArgs
 	outputFormat  OutputFormat // Output format
 
-	APIServerClient   *HTTPClient
-	AdminServerClient *HTTPClient
-	PasswordPrompt    PasswordPromptFunc // Function for password input
-	ContextEngine     *filesystem.Engine // Context Engine for virtual filesystem
-	CurrentModel      *CurrentModel      // Current model configuration
-	Config            *CommandLineConfig
+	APIServerClientMap map[string]*HTTPClient
+	AdminServerClient  *HTTPClient
+	PasswordPrompt     PasswordPromptFunc // Function for password input
+	ContextEngine      *filesystem.Engine // Context Engine for virtual filesystem
+	CurrentModel       *CurrentModel      // Current model configuration
+	Config             *CommandLineConfig
 }
 
 // NewCLI creates a new CLI instance
@@ -729,15 +741,18 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	}
 
 	if commandLineConfig.CLIMode == UserMode {
+		apiServerConfig := commandLineConfig.APIClientConfig.APIServerMap[commandLineConfig.APIClientConfig.CurrentAPIServer]
 		httpClient := NewHTTPClient()
-		httpClient.Host = commandLineConfig.APIClientConfig.ApiHost
-		httpClient.Port = commandLineConfig.APIClientConfig.ApiPort
-		if commandLineConfig.APIClientConfig.ApiToken != nil {
-			httpClient.APIToken = commandLineConfig.APIClientConfig.ApiToken
+		httpClient.Host = apiServerConfig.ApiHost
+		httpClient.Port = apiServerConfig.ApiPort
+		if apiServerConfig.ApiToken != nil {
+			httpClient.APIToken = apiServerConfig.ApiToken
 			httpClient.useAPIToken = true
 		}
 		cli.prompt = fmt.Sprintf("RAGFlow(user)> ")
-		cli.APIServerClient = httpClient
+		cli.APIServerClientMap = map[string]*HTTPClient{
+			cli.Config.APIClientConfig.CurrentAPIServer: httpClient,
+		}
 
 		engine := filesystem.NewEngine()
 
@@ -767,7 +782,7 @@ func (c *CLI) NewRun() error {
 	cliConfig := c.Config
 	switch cliConfig.CLIMode {
 	case UserMode:
-		apiConfig := c.Config.APIClientConfig
+		apiConfig := c.Config.APIClientConfig.APIServerMap[c.Config.APIClientConfig.CurrentAPIServer]
 		if apiConfig.UserName != nil && apiConfig.UserPassword == nil && apiConfig.ApiToken == nil {
 			// provider username but no password or api token
 			maxAttempts := 3
@@ -784,7 +799,7 @@ func (c *CLI) NewRun() error {
 					return errors.New("no password provided after 3 attempts")
 				}
 
-				c.Config.APIClientConfig.UserPassword = &password
+				apiConfig.UserPassword = &password
 
 				if err = c.VerifyAuth(); err != nil {
 					if attempt < maxAttempts {
@@ -1129,6 +1144,8 @@ func (c *CLI) executeFilesystem(input string) error {
 	// Build filesystem command
 	var ceCmd *filesystem.Command
 
+	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+
 	switch cmdType {
 	case "ls", "list":
 		// Parse list command arguments
@@ -1238,7 +1255,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("skill provider not available")
 		}
 		// Create adapter for HTTPClient
-		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
+		httpAdapter := &httpClientAdapter{client: httpClient}
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "uninstall-skill":
@@ -1251,7 +1268,7 @@ func (c *CLI) executeFilesystem(input string) error {
 			return fmt.Errorf("file provider not available")
 		}
 		// Create adapter for HTTPClient
-		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
+		httpAdapter := &httpClientAdapter{client: httpClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
@@ -1266,7 +1283,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		if skillProvider == nil {
 			return fmt.Errorf("skill provider not available")
 		}
-		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
+		httpAdapter := &httpClientAdapter{client: httpClient}
 		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
 		return cmd.Execute(cmdArgs)
 	case "delete-skill":
@@ -1280,7 +1297,7 @@ func (c *CLI) executeFilesystem(input string) error {
 		if fileProvider == nil {
 			return fmt.Errorf("file provider not available")
 		}
-		httpAdapter := &httpClientAdapter{client: c.APIServerClient}
+		httpAdapter := &httpClientAdapter{client: httpClient}
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
