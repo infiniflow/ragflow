@@ -61,6 +61,26 @@ class RedisMsg:
 class RedisDB:
     lua_delete_if_equal = None
     lua_token_bucket = None
+    lua_requeue_msg = None
+    LUA_REQUEUE_MSG_SCRIPT = """
+        -- KEYS[1] = stream/queue
+        -- KEYS[2] = dedupe marker key
+        -- ARGV[1] = group name
+        -- ARGV[2] = message id
+        -- ARGV[3] = marker ttl seconds
+
+        -- Re-add + ack atomically; the NX marker makes retries skip the re-add,
+        -- so neither a partial failure nor a retry can duplicate the payload.
+        if redis.call('SET', KEYS[2], '1', 'NX', 'EX', tonumber(ARGV[3])) then
+            local entries = redis.call('XRANGE', KEYS[1], ARGV[2], ARGV[2])
+            if #entries > 0 then
+                redis.call('XADD', KEYS[1], '*', unpack(entries[1][2]))
+            end
+        end
+        redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
+        return 1
+    """
+
     LUA_DELETE_IF_EQUAL_SCRIPT = """
         local current_value = redis.call('get', KEYS[1])
         if current_value and current_value == ARGV[1] then
@@ -121,6 +141,7 @@ class RedisDB:
         client = self.REDIS
         cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
         cls.lua_token_bucket = client.register_script(cls.LUA_TOKEN_BUCKET_SCRIPT)
+        cls.lua_requeue_msg = client.register_script(cls.LUA_REQUEUE_MSG_SCRIPT)
 
     def __open__(self):
         try:
@@ -455,7 +476,10 @@ class RedisDB:
         return None
 
     def get_unacked_iterator(self, queue_names: list[str], group_name, consumer_name):
-        # Isolate each queue so one queue's failure can't skip the others' replay.
+        """Yield this consumer's own pending (delivered-but-unacked) messages so a
+        restarted worker can finish what it had in flight. Each queue is isolated:
+        a failure inspecting or draining one queue cannot skip the others' replay.
+        """
         for queue_name in queue_names:
             try:
                 try:
@@ -528,16 +552,14 @@ class RedisDB:
 
     def requeue_msg(self, queue: str, group_name: str, msg_id: str) -> bool:
         """Re-deliver a pending message: copy it to the stream tail for a fresh
-        pickup, then ack the original to drain the PEL. The ack is unconditional
-        so already-trimmed entries still leave the PEL. Idempotent; returns True
-        once the original is acked.
+        pickup and ack the original, in one atomic Lua script guarded by an NX
+        dedupe marker so it can't be enqueued twice. Returns True once acked.
         """
+        # Hash-tag the marker to the queue's slot so both keys stay co-located.
+        marker = f"reclaim:{{{queue}}}:{group_name}:{msg_id}"
         for _ in range(3):
             try:
-                messages = self.REDIS.xrange(queue, msg_id, msg_id)
-                if messages:
-                    self.REDIS.xadd(queue, messages[0][1])
-                self.REDIS.xack(queue, group_name, msg_id)
+                self.lua_requeue_msg(keys=[queue, marker], args=[group_name, msg_id, 300], client=self.REDIS)
                 return True
             except Exception as e:
                 logging.warning(

@@ -36,16 +36,21 @@ import valkey
 from rag.utils.redis_conn import RedisDB
 
 
-def _make_db():
-    """A RedisDB whose connection is replaced by a mock (no live server).
-
-    __open__ is stubbed so a simulated connection error in a method under test
-    does not reconnect and replace the mock with a real (dead) client.
+@pytest.fixture
+def db():
+    """RedisDB (a @singleton) with its connection mocked. The shared instance is
+    restored on teardown to keep tests order-independent, and __open__ is stubbed
+    so a simulated connection error doesn't reconnect over the mock.
     """
-    db = RedisDB()
-    db.__open__ = MagicMock()
-    db.REDIS = MagicMock()
-    return db
+    inst = RedisDB()
+    saved = dict(inst.__dict__)
+    inst.__open__ = MagicMock()
+    inst.REDIS = MagicMock()
+    try:
+        yield inst
+    finally:
+        inst.__dict__.clear()
+        inst.__dict__.update(saved)
 
 
 def _msg(msg_id):
@@ -56,14 +61,12 @@ def _msg(msg_id):
 
 @pytest.mark.p1
 class TestGetUnackedIterator:
-    def test_non_missing_key_error_does_not_skip_remaining_queues(self):
+    def test_non_missing_key_error_does_not_skip_remaining_queues(self, db):
         """A transient error on the first queue must not abort the second."""
-        db = _make_db()
 
         def xinfo_groups(queue_name):
+            # A non "no such key" error used to abort the whole replay.
             if queue_name == "te.1.common":
-                # Anything other than an exact "no such key" used to leave
-                # group_info unbound -> UnboundLocalError -> whole loop aborts.
                 raise valkey.exceptions.ConnectionError("connection reset by peer")
             return [{"name": "grp"}]
 
@@ -77,8 +80,7 @@ class TestGetUnackedIterator:
 
         assert [m.get_msg_id() for m in out] == ["5-0"]
 
-    def test_missing_stream_is_skipped(self):
-        db = _make_db()
+    def test_missing_stream_is_skipped(self, db):
         db.REDIS.xinfo_groups.side_effect = valkey.exceptions.ResponseError("no such key")
         db.queue_consumer = MagicMock()
 
@@ -87,8 +89,7 @@ class TestGetUnackedIterator:
         assert out == []
         db.queue_consumer.assert_not_called()
 
-    def test_missing_group_is_skipped(self):
-        db = _make_db()
+    def test_missing_group_is_skipped(self, db):
         db.REDIS.xinfo_groups.return_value = [{"name": "other-group"}]
         db.queue_consumer = MagicMock()
 
@@ -100,36 +101,35 @@ class TestGetUnackedIterator:
 
 @pytest.mark.p1
 class TestRequeueMsg:
-    def test_requeues_exactly_once(self):
-        """The retry loop must stop on success instead of re-adding 3x."""
-        db = _make_db()
-        db.REDIS.xrange.return_value = [("9-0", {"message": "{}"})]
+    def test_requeues_via_atomic_script_once(self, db):
+        """A successful handoff runs the script once and stops retrying."""
+        db.lua_requeue_msg = MagicMock(return_value=1)
 
         assert db.requeue_msg("te.0.common", "grp", "9-0") is True
-        assert db.REDIS.xadd.call_count == 1
-        db.REDIS.xack.assert_called_once_with("te.0.common", "grp", "9-0")
 
-    def test_acks_even_when_entry_trimmed(self):
-        """A PEL entry whose stream payload was trimmed is still drained."""
-        db = _make_db()
-        db.REDIS.xrange.return_value = []
+        db.lua_requeue_msg.assert_called_once()
+        kwargs = db.lua_requeue_msg.call_args.kwargs
+        assert kwargs["keys"][0] == "te.0.common"
+        # Marker is hash-tagged to the queue's slot so both keys co-locate.
+        assert kwargs["keys"][1] == "reclaim:{te.0.common}:grp:9-0"
+        assert kwargs["args"][:2] == ["grp", "9-0"]
 
-        assert db.requeue_msg("te.0.common", "grp", "9-0") is True
-        db.REDIS.xadd.assert_not_called()
-        db.REDIS.xack.assert_called_once_with("te.0.common", "grp", "9-0")
+    def test_returns_false_after_exhausting_retries(self, db):
+        db.lua_requeue_msg = MagicMock(side_effect=valkey.exceptions.ConnectionError("boom"))
+
+        assert db.requeue_msg("te.0.common", "grp", "9-0") is False
+        assert db.lua_requeue_msg.call_count == 3
 
 
 @pytest.mark.p1
 class TestGetPendingMsg:
-    def test_returns_empty_on_nogroup(self):
-        db = _make_db()
+    def test_returns_empty_on_nogroup(self, db):
         db.REDIS.xpending_range.side_effect = valkey.exceptions.ResponseError(
             "NOGROUP No such key 'te.0.common' or consumer group 'grp'"
         )
         assert db.get_pending_msg("te.0.common", "grp") == []
 
-    def test_paginates_through_full_pel(self):
-        db = _make_db()
+    def test_paginates_through_full_pel(self, db):
         page1 = [{"message_id": f"{i}-0", "consumer": "c"} for i in range(256)]
         page2 = [{"message_id": "256-0", "consumer": "c"}]
         db.REDIS.xpending_range.side_effect = [page1, page2]
@@ -142,32 +142,32 @@ class TestGetPendingMsg:
 
 @pytest.mark.p1
 class TestReclaimPendingMsg:
-    def test_reclaims_only_dead_consumer_entries(self):
-        db = _make_db()
+    def test_reclaims_only_dead_consumer_entries(self, db):
         db.REDIS.xpending_range.return_value = [
             {"message_id": "1-0", "consumer": "dead_worker"},
             {"message_id": "2-0", "consumer": "live_worker"},
         ]
-        db.REDIS.xrange.side_effect = lambda q, a, b: [(a, {"message": "{}"})]
+        db.lua_requeue_msg = MagicMock(return_value=1)
 
         reclaimed = db.reclaim_pending_msg(
             ["te.0.common"], "grp", live_consumers={"live_worker"}
         )
 
         assert reclaimed == 1
-        # Only the dead worker's entry is acked/requeued.
-        db.REDIS.xack.assert_called_once_with("te.0.common", "grp", "1-0")
+        # Only the dead worker's entry is requeued.
+        db.lua_requeue_msg.assert_called_once()
+        assert db.lua_requeue_msg.call_args.kwargs["args"][:2] == ["grp", "1-0"]
 
-    def test_noop_when_all_consumers_live(self):
-        db = _make_db()
+    def test_noop_when_all_consumers_live(self, db):
         db.REDIS.xpending_range.return_value = [
             {"message_id": "1-0", "consumer": "live_a"},
             {"message_id": "2-0", "consumer": "live_b"},
         ]
+        db.lua_requeue_msg = MagicMock(return_value=1)
 
         reclaimed = db.reclaim_pending_msg(
             ["te.0.common"], "grp", live_consumers={"live_a", "live_b"}
         )
 
         assert reclaimed == 0
-        db.REDIS.xack.assert_not_called()
+        db.lua_requeue_msg.assert_not_called()

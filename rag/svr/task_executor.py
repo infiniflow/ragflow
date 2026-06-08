@@ -1821,15 +1821,20 @@ async def report_status():
             logging.warning(f"Failed to acquire Redis lock: {e}")
         if lock_acquired:
             try:
-                task_executors = REDIS_CONN.smembers("TASKEXE") or set()
+                # smembers returns None on a Redis error; without a known member
+                # list every peer would look dead, so skip reclaim in that case.
+                task_executors = REDIS_CONN.smembers("TASKEXE")
+                membership_known = task_executors is not None
                 live_workers = {CONSUMER_NAME}
-                for worker_name in task_executors:
+                for worker_name in task_executors or set():
                     if worker_name == CONSUMER_NAME:
                         continue
                     try:
                         last_heartbeat = REDIS_CONN.REDIS.zrevrange(worker_name, 0, 0, withscores=True)
                     except Exception as e:
                         logging.warning(f"Failed to read zset for {worker_name}: {e}")
+                        # Liveness unknown: treat as live so we don't reclaim it.
+                        live_workers.add(worker_name)
                         continue
 
                     if not last_heartbeat or now_ts - last_heartbeat[0][1] > WORKER_HEARTBEAT_TIMEOUT:
@@ -1842,17 +1847,20 @@ async def report_status():
                 # Reclaim in-flight messages orphaned by dead consumers, which would
                 # otherwise sit in the PEL forever (e.g. on scale-down/rescheduling).
                 # Live workers are skipped and min_idle_ms avoids stealing fresh work.
-                try:
-                    reclaimed = REDIS_CONN.reclaim_pending_msg(
-                        settings.get_svr_queue_names(TASK_TYPE),
-                        SVR_CONSUMER_GROUP_NAME,
-                        live_workers,
-                        min_idle_ms=WORKER_HEARTBEAT_TIMEOUT * 1000,
-                    )
-                    if reclaimed:
-                        logging.info(f"Reclaimed {reclaimed} orphaned pending message(s) from dead consumers")
-                except Exception as e:
-                    logging.warning(f"Failed to reclaim orphaned pending messages: {e}")
+                if membership_known:
+                    try:
+                        reclaimed = REDIS_CONN.reclaim_pending_msg(
+                            settings.get_svr_queue_names(TASK_TYPE),
+                            SVR_CONSUMER_GROUP_NAME,
+                            live_workers,
+                            min_idle_ms=WORKER_HEARTBEAT_TIMEOUT * 1000,
+                        )
+                        if reclaimed:
+                            logging.info(f"Reclaimed {reclaimed} orphaned pending message(s) from dead consumers")
+                    except Exception as e:
+                        logging.warning(f"Failed to reclaim orphaned pending messages: {e}")
+                else:
+                    logging.warning("Skipping pending-message reclaim: TASKEXE membership could not be read")
             except Exception as e:
                 logging.warning(f"Failed to clean other executors: {e}")
             finally:
