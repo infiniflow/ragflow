@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build integration
+
 package storage
 
 import (
