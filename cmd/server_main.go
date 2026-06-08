@@ -232,6 +232,7 @@ func startServer(config *server.Config) {
 		metadataService,
 		retrievalService,
 		docDAO,
+		docEngine,
 	)
 
 	// Initialize router
