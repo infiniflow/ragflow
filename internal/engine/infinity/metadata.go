@@ -724,7 +724,11 @@ func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs [
 		quotedKBIDs[i] = "'" + strings.ReplaceAll(kbID, "'", "''") + "'"
 	}
 	kbFilter := "kb_id IN (" + strings.Join(quotedKBIDs, ", ") + ")"
-	whereClause = kbFilter + " AND " + whereClause
+	// Wrap the translated predicate in parens so the AND with the KB clause
+	// doesn't get re-grouped by an internal OR. Without the parens,
+	// `kbFilter AND a OR b` parses as `(kbFilter AND a) OR b`, which can
+	// match rows in other KBs.
+	whereClause = kbFilter + " AND (" + whereClause + ")"
 
 	// Use Infinity connection to execute query
 	db, err := e.client.conn.GetDatabase(e.client.dbName)

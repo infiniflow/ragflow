@@ -66,6 +66,7 @@ type RetrievalRequest struct {
 type RetrievalResult struct {
 	Chunks  []map[string]interface{}
 	DocAggs []map[string]interface{} // Aggregated document counts, sorted by count desc
+	Total   int64                    // Post-pagination chunk count (matches Python's len(ranks["chunks"]))
 }
 
 // Retrieval performs hybrid search + reranking + pagination
@@ -78,7 +79,7 @@ type RetrievalResult struct {
 func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest) (*RetrievalResult, error) {
 	common.Info("Retrieval START", zap.String("question", req.Question), zap.Int("page", req.Page), zap.Int("pageSize", req.PageSize))
 	if req.Question == "" {
-		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, nil
+		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
 	// Apply default values
@@ -155,7 +156,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		return nil, fmt.Errorf("PruneDeletedChunks failed: %w", err)
 	}
 	if searchResult.Total == 0 {
-		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, nil
+		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
 	// sim = tkWeight*tsim + vtWeight*vsim
@@ -278,7 +279,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		}
 	}
 	if len(sim) == 0 {
-		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, nil
+		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
 	// Sort indices (positions into search results) by score descending
@@ -310,7 +311,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		}
 	}
 	if len(validIdx) == 0 {
-		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}}, nil
+		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
 	}
 
 	// Calculate pagination
@@ -522,6 +523,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	return &RetrievalResult{
 		Chunks:  filteredChunks,
 		DocAggs: docAggs,
+		Total:   int64(len(filteredChunks)),
 	}, nil
 }
 

@@ -1948,6 +1948,15 @@ func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName st
 	return modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens), nil
 }
 
+// GetChatModel  returns a ChatModel wrapper for the given tenant
+func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
+	driver, modelName, apiConfig, _, err := m.getModelConfig(tenantID, compositeModelName)
+	if err != nil {
+		return nil, err
+	}
+	return modelModule.NewChatModel(driver, &modelName, apiConfig), nil
+}
+
 type AddModelRequest struct {
 	ProviderName string         `json:"provider_name"`
 	InstanceName string         `json:"instance_name"`
@@ -2188,8 +2197,15 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	// tenant_model_instance tables don't have a row for "Builtin" because it's
 	// a local service, not a tenant-enrolled provider — so the direct lookups
 	// below would raise. Mirrors the private getModelConfig's Builtin branch.
+	//
+	// Gated on ModelTypeEmbedding because the Builtin driver here is the TEI
+	// embedding endpoint; the underlying BuiltinModel's Chat/Rerank/AudioSpeech
+	// /OCR methods all return hard "not supported" errors. A chat/rerank/etc.
+	// request that names a Builtin provider must fall through to the standard
+	// branch, which surfaces an accurate "provider not found" instead of
+	// handing back an embedding-only driver.
 	parts := strings.Split(modelName, "@")
-	if len(parts) >= 2 && parts[len(parts)-1] == "Builtin" {
+	if modelType == entity.ModelTypeEmbedding && len(parts) >= 2 && parts[len(parts)-1] == "Builtin" {
 		pureModelName := parts[0]
 		builtinDriver := modelModule.GetBuiltinEmbeddingModel(pureModelName)
 		if builtinDriver == nil {
@@ -2239,7 +2255,9 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 	modelObj, modelErr := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
 		provider.ID, instance.ID, string(modelType), pureModelName,
 	)
-	if modelErr == nil && modelObj != nil {
+	switch {
+	case modelErr == nil:
+		// Happy path: tenant enrolled this model.
 		// INACTIVE check
 		if modelObj.Status == "inactive" {
 			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
@@ -2259,6 +2277,19 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(tenantID strin
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
+	case errors.Is(modelErr, gorm.ErrRecordNotFound):
+		// Tenant hasn't enrolled this model. Fall through to the factory catalog.
+		common.Debug("GetModelConfigFromProviderInstance: tenant has no row for model, falling back to factory catalog",
+			zap.String("tenantID", tenantID),
+			zap.String("providerName", providerName),
+			zap.String("instanceName", instanceName),
+			zap.String("modelType", string(modelType)),
+			zap.String("modelName", pureModelName))
+	default:
+		// Surface unexpected DAO errors (e.g. transient DB failure) instead of
+		// silently resolving from the factory catalog — that would mask disabled
+		// or tenant-specific configurations.
+		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
 	}
 
 	// Fallback: factory LLM catalog

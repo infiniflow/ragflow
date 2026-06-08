@@ -475,7 +475,7 @@ RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test';
 
 RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test1' 'test2';
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'teset' WITH top_k 1;
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH top_k 1;
 
 RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH page 2 page_size 20;
 
@@ -487,17 +487,17 @@ RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH keyword true;
 
 RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH use_kg true;
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH rerank_id 'BAAI/bge-reranker-v2-m3@CI@SILICONFLOW';
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH rerank_id 'BAAI/bge-reranker-v2-m3@CI@SILICONFLOW';
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH search_id 'abc123';
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH search_id 'abc123';
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH cross_languages ['Chinese'];
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH cross_languages ['Chinese'];
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH doc_ids ['doc_a', 'doc_b'];
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH doc_ids ['doc_a', 'doc_b'];
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH meta_data_filter '{"method":"auto"}';
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"auto"}';
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH meta_data_filter '{"method":"manual","conditions":[{"key":"author","op":"eq","value":"Luo"}]}';
 
-RAGFlow(user)> SEARCH 'AI' ON DATASETS 'infinity' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true';
+RAGFlow(user)> SEARCH 'AI' ON DATASETS 'test' WITH top_k 50 similarity_threshold 0.5 vector_similarity_weight 0.5 use_kg true;
 ```

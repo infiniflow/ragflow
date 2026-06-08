@@ -1352,11 +1352,12 @@ func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []str
 	}
 	fieldsAll["id"] = true
 
-	// Track none_columns (Python line 752)
-	noneColumns := make(map[string]bool)
-	for f := range fieldsAll {
-		noneColumns[strings.ToLower(f)] = true
-	}
+	// noneColumns is rebuilt per chunk inside the loop below. The
+	// per-chunk "missing → nil" map MUST be fresh for every iteration; if
+	// it's reused, the first chunk that contains a field removes it from
+	// the shared set, and later chunks missing that same field silently
+	// stop getting the nil placeholder, producing inconsistent shapes
+	// per document.
 
 	// Check if important_kwd is needed (for empty_count handling)
 	needImportantKwdEmptyCount := fieldsAll["important_kwd"]
@@ -1599,6 +1600,14 @@ func (e *infinityEngine) GetFields(chunks []map[string]interface{}, fields []str
 		// Build result map keyed by id
 		if idVal, ok := chunk["id"].(string); ok {
 			fieldMap := make(map[string]interface{})
+			// Rebuild noneColumns for this chunk so that fields missing
+			// from THIS chunk get a nil placeholder. Reusing a set across
+			// chunks would let the first chunk's contents permanently
+			// remove keys, leaving later chunks with inconsistent shapes.
+			noneColumns := make(map[string]bool, len(fieldsAll))
+			for f := range fieldsAll {
+				noneColumns[strings.ToLower(f)] = true
+			}
 			for field, value := range chunk {
 				if fieldsAll[field] {
 					fieldMap[field] = value

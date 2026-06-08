@@ -411,6 +411,12 @@ def all_datasets(rest_client):
     logger.info("[TEARDOWN] Done.")
 
 
+# Skip every test in this module from CI. Remove the next line to re-enable.
+pytestmark = pytest.mark.skipif(
+    os.getenv("CI") == "true",
+    reason="GO server is not started in CI",
+)
+
 # ---------------------------------------------------------------------------
 # Test Unit 1: Search consistency — 1 dataset with 2 files
 # ---------------------------------------------------------------------------

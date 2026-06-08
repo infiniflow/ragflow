@@ -665,6 +665,8 @@ func (c *RAGFlowClient) SearchOnDatasets(cmd *Command) (ResponseIf, error) {
 			payload["meta_data_filter"] = decoded
 		case map[string]interface{}:
 			payload["meta_data_filter"] = v
+		default:
+			return nil, fmt.Errorf("meta_data_filter must be JSON string or object")
 		}
 	}
 

@@ -771,13 +771,31 @@ func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kb
 		return nil
 	}
 
+	// Extract doc IDs before the cap check so we can use uniqueDocIDs to
+	// detect silent truncation when the ES total isn't available.
+	docIDs := ExtractDocIDs(result)
+	uniqueDocIDs := dedupeStrings(docIDs)
+
 	// Detect silent truncation: the push-down is a fast path, not the
 	// system of record. If the query matched more than metaPushdownMaxSize
 	// docs, the slice we can build here is necessarily a strict subset of
 	// the truth, and the caller treats non-nil as definitive. Surface a
 	// warning (parity with the Python reference) AND bail out so the
 	// caller falls back to the in-memory meta_filter, which is correct.
-	if total, ok := totalHitsFromESResponse(result); ok && total > int64(metaPushdownMaxSize) {
+	total, totalOK := totalHitsFromESResponse(result)
+	switch {
+	case !totalOK && len(uniqueDocIDs) >= metaPushdownMaxSize:
+		// ES didn't report a verifiable total but we filled the cap. The
+		// result is possibly truncated and we cannot prove completeness,
+		// so fall back rather than hand the caller a possibly-incomplete
+		// definitive answer.
+		common.Warn("FilterDocIdsByMetaPushdown: ES total is unavailable at cap, falling back to in-memory",
+			zap.Int("uniqueDocCount", len(uniqueDocIDs)),
+			zap.Int("cap", metaPushdownMaxSize),
+			zap.Strings("kbIDs", kbIDs),
+		)
+		return nil
+	case totalOK && total > int64(metaPushdownMaxSize):
 		common.Warn("FilterDocIdsByMetaPushdown: result exceeds push-down cap, falling back to in-memory",
 			zap.Int64("total", total),
 			zap.Int("cap", metaPushdownMaxSize),
@@ -786,9 +804,24 @@ func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kb
 		return nil
 	}
 
-	// Extract doc IDs
-	docIDs := ExtractDocIDs(result)
 	return docIDs
+}
+
+// dedupeStrings returns the unique values of s, preserving first-seen order.
+func dedupeStrings(s []string) []string {
+	if len(s) == 0 {
+		return s
+	}
+	seen := make(map[string]struct{}, len(s))
+	out := make([]string, 0, len(s))
+	for _, v := range s {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 // totalHitsFromESResponse extracts the exact total hit count from an ES

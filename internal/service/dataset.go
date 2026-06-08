@@ -479,7 +479,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		Chunks:  pyChunks,
 		DocAggs: retrievalResult.DocAggs,
 		Labels:  &labels,
-		Total:   int64(len(filteredChunks)),
+		Total:   retrievalResult.Total,
 	}, nil
 }
 

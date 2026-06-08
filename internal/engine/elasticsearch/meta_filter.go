@@ -308,14 +308,17 @@ func (t *MetaFilterTranslator) translateEndWith(fieldPath string, value interfac
 
 // BuildMetaFilterQuery translates filters and renders ES query body
 func BuildMetaFilterQuery(filters []map[string]interface{}, logic string, kbIDs []string) (map[string]interface{}, error) {
-	plan := planPushdown(filters, logic)
+	plan, err := planPushdown(filters, logic)
+	if err != nil {
+		return nil, err
+	}
 	return plan.ToQuery(kbIDs), nil
 }
 
 // PlanPushdown translates every filter and builds a composed plan
-func planPushdown(filters []map[string]interface{}, logic string) *MetaFilterPushdownPlan {
+func planPushdown(filters []map[string]interface{}, logic string) (*MetaFilterPushdownPlan, error) {
 	if logic != "and" && logic != "or" {
-		return &MetaFilterPushdownPlan{Logic: logic}
+		return nil, fmt.Errorf("unsupported logic %q", logic)
 	}
 
 	translator := NewMetaFilterTranslator()
@@ -324,11 +327,11 @@ func planPushdown(filters []map[string]interface{}, logic string) *MetaFilterPus
 		translated, err := translator.Translate(flt)
 		if err != nil {
 			common.Warn("plan_pushdown failed", zap.String("error", err.Error()))
-			return &MetaFilterPushdownPlan{Logic: logic}
+			return nil, err
 		}
 		plan.translated = append(plan.translated, translated)
 	}
-	return plan
+	return plan, nil
 }
 
 // IsPushdownSupported checks if all filters can be pushed down
