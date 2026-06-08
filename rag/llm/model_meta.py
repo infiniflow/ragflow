@@ -110,3 +110,33 @@ class Ollama(Base):
                         "max_tokens": model_info["model_info"].get(max_tokens_key, 8192)
                     })
         return res
+
+
+class XunFeiSpark(Base):
+    _FACTORY_NAME = "XunFei Spark"
+
+    async def get_model_list(self):
+        # todo implement access token auth
+        raise NotImplementedError
+
+
+class GPUStack(Base):
+    _FACTORY_NAME = "GPUStack"
+
+    async def get_model_list(self):
+        # todo implement access token auth
+        raise NotImplementedError
+
+class FishAudio(Base):
+    _FACTORY_NAME = "Fish Audio"
+
+    async def get_model_list(self):
+        # todo implement access token auth
+        raise NotImplementedError
+
+class MinerU(Base):
+    _FACTORY_NAME = "MinerU"
+
+    async def get_model_list(self):
+        # todo implement access token auth
+        raise NotImplementedError
