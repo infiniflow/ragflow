@@ -264,7 +264,7 @@ func parseAgentSessionReferences(raw json.RawMessage) []map[string]interface{} {
 	}
 
 	if _, ok := referenceMap["chunks"]; ok {
-		return []map[string]interface{}{referenceMap}
+		return []map[string]interface{}{normalizeAgentReferenceEntry(referenceMap)}
 	}
 
 	keys := make([]string, 0, len(referenceMap))
@@ -284,7 +284,7 @@ func parseAgentSessionReferences(raw json.RawMessage) []map[string]interface{} {
 		if !ok {
 			continue
 		}
-		result = append(result, reference)
+		result = append(result, normalizeAgentReferenceEntry(reference))
 	}
 
 	return result
