@@ -381,6 +381,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
+				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
+				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
+				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
 			}
 
 			// Plugin routes
