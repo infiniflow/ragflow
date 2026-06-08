@@ -60,13 +60,6 @@ func (m *MinimaxModel) Name() string {
 	return "minimax"
 }
 
-func validateMinimaxAPIKey(apiConfig *APIConfig) (string, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
-		return "", fmt.Errorf("api key is required")
-	}
-	return strings.TrimSpace(*apiConfig.ApiKey), nil
-}
-
 func validateMinimaxModelName(modelName string) (string, error) {
 	if strings.TrimSpace(modelName) == "" {
 		return "", fmt.Errorf("model name is required")
@@ -76,11 +69,11 @@ func validateMinimaxModelName(modelName string) (string, error) {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
-	apiKey, err := validateMinimaxAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	modelName, err = validateMinimaxModelName(modelName)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	modelName, err := validateMinimaxModelName(modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -220,11 +213,11 @@ func (m *MinimaxModel) ChatWithMessages(modelName string, messages []Message, ap
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MinimaxModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
-	apiKey, err := validateMinimaxAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	modelName, err = validateMinimaxModelName(modelName)
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	modelName, err := validateMinimaxModelName(modelName)
 	if err != nil {
 		return err
 	}
@@ -396,10 +389,10 @@ func (m *MinimaxModel) Embed(modelName *string, texts []string, apiConfig *APICo
 }
 
 func (m *MinimaxModel) ListModels(apiConfig *APIConfig) ([]string, error) {
-	apiKey, err := validateMinimaxAPIKey(apiConfig)
-	if err != nil {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
