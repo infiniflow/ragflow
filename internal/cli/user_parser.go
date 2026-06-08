@@ -571,16 +571,22 @@ func (p *Parser) parseShowModel() (*Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("expected model name: %w", err)
 	}
-
-	cmd := NewCommand("show_model")
-	cmd.Params["model_name"] = modelName
-
 	p.nextToken() // consume model_name
 
 	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
+		// SHOW MODEL 'model_name'
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		cmd := NewCommand("show_model")
+		cmd.Params["model_name"] = modelName
+		return cmd, nil
 	}
 	p.nextToken() // consume from
+
+	cmd := NewCommand("show_provider_model")
+	cmd.Params["model_name"] = modelName
+
 	providerName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, fmt.Errorf("expected provider name: %w", err)
@@ -608,6 +614,18 @@ func (p *Parser) parseShowProvider() (*Command, error) {
 
 	p.nextToken()
 	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
+}
+
+// parseListModels parses LIST MODELS
+func (p *Parser) parseListAllModels() (*Command, error) {
+	p.nextToken() // consume models
+
+	cmd := NewCommand("list_all_models")
+
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
@@ -2685,7 +2703,13 @@ func (p *Parser) parseListModelsOfProvider() (*Command, error) {
 	p.nextToken()
 
 	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM")
+		// LIST MODELS
+		cmd := NewCommand("list_all_models")
+
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
 	}
 	p.nextToken()
 

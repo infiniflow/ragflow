@@ -160,6 +160,7 @@ type Model struct {
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
 	Class        *string        `json:"class"`
+	Alias        []string       `json:"alias"`
 	ModelTypeMap map[string]bool
 }
 
@@ -177,6 +178,7 @@ type Provider struct {
 // ProviderManager manages provider and model operations
 type ProviderManager struct {
 	Providers []Provider `json:"model_providers"`
+	AllModels []Model    `json:"all_models"`
 }
 
 // ModelResponse represents the standard response structure
@@ -257,8 +259,25 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 		return nil, fmt.Errorf("no JSON files found in directory %s", dirPath)
 	}
 
+	// Read the file
+	var data []byte
+	data, err = os.ReadFile("conf/all_models.json")
+	if err != nil {
+		return nil, fmt.Errorf("error reading file 'conf/all_models.json': %w", err)
+	}
+
+	// Parse JSON
+	type AllModels struct {
+		Models []Model `json:"models"`
+	}
+	var allModels AllModels
+	if err = json.Unmarshal(data, &allModels); err != nil {
+		return nil, fmt.Errorf("error parsing JSON from file 'conf/all_models.json': %w", err)
+	}
+
 	return &ProviderManager{
 		Providers: providers,
+		AllModels: allModels.Models,
 	}, nil
 }
 
@@ -295,6 +314,35 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 	}
 
 	return providers, nil
+}
+
+func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
+
+	var modelList []map[string]interface{}
+
+	for _, model := range pm.AllModels {
+
+		modelData := map[string]interface{}{
+			"name":        model.Name,
+			"model_types": model.ModelTypes,
+		}
+		if model.Alias != nil {
+			modelData["alias"] = model.Alias
+		}
+		if model.Thinking != nil {
+			modelData["thinking"] = model.Thinking
+		}
+		if model.MaxTokens != 0 {
+			modelData["max_tokens"] = model.MaxTokens
+		}
+		modelList = append(modelList, modelData)
+	}
+
+	if len(modelList) == 0 {
+		return nil, fmt.Errorf("no models found")
+	}
+
+	return modelList, nil
 }
 
 // 2. Show specific provider information (including base_url)
