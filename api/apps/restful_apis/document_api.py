@@ -1633,7 +1633,9 @@ async def stop_parse_documents(tenant_id, dataset_id):
                         "chunk_num": 0,
                     },
                 )
-                settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
+                index_name = search.index_name(tenant_id)
+                if settings.docStoreConn.index_exist(index_name, doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": doc.id}, index_name, doc.kb_id)
                 success_count += 1
 
             result = {"success_count": success_count}

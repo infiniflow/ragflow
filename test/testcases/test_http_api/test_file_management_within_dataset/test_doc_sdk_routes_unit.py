@@ -755,6 +755,7 @@ class TestDocRoutesUnit:
         _patch_docstore(
             monkeypatch,
             module,
+            index_exist=lambda *_args, **_kwargs: True,
             delete=lambda condition, index, kb_id: deleted.append((condition, index, kb_id)),
         )
 
@@ -772,7 +773,13 @@ class TestDocRoutesUnit:
                 },
             )
         ]
-        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name("tenant-1"), "ds-1")]
+        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name("tenant-1"), "kb-1")]
+
+        deleted.clear()
+        _patch_docstore(monkeypatch, module, index_exist=lambda *_args, **_kwargs: False)
+        res = _run(module.stop_parse_documents.__wrapped__("tenant-1", "ds-1"))
+        assert res["code"] == 0
+        assert deleted == []
 
     def test_list_chunks_branches(self, monkeypatch):
         module = _load_restful_chunk_module(monkeypatch)
