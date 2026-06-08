@@ -262,10 +262,45 @@ class BaiduYiyan(Base):
         return res
 
 
+class TencentHunyuan(Base):
+    """Tencent Hunyuan provides an OpenAI-compatible API at ``https://api.hunyuan.cloud.tencent.com/v1``.
+
+    ``GET /v1/models`` returns the standard OpenAI model list format (id, object, created, owned_by).
+    Model type and max_tokens are not included in the response, so all models default to ``chat``
+    with ``max_tokens=8192``. The static config in ``llm_factories.json`` provides accurate values
+    for known models and takes precedence via the merge logic in ``list_provider_models``.
+    """
+
+    _FACTORY_NAME = "Tencent Hunyuan"
+
+    def _format_model_list(self, raw_model_list):
+        data = raw_model_list.get("data", [])
+        if not data:
+            return []
+        res = []
+        for model in data:
+            model_id = model.get("id")
+            if not model_id:
+                continue
+            res.append(
+                {
+                    "name": model_id,
+                    "model_types": [LLMType.CHAT.value],
+                    "features": None,
+                    "max_tokens": 8192,
+                }
+            )
+        return res
+
+
 class TencentCloud(Base):
+    """Tencent Cloud is used for ASR (speech-to-text) only.
+
+    It uses SDK-based authentication (SID/SK with HMAC signing).
+    No REST API is available for model listing, and there are no LLM models.
+    """
+
     _FACTORY_NAME = "Tencent Cloud"
 
     def get_model_list(self):
-        # Tencent Cloud uses SDK-based authentication (SID/SK with HMAC signing).
-        # Model listing is not available through a simple REST endpoint.
         raise NotImplementedError
