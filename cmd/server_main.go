@@ -212,16 +212,18 @@ func startServer(config *server.Config) {
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine)
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
-	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
-	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
+	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
 		searchBotLLM,
 		chunkService,
-	searchBotHandler.SetStreamLLM(searchBotLLM)
 	)
+	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
+	searchBotHandler.SetStreamLLM(searchBotLLM)
+	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
 
 	// Dify retrieval handler
 	docDAO := dao.NewDocumentDAO()

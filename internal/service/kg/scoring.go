@@ -148,7 +148,7 @@ func SortAndTrimRelations(relsFromText map[Edge]*KGRelation, topN int) []ScoredR
 }
 
 // NumTokensFromString estimates the number of tokens in a string.
-// Uses a simple approximation: len/4 characters per token (roughly matching cl100k_base).
+// Delegates to the shared implementation in the parent service package.
 func NumTokensFromString(s string) int {
 	return service.NumTokensFromString(s)
 }

@@ -415,10 +415,9 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 	// Apply retrieval_by_children - aggregate child chunks into parent chunks
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, s.docEngine, ctx)
 
-	// Remove vector field from each chunk
-	for i := range filteredChunks {
-		delete(filteredChunks[i], "vector")
-	}
+	// Hydrate: ES returns zero vectors; replace with real vectors from FetchChunkVectors.
+	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
+	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
 
 	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
@@ -428,6 +427,62 @@ func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (
 		Labels:  &labels,
 		Total:   int64(len(filteredChunks)),
 	}, nil
+}
+
+// hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
+// vectors fetched from the engine.  Infinity and OceanBase already ship real
+// vectors with chunks, so this is a no-op for those engines; for ES it queries
+// the engine by chunk ID list.  No if/else on engine type — just replaces
+// whatever is missing or zero.
+func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []map[string]interface{}, kbIDs []string, tenantIDs []string) {
+	if len(chunks) == 0 {
+		return
+	}
+
+	// Collect chunk IDs whose vectors are missing or all-zero.
+	var missingIDs []string
+	missingIdx := make(map[string]int)
+	for i, ck := range chunks {
+		id, _ := ck["id"].(string)
+		if id == "" {
+			continue
+		}
+		v, _ := ck["vector"].([]float64)
+		if len(v) == 0 || isZeroVector(v) {
+			missingIDs = append(missingIDs, id)
+			missingIdx[id] = i
+		}
+	}
+	if len(missingIDs) == 0 {
+		return
+	}
+
+	dim := 0
+	for _, ck := range chunks {
+		if v, _ := ck["vector"].([]float64); len(v) > 0 {
+			dim = len(v)
+			break
+		}
+	}
+	if dim == 0 {
+		return
+	}
+
+	vectors := FetchChunkVectors(ctx, engine, missingIDs, tenantIDs, kbIDs, dim)
+	for id, v := range vectors {
+		if idx, ok := missingIdx[id]; ok && !isZeroVector(v) {
+			chunks[idx]["vector"] = v
+		}
+	}
+}
+
+func isZeroVector(v []float64) bool {
+	for _, x := range v {
+		if x != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // GetChunkRequest request for getting a chunk by ID
