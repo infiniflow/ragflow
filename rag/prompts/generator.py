@@ -297,10 +297,12 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
 
     ans = await chat_mdl.async_chat(rendered_sys_prompt, [{"role": "user", "content": rendered_user_prompt}],
                                     {"temperature": 0.2})
-    ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
     if ans.find("**ERROR**") >= 0:
+        logging.info("[cross_languages] LLM returned error, falling back to original query")
         return query
-    return "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+    ans = re.sub(r"^.*\*\*ERROR\*\*", "", ans, flags=re.DOTALL)
+    result = "\n".join([a for a in re.sub(r"(^Output:|\n+)", "", ans, flags=re.DOTALL).split("===") if a.strip()])
+    return result
 
 
 async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):

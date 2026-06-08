@@ -17,19 +17,24 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/server"
+	"ragflow/internal/service/nlp"
 	"ragflow/internal/utility"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
-
-	"ragflow/internal/common"
-	"ragflow/internal/dao"
 )
 
 var (
@@ -73,10 +78,16 @@ type DatasetService struct {
 	tenantDAO      *dao.TenantDAO
 	tenantLLMDAO   *dao.TenantLLMDAO
 	pipelineLogDAO *dao.PipelineOperationLogDAO
+	userTenantDAO  *dao.UserTenantDAO
+	searchService  *SearchService
+	docEngine      engine.DocEngine
+	embeddingCache *utility.EmbeddingLRU
+	engineType     server.EngineType
 }
 
 // NewDatasetService creates a new datasets service.
 func NewDatasetService() *DatasetService {
+	cfg := server.GetConfig()
 	return &DatasetService{
 		kbDAO:          dao.NewKnowledgebaseDAO(),
 		documentDAO:    dao.NewDocumentDAO(),
@@ -84,7 +95,416 @@ func NewDatasetService() *DatasetService {
 		tenantDAO:      dao.NewTenantDAO(),
 		tenantLLMDAO:   dao.NewTenantLLMDAO(),
 		pipelineLogDAO: dao.NewPipelineOperationLogDAO(),
+		userTenantDAO:  dao.NewUserTenantDAO(),
+		searchService:  NewSearchService(),
+		docEngine:      engine.Get(),
+		embeddingCache: utility.NewEmbeddingLRU(1000),
+		engineType:     cfg.DocEngine.Type,
 	}
+}
+
+// SearchDatasetsRequest is the request structure for searching chunks across datasets.
+type SearchDatasetsRequest struct {
+	DatasetIDs             []string               `json:"dataset_ids" binding:"required"`
+	Question               string                 `json:"question" binding:"required"`
+	Page                   *int                   `json:"page,omitempty"`
+	Size                   *int                   `json:"size,omitempty"`
+	DocIDs                 []string               `json:"doc_ids,omitempty"`
+	UseKG                  *bool                  `json:"use_kg,omitempty"`
+	TopK                   *int                   `json:"top_k,omitempty"`
+	CrossLanguages         []string               `json:"cross_languages,omitempty"`
+	SearchID               *string                `json:"search_id,omitempty"`
+	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID               *string                `json:"rerank_id,omitempty"`
+	Keyword                *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
+}
+
+// SearchDatasetsResponse is the response structure for dataset search results.
+type SearchDatasetsResponse struct {
+	Chunks  []map[string]interface{} `json:"chunks"`
+	DocAggs []map[string]interface{} `json:"doc_aggs"`
+	Labels  *map[string]float64      `json:"labels"`
+	Total   int64                    `json:"total"`
+}
+
+// SearchDatasets searches chunks across one or more knowledge bases based on a question.
+// It retrieves relevant chunks using embedding and optional reranking, applying filters,
+// cross-language translation, and keyword extraction as configured.
+func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID string) (*SearchDatasetsResponse, error) {
+	if req.Question == "" {
+		return nil, fmt.Errorf("question is required")
+	}
+	if len(req.DatasetIDs) == 0 {
+		return nil, fmt.Errorf("dataset_ids is required")
+	}
+	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
+
+	page := 1
+	if req.Page != nil {
+		page = *req.Page
+	}
+	pageSize := 30
+	if req.Size != nil {
+		pageSize = *req.Size
+	}
+	useKG := false
+	if req.UseKG != nil {
+		useKG = *req.UseKG
+	}
+	similarityThreshold := 0.0
+	if req.SimilarityThreshold != nil {
+		similarityThreshold = *req.SimilarityThreshold
+	}
+	vectorSimilarityWeight := 0.3
+	if req.VectorSimilarityWeight != nil {
+		vectorSimilarityWeight = *req.VectorSimilarityWeight
+	}
+	topK := 1024
+	if req.TopK != nil {
+		topK = *req.TopK
+	}
+	if topK < 1 {
+		topK = 1
+	} else if topK > 2048 {
+		topK = 2048
+	}
+	keyword := false
+	if req.Keyword != nil {
+		keyword = *req.Keyword
+	}
+	searchID := ""
+	if req.SearchID != nil {
+		searchID = *req.SearchID
+	}
+	rerankID := ""
+	if req.RerankID != nil {
+		rerankID = *req.RerankID
+	}
+
+	question := req.Question
+	datasetIDs := req.DatasetIDs
+	metadataFilter := req.MetadataFilter
+	crossLanguages := req.CrossLanguages
+
+	common.Debug(fmt.Sprintf("SearchDatasets request:\n"+
+		"    datasetIDs=%v\n"+
+		"    question=%s\n"+
+		"    page=%v, pageSize=%v\n"+
+		"    docIDs=%v\n"+
+		"    useKG=%v, topK=%v\n"+
+		"    crossLanguages=%v\n"+
+		"    searchID=%v\n"+
+		"    metadataFilter=%v\n"+
+		"    rerankID=%v\n"+
+		"    keyword=%v\n"+
+		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
+		datasetIDs, req.Question,
+		ptrString(req.Page), ptrString(req.Size), req.DocIDs,
+		useKG, topK, crossLanguages, searchID,
+		metadataFilter,
+		rerankID,
+		keyword,
+		similarityThreshold, vectorSimilarityWeight))
+
+	ctx := context.Background()
+	modelProviderSvc := NewModelProviderService()
+
+	// Access check for all datasets
+	var tenantIDs []string
+	var kbRecords []*entity.Knowledgebase
+	seenTenants := make(map[string]bool)
+	for _, datasetID := range datasetIDs {
+		if !s.kbDAO.Accessible(datasetID, userID) {
+			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
+			return nil, fmt.Errorf("only owner of dataset %s is authorized for this operation", datasetID)
+		}
+
+		kb, err := s.kbDAO.GetByID(datasetID)
+		if err != nil || kb == nil {
+			common.Warn("SearchDatasets dataset not found", zap.String("datasetID", datasetID))
+			return nil, fmt.Errorf("dataset %s not found", datasetID)
+		}
+		if !seenTenants[kb.TenantID] {
+			seenTenants[kb.TenantID] = true
+			tenantIDs = append(tenantIDs, kb.TenantID)
+		}
+		kbRecords = append(kbRecords, kb)
+	}
+
+	// Check if all kbs have the same embedding model
+	if len(kbRecords) > 1 {
+		firstEmbdID := kbRecords[0].EmbdID
+		for i := 1; i < len(kbRecords); i++ {
+			if kbRecords[i].EmbdID != firstEmbdID {
+				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
+			}
+		}
+	}
+
+	// Override request fields with values from saved search config (if search_id is provided)
+	var chatID string
+	if searchID != "" {
+		searchDetail, err := s.searchService.GetDetail(searchID)
+		if err != nil {
+			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", searchID), zap.Error(err))
+		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
+				metadataFilter = scMetadataFilter
+			}
+			if scST, ok := searchConfig["similarity_threshold"].(float64); ok {
+				similarityThreshold = scST
+			}
+			if scVSW, ok := searchConfig["vector_similarity_weight"].(float64); ok {
+				vectorSimilarityWeight = scVSW
+			}
+			if scTopK, ok := searchConfig["top_k"].(float64); ok {
+				topK = int(scTopK)
+				if topK < 1 {
+					topK = 1
+				} else if topK > 2048 {
+					topK = 2048
+				}
+			}
+			if scUseKG, ok := searchConfig["use_kg"].(bool); ok {
+				useKG = scUseKG
+			}
+			if scLangs, ok := searchConfig["cross_languages"].([]interface{}); ok {
+				crossLanguages = make([]string, len(scLangs))
+				for i, l := range scLangs {
+					if s, ok := l.(string); ok {
+						crossLanguages[i] = s
+					}
+				}
+			}
+			if scKeyword, ok := searchConfig["keyword"].(bool); ok {
+				keyword = scKeyword
+			}
+			if scRerankID, ok := searchConfig["rerank_id"].(string); ok {
+				rerankID = scRerankID
+			}
+			chatID, _ = searchConfig["chat_id"].(string)
+
+			common.Debug("SearchDatasets loaded Search config",
+				zap.String("searchID", searchID),
+				zap.Strings("datasetIDs", datasetIDs),
+				zap.Float64("vectorSimilarityWeight", vectorSimilarityWeight),
+				zap.Float64("fullTextWeight", 1-vectorSimilarityWeight),
+				zap.Float64("similarityThreshold", similarityThreshold),
+				zap.Int("topK", topK),
+				zap.Strings("crossLanguages", crossLanguages),
+				zap.Bool("keyword", keyword),
+				zap.String("rerankID", rerankID),
+				zap.String("chatID", chatID),
+				zap.Bool("useKG", useKG))
+		} else {
+			common.Warn("No search_config found in search detail", zap.String("searchID", searchID))
+		}
+	}
+
+	// If meta_data_filter method is auto/semi_auto, get chat model
+	var err error
+	var chatModelForFilter *models.ChatModel
+	if metadataFilter != nil {
+		method, _ := metadataFilter["method"].(string)
+		if method == "auto" || method == "semi_auto" {
+			if chatID != "" {
+				driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
+				if err != nil {
+					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
+				} else {
+					chatModelForFilter = models.NewChatModel(driver, &modelName, apiConfig)
+					common.Info("Fetched chat model (from search_config) for metadata filter",
+						zap.String("chatID", chatID),
+						zap.String("tenantID", tenantIDs[0]))
+				}
+			}
+
+			if chatModelForFilter == nil {
+				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+				if err != nil {
+					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
+				} else {
+					chatModelForFilter = models.NewChatModel(driver, &modelName, apiConfig)
+					common.Info("Fetched chat model (tenant default) for metadata filter",
+						zap.String("tenantID", tenantIDs[0]))
+				}
+			}
+		}
+	}
+
+	// Apply meta_data_filter to get filtered doc_ids
+	docIDs := make([]string, len(req.DocIDs))
+	copy(docIDs, req.DocIDs)
+	if metadataFilter != nil {
+		metadataSvc := NewMetadataService()
+		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(datasetIDs)
+		if err != nil {
+			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
+			flattedMeta = make(common.MetaData)
+		}
+		common.Info("Metadata filter conditions", zap.Any("filter", metadataFilter))
+		filteredDocIDs, _ := ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, req.DocIDs, datasetIDs)
+		docIDs = filteredDocIDs
+		common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
+	}
+
+	// Apply cross_languages and keyword extraction
+	modifiedQuestion := question
+	if len(crossLanguages) > 0 {
+		// Pass tenantID and empty llmID so CrossLanguages can fetch default if needed
+		// This matches Python's cross_languages(tenant_id, llm_id, query, languages)
+		common.Info("CrossLanguages: dispatching translation",
+			zap.String("tenantID", tenantIDs[0]),
+			zap.String("llmID", ""),
+			zap.Strings("crossLanguages", crossLanguages))
+		translated, err := CrossLanguages(ctx, tenantIDs[0], "", question, crossLanguages)
+		if err != nil {
+			common.Warn("Failed to translate question", zap.String("llmID", ""), zap.Error(err))
+		} else {
+			modifiedQuestion = translated
+		}
+	}
+	if keyword {
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+		if err != nil {
+			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
+		} else {
+			chatModel := models.NewChatModel(driver, &modelName, apiConfig)
+			common.Info("Fetched chat model (tenant default) for keyword_extraction",
+				zap.String("tenantID", tenantIDs[0]))
+
+			extractedKeywords, err := KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
+			if err != nil {
+				common.Warn("Failed to extract keywords from question", zap.Error(err))
+			} else if extractedKeywords != "" {
+				modifiedQuestion = modifiedQuestion + extractedKeywords
+			}
+		}
+	}
+	if modifiedQuestion != question {
+		common.Info("Modified question after transformations",
+			zap.String("originalQuestion", question),
+			zap.String("modifiedQuestion", modifiedQuestion),
+			zap.Strings("crossLanguages", crossLanguages),
+			zap.Bool("keywordExtraction", keyword))
+	}
+
+	// Get tag-based rank features via LabelQuestion
+	metadataSvc := NewMetadataService()
+	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
+	if len(labels) > 0 {
+		common.Debug("LabelQuestion result", zap.Any("labels", labels))
+	}
+
+	// Determine embedding model
+	var embeddingModel *models.EmbeddingModel
+	if kbRecords[0].EmbdID != "" {
+		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
+		if embErr != nil {
+			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
+		}
+		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+	} else {
+		driver, modelName, apiConfig, maxTokens, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeEmbedding)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", err)
+		}
+		embeddingModel = models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+	}
+	modelNameStr := ""
+	if embeddingModel.ModelName != nil {
+		modelNameStr = *embeddingModel.ModelName
+	}
+	common.Info("Fetched embedding model for retrieval",
+		zap.String("tenantID", tenantIDs[0]),
+		zap.String("modelName", modelNameStr))
+
+	// Get rerank model if rerankID is specified
+	var rerankModel *models.RerankModel
+
+	if rerankID != "" {
+		driver, modelName, apiConfig, _, rErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		if rErr != nil {
+			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
+		}
+		rerankModel = models.NewRerankModel(driver, &modelName, apiConfig)
+	}
+
+	if rerankModel != nil {
+		common.Info("Fetched rerank model",
+			zap.String("tenantID", tenantIDs[0]),
+			zap.String("modelName", *rerankModel.ModelName))
+	}
+
+	retrievalReq := &nlp.RetrievalRequest{
+		TenantIDs:              tenantIDs,
+		Question:               modifiedQuestion,
+		KbIDs:                  datasetIDs,
+		DocIDs:                 docIDs,
+		Page:                   page,
+		PageSize:               pageSize,
+		Top:                    &topK,
+		SimilarityThreshold:    &similarityThreshold,
+		VectorSimilarityWeight: &vectorSimilarityWeight,
+		RerankModel:            rerankModel,
+		RankFeature:            &labels,
+		EmbeddingModel:         embeddingModel,
+	}
+
+	retrievalResult, err := nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval search failed: %w", err)
+	}
+
+	filteredChunks := retrievalResult.Chunks
+
+	if useKG {
+		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
+	}
+
+	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, s.docEngine, ctx)
+
+	for i := range filteredChunks {
+		delete(filteredChunks[i], "vector")
+	}
+
+	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
+
+	// Convert all float64 values to PyFloat64 for Python-compatible JSON serialization
+	pyChunks := common.ConvertFloatsToPyFormat(filteredChunks).([]map[string]interface{})
+
+	return &SearchDatasetsResponse{
+		Chunks:  pyChunks,
+		DocAggs: retrievalResult.DocAggs,
+		Labels:  &labels,
+		Total:   retrievalResult.Total,
+	}, nil
+}
+
+// Helper functions
+
+// ptrString converts a pointer to a formatted string
+func ptrString[T any](p *T) string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("%v", *p)
+}
+
+func getPageNum(page *int, defaultVal int) int {
+	if page != nil && *page > 0 {
+		return *page
+	}
+	return defaultVal
+}
+
+func getPageSize(size *int, defaultVal int) int {
+	if size != nil && *size > 0 {
+		return *size
+	}
+	return defaultVal
 }
 
 // AutoMetadataField mirrors the REST dataset auto metadata field schema.
