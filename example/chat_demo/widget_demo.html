@@ -122,6 +122,8 @@
     style="position:fixed;bottom:0;right:0;width:100px;height:100px;border:none;background:transparent;z-index:9999;opacity:0;transition:opacity 0.2s ease"
     frameborder="0" allow="microphone;camera"></iframe>
   <script>
+    
+    const newTabLink = true;
   window.addEventListener('message',e=>{
     if(e.origin!=='http://localhost:9222')return;
     if(e.data.type==='WIDGET_READY'){
@@ -147,7 +149,11 @@
           setTimeout(() => w.style.display='none', 200);
         }
       }
-    }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+      }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+    else if(e.data.type==='CHAT_LINK_CLICK'&&e.data.url){
+        if(newTabLink)window.open(e.data.url,'_blank');
+        else window.location.href=e.data.url;
+    }
   });
   </script>
 </body>

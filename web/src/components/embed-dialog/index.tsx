@@ -236,7 +236,7 @@ function EmbedDialog({
     return src.toString();
   }, [beta, from, token, values]);
 
-  const text = useMemo(() => {
+  const generateEmbedCode = useCallback(() => {
     const iframeSrc = generateIframeSrc();
     const { embedType } = values;
 
@@ -248,7 +248,9 @@ function EmbedDialog({
   allow="microphone;camera"
 ></iframe>
 <script>
+const newTabLink = true;
 window.addEventListener('message',e=>{
+  console.log(e)
   if(e.origin!=='${location.origin.replace(/:\d+/, ':9222')}')return;
   if(e.data.type==='CREATE_CHAT_WINDOW'){
     if(document.getElementById('chat-win'))return;
@@ -261,6 +263,10 @@ window.addEventListener('message',e=>{
     const w=document.getElementById('chat-win');
     if(w)w.style.display=e.data.isOpen?'block':'none';
   }else if(e.data.type==='SCROLL_PASSTHROUGH')window.scrollBy(0,e.data.deltaY);
+  else if(e.data.type==='CHAT_LINK_CLICK'&&e.data.url){
+    if(newTabLink)window.open(e.data.url,'_blank');
+    else window.location.href=e.data.url;
+  }
 });
 </script>
 `;
@@ -274,10 +280,32 @@ window.addEventListener('message',e=>{
     }
   }, [generateIframeSrc, values]);
 
+  const text = useMemo(() => generateEmbedCode(), [generateEmbedCode]);
+
   const handleOpenInNewTab = useCallback(() => {
-    const iframeSrc = generateIframeSrc();
-    window.open(iframeSrc, '_blank');
-  }, [generateIframeSrc]);
+    if (values.embedType === 'widget') {
+      const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAGFlow Chat Widget Preview</title>
+  </head>
+  <body style="margin:0;min-height:100vh;">
+${generateEmbedCode()}
+  </body>
+</html>`;
+
+      const blob = new Blob([html], { type: 'text/html' });
+      const previewUrl = URL.createObjectURL(blob);
+
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
+      return;
+    }
+
+    window.open(generateIframeSrc(), '_blank', 'noopener,noreferrer');
+  }, [generateEmbedCode, generateIframeSrc, values.embedType]);
 
   const handleSaveWidgetSettings = useCallback(async () => {
     if (!onSaveWidgetSettings) {
