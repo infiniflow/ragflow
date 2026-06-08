@@ -99,6 +99,62 @@ class OSConnection(DocStoreConnection):
         with open(fp_mapping, "r") as f:
             self.mapping = json.load(f)
         logger.info(f"OpenSearch {settings.OS['hosts']} is healthy.")
+        self._init_hybrid_search()
+
+    # normalization-processor (needed to merge the BM25 and KNN scores) only
+    # exists on OpenSearch 2.10+.
+    HYBRID_MIN_VERSION = (2, 10)
+
+    def _init_hybrid_search(self):
+        """Create the hybrid-search pipeline if it isn't there yet.
+
+        A {"hybrid": {...}} query is scored by a normalization-processor that has
+        to live on a search pipeline, otherwise OpenSearch rejects the query. We
+        create it once at startup (PUT _search/pipeline is idempotent) so there's
+        no extra setup step to run.
+
+        Sets self.hybrid_search_enabled. If the pipeline can't be created
+        (OpenSearch < 2.10, or no permission to manage pipelines) we log a
+        warning, leave it off, and search() keeps doing vector-only.
+        """
+        self.hybrid_search_enabled = False
+        self._hybrid_pipeline = os.environ.get("OS_HYBRID_PIPELINE") \
+            or settings.OS.get("hybrid_search_pipeline") or "ragflow_hybrid_pipeline"
+
+        version_number = self.info.get("version", {}).get("number", "")
+        try:
+            version = tuple(int(p) for p in version_number.split(".")[:2])
+        except (ValueError, AttributeError):
+            version = (0, 0)
+        if version < self.HYBRID_MIN_VERSION:
+            logger.warning(f"OpenSearch {version_number or 'unknown'} does not support the "
+                           f"normalization-processor (requires >= {self.HYBRID_MIN_VERSION[0]}."
+                           f"{self.HYBRID_MIN_VERSION[1]}); hybrid search is disabled and "
+                           f"queries fall back to vector-only.")
+            return
+
+        weights = settings.OS.get("hybrid_search_weights", [0.5, 0.5])
+        pipeline_body = {
+            "description": "RAGFlow hybrid search normalization pipeline (BM25 + KNN).",
+            "phase_results_processors": [
+                {"normalization-processor": {
+                    "normalization": {"technique": "min_max"},
+                    "combination": {"technique": "arithmetic_mean",
+                                    "parameters": {"weights": weights}}}}
+            ],
+        }
+        try:
+            self.os.transport.perform_request(
+                "PUT", f"/_search/pipeline/{self._hybrid_pipeline}", body=pipeline_body)
+            self.hybrid_search_enabled = True
+            logger.info(f"OpenSearch hybrid search enabled via pipeline "
+                        f"'{self._hybrid_pipeline}' (weights {weights}).")
+        except Exception:
+            logger.warning(f"Could not create OpenSearch search pipeline '{self._hybrid_pipeline}'; "
+                           f"hybrid search is disabled and queries fall back to vector-only. "
+                           f"Creating a search pipeline needs the "
+                           f"'cluster:admin/search/pipeline/put' privilege (relevant on "
+                           f"locked-down or managed OpenSearch).", exc_info=True)
 
     """
     Database operations
@@ -276,6 +332,7 @@ class OSConnection(DocStoreConnection):
         Refers to https://github.com/opensearch-project/opensearch-py/blob/main/guides/dsl.md
         """
         use_knn = False
+        use_text = False
         if isinstance(index_names, str):
             index_names = index_names.split(",")
         assert isinstance(index_names, list) and len(index_names) > 0
@@ -313,6 +370,7 @@ class OSConnection(DocStoreConnection):
         knn_query = {}
         for m in match_expressions:
             if isinstance(m, MatchTextExpr):
+                use_text = True
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
@@ -336,7 +394,13 @@ class OSConnection(DocStoreConnection):
                 knn_query[vector_column_name] = {}
                 knn_query[vector_column_name]["vector"] = list(m.embedding_data)
                 knn_query[vector_column_name]["k"] = m.topn
-                knn_query[vector_column_name]["filter"] = bqry.to_dict()
+                # The knn filter holds only the structural filters (kb_id,
+                # available_int, ...). The text query is deliberately kept out of it:
+                # it's scored as its own leg in the hybrid query below, not used to
+                # pre-filter knn candidates.
+                bool_inner = bqry.to_dict().get("bool", {})
+                if bool_inner.get("filter"):
+                    knn_query[vector_column_name]["filter"] = {"bool": {"filter": bool_inner["filter"]}}
                 knn_query[vector_column_name]["boost"] = similarity
 
         if bqry and rank_feature:
@@ -372,9 +436,22 @@ class OSConnection(DocStoreConnection):
         q = s.to_dict()
         logger.debug(f"OSConnection.search {str(index_names)} query: " + json.dumps(q))
 
+        hybrid_search = use_knn and use_text and getattr(self, "hybrid_search_enabled", False)
         if use_knn:
-            del q["query"]
-            q["query"] = {"knn": knn_query}
+            if hybrid_search:
+                # both legs + a pipeline available: send a real hybrid query so the
+                # keyword (BM25) and vector (knn) legs are scored separately and
+                # merged by the pipeline.
+                keyword_query = q.get("query")
+                q["query"] = {"hybrid": {"queries": [keyword_query, {"knn": knn_query}]}}
+            else:
+                # vector-only, or no pipeline available: fall back to a plain knn query.
+                del q["query"]
+                q["query"] = {"knn": knn_query}
+
+        search_kwargs = {}
+        if hybrid_search:
+            search_kwargs["params"] = {"search_pipeline": self._hybrid_pipeline}
 
         for i in range(ATTEMPT_TIME):
             try:
@@ -383,7 +460,8 @@ class OSConnection(DocStoreConnection):
                                      timeout=600,
                                      # search_type="dfs_query_then_fetch",
                                      track_total_hits=True,
-                                     _source=True)
+                                     _source=True,
+                                     **search_kwargs)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("OpenSearch Timeout.")
                 logger.debug(f"OSConnection.search {str(index_names)} res: " + str(res))
@@ -423,7 +501,10 @@ class OSConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             d_copy = copy.deepcopy(d)
-            meta_id = d_copy.pop("id", "")
+            # Use id as _id for uniqueness, but keep "id" in the document so the
+            # doc-meta read path (DocMetadataService filters on / sorts by the
+            # "id" field) can find it, mirroring ESConnection.insert().
+            meta_id = d_copy.get("id", "")
             operations.append(
                 {"index": {"_index": indexName, "_id": meta_id}})
             operations.append(d_copy)
