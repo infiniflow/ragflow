@@ -241,10 +241,10 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	sessionID = strings.TrimSpace(sessionID)
 	agentID = strings.TrimSpace(agentID)
 
-	data, err := h.agentService.GetAgentSession(userID, agentID, sessionID)
+	data, code, err := h.agentService.GetAgentSession(userID, agentID, sessionID)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeServerError,
+			"code":    code,
 			"data":    nil,
 			"message": err.Error(),
 		})

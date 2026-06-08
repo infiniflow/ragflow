@@ -429,26 +429,26 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 	return &ListAgentSessionsResponse{Data: data, Total: total}, common.CodeSuccess, nil
 }
 
-func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*entity.API4Conversation, error) {
+func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*entity.API4Conversation, common.ErrorCode, error) {
 	if sessionID == "" {
-		return nil, fmt.Errorf("session_id is required")
+		return nil, common.CodeArgumentError, fmt.Errorf("session_id is required")
 	}
 	ok, err := s.CheckCanvasAccess(userID, agentID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check agent permission: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
 	}
 	if !ok {
-		return nil, fmt.Errorf("Agent not found or no permission.")
+		return nil, common.CodeOperatingError, fmt.Errorf("Agent not found or no permission.")
 	}
 
 	data, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check agent permission: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
 	}
 	if data == nil {
-		return nil, fmt.Errorf("agent session not found")
+		return nil, common.CodeNotFound, fmt.Errorf("agent session not found")
 	}
-	return data, nil
+	return data, common.CodeSuccess, nil
 }
 
 func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string) (bool, common.ErrorCode, error) {
