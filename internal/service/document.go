@@ -19,10 +19,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"regexp"
 	"sort"
 	"strings"
@@ -117,6 +121,51 @@ type ThumbnailResponse struct {
 	KbID      string  `json:"kb_id"`
 }
 
+type ArtifactResponse struct {
+	Data            []byte
+	ContentType     string
+	SafeFilename    string
+	ForceAttachment bool
+}
+
+var (
+	ErrArtifactInvalidFilename = errors.New("Invalid filename.")
+	ErrArtifactInvalidFileType = errors.New("Invalid file type.")
+	ErrArtifactNotFound        = errors.New("Artifact not found.")
+)
+
+var artifactContentTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".svg":  "image/svg+xml",
+	".pdf":  "application/pdf",
+	".csv":  "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+}
+
+var artifactForceAttachmentExtensions = map[string]struct{}{
+	".htm":   {},
+	".html":  {},
+	".shtml": {},
+	".xht":   {},
+	".xhtml": {},
+	".xml":   {},
+	".mhtml": {},
+	".svg":   {},
+}
+var artifactForceAttachmentContentTypes = map[string]struct{}{
+	"text/html":             {},
+	"image/svg+xml":         {},
+	"application/xhtml+xml": {},
+	"text/xml":              {},
+	"application/xml":       {},
+	"multipart/related":     {},
+}
+
+var artifactUnsafeFilenameChars = regexp.MustCompile(`[^\pL\pN_.-]`)
+
 // GetDocumentImage retrieves an image object from storage.
 func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	parts := strings.Split(imageID, "-")
@@ -130,6 +179,186 @@ func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 	}
 
 	return storageImpl.Get(parts[0], parts[1])
+}
+
+// GetDocumentArtifact retrieves a sandbox artifact from object storage.
+func (s *DocumentService) GetDocumentArtifact(filename string) (*ArtifactResponse, error) {
+	basename := filepath.Base(filename)
+	if basename != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
+		return nil, ErrArtifactInvalidFilename
+	}
+
+	ext := strings.ToLower(filepath.Ext(basename))
+	contentType, ok := artifactContentTypes[ext]
+	if !ok {
+		return nil, ErrArtifactInvalidFileType
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	bucket := sandboxArtifactBucket()
+	if !storageImpl.ObjExist(bucket, basename) {
+		return nil, ErrArtifactNotFound
+	}
+
+	data, err := storageImpl.Get(bucket, basename)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, ErrArtifactNotFound
+	}
+
+	return &ArtifactResponse{
+		Data:            data,
+		ContentType:     contentType,
+		SafeFilename:    sanitizeArtifactFilename(basename),
+		ForceAttachment: shouldForceArtifactAttachment(ext, contentType),
+	}, nil
+}
+
+func sandboxArtifactBucket() string {
+	if bucket := os.Getenv("SANDBOX_ARTIFACT_BUCKET"); bucket != "" {
+		return bucket
+	}
+	return "sandbox-artifacts"
+}
+
+func sanitizeArtifactFilename(filename string) string {
+	return artifactUnsafeFilenameChars.ReplaceAllString(filename, "_")
+}
+
+func shouldForceArtifactAttachment(ext, contentType string) bool {
+	if _, ok := artifactForceAttachmentExtensions[strings.ToLower(ext)]; ok {
+		return true
+	}
+	_, ok := artifactForceAttachmentContentTypes[strings.ToLower(contentType)]
+	return ok
+}
+
+type DocumentPreview struct {
+	Data        []byte
+	ContentType string
+	FileName    string
+}
+
+func (s *DocumentService) GetDocumentPreview(docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	data, err := storageImpl.Get(bucket, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, ErrArtifactNotFound
+	}
+
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	ext := utility.GetFileExtension(fileName)
+	contentType := utility.GetContentType(ext, doc.Type)
+
+	return &DocumentPreview{
+		Data:        data,
+		ContentType: contentType,
+		FileName:    fileName,
+	}, nil
+}
+
+func (s *DocumentService) GetDocumentStorageAddress(doc *entity.Document) (string, string, error) {
+	if doc == nil {
+		return "", "", fmt.Errorf("document is nil")
+	}
+
+	file2DocumentDAO := dao.NewFile2DocumentDAO()
+	fileDAO := dao.NewFileDAO()
+
+	mappings, err := file2DocumentDAO.GetByDocumentID(doc.ID)
+	if err != nil {
+		return "", "", err
+	}
+
+	if len(mappings) > 0 && mappings[0].FileID != nil {
+		file, err := fileDAO.GetByID(*mappings[0].FileID)
+		if err != nil {
+			return "", "", err
+		}
+
+		if file.SourceType == "" || entity.FileSource(file.SourceType) == entity.FileSourceLocal {
+			if file.Location == nil || *file.Location == "" {
+				return "", "", fmt.Errorf("file location is empty")
+			}
+			return file.ParentID, *file.Location, nil
+		}
+	}
+
+	if doc.Location == nil || *doc.Location == "" {
+		return "", "", fmt.Errorf("document location is empty")
+	}
+	return doc.KbID, *doc.Location, nil
+}
+
+type DownloadDocumentResp struct {
+	Data        []byte
+	FileName    string
+	ContentType string
+}
+
+func (s *DocumentService) DownloadDocument(datasetID, docID string) (*DownloadDocumentResp, error) {
+	if docID == "" {
+		return nil, fmt.Errorf("Specify document_id please.")
+	}
+	doc, err := s.documentDAO.GetByID(docID)
+	if err != nil || doc.KbID != datasetID {
+		return nil, fmt.Errorf("The dataset not own the document %s.", docID)
+	}
+	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	if err != nil {
+		return nil, err
+	}
+
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, fmt.Errorf("storage not initialized")
+	}
+
+	data, err := storageImpl.Get(bucket, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("This file is empty.")
+	}
+
+	fileName := ""
+	if doc.Name != nil {
+		fileName = *doc.Name
+	}
+
+	return &DownloadDocumentResp{
+		Data:        data,
+		FileName:    fileName,
+		ContentType: "application/octet-stream",
+	}, nil
 }
 
 // CreateDocument create document

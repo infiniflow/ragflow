@@ -12,7 +12,7 @@ export const useFetchAllMemoryList = () => {
     queryFn: async () => {
       const { data: response } = await memoryService.getMemoryList(
         {
-          params: { page_size: 100000000, page: 1 },
+          params: { page_size: 100, page: 1 },
           data: {},
         },
         true,
