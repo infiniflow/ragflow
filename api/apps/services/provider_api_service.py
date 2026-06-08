@@ -393,7 +393,7 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
             assert provider_name in EmbeddingModel, f"Embedding model from {provider_name} is not supported yet."
             mdl = EmbeddingModel[provider_name](api_key_str, llm["llm_name"], base_url=base_url)
             try:
-                arr, tc = asyncio.wait_for(
+                arr, tc = await asyncio.wait_for(
                     asyncio.to_thread(mdl.encode, ["Test if the api key is available"]),
                     timeout=timeout_seconds,
                 )
@@ -401,6 +401,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                     raise Exception("Fail")
                 embd_passed = True
             except Exception as e:
+                logging.exception(
+                    "Fail to access embedding model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access embedding model({llm['llm_name']}) using this api key." + str(e)
         elif not chat_passed and llm["model_type"] == LLMType.CHAT.value:
             assert provider_name in ChatModel, f"Chat model from {provider_name} is not supported yet."
@@ -422,6 +427,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 else:
                     raise Exception("No valid response received")
             except Exception as e:
+                logging.exception(
+                    "Fail to access chat model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         elif not rerank_passed and llm["model_type"] == LLMType.RERANK.value:
             assert provider_name in RerankModel, f"Rerank model from {provider_name} is not supported yet."
@@ -436,6 +446,11 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
                 rerank_passed = True
                 logging.debug(f"passed model rerank {llm['llm_name']}")
             except Exception as e:
+                logging.exception(
+                    "Fail to access rerank model for provider=%s model=%s",
+                    provider_name,
+                    llm["llm_name"],
+                )
                 msg += f"\nFail to access model({provider_name}/{llm['llm_name']}) using this api key." + str(e)
         if any([embd_passed, chat_passed, rerank_passed]):
             msg = ""
