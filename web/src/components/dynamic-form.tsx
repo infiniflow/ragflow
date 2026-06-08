@@ -197,9 +197,12 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
         fieldSchema = (fieldSchema as z.ZodArray<z.ZodString>).min(1, {
           message: requiredMessage,
         });
-      } else if (field.type == FormFieldType.Segmented) {
+      } else if (field.type === FormFieldType.Segmented) {
         fieldSchema = fieldSchema.refine(
-          (val) => val !== undefined && val !== null,
+          (val) => 
+            val !== undefined && 
+            val !== null && 
+            (typeof val !== 'string' || val.trim().length > 0),
           {message : requiredMessage},
         );
       } else {
