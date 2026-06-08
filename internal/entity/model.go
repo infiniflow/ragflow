@@ -17,6 +17,7 @@
 package entity
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -186,6 +187,31 @@ type ModelResponse struct {
 	Message string                   `json:"message"`
 }
 
+func decodeProviderConfig(data []byte) (Provider, error) {
+	var provider Provider
+	if err := json.Unmarshal(data, &provider); err != nil {
+		return Provider{}, err
+	}
+
+	var rawProvider struct {
+		URLSuffix json.RawMessage `json:"url_suffix"`
+	}
+	if err := json.Unmarshal(data, &rawProvider); err != nil {
+		return Provider{}, err
+	}
+	if len(rawProvider.URLSuffix) == 0 {
+		return provider, nil
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(rawProvider.URLSuffix))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&provider.URLSuffix); err != nil {
+		return Provider{}, err
+	}
+
+	return provider, nil
+}
+
 // NewProviderManager creates a new ProviderManager by reading all JSON files from a directory
 func NewProviderManager(dirPath string) (*ProviderManager, error) {
 	providers := []Provider{}
@@ -222,7 +248,7 @@ func NewProviderManager(dirPath string) (*ProviderManager, error) {
 
 		// Parse JSON
 		var provider Provider
-		if err = json.Unmarshal(data, &provider); err != nil {
+		if provider, err = decodeProviderConfig(data); err != nil {
 			return nil, fmt.Errorf("error parsing JSON from file %s: %w", filePath, err)
 		}
 
