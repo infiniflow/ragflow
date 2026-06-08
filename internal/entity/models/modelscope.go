@@ -190,7 +190,9 @@ func (m *ModelScopeModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -264,7 +266,9 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -419,7 +423,9 @@ func (m *ModelScopeModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	m.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {

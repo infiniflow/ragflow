@@ -184,7 +184,9 @@ func (x *XinferenceModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -258,7 +260,9 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -410,7 +414,9 @@ func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -521,7 +527,9 @@ func (x *XinferenceModel) Rerank(modelName *string, query string, documents []st
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -635,7 +643,9 @@ func (x *XinferenceModel) TranscribeAudio(modelName *string, file *string, apiCo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	resp, err := x.baseModel.httpClient.Do(req)
@@ -711,7 +721,9 @@ func (x *XinferenceModel) AudioSpeech(modelName *string, audioContent *string, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -766,7 +778,9 @@ func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	x.baseModel.SetBearerAuthorizationHeader(req, apiConfig)
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {

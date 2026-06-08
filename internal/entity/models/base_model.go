@@ -41,6 +41,19 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 	return nil
 }
 
+// BearerAuth returns the Bearer token for Authorization header,
+// or empty string if apiConfig or its ApiKey is nil/empty.
+func BearerAuth(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	if key == "" {
+		return ""
+	}
+	return fmt.Sprintf("Bearer %s", key)
+}
+
 func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	if apiConfig != nil && apiConfig.BaseURL != nil && *apiConfig.BaseURL != "" {
 		return strings.TrimSuffix(*apiConfig.BaseURL, "/"), nil
@@ -66,19 +79,3 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	return baseURL, nil
 }
 
-func (b *BaseModel) SetAuthorizationHeader(req *http.Request, apiConfig *APIConfig, scheme string) {
-	if req == nil || apiConfig == nil || apiConfig.ApiKey == nil {
-		return
-	}
-
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
-	if apiKey == "" {
-		return
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("%s %s", scheme, apiKey))
-}
-
-func (b *BaseModel) SetBearerAuthorizationHeader(req *http.Request, apiConfig *APIConfig) {
-	b.SetAuthorizationHeader(req, apiConfig, "Bearer")
-}

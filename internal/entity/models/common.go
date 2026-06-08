@@ -45,7 +45,7 @@ func NormalizeModelFamily(modelType *string) string {
 		family = family[slash+1:]
 	}
 
-	if strings.HasPrefix(family, "qwen3") {
+	if family == "qwen3" || strings.HasPrefix(family, "qwen3-") || strings.HasPrefix(family, "qwen3.") {
 		return "qwen3"
 	}
 
