@@ -1484,6 +1484,13 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
         state.think_buffer = ""
         return out
 
+    def _flush_answer_buffer():
+        if not state.answer_buffer:
+            return None
+        out = state.answer_buffer
+        state.answer_buffer = ""
+        return out
+
     async for chunk in stream_iter:
         if not chunk:
             continue
@@ -1541,6 +1548,9 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                         yield ("text", out, state)
                 pending = pending[open_idx + len("<think>") :]
                 if not state.in_think:
+                    answer_piece = _flush_answer_buffer()
+                    if answer_piece is not None:
+                        yield ("text", answer_piece, state)
                     think_piece = _flush_think_buffer()
                     if think_piece is not None:
                         yield ("text", think_piece, state)
@@ -1556,23 +1566,33 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
                 out = _emit_text(section, piece)
                 if out is not None:
                     yield ("text", out, state)
+            after_visible = re.sub(r"</?think>", "", after or "")
+            if after_visible.strip():
+                think_piece = _flush_think_buffer()
+                if think_piece is not None:
+                    yield ("text", think_piece, state)
+                state.in_think = False
+                yield ("marker", "</think>", state)
+                pending = after_visible
+                continue
             state.close_pending = True
-            if after:
-                state.pending_after_close += re.sub(r"</?think>", "", after or "")
+            if after_visible:
+                state.pending_after_close += after_visible
             pending = ""
             break
 
     if state.think_buffer:
         yield ("text", state.think_buffer, state)
         state.think_buffer = ""
+    if state.close_pending:
+        state.in_think = False
+        yield ("marker", "</think>", state)
     if state.answer_buffer:
         yield ("text", state.answer_buffer, state)
         state.answer_buffer = ""
     if state.pending_after_close:
         yield ("text", state.pending_after_close, state)
         state.pending_after_close = ""
-    if state.close_pending:
-        state.in_think = False
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
