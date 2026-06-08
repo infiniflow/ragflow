@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import json
 import aiohttp
 from abc import ABC
 
@@ -116,27 +117,166 @@ class XunFeiSpark(Base):
     _FACTORY_NAME = "XunFei Spark"
 
     async def get_model_list(self):
-        # todo implement access token auth
-        raise NotImplementedError
+        return await super().get_model_list()
 
 
 class GPUStack(Base):
     _FACTORY_NAME = "GPUStack"
 
+    def _get_access_token(self):
+        api_key = self._get_api_key()
+        if not api_key:
+            return ""
+        try:
+            payload = json.loads(api_key)
+        except Exception:
+            return api_key
+        if isinstance(payload, dict):
+            return payload.get("access_token") or payload.get("api_key") or api_key
+        return api_key
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            return None
+        base_url = self.base_url.rstrip("/")
+        if base_url.endswith("/v1"):
+            return base_url + "/models"
+        if "/v1/" in base_url:
+            return base_url.split("/v1")[0].rstrip("/") + "/v1/models"
+        return base_url + "/v1/models"
+
+    def _format_model_list(self, raw_model_list):
+        if isinstance(raw_model_list, dict):
+            raw_model_list = raw_model_list.get("data") or raw_model_list.get("models") or []
+        if not isinstance(raw_model_list, list):
+            return []
+
+        model_list = []
+        for model in raw_model_list:
+            if not isinstance(model, dict):
+                continue
+            model_name = model.get("id") or model.get("name")
+            if not model_name:
+                continue
+            model_list.append({
+                "name": model_name,
+                "model_types": [],
+                "features": [],
+                "max_tokens": model.get("max_tokens", 8192),
+            })
+        return model_list
+
     async def get_model_list(self):
-        # todo implement access token auth
-        raise NotImplementedError
+        url = self._get_model_list_url()
+        access_token = self._get_access_token()
+        if not url or not access_token:
+            return []
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"Authorization": f"Bearer {access_token}"}) as resp:
+                if resp.status != 200:
+                    return []
+                return self._format_model_list(await resp.json())
 
 class FishAudio(Base):
     _FACTORY_NAME = "Fish Audio"
 
+    def _get_access_token(self):
+        api_key = self._get_api_key()
+        if not api_key:
+            return ""
+        try:
+            payload = json.loads(api_key)
+        except Exception:
+            return api_key
+        if isinstance(payload, dict):
+            return payload.get("fish_audio_ak") or payload.get("access_token") or payload.get("api_key") or api_key
+        return api_key
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            return "https://api.fish.audio/model"
+        base_url = self.base_url.rstrip("/")
+        if "/v1/" in base_url:
+            return base_url.split("/v1")[0].rstrip("/") + "/model"
+        if base_url.endswith("/v1"):
+            return base_url[:-3] + "/model"
+        return base_url + "/model"
+
     async def get_model_list(self):
-        # todo implement access token auth
-        raise NotImplementedError
+        url = self._get_model_list_url()
+        access_token = self._get_access_token()
+        if not url or not access_token:
+            return []
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"Authorization": f"Bearer {access_token}"}) as resp:
+                if resp.status != 200:
+                    return []
+                raw_model_list = await resp.json()
+                if not isinstance(raw_model_list, dict):
+                    return []
+                models = raw_model_list.get("items") or []
+                if not isinstance(models, list):
+                    return []
+
+                model_list = []
+                for model in models:
+                    if not isinstance(model, dict):
+                        continue
+                    model_name = model.get("title") or model.get("_id")
+                    if not model_name:
+                        continue
+                    model_list.append({
+                        "name": model_name,
+                        "model_types": [LLMType.TTS.value],
+                        "features": [],
+                        "max_tokens": 8192,
+                    })
+                return model_list
 
 class MinerU(Base):
     _FACTORY_NAME = "MinerU"
 
+    def _get_access_token(self):
+        api_key = self._get_api_key()
+        if not api_key:
+            return ""
+        try:
+            payload = json.loads(api_key)
+        except Exception:
+            return api_key
+        if isinstance(payload, dict):
+            return payload.get("access_token") or payload.get("api_key") or api_key
+        return api_key
+
     async def get_model_list(self):
-        # todo implement access token auth
-        raise NotImplementedError
+        url = self._get_model_list_url()
+        access_token = self._get_access_token()
+        if not url or not access_token:
+            return []
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"Authorization": f"Bearer {access_token}"}) as resp:
+                if resp.status != 200:
+                    return []
+                raw_model_list = await resp.json()
+                if isinstance(raw_model_list, dict):
+                    raw_model_list = raw_model_list.get("data") or raw_model_list.get("models") or raw_model_list.get("items") or []
+                if not isinstance(raw_model_list, list):
+                    return []
+
+                model_list = []
+                for model in raw_model_list:
+                    if not isinstance(model, dict):
+                        continue
+                    model_name = model.get("title") or model.get("name") or model.get("id") or model.get("_id")
+                    if not model_name:
+                        continue
+                    model_list.append({
+                        "name": model_name,
+                        "model_types": [LLMType.OCR.value],
+                        "features": [],
+                        "max_tokens": model.get("max_tokens", 8192),
+                    })
+                return model_list
