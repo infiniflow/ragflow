@@ -787,7 +787,7 @@ func TestAssertHostIsSafeRejectsLocalhost(t *testing.T) {
 }
 
 func TestTestDBConnectionMissingFields(t *testing.T) {
-	_, code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{DBType: "mysql"})
+	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{DBType: "mysql"})
 	if err == nil {
 		t.Fatal("expected missing field error")
 	}
@@ -801,7 +801,7 @@ func TestTestDBConnectionMissingFields(t *testing.T) {
 }
 
 func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
-	_, code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{
+	code, err := NewAgentService().TestDBConnection("user-1", &TestDBConnectionRequest{
 		DBType:   "postgres",
 		Database: "rag_flow",
 		Username: "root",
