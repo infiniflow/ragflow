@@ -1371,8 +1371,12 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.provider_order = json.loads(key).get("provider_order", "")
+            try:
+                self.api_key = json.loads(key).get("api_key", "")
+                self.provider_order = json.loads(key).get("provider_order", "")
+            except JSONDecodeError:
+                self.api_key = key
+                self.provider_order = ""
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")

@@ -174,7 +174,7 @@ func TestOpenRouterTranscribeAudioValidatesInputs(t *testing.T) {
 		apiConfig *APIConfig
 		want      string
 	}{
-		{name: "api key", modelName: &modelName, file: &file, apiConfig: &APIConfig{}, want: "OpenRouter API key is missing"},
+		{name: "api key", modelName: &modelName, file: &file, apiConfig: &APIConfig{}, want: "api key is required"},
 		{name: "model", file: &file, apiConfig: &APIConfig{ApiKey: &apiKey}, want: "model name is required"},
 		{name: "file", modelName: &modelName, apiConfig: &APIConfig{ApiKey: &apiKey}, want: "file is missing"},
 	}

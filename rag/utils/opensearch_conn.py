@@ -501,7 +501,10 @@ class OSConnection(DocStoreConnection):
             assert "_id" not in d
             assert "id" in d
             d_copy = copy.deepcopy(d)
-            meta_id = d_copy.pop("id", "")
+            # Use id as _id for uniqueness, but keep "id" in the document so the
+            # doc-meta read path (DocMetadataService filters on / sorts by the
+            # "id" field) can find it, mirroring ESConnection.insert().
+            meta_id = d_copy.get("id", "")
             operations.append(
                 {"index": {"_index": indexName, "_id": meta_id}})
             operations.append(d_copy)
