@@ -84,6 +84,7 @@ class KGSearch(Dealer):
             try:
                 n_hop_ents = json.loads(n_hop_raw)
             except (json.JSONDecodeError, TypeError):
+                logging.warning(f"Failed to parse n_hop_with_weight for entity {ent.get('entity_kwd')}: {n_hop_raw}")
                 n_hop_ents = []
             res[ent["entity_kwd"]] = {
                 "sim": get_float(ent.get("_score", 0)),

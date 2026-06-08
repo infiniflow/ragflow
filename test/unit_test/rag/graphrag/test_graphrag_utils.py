@@ -516,6 +516,7 @@ class TestMergeTuples:
         assert merge_tuples([], []) == []
 
 
+@pytest.mark.p1
 class TestNNeighbor:
     """Tests for n_neighbor function (n-hop neighbour path enumeration).
 
@@ -570,6 +571,7 @@ class TestNNeighbor:
         assert nbrs[0]["weights"] == [3]
 
 
+@pytest.mark.p1
 class TestGraphNodeToChunk:
     """Tests for graph_node_to_chunk field population.
 
