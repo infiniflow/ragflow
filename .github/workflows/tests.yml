@@ -150,6 +150,7 @@ jobs:
           fi
           sudo mkdir -p /usr/share/infinity
           sudo ln -sf /tmp/resource /usr/share/infinity/resource
+          mkdir -p resource
           ln -sf /tmp/resource/wordnet resource/wordnet
 
       - name: Test Go packages
