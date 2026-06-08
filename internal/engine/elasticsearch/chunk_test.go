@@ -431,3 +431,106 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 		"id": 42,
 	}, []string{"id", "_id"})
 }
+
+// paginationGRID mirrors the (page_size, top) grid from
+// rag/nlp/search.py::Dealer._rerank_window tests. It covers the common page
+// sizes that do NOT divide 64 (the exact case the legacy min(..., 64) clamp
+// broke) plus tiny / large / page-aligned tops.
+var paginationGRID = func() []struct{ size, topK int } {
+	sizes := []int{1, 5, 7, 10, 30, 50, 64}
+	tops := []int{0, 5, 30, 50, 55, 64, 100, 1024}
+	out := make([]struct{ size, topK int }, 0, len(sizes)*len(tops))
+	for _, s := range sizes {
+		for _, t := range tops {
+			out = append(out, struct{ size, topK int }{s, t})
+		}
+	}
+	return out
+}()
+
+// paginate replays the (block-fetch + in-block slice) math that
+// calculatePagination's window is consumed by: for every page whose start is
+// inside the candidate pool, return the in-block page slice. The block is
+// window-aligned, so on the aligned invariant every page is full and the
+// concatenation reconstructs [0, cap).
+func paginate(total, size, topK int) (window, capN int, surfaced []int) {
+	window = rerankWindow(size, topK)
+	capN = total
+	if topK > 0 && capN > topK {
+		capN = topK
+	}
+	for page := 1; (page-1)*size < capN; page++ {
+		globalOffset := (page - 1) * size
+		blockIndex := globalOffset / window
+		blockStart := blockIndex * window
+		block := make([]int, 0, window)
+		for i := blockStart; i < blockStart+window && i < capN; i++ {
+			block = append(block, i)
+		}
+		begin := globalOffset % window
+		end := begin + size
+		if end > len(block) {
+			end = len(block)
+		}
+		surfaced = append(surfaced, block[begin:end]...)
+	}
+	return window, capN, surfaced
+}
+
+func TestRerankWindowIsPageAligned(t *testing.T) {
+	for _, g := range paginationGRID {
+		window := rerankWindow(g.size, g.topK)
+		if window < 1 {
+			t.Errorf("rerankWindow(%d, %d) = %d, want >= 1", g.size, g.topK, window)
+		}
+		if g.size > 1 && window%g.size != 0 {
+			t.Errorf("rerankWindow(%d, %d) = %d, want multiple of %d", g.size, g.topK, window, g.size)
+		}
+	}
+}
+
+func TestRerankWindowPaginationReconstructsPool(t *testing.T) {
+	// Walking every page reconstructs the candidate pool exactly: in order,
+	// no gaps, no duplicates, and no short interior pages.
+	const total = 250
+	for _, g := range paginationGRID {
+		window, capN, surfaced := paginate(total, g.size, g.topK)
+		if len(surfaced) != capN {
+			t.Errorf("size=%d topK=%d: surfaced %d, want %d (window=%d)",
+				g.size, g.topK, len(surfaced), capN, window)
+			continue
+		}
+		for i, v := range surfaced {
+			if v != i {
+				t.Errorf("size=%d topK=%d: surfaced[%d] = %d, want %d (window=%d)",
+					g.size, g.topK, i, v, i, window)
+				break
+			}
+		}
+	}
+}
+
+func TestCalculatePaginationReportedRegression(t *testing.T) {
+	// The reported case: size=10, topK=1024. Legacy min(..., 64) clamped the
+	// window to 64 (not a multiple of 10), so page 7 (global offset 60) used
+	// to return only 4 of 10 results. With the fix, the window is 70 and
+	// page 7 is full and contiguous.
+	_, limit := calculatePagination(7, 10, 1024)
+	if limit != 70 {
+		t.Fatalf("calculatePagination(7, 10, 1024) limit = %d, want 70", limit)
+	}
+	if limit%10 != 0 {
+		t.Fatalf("calculatePagination(7, 10, 1024) limit = %d, want multiple of 10", limit)
+	}
+
+	// And the simulated end-to-end page walk covers positions 60..69 fully.
+	_, capN, surfaced := paginate(250, 10, 1024)
+	if capN < 70 || len(surfaced) < 70 {
+		t.Fatalf("paginate(250, 10, 1024) returned cap=%d surfaced=%d, want >= 70", capN, len(surfaced))
+	}
+	for i := 60; i < 70; i++ {
+		if surfaced[i] != i {
+			t.Errorf("page 7: surfaced[%d] = %d, want %d", i, surfaced[i], i)
+		}
+	}
+}
