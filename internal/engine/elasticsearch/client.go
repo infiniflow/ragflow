@@ -33,7 +33,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// Engine Elasticsearch engine implementation
+// elasticsearchEngine is the Elasticsearch engine implementation
 type elasticsearchEngine struct {
 	client *elasticsearch.Client
 	config *server.ElasticsearchConfig

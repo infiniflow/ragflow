@@ -199,7 +199,7 @@ def delete_provider(tenant_id: str = None, provider_name: str = None):
 
 @manager.route("/providers/<provider_name>/models", methods=["GET"])  # noqa: F821
 @login_required
-def list_provider_models(provider_name: str):
+async def list_provider_models(provider_name: str):
     """
     List models for a provider.
     ---
@@ -230,7 +230,9 @@ def list_provider_models(provider_name: str):
                 type: object
     """
     try:
-        success, result = provider_api_service.list_provider_models(provider_name)
+        api_key = request.args.get("api_key")
+        base_url = request.args.get("base_url")
+        success, result = await provider_api_service.list_provider_models(provider_name, api_key, base_url)
         if success:
             return get_result(data=result)
         else:
@@ -341,7 +343,7 @@ async def create_provider_instance(tenant_id: str = None, provider_name: str = N
     api_key = data["api_key"]
     base_url = data.get("base_url", "")
     region = data.get("region", "")
-    model_info = data.get("model_info", {})
+    model_info = data.get("model_info", [])
 
     try:
         success, msg = await provider_api_service.create_provider_instance(tenant_id, provider_name, instance_name, api_key, base_url, region, model_info)
@@ -409,7 +411,7 @@ async def verify_provider_api_key(provider_name: str = None):
     base_url = data.get("base_url", "")
     api_key = data["api_key"]
     region = data.get("region", "default")
-    model_info = data.get("model_info", {})
+    model_info = data.get("model_info", [])
 
     try:
         success, msg = await provider_api_service.verify_api_key(provider_name, api_key, base_url, region, model_info)

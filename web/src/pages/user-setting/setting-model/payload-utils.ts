@@ -18,6 +18,7 @@ const INSTANCE_RESERVED_KEYS = new Set([
   'base_url',
   'region',
   'verify',
+  'model_info',
 ]);
 
 export const MODEL_EXTRA_KEYS = new Set([
@@ -91,6 +92,7 @@ export const splitProviderPayload = (payload: FlatPayload): SplitResult => {
     api_key: collectApiKeyExtras(payload),
     base_url: (payload.base_url ?? payload.api_base) as string | undefined,
     region: (payload.region as string | undefined) || 'default',
+    model_info: payload.model_info,
   };
 
   const modelExtra = collectModelExtras(payload);
