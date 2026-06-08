@@ -146,6 +146,7 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
         sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
     else \
         sed -i 's|mirrors.aliyun.com/pypi|pypi.org|g' uv.lock; \
+        sed -i 's|gitee.com|github.com|g' uv.lock; \
     fi; \
     uv sync --python 3.13 --frozen && \
     # Ensure pip is available in the venv for runtime package installation (fixes #12651)
