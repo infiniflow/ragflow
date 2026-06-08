@@ -575,9 +575,12 @@ async def box_web_oauth_callback():
     if not code:
         return await _render_web_oauth_popup(flow_id, False, "Missing authorization code from Box.", "box")
 
-    cache_payload = json.loads(REDIS_CONN.get(_web_state_cache_key(flow_id, "box")))
+    raw_cache = REDIS_CONN.get(_web_state_cache_key(flow_id, "box"))
+    if not raw_cache:
+        return await _render_web_oauth_popup(flow_id, False, "Box OAuth session expired or invalid.", "box")
+    cache_payload = json.loads(raw_cache)
     if not cache_payload:
-        return get_result(code=RetCode.ARGUMENT_ERROR, message="Box OAuth session expired or invalid.")
+        return await _render_web_oauth_popup(flow_id, False, "Box OAuth session expired or invalid.", "box")
 
     error = request.args.get("error")
     error_description = request.args.get("error_description") or error

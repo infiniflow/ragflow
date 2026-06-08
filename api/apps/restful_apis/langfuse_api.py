@@ -73,7 +73,7 @@ def get_api_key():
         if not langfuse.auth_check():
             return get_result(code=RetCode.DATA_ERROR, message="Invalid Langfuse keys loaded")
     except langfuse.api.core.api_error.ApiError as api_err:
-        return get_result(message=f"Error from Langfuse: {api_err}")
+        return get_result(code=RetCode.DATA_ERROR, message=f"Error from Langfuse: {api_err}")
     except Exception as e:
         return server_error_response(e)
 

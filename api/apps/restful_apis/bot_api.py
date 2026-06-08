@@ -26,6 +26,8 @@ from api.apps import AUTH_BETA, login_required
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.canvas_service import completion as agent_completion
+from api.db.services.user_canvas_version import UserCanvasVersionService
+from api.db.db_models import APIToken
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.dialog_service import DialogService, async_ask, gen_mindmap
 from api.db.services.doc_metadata_service import DocMetadataService
@@ -37,10 +39,11 @@ from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
 from common.misc_utils import get_uuid, thread_pool_exec
-from api.utils.api_utils import get_result, check_duplicate_ids, get_request_json, server_error_response, token_required, validate_request
-from common.misc_utils import thread_pool_exec
-from api.utils.api_utils import get_error_data_result, get_json_result, \
-    add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
+from api.utils.api_utils import (
+    get_result, get_error_data_result, get_json_result,
+    check_duplicate_ids, get_request_json, server_error_response,
+    token_required, validate_request, add_tenant_id_to_kwargs,
+)
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
@@ -54,13 +57,7 @@ from api.utils.reference_metadata_utils import (
 logger = logging.getLogger(__name__)
 
 
-def _get_sdk_authorization_token():
-    token = request.headers.get("Authorization", "").split()
-    if len(token) != 2:
-        return None
-    return token[1]
-
-
+@manager.route("/agents/<agent_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
 async def create_agent_session(tenant_id, agent_id):
     req = await get_request_json()
@@ -224,14 +221,6 @@ async def chatbot_completions(dialog_id, tenant_id=None):
     return None
 
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
-async def chatbots_inputs(dialog_id):
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_result(code=RetCode.DATA_ERROR, message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_result(code=RetCode.DATA_ERROR, message='Authentication error: API key is invalid!"')
-    tenant_id = objs[0].tenant_id
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 async def chatbots_inputs(dialog_id, tenant_id=None):
@@ -344,14 +333,6 @@ async def agent_bot_completions(agent_id, tenant_id=None):
 
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
-async def begin_inputs(agent_id):
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_result(code=RetCode.DATA_ERROR, message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_result(code=RetCode.DATA_ERROR, message='Authentication error: API key is invalid!"')
-
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 async def begin_inputs(agent_id, tenant_id=None):
@@ -369,14 +350,6 @@ async def begin_inputs(agent_id, tenant_id=None):
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 @validate_request("question", "kb_ids")
-async def ask_about_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_result(code=RetCode.DATA_ERROR, message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_result(code=RetCode.DATA_ERROR, message='Authentication error: API key is invalid!"')
-
 async def ask_about_embedded(tenant_id=None):
     req = await get_request_json()
     uid = tenant_id
@@ -415,14 +388,6 @@ async def ask_about_embedded(tenant_id=None):
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 @validate_request("kb_id", "question")
-async def retrieval_test_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_result(code=RetCode.DATA_ERROR, message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_result(code=RetCode.DATA_ERROR, message='Authentication error: API key is invalid!"')
-
 async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
     page = int(req.get("page", 1))
@@ -598,14 +563,6 @@ Related search terms:
 
 
 @manager.route("/searchbots/detail", methods=["GET"])  # noqa: F821
-async def detail_share_embedded():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_result(code=RetCode.DATA_ERROR, message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_result(code=RetCode.DATA_ERROR, message='Authentication error: API key is invalid!"')
-
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 async def detail_share_embedded(tenant_id=None):
@@ -633,15 +590,6 @@ async def detail_share_embedded(tenant_id=None):
 @login_required(auth_types=AUTH_BETA)
 @add_tenant_id_to_kwargs
 @validate_request("question", "kb_ids")
-async def mindmap():
-    token = _get_sdk_authorization_token()
-    if not token:
-        return get_result(code=RetCode.DATA_ERROR, message='Authorization is not valid!')
-    objs = await thread_pool_exec(APIToken.query, beta=token)
-    if not objs:
-        return get_result(code=RetCode.DATA_ERROR, message='Authentication error: API key is invalid!"')
-
-    tenant_id = objs[0].tenant_id
 async def mindmap(tenant_id=None):
     req = await get_request_json()
 

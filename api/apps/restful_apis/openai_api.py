@@ -251,12 +251,14 @@ async def openai_chat_completions(chat_id):
     if metadata_fields is not None and not isinstance(metadata_fields, list):
         return get_result(code=RetCode.DATA_ERROR, message="reference_metadata.fields must be an array.")
 
-    messages = req.get("messages", [])
-    if len(messages) < 1:
+    messages = req.get("messages") or []
+    if not isinstance(messages, list):
         return get_result(code=RetCode.DATA_ERROR, message="You have to provide messages.")
     messages, normalize_error = _normalize_openai_messages(messages)
     if normalize_error:
         return get_result(code=RetCode.DATA_ERROR, message=normalize_error)
+    if len(messages) < 1:
+        return get_result(code=RetCode.DATA_ERROR, message="You have to provide messages.")
     if messages[-1]["role"] != "user":
         return get_result(code=RetCode.DATA_ERROR, message="The last content of this conversation is not from user.")
 

@@ -51,7 +51,7 @@ async def create_memory():
                 request.path,
             )
         if success:
-            return get_result(message=True, data=res)
+            return get_result(message="success", data=res)
         else:
             return get_result(message=res, code=RetCode.SERVER_ERROR)
 
@@ -91,7 +91,7 @@ async def update_memory(memory_id):
     try:
         success, res = await memory_api_service.update_memory(memory_id, new_settings)
         if success:
-            return get_result(message=True, data=res)
+            return get_result(message="success", data=res)
         else:
             return get_result(message=res, code=RetCode.SERVER_ERROR)
     except NotFoundException as not_found_exception:
@@ -110,7 +110,7 @@ async def update_memory(memory_id):
 async def delete_memory(memory_id):
     try:
         await memory_api_service.delete_memory(memory_id)
-        return get_result(message=True)
+        return get_result(message="success")
     except NotFoundException as not_found_exception:
         logging.error(not_found_exception)
         return get_result(code=RetCode.NOT_FOUND, message=str(not_found_exception))
@@ -130,7 +130,7 @@ async def list_memory():
     page_size = validate_rest_api_page_size(int(request.args.get("page_size", 50)))
     try:
         res = await memory_api_service.list_memory(filter_params, keywords, page, page_size)
-        return get_result(message=True, data=res)
+        return get_result(message="success", data=res)
     except Exception as e:
         logging.error(e)
         return get_result(code=RetCode.SERVER_ERROR, message="Internal server error")
@@ -141,7 +141,7 @@ async def list_memory():
 async def get_memory_config(memory_id):
     try:
         res = await memory_api_service.get_memory_config(memory_id)
-        return get_result(message=True, data=res)
+        return get_result(message="success", data=res)
     except NotFoundException as not_found_exception:
         logging.error(not_found_exception)
         return get_result(code=RetCode.NOT_FOUND, message=str(not_found_exception))
@@ -165,7 +165,7 @@ async def get_memory_messages(memory_id):
         res = await memory_api_service.get_memory_messages(
             memory_id, agent_ids, keywords, page, page_size
         )
-        return get_result(message=True, data=res)
+        return get_result(message="success", data=res)
     except NotFoundException as not_found_exception:
         logging.error(not_found_exception)
         return get_result(code=RetCode.NOT_FOUND, message=str(not_found_exception))
@@ -271,7 +271,7 @@ async def search_message():
         "top_n": top_n
     }
     res = await memory_api_service.search_message(filter_dict, params)
-    return get_result(message=True, data=res)
+    return get_result(message="success", data=res)
 
 @manager.route("/messages", methods=["GET"]) # noqa: F821
 @login_required
@@ -287,7 +287,7 @@ async def get_messages():
         return get_result(code=RetCode.ARGUMENT_ERROR, message="memory_ids is required.")
     try:
         res = await memory_api_service.get_messages(memory_ids, agent_id, session_id, limit)
-        return get_result(message=True, data=res)
+        return get_result(message="success", data=res)
     except Exception as e:
         logging.error(e)
         return get_result(code=RetCode.SERVER_ERROR, message="Internal server error")
@@ -298,7 +298,7 @@ async def get_messages():
 async def get_message_content(memory_id: str, message_id: int):
     try:
         res = await memory_api_service.get_message_content(memory_id, message_id)
-        return get_result(message=True, data=res)
+        return get_result(message="success", data=res)
     except NotFoundException as not_found_exception:
         logging.error(not_found_exception)
         return get_result(code=RetCode.NOT_FOUND, message=str(not_found_exception))

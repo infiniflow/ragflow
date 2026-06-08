@@ -19,6 +19,7 @@ import functools
 import inspect
 import json
 import logging
+import os
 import sys
 import time
 from copy import deepcopy
@@ -31,7 +32,7 @@ from quart import (
     request,
     has_app_context,
 )
-from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest, Unauthorized as WerkzeugUnauthorized
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -48,6 +49,7 @@ from common.connection_utils import timeout
 from common.constants import RetCode
 from common import settings
 from common.misc_utils import thread_pool_exec
+from api.db.db_models import APIToken
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
@@ -255,18 +257,23 @@ def apikey_required(func):
     async def decorated_function(*args, **kwargs):
         authorization = request.headers.get("Authorization")
         if not authorization:
-            return get_result(code=RetCode.FORBIDDEN, message="Authorization header is missing!")
+            err = WerkzeugUnauthorized(description="Authorization header is missing!")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
         parts = authorization.split()
         if len(parts) < 2:
-            return get_result(code=RetCode.FORBIDDEN, message="Please check your authorization format.")
+            err = WerkzeugUnauthorized(description="Please check your authorization format.")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
         token = parts[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return get_result(code=RetCode.FORBIDDEN, message="API-KEY is invalid!")
+            err = WerkzeugUnauthorized(description="API-KEY is invalid!")
+            err.code = RetCode.AUTHENTICATION_ERROR
+            raise err
         kwargs["tenant_id"] = objs[0].tenant_id
         if inspect.iscoroutinefunction(func):
             return await func(*args, **kwargs)
-
         return func(*args, **kwargs)
 
     return decorated_function
