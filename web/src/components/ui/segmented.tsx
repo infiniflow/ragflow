@@ -3,7 +3,7 @@ import { supportsCssAnchor } from '@/utils/css-support';
 import * as React from 'react';
 import { useId } from 'react';
 import { Button, ButtonVariants } from './button';
-export declare type SegmentedValue = string | number;
+export declare type SegmentedValue = string | number | boolean;
 export declare type SegmentedRawOption = SegmentedValue;
 export interface SegmentedLabeledOption {
   className?: string;
