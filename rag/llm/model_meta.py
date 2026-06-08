@@ -215,3 +215,160 @@ class MinerU(Base):
                         "max_tokens": model.get("max_tokens", 8192),
                     })
                 return model_list
+
+
+class OpenRouter(Base):
+    _FACTORY_NAME = "OpenRouter"
+
+    def _get_api_key(self):
+        api_key = self.api_key
+        if not api_key:
+            return ""
+        try:
+            payload = json.loads(api_key)
+        except Exception:
+            return api_key
+        if isinstance(payload, dict):
+            return payload.get("api_key") or api_key
+        return api_key
+
+    def _get_model_list_url(self):
+        tail = "/api/v1/models?output_modalities=all"
+        if not self.base_url:
+            return "https://openrouter.ai" + tail
+        base_url = self.base_url.rstrip("/")
+        if "/api/v1" in base_url:
+            return base_url.split("/api/v1")[0].rstrip("/") + tail
+        if "/v1" in base_url:
+            return base_url.split("/v1")[0].rstrip("/") + tail
+        return base_url + tail
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+
+            model_name = model.get("id") or model.get("name") or model.get("canonical_slug")
+            if not model_name:
+                continue
+
+            architecture = model.get("architecture") or {}
+            input_modalities = set(architecture.get("input_modalities") or [])
+            output_modalities = set(architecture.get("output_modalities") or [])
+            supported_parameters = set(model.get("supported_parameters") or [])
+
+            model_types = []
+            if "text" in output_modalities:
+                model_types.append(LLMType.CHAT.value)
+            if "embeddings" in output_modalities:
+                model_types.append(LLMType.EMBEDDING.value)
+            if "image" in input_modalities and "text" in output_modalities:
+                model_types.append(LLMType.IMAGE2TEXT.value)
+            if "audio" in input_modalities and "text" in output_modalities:
+                model_types.append(LLMType.SPEECH2TEXT.value)
+            if "audio" in output_modalities:
+                model_types.append(LLMType.TTS.value)
+
+            features = []
+            if "tools" in supported_parameters:
+                features.append("is_tools")
+            if supported_parameters & {"reasoning", "include_reasoning"}:
+                features.append("thinking")
+
+            max_tokens = (
+                (model.get("top_provider") or {}).get("max_completion_tokens")
+                or model.get("context_length")
+                or (model.get("top_provider") or {}).get("context_length")
+                or 8192
+            )
+
+            model_list.append({
+                "name": model_name,
+                "model_types": list(dict.fromkeys(model_types)),
+                "features": features,
+                "max_tokens": max_tokens,
+            })
+
+        return model_list
+
+
+class OpenAIAPICompatible(Base):
+    _FACTORY_NAME = "OpenAI-API-Compatible"
+
+    _EMBEDDING_HINTS = ("embed", "embedding")
+    _RERANK_HINTS = ("rerank", "reranker")
+    _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
+    _TTS_HINTS = ("tts", "text-to-speech")
+    _VISION_HINTS = (
+        "vl",
+        "vision",
+        "llava",
+        "internvl",
+        "minicpm-v",
+        "gpt-4o",
+        "glm-4v",
+        "qvq",
+        "qwen-vl",
+        "pixtral",
+    )
+
+    @classmethod
+    def _contains_hint(cls, model_name, hints):
+        return any(hint in model_name for hint in hints)
+
+    @classmethod
+    def _infer_model_types(cls, model_name):
+        if cls._contains_hint(model_name, cls._RERANK_HINTS):
+            return [LLMType.RERANK.value]
+        if cls._contains_hint(model_name, cls._EMBEDDING_HINTS):
+            return [LLMType.EMBEDDING.value]
+        if cls._contains_hint(model_name, cls._SPEECH2TEXT_HINTS):
+            return [LLMType.SPEECH2TEXT.value]
+        if cls._contains_hint(model_name, cls._TTS_HINTS):
+            return [LLMType.TTS.value]
+
+        model_types = [LLMType.CHAT.value]
+        if cls._contains_hint(model_name, cls._VISION_HINTS):
+            model_types.append(LLMType.IMAGE2TEXT.value)
+        return model_types
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+
+            model_name = model.get("id") or model.get("name")
+            if not model_name:
+                continue
+
+            model_name_lower = model_name.lower()
+            model_list.append({
+                "name": model_name,
+                "model_types": self._infer_model_types(model_name_lower),
+                "features": [],
+                "max_tokens": (
+                    model.get("max_tokens")
+                    or model.get("max_completion_tokens")
+                    or model.get("context_length")
+                    or model.get("max_model_len")
+                    or 8192
+                ),
+            })
+
+        return model_list
+
+class VLLM(OpenAIAPICompatible):
+    _FACTORY_NAME = "VLLM"
+
+class LMStudio(OpenAIAPICompatible):
+    _FACTORY_NAME = "LM-Studio"
