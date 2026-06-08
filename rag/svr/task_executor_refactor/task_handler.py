@@ -23,6 +23,7 @@ for handling document processing tasks with refactored, testable methods.
 import asyncio
 import logging
 import json
+from rag.advanced_rag.knowlege_compile.artifact import artifact_map_from_chunks, artifact_plan_from_reduction, artifact_reduce_from_extracts, artifact_refine_from_plan
 import xxhash
 
 from timeit import default_timer as timer
@@ -457,10 +458,10 @@ class TaskHandler:
         logging.info(progress_message)
         ctx.progress_cb(msg=progress_message)
 
-        # Build TOC if needed
+        # Build TOC if needed (TOC continues to run in parallel during ingest;
+        # artifact_compilation has been moved to AFTER the chunk insert below
+        # because REFINE needs to look the source chunks up in ES by id).
         toc_thread = None
-        if ctx.parser_id.lower() == "naive" and ctx.parser_config.get("toc_extraction", False):
-            toc_thread = asyncio.create_task(asyncio.to_thread(self._build_toc, ctx, chunks, ctx.progress_cb))
 
         # Insert chunks
         chunk_count = len(set([chunk["id"] for chunk in chunks]))
@@ -486,6 +487,17 @@ class TaskHandler:
         await post_processor.process_table_parser_metadata(task_doc_id, chunks)
 
         ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
+
+        # Artifact MRP compilation — runs AFTER chunk insert so REFINE's
+        # ``_artifact_load_chunks_by_id(chunk_ids, …)`` actually finds the rows
+        # in ES (previously this ran before insert, which left REFINE
+        # unable to fetch the source chunks and produced the
+        # "still unresolved after fallback" warning).
+        if ctx.parser_id.lower() == "naive" and ctx.parser_config.get("toc_extraction", False):
+            try:
+                await self._artifact_compilation(ctx, chunks, ctx.progress_cb)
+            except Exception:
+                logging.exception("artifact_compilation failed for doc %s", ctx.doc_id)
 
         toc_chunk = await self._process_toc_thread(toc_thread)
         if toc_chunk:
@@ -529,6 +541,132 @@ class TaskHandler:
         from common import settings
         """Get binary from storage."""
         return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, name)
+    
+    async def _artifact_compilation(self, ctx: TaskContext, docs: List[Dict], progress_callback):
+        """Run the artifact MRP pipeline end-to-end: MAP (this doc's chunks) → REDUCE
+        → PLAN → REFINE (KB-wide). Persists per-stage results to ES under
+        ``compile_kwd`` markers (artifact_map_extract, artifact_reduce_result,
+        artifact_compilation_plan, artifact_page_draft, artifact_page).
+
+        Reduce / Plan / Refine run with ``force_rerun=True`` so each new doc
+        upload refreshes the KB-wide artifact. The artifact_page rows include
+        ``artifact_kb_id_kwd``, ``artifact_doc_id_kwd``, ``artifact_outlinks_kwd``,
+        ``artifact_slug_kwd``, ``artifact_title_kwd``, and ``artifact_page_type_kwd`` so the
+        UI can fetch any page from ES by ``(kb_id, slug)`` — the embedded
+        ``[text](artifact/{kb_id}/{slug})`` links in ``content_with_weight`` carry
+        exactly that pair.
+        """
+        progress_callback(msg="Start to compile artifact ...")
+        
+        chat_model_config = get_model_config_from_provider_instance(
+            ctx.tenant_id, LLMType.CHAT, ctx.llm_id
+        )
+        chat_mdl = LLMBundle(ctx.tenant_id, chat_model_config, lang=ctx.language)
+        embedding_model, _ = await self._bind_embedding_model()
+        docs = sorted(docs, key=lambda d: (
+            d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
+            d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
+        ))
+
+        parser_cfg = ctx.parser_config.get("artifact_compilation") or {}
+        kb_name = parser_cfg.get("kb_name") if isinstance(parser_cfg, dict) else None
+        kb_description = parser_cfg.get("kb_description") if isinstance(parser_cfg, dict) else None
+        
+        settings.docStoreConn.delete({"compile_kwd": "artifact_map_extract"}, search.index_name(ctx.tenant_id), ctx.kb_id)
+        settings.docStoreConn.delete({"compile_kwd": "artifact_reduce_result"}, search.index_name(ctx.tenant_id), ctx.kb_id)
+        settings.docStoreConn.delete({"compile_kwd": "artifact_compilation_plan"}, search.index_name(ctx.tenant_id), ctx.kb_id)
+        settings.docStoreConn.delete({"compile_kwd": "artifact_page_draft"}, search.index_name(ctx.tenant_id), ctx.kb_id)
+        settings.docStoreConn.delete({"compile_kwd": "artifact_page"}, search.index_name(ctx.tenant_id), ctx.kb_id)
+        for kwd in ("artifact_map_extract", "artifact_reduce_result", "artifact_compilation_plan", "artifact_page_draft", "artifact_page"):
+            settings.docStoreConn.delete({"compile_kwd": kwd}, search.index_name(ctx.tenant_id), ctx.kb_id)
+
+        def _stage_cb(prefix: str):
+            def _cb(*args, **kwargs):
+                try:
+                    if args and isinstance(args[0], (int, float)):
+                        msg = args[1] if len(args) > 1 else kwargs.get("msg", "")
+                        progress_callback(msg=f"{prefix} {msg}")
+                    else:
+                        msg = kwargs.get("msg") or (args[0] if args else "")
+                        progress_callback(msg=f"{prefix} {msg}")
+                except Exception:
+                    logging.exception("artifact_compilation: progress callback failed")
+            return _cb
+
+        async def _run():
+            # Phase 1 — MAP: per-chunk extraction for this doc.
+            # ``parser_cfg`` is the ``artifact_compilation`` block on the KB's
+            # parser config. When it carries ``output.entities.fields`` /
+            # ``output.relations.fields`` and / or
+            # ``guideline.rules_for_entities|relations``, those drive the
+            # entity / relation schema and Rules section of the MAP prompt;
+            # otherwise the built-in artifact defaults are used.
+            phase1 = await artifact_map_from_chunks(
+                chunks=docs,
+                chat_mdl=chat_mdl,
+                embd_mdl=embedding_model,
+                doc_id=ctx.doc_id,
+                tenant_id=ctx.tenant_id,
+                kb_id=ctx.kb_id,
+                language=ctx.language,
+                callback=_stage_cb("[artifact MAP]"),
+                parser_config=parser_cfg,
+            )
+            logging.info("Artifact compilation PHASE【1】"+ json.dumps(phase1, ensure_ascii=False, indent=4))
+            # Phase 2 — REDUCE: KB-wide dedup of every MAP extract in this KB.
+            phase2 = await artifact_reduce_from_extracts(
+                chat_mdl=chat_mdl,
+                embd_mdl=embedding_model,
+                tenant_id=ctx.tenant_id,
+                kb_id=ctx.kb_id,
+                force_rerun=True,
+                callback=_stage_cb("[artifact REDUCE]"),
+            )
+            logging.info("Artifact compilation PHASE【2】"+ json.dumps(phase2, ensure_ascii=False, indent=4))
+            # Phase 3 — PLAN: KB-wide compilation plan.
+            phase3 = await artifact_plan_from_reduction(
+                chat_mdl=chat_mdl,
+                embd_mdl=embedding_model,
+                tenant_id=ctx.tenant_id,
+                kb_id=ctx.kb_id,
+                kb_name=kb_name,
+                kb_description=kb_description,
+                force_rerun=True,
+                callback=_stage_cb("[artifact PLAN]"),
+            )
+            logging.info("Artifact compilation PHASE【3】"+ json.dumps(phase3, ensure_ascii=False, indent=4))
+            # Phase 4 — REFINE: write/merge every planned page to ES as artifact_page.
+            phase4 = await artifact_refine_from_plan(
+                chat_mdl=chat_mdl,
+                embd_mdl=embedding_model,
+                tenant_id=ctx.tenant_id,
+                kb_id=ctx.kb_id,
+                force_rerun=True,
+                callback=_stage_cb("[artifact REFINE]"),
+            )
+            logging.info("Artifact compilation PHASE【4】"+ json.dumps(phase4, ensure_ascii=False, indent=4))
+            return phase4
+
+        try:
+            pages = asyncio.run(_run())
+        except Exception:
+            logging.exception("artifact_compilation: pipeline failed for doc %s", ctx.doc_id)
+            return None
+
+        summary = [
+            {"slug": p.get("slug"), "title": p.get("title"),
+            "action": p.get("action"), "page_type": p.get("page_type"),
+            "outlinks": p.get("outlinks") or [],
+            "source_doc_ids": p.get("source_doc_ids") or [],
+            "source_chunk_ids": p.get("source_chunk_ids") or []}
+            for p in (pages or [])
+        ]
+        logging.info(
+            "------------ Artifact Compilation -------------\nkb=%s doc=%s pages=%d\n%s",
+            ctx.kb_id, ctx.doc_id, len(summary),
+            json.dumps(summary, ensure_ascii=False, indent=2),
+        )
+        return pages
 
     @classmethod
     def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:
