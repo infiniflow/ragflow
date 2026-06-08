@@ -177,6 +177,20 @@ func (t *MetaFilterTranslator) Translate(flt map[string]interface{}) (*Translate
 	if !supportedOperators[op] {
 		return nil, &UnsupportedMetaFilterError{Reason: fmt.Sprintf("unknown operator %q", op), FilterClause: flt}
 	}
+	if op != "empty" && op != "not empty" {
+		switch v := value.(type) {
+		case nil:
+			return nil, &UnsupportedMetaFilterError{Reason: fmt.Sprintf("operator %q requires a value", op), FilterClause: flt}
+		case string:
+			if strings.TrimSpace(v) == "" {
+				return nil, &UnsupportedMetaFilterError{Reason: fmt.Sprintf("operator %q requires a non-empty value", op), FilterClause: flt}
+			}
+		case []interface{}:
+			if len(v) == 0 {
+				return nil, &UnsupportedMetaFilterError{Reason: fmt.Sprintf("operator %q requires at least one value", op), FilterClause: flt}
+			}
+		}
+	}
 
 	fieldPath := t.fieldName(key)
 

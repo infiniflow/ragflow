@@ -1323,20 +1323,29 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			continue
 		}
 		if k == "available_int" {
-			if vi, ok := v.(float64); ok {
-				if vi == 0 {
-					filterClauses = append(filterClauses, map[string]interface{}{
-						"range": map[string]interface{}{"available_int": map[string]interface{}{"lt": 1}},
-					})
-				} else {
-					filterClauses = append(filterClauses, map[string]interface{}{
-						"bool": map[string]interface{}{
-							"must_not": []map[string]interface{}{
-								{"range": map[string]interface{}{"available_int": map[string]interface{}{"lt": 1}}},
-							},
+			var numVal float64
+			switch val := v.(type) {
+			case float64:
+				numVal = val
+			case int:
+				numVal = float64(val)
+			case int64:
+				numVal = float64(val)
+			default:
+				continue
+			}
+			if numVal == 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"range": map[string]interface{}{"available_int": map[string]interface{}{"lt": 1}},
+				})
+			} else {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"bool": map[string]interface{}{
+						"must_not": []map[string]interface{}{
+							{"range": map[string]interface{}{"available_int": map[string]interface{}{"lt": 1}}},
 						},
-					})
-				}
+					},
+				})
 			}
 			continue
 		}
