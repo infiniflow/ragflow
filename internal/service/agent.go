@@ -17,13 +17,19 @@
 package service
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -161,6 +167,25 @@ type ListAgentSessionsRequest struct {
 type ListAgentSessionsResponse struct {
 	Data  []map[string]interface{} `json:"data"`
 	Total int64                    `json:"total"`
+}
+
+type DeleteAgentSessionsResult struct {
+	Data    *DeleteAgentSessionsResponse
+	Message string
+}
+
+type DeleteAgentSessionsResponse struct {
+	SuccessCount int      `json:"success_count"`
+	Errors       []string `json:"errors,omitempty"`
+}
+
+type TestDBConnectionRequest struct {
+	DBType   string      `json:"db_type"`
+	Database string      `json:"database"`
+	Username string      `json:"username"`
+	Host     string      `json:"host"`
+	Port     interface{} `json:"port"`
+	Password string      `json:"password"`
 }
 
 func parseAgentSessionDate(value string, isEnd bool) (*time.Time, error) {
@@ -370,6 +395,28 @@ func firstNonNil(values ...interface{}) interface{} {
 	return nil
 }
 
+// checkDuplicateSessionIDs check duplicated ID in IDS and add some messages for it
+func checkDuplicateSessionIDs(ids []string) ([]string, []string) {
+	seen := make(map[string]int, len(ids))
+	uniqueIDs := make([]string, 0, len(ids))
+
+	for _, id := range ids {
+		seen[id]++
+		if seen[id] == 1 {
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+
+	duplicateMessages := make([]string, 0)
+	for _, id := range uniqueIDs {
+		if seen[id] > 1 {
+			duplicateMessages = append(duplicateMessages, fmt.Sprintf("Duplicate session ids: %s", id))
+		}
+	}
+
+	return uniqueIDs, duplicateMessages
+}
+
 func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
@@ -472,6 +519,297 @@ func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string)
 	}
 
 	return true, common.CodeSuccess, nil
+}
+
+// DeleteAgentSessions Delete sessions by ids
+func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string, deleteAll bool) (*DeleteAgentSessionsResult, common.ErrorCode, error) {
+	if agentID == "" {
+		return nil, common.CodeArgumentError, errors.New("agent_id is required")
+	}
+
+	canvas, err := s.canvasDAO.GetByID(agentID)
+	if err != nil || canvas == nil || canvas.UserID != userID {
+		return nil, common.CodeDataError, fmt.Errorf("You don't own the agent %s", agentID)
+	}
+
+	if len(ids) == 0 {
+		if !deleteAll {
+			return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
+		}
+
+		ids, err = s.api4ConversationDAO.ListIDsByAgentID(agentID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if len(ids) == 0 {
+			return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
+		}
+	}
+
+	sessionIDs, duplicateMessages := checkDuplicateSessionIDs(ids)
+	errorsList := make([]string, 0)
+	successCount := 0
+
+	for _, sessionID := range sessionIDs {
+		sessionID = strings.TrimSpace(sessionID)
+		if sessionID == "" {
+			errorsList = append(errorsList, "The agent doesn't own the session ")
+			continue
+		}
+
+		conv, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if conv == nil {
+			errorsList = append(errorsList, fmt.Sprintf("The agent doesn't own the session %s", sessionID))
+			continue
+		}
+
+		if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(sessionID, agentID); err != nil {
+			return nil, common.CodeServerError, err
+		}
+		successCount++
+	}
+
+	if len(errorsList) > 0 {
+		if successCount > 0 {
+			return &DeleteAgentSessionsResult{
+				Message: fmt.Sprintf("Partially deleted %d sessions with %d errors", successCount, len(errorsList)),
+				Data: &DeleteAgentSessionsResponse{
+					SuccessCount: successCount,
+					Errors:       errorsList,
+				},
+			}, common.CodeSuccess, nil
+		}
+		return nil, common.CodeDataError, errors.New(strings.Join(errorsList, "; "))
+	}
+
+	if len(duplicateMessages) > 0 {
+		if successCount > 0 {
+			return &DeleteAgentSessionsResult{
+				Message: fmt.Sprintf("Partially deleted %d sessions with %d errors", successCount, len(duplicateMessages)),
+				Data: &DeleteAgentSessionsResponse{
+					SuccessCount: successCount,
+					Errors:       duplicateMessages,
+				},
+			}, common.CodeSuccess, nil
+		}
+		return nil, common.CodeDataError, errors.New(strings.Join(duplicateMessages, ";"))
+	}
+
+	return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
+}
+
+// AssertHostIsSafe checks whether host resolves only to public IP addresses.
+func AssertHostIsSafe(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", errors.New("Host must not be empty.")
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		zap.L().Warn("SSRF guard could not resolve host",
+			zap.String("host", host),
+			zap.Error(err),
+		)
+		return "", fmt.Errorf("Could not resolve host %q: %w", host, err)
+	}
+
+	if len(ips) == 0 {
+		zap.L().Warn("SSRF guard blocked host: resolved to no addresses",
+			zap.String("host", host),
+		)
+		return "", fmt.Errorf("Host %q resolved to no addresses.", host)
+	}
+
+	var resolvedIP string
+
+	for _, ip := range ips {
+		addr, ok := netip.AddrFromSlice(ip)
+		if !ok {
+			return "", fmt.Errorf("invalid resolved IP %q for host %q", ip.String(), host)
+		}
+
+		// Normalize IPv4-mapped IPv6, equivalent to Python _effective_ip().
+		addr = addr.Unmap()
+
+		if !isPublicAddr(addr) {
+			zap.L().Warn("SSRF guard blocked host",
+				zap.String("host", host),
+				zap.String("resolved_ip", addr.String()),
+			)
+			return "", fmt.Errorf("Host resolves to a non-public address (%s), which is not allowed.", addr.String())
+		}
+
+		if resolvedIP == "" {
+			resolvedIP = addr.String()
+		}
+	}
+
+	if resolvedIP == "" {
+		return "", fmt.Errorf("Host %q resolved to no addresses.", host)
+	}
+
+	return resolvedIP, nil
+}
+
+func isPublicAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+
+	if !addr.IsValid() {
+		return false
+	}
+
+	if !addr.IsGlobalUnicast() {
+		return false
+	}
+
+	if addr.IsPrivate() ||
+		addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() ||
+		addr.IsUnspecified() {
+		return false
+	}
+
+	return !isSpecialUseAddr(addr)
+}
+
+func isSpecialUseAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+
+	specialCIDRs := []string{
+		// IPv4 special-use / documentation / reserved ranges.
+		"0.0.0.0/8",
+		"100.64.0.0/10",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"192.0.0.0/24",
+		"192.0.2.0/24",
+		"198.18.0.0/15",
+		"198.51.100.0/24",
+		"203.0.113.0/24",
+		"224.0.0.0/4",
+		"240.0.0.0/4",
+
+		// IPv6 special-use / documentation / local ranges.
+		"::/128",
+		"::1/128",
+		"64:ff9b:1::/48",
+		"100::/64",
+		"2001::/23",
+		"2001:2::/48",
+		"fc00::/7",
+		"fe80::/10",
+		"ff00::/8",
+		"2001:db8::/32",
+		"2002::/16",
+	}
+
+	for _, cidr := range specialCIDRs {
+		prefix := netip.MustParsePrefix(cidr)
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// missingDBConnectionFields Check if request is missing something
+func missingDBConnectionFields(req *TestDBConnectionRequest) []string {
+	missing := make([]string, 0, 6)
+	if req == nil || strings.TrimSpace(req.DBType) == "" {
+		missing = append(missing, "db_type")
+	}
+	if req == nil || strings.TrimSpace(req.Database) == "" {
+		missing = append(missing, "database")
+	}
+	if req == nil || strings.TrimSpace(req.Username) == "" {
+		missing = append(missing, "username")
+	}
+	if req == nil || strings.TrimSpace(req.Host) == "" {
+		missing = append(missing, "host")
+	}
+	if req == nil || dbConnectionPort(req.Port) == "" {
+		missing = append(missing, "port")
+	}
+	if req == nil || req.Password == "" {
+		missing = append(missing, "password")
+	}
+	return missing
+}
+
+func dbConnectionPort(port interface{}) string {
+	switch value := port.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(value)
+	case float64:
+		return strconv.Itoa(int(value))
+	case float32:
+		return strconv.Itoa(int(value))
+	case int:
+		return strconv.Itoa(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case json.Number:
+		return value.String()
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func (s *AgentService) TestDBConnection(userID string, req *TestDBConnectionRequest) (common.ErrorCode, error) {
+	if missing := missingDBConnectionFields(req); len(missing) > 0 {
+		return common.CodeArgumentError, fmt.Errorf("required argument are missing: %s; ", strings.Join(missing, ","))
+	}
+
+	safeHost, err := AssertHostIsSafe(req.Host)
+	if err != nil {
+		zap.L().Warn(
+			"Rejected test_db_connection: unsafe host",
+			zap.String("host", req.Host),
+			zap.String("db_type", req.DBType),
+			zap.String("user", userID),
+			zap.Error(err),
+		)
+		return common.CodeDataError, err
+	}
+
+	switch req.DBType {
+	case "mysql", "mariadb", "oceanbase":
+		port := dbConnectionPort(req.Port)
+		config := mysql.Config{
+			User:                 req.Username,
+			Passwd:               req.Password,
+			Net:                  "tcp",
+			Addr:                 net.JoinHostPort(safeHost, port),
+			DBName:               req.Database,
+			Timeout:              5 * time.Second,
+			AllowNativePasswords: true,
+		}
+		db, err := sql.Open("mysql", config.FormatDSN())
+		if err != nil {
+			return common.CodeExceptionError, err
+		}
+		defer db.Close()
+
+		if err := db.Ping(); err != nil {
+			return common.CodeExceptionError, err
+		}
+		if _, err := db.Exec("SELECT 1"); err != nil {
+			return common.CodeExceptionError, err
+		}
+	default:
+		return common.CodeExceptionError, errors.New("Unsupported database type.")
+	}
+
+	return common.CodeSuccess, nil
 }
 
 // normalizeAgentTags returns an error for unsupported tag payload types
