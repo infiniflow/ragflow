@@ -2,11 +2,13 @@ import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { ToggleList } from '@/components/ui/toggle-list';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { cn } from '@/lib/utils';
 import {
   useFetchInstanceNameSet,
   useHideWhenInstanceExists,
+  VerifyResult,
 } from '@/pages/user-setting/setting-model/hooks';
-import { memo, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 import VerifyButton from '../verify-button';
@@ -36,6 +38,13 @@ const ProviderModal = ({
   const formRef = useRef<DynamicFormRef>(null);
   const { instanceNameSet } = useFetchInstanceNameSet(llmFactory);
   const hideWhenInstanceExists = useHideWhenInstanceExists(instanceNameSet);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  useEffect(() => {
+    setVerifyResult(null);
+    return () => {
+      setVerifyResult(null);
+    };
+  }, [visible]);
 
   // Field config, default values, doc link, and the LIST_MODEL_PROVIDERS
   // flag are all derived from the current llmFactory / mode / initialValues.
@@ -145,8 +154,12 @@ const ProviderModal = ({
           />
         )}
 
-        <VerifyButton onVerify={handleVerify} />
-
+        <VerifyButton
+          onVerify={handleVerify}
+          verifyCallback={(result: VerifyResult | null) => {
+            setVerifyResult(result);
+          }}
+        />
         <div
           className={
             docLinkText
@@ -159,7 +172,9 @@ const ProviderModal = ({
               href={config.docLink}
               target="_blank"
               rel="noreferrer"
-              className="text-primary hover:underline ml-24"
+              className={cn('text-primary hover:underline', {
+                'ml-24': !verifyResult,
+              })}
             >
               {docLinkText}
             </a>

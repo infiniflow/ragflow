@@ -146,10 +146,14 @@ export function ToggleList<V = unknown>({
   const filteredOptions = React.useMemo(() => {
     if (isApiSearch || !query.trim()) return options;
     const q = query.trim().toLowerCase();
-    return options.filter((opt) =>
-      String(opt.label ?? '')
-        .toLowerCase()
-        .includes(q),
+    return options.filter(
+      (opt) =>
+        String(opt.label ?? '')
+          .toLowerCase()
+          .includes(q) ||
+        String(opt.value ?? '')
+          .toLowerCase()
+          .includes(q),
     );
   }, [options, query, isApiSearch]);
 
