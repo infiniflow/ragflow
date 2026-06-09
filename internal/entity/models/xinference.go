@@ -69,8 +69,9 @@ func NewXinferenceModel(baseURL map[string]string, urlSuffix URLSuffix) *Xinfere
 
 	return &XinferenceModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: transport,
 			},
@@ -183,7 +184,9 @@ func (x *XinferenceModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -257,7 +260,9 @@ func (x *XinferenceModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -409,7 +414,9 @@ func (x *XinferenceModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -520,7 +527,9 @@ func (x *XinferenceModel) Rerank(modelName *string, query string, documents []st
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -634,7 +643,9 @@ func (x *XinferenceModel) TranscribeAudio(modelName *string, file *string, apiCo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	resp, err := x.baseModel.httpClient.Do(req)
@@ -710,7 +721,9 @@ func (x *XinferenceModel) AudioSpeech(modelName *string, audioContent *string, a
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -744,7 +757,7 @@ func (x *XinferenceModel) ParseFile(modelName *string, content []byte, url *stri
 
 // ListModels returns the model IDs exposed by Xinference's OpenAI-compatible
 // /v1/models endpoint.
-func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -765,7 +778,9 @@ func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -786,10 +801,10 @@ func (x *XinferenceModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	models := make([]string, 0, len(result.Data))
+	models := make([]ListModelResponse, 0, len(result.Data))
 	for _, model := range result.Data {
 		if model.ID != "" {
-			models = append(models, model.ID)
+			models = append(models, ListModelResponse{Name: model.ID})
 		}
 	}
 	return models, nil

@@ -31,41 +31,72 @@ import (
 	"go.uber.org/zap"
 )
 
-// searchbotLLM is the interface for LLM calls used by SearchbotHandler.
+// searchbotLLM is the interface for LLM calls used by SearchBotHandler.
 type searchbotLLM interface {
 	Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error)
 }
 
-// SearchbotRealLLM wraps ModelProviderService to implement searchbotLLM.
-type SearchbotRealLLM struct {
+// ChunkRetriever abstracts chunk retrieval for the searchbots handler.
+type ChunkRetriever interface {
+	RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+}
+
+// SearchBotRealLLM wraps ModelProviderService to implement searchbotLLM.
+type SearchBotRealLLM struct {
 	Svc *service.ModelProviderService
 }
 
-func (r *SearchbotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	driver, modelName, apiConfig, _, err := r.Svc.GetModelConfigFromProviderInstance(tenantID, entity.ModelTypeChat, modelID)
+func (r *SearchBotRealLLM) Chat(tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
+	chatModel, err := r.Svc.GetChatModel(tenantID, modelID)
 	if err != nil {
 		return nil, err
 	}
-	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	return chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, config)
 }
 
-// SearchbotRequest is the request body for POST /api/v1/searchbots/related_questions.
-type SearchbotRequest struct {
+// SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
+type SearchBotRetrievalTestRequest struct {
+	KbIDs                  common.StringSlice      `json:"kb_id" binding:"required"`
+	Question               string                  `json:"question" binding:"required"`
+	Page                   *int                    `json:"page,omitempty"`
+	Size                   *int                    `json:"size,omitempty"`
+	DocIDs                 []string                `json:"doc_ids,omitempty"`
+	UseKG                  *bool                   `json:"use_kg,omitempty"`
+	TopK                   *int                    `json:"top_k,omitempty"`
+	CrossLanguages         []string                `json:"cross_languages,omitempty"`
+	SearchID               *string                 `json:"search_id,omitempty"`
+	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
+	TenantRerankID         *string                 `json:"tenant_rerank_id,omitempty"`
+	RerankID               *string                 `json:"rerank_id,omitempty"`
+	Keyword                *bool                   `json:"keyword,omitempty"`
+	SimilarityThreshold    *float64                `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight *float64                `json:"vector_similarity_weight,omitempty"`
+	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
+	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
+	//        → search.py highlightFields → ES get_highlight()
+	// Issue: https://github.com/infiniflow/ragflow/issues/15712
+	// Highlight           *bool                   `json:"highlight,omitempty"`
+}
+
+// SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
+type SearchBotRequest struct {
 	Question string `json:"question" binding:"required"`
 	SearchID string `json:"search_id,omitempty"`
 }
 
-// SearchbotHandler handles POST /api/v1/searchbots/related_questions.
-type SearchbotHandler struct {
+// SearchBotHandler handles searchbot endpoints:
+//   POST /api/v1/searchbots/related_questions
+//   POST /api/v1/searchbots/retrieval_test
+type SearchBotHandler struct {
 	searchSvc *service.SearchService
 	tenantSvc *service.TenantService
 	llm       searchbotLLM
+	chunkSvc  ChunkRetriever
 }
 
-// NewSearchbotHandler creates a new SearchbotHandler.
-func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM) *SearchbotHandler {
-	return &SearchbotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm}
+// NewSearchBotHandler creates a new SearchBotHandler.
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm searchbotLLM, chunkSvc ChunkRetriever) *SearchBotHandler {
+	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc}
 }
 
 // Handle generates related search questions based on a user query.
@@ -74,17 +105,17 @@ func NewSearchbotHandler(searchSvc *service.SearchService, tenantSvc *service.Te
 // @Tags searchbots
 // @Accept json
 // @Produce json
-// @Param request body SearchbotRequest true "Request body"
+// @Param request body SearchBotRequest true "Request body"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/related_questions [post]
-func (h *SearchbotHandler) Handle(c *gin.Context) {
+func (h *SearchBotHandler) Handle(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		jsonError(c, errorCode, errorMessage)
 		return
 	}
 
-	var req SearchbotRequest
+	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    common.CodeArgumentError,
@@ -148,21 +179,133 @@ func (h *SearchbotHandler) Handle(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    common.CodeSuccess,
 		"data":    questions,
-		"message": "",
+		"message": "success",
 	})
+}
+
+// RetrievalTest performs a retrieval test against specified knowledge bases.
+// @Summary Retrieval Test
+// @Description Test document retrieval across knowledge bases with optional filters, reranking, and KG search.
+// @Tags searchbots
+// @Accept json
+// @Produce json
+// @Param request body SearchBotRetrievalTestRequest true "Retrieval test parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/searchbots/retrieval_test [post]
+func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": errorCode, "data": nil, "message": errorMessage})
+		return
+	}
+
+	var req SearchBotRetrievalTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": err.Error()})
+		return
+	}
+
+	// Filter out empty strings from KbIDs before validation.
+	filtered := make(common.StringSlice, 0, len(req.KbIDs))
+	for _, id := range req.KbIDs {
+		if strings.TrimSpace(id) != "" {
+			filtered = append(filtered, id)
+		}
+	}
+	req.KbIDs = filtered
+
+	if len(req.KbIDs) == 0 || req.Question == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "kb_id and question are required"})
+		return
+	}
+
+	applyRetrievalDefaults(&req)
+
+	if req.TopK != nil && *req.TopK <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": common.CodeArgumentError, "data": nil, "message": "top_k must be greater than 0"})
+		return
+	}
+
+	svcReq := toRetrievalServiceRequest(&req)
+
+	result, err := h.chunkSvc.RetrievalTest(svcReq, user.ID)
+	if err != nil {
+		common.Warn("searchbot retrieval test failed", zap.String("error", err.Error()))
+		c.JSON(http.StatusInternalServerError, gin.H{"code": common.CodeServerError, "data": nil, "message": "retrieval test failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": int(common.CodeSuccess), "data": result, "message": "success"})
+}
+
+// toRetrievalServiceRequest maps the handler DTO to the service DTO.
+// The two structs differ in KbIDs (StringSlice → []string) and
+// MetaDataFilter (→ Filter) to maintain Python API compatibility.
+func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.RetrievalTestRequest {
+	return &service.RetrievalTestRequest{
+		Datasets:               common.StringSlice(h.KbIDs),
+		Question:               h.Question,
+		Page:                   h.Page,
+		Size:                   h.Size,
+		DocIDs:                 h.DocIDs,
+		UseKG:                  h.UseKG,
+		TopK:                   h.TopK,
+		CrossLanguages:         h.CrossLanguages,
+		SearchID:               h.SearchID,
+		Filter:                 h.MetaDataFilter,
+		TenantRerankID:         h.TenantRerankID,
+		RerankID:               h.RerankID,
+		Keyword:                h.Keyword,
+		SimilarityThreshold:    h.SimilarityThreshold,
+		VectorSimilarityWeight: h.VectorSimilarityWeight,
+	}
 }
 
 // ptrFloat64 returns a pointer to a float64 value.
 func ptrFloat64(v float64) *float64 { return &v }
 
+// applyRetrievalDefaults fills in default values for optional fields,
+// matching Python bot_api.py retrieval_test endpoint.
+func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
+	if req.Page == nil {
+		v := 1
+		req.Page = &v
+	}
+	if req.Size == nil {
+		v := 30
+		req.Size = &v
+	}
+	if req.TopK == nil {
+		v := 1024
+		req.TopK = &v
+	}
+	if req.UseKG == nil {
+		v := false
+		req.UseKG = &v
+	}
+	if req.Keyword == nil {
+		v := false
+		req.Keyword = &v
+	}
+	if req.SimilarityThreshold == nil {
+		v := 0.0
+		req.SimilarityThreshold = &v
+	}
+	if req.VectorSimilarityWeight == nil {
+		v := 0.3
+		req.VectorSimilarityWeight = &v
+	}
+}
+
+var relatedQuestionLineRe = regexp.MustCompile(`^\d+\.\s`)
+
 // parseRelatedQuestions extracts numbered list items from an LLM response.
 // Lines matching "^N. " are extracted and the number prefix is stripped.
 func parseRelatedQuestions(text string) []string {
-	lineRe := regexp.MustCompile(`^\d+\.\s`)
 	var result []string
 	for _, line := range strings.Split(text, "\n") {
-		if lineRe.MatchString(line) {
-			result = append(result, lineRe.ReplaceAllString(line, ""))
+		if relatedQuestionLineRe.MatchString(line) {
+			result = append(result, relatedQuestionLineRe.ReplaceAllString(line, ""))
 		}
 	}
 	if result == nil {
