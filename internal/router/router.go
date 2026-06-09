@@ -94,7 +94,7 @@ func NewRouter(
 		agentHandler:            agentHandler,
 		searchBotHandler: searchBotHandler,
 			difyRetrievalHandler:  difyRetrievalHandler,
-		pluginHandler:         pluginHandler,
+			pluginHandler:         pluginHandler,
 	}
 }
 
@@ -382,12 +382,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/versions/:version_id", r.agentHandler.GetAgentVersion)
 				agents.POST("/:agent_id/upload", r.agentHandler.UploadAgentFile)
 				agents.PUT("/:agent_id/tags", r.agentHandler.UpdateAgentTags)
-			}
-
 			// Plugin routes
 			plugin := v1.Group("/plugin")
 			{
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
+			}
 			}
 
 			connector := v1.Group("/connectors")

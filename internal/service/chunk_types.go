@@ -18,20 +18,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
 	"ragflow/internal/server"
-	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
-	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
@@ -47,19 +43,6 @@ type ChunkService struct {
 	searchService  *SearchService
 }
 
-// NewChunkService creates chunk service
-func NewChunkService() *ChunkService {
-	cfg := server.GetConfig()
-	return &ChunkService{
-		docEngine:      engine.Get(),
-		engineType:     cfg.DocEngine.Type,
-		embeddingCache: utility.NewEmbeddingLRU(1000), // default capacity
-		kbDAO:          dao.NewKnowledgebaseDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
-		documentDAO:    dao.NewDocumentDAO(),
-		searchService:  NewSearchService(),
-	}
-}
 
 // RetrievalTestRequest retrieval test request
 type RetrievalTestRequest struct {
@@ -86,403 +69,6 @@ type RetrievalTestResponse struct {
 	DocAggs []map[string]interface{} `json:"doc_aggs"`
 	Labels  *map[string]float64      `json:"labels"`
 	Total   int64                    `json:"total"`
-}
-
-// RetrievalTest performs retrieval test for a given question against specified knowledge bases.
-//
-// Flow:
-//  1. Validate kbs permissions and embedding model
-//  2. Apply metadata filter if specified (auto/semi_auto uses LLM, manual uses provided conditions)
-//  3. Apply cross_languages transformation if requested (translate question)
-//  4. Apply keyword extraction if requested (append keywords to question)
-//  5. Get rank features via LabelQuestion() - tag-based weights or pagerank_fld fallback
-//  6. Call RetrievalService.Retrieval() which:
-//     - Computes query embedding
-//     - Performs hybrid search (text + vector) with rank features
-//     - Reranks results
-//     - Builds doc_aggs by aggregating chunks per document
-//  7. knowledge graph retrieval (not implemented)
-//  8. Apply retrieval by children to group child chunks under parent chunks
-func (s *ChunkService) RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
-	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
-
-	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
-		"    kbID=%v\n"+
-		"    question=%s\n"+
-		"    page=%v, size=%v\n"+
-		"    docIDs=%v\n"+
-		"    useKG=%v, topK=%v\n"+
-		"    crossLanguages=%v\n"+
-		"    searchID=%v\n"+
-		"    filter=%v\n"+
-		"    tenantRerankID=%v\n"+
-		"    rerankID=%v\n"+
-		"    keyword=%v\n"+
-		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
-		req.Datasets, req.Question,
-		ptrString(req.Page), ptrString(req.Size), req.DocIDs,
-		ptrString(req.UseKG), ptrString(req.TopK), req.CrossLanguages, ptrString(req.SearchID),
-		req.Filter,
-		ptrString(req.TenantRerankID), ptrString(req.RerankID),
-		ptrString(req.Keyword),
-		ptrString(req.SimilarityThreshold), ptrString(req.VectorSimilarityWeight)))
-
-	if req.Question == "" {
-		return nil, fmt.Errorf("question is required")
-	}
-
-	ctx := context.Background()
-
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-	if len(tenants) == 0 {
-		return nil, fmt.Errorf("user has no accessible tenants")
-	}
-	common.Debug("Retrieved user tenants from database", zap.String("userID", userID), zap.Int("tenantCount", len(tenants)))
-
-	var tenantIDs []string
-	var kbRecords []*entity.Knowledgebase
-	for _, datasetID := range req.Datasets {
-		found := false
-		for _, tenant := range tenants {
-			kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenant.TenantID)
-			if err == nil && kb != nil {
-				common.Debug("Found knowledge base in database",
-					zap.String("datasetID", datasetID),
-					zap.String("tenantID", tenant.TenantID),
-					zap.String("kbName", kb.Name),
-					zap.String("embdID", kb.EmbdID))
-				tenantIDs = append(tenantIDs, tenant.TenantID)
-				kbRecords = append(kbRecords, kb)
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("only owner of dataset is authorized for this operation")
-		}
-	}
-
-	// Check if all kbs have the same embedding model
-	if len(kbRecords) > 1 {
-		firstEmbdID := kbRecords[0].EmbdID
-		for i := 1; i < len(kbRecords); i++ {
-			if kbRecords[i].EmbdID != firstEmbdID {
-				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
-			}
-		}
-	}
-
-	// Determine meta_data_filter
-	var chatID string
-	var chatModelForFilter *models.ChatModel
-	filter := req.Filter
-
-	if req.SearchID != nil && *req.SearchID != "" {
-		// If search_id is set, get meta_data_filter and chat_id from search_config
-		searchDetail, err := s.searchService.GetDetail(*req.SearchID)
-		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
-		} else if searchConfig, ok := searchDetail["search_config"].(entity.JSONMap); ok && searchConfig != nil {
-			if searchMetaFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
-				filter = searchMetaFilter
-			}
-			chatID, _ = searchConfig["chat_id"].(string)
-		} else {
-			common.Warn("No search_config found in search detail", zap.String("searchID", *req.SearchID))
-		}
-	}
-
-	// If meta_data_filter method is auto/semi_auto, get chat model
-	if filter != nil {
-		method, _ := filter["method"].(string)
-		if method == "auto" || method == "semi_auto" {
-			modelProviderSvc := NewModelProviderService()
-			if chatID != "" {
-				// Use chat_id from search_config (it's actually the model name)
-				driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, chatID)
-				if getErr != nil {
-					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
-				} else {
-					chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
-					common.Info("Fetched chat model (from search_config) for metadata filter",
-						zap.String("chatID", chatID),
-						zap.String("tenantID", tenantIDs[0]))
-				}
-
-			}
-
-			// If no chatID from search_config, or chatModel not found, use tenant default
-			if chatModelForFilter == nil {
-				tenantSvc := NewTenantService()
-				modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
-				if err != nil || modelName == "" {
-					common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
-				} else {
-					driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, modelName)
-					if getErr != nil {
-						common.Warn("Failed to get chat model for meta_data_filter", zap.Error(getErr))
-					} else {
-						chatModelForFilter = models.NewChatModel(driver, &mdlName, apiConfig)
-						common.Info("Fetched chat model (tenant default) for metadata filter",
-							zap.String("tenantID", tenantIDs[0]),
-							zap.String("modelName", modelName))
-					}
-
-				}
-			}
-		}
-	}
-
-	// Apply meta_data_filter to get filtered doc_ids (filter by metadata before retrieval)
-	docIDs := make([]string, len(req.DocIDs))
-	copy(docIDs, req.DocIDs)
-	if filter != nil {
-		// Get flattened metadata
-		metadataSvc := NewMetadataService()
-		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs([]string(req.Datasets))
-		if err != nil {
-			common.Warn("Failed to get flatted metadata", zap.Error(err))
-		} else {
-			common.Info("metadata filter conditions", zap.Any("filter", filter))
-			filteredDocIDs, _ := ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets))
-			docIDs = filteredDocIDs
-			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
-		}
-	}
-
-	// Apply cross_languages and keyword extraction with tenant default chat model
-	modifiedQuestion := req.Question
-	var chatModel *models.ChatModel
-
-	// Get chat model for cross_languages and keyword_extraction
-	var llmModelName string
-	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
-		tenantSvc := NewTenantService()
-		modelProviderSvc := NewModelProviderService()
-		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(tenantIDs[0], "chat")
-		if err != nil || llmModelName == "" {
-			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
-		} else {
-			driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeChat, llmModelName)
-			if getErr != nil {
-				common.Warn("Failed to get chat model for LLM transformations", zap.Error(getErr))
-			} else {
-				chatModel = models.NewChatModel(driver, &mdlName, apiConfig)
-				common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
-					zap.String("tenantID", tenantIDs[0]),
-					zap.String("modelName", llmModelName))
-			}
-		}
-	}
-
-	// Apply cross_languages on the question (translate question)
-	if len(req.CrossLanguages) > 0 {
-		translated, err := CrossLanguages(ctx, tenantIDs[0], llmModelName, req.Question, req.CrossLanguages)
-		if err != nil {
-			common.Warn("Failed to translate question", zap.Error(err))
-		} else {
-			modifiedQuestion = translated
-		}
-	}
-
-	// Apply keyword extraction on the question (append keywords to question)
-	if chatModel != nil && req.Keyword != nil && *req.Keyword {
-		extractedKeywords, err := KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
-		if err != nil {
-			common.Warn("Failed to extract keywords from question", zap.Error(err))
-		} else if extractedKeywords != "" {
-			modifiedQuestion = modifiedQuestion + " " + extractedKeywords
-		}
-	}
-
-	if modifiedQuestion != req.Question {
-		common.Info("Modified question after transformations",
-			zap.String("originalQuestion", req.Question),
-			zap.String("modifiedQuestion", modifiedQuestion),
-			zap.Strings("crossLanguages", req.CrossLanguages),
-			zap.Bool("keywordExtraction", req.Keyword != nil && *req.Keyword))
-	}
-
-	// Get tag-based rank features via LabelQuestion
-	metadataSvc := NewMetadataService()
-	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
-	common.Debug("LabelQuestion result", zap.Any("labels", labels))
-
-	// Determine embedding model
-	var embdID string
-	var tenantLLM *entity.TenantLLM
-	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID > 0 {
-		tenantLLM, embdID, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), *kbRecords[0].TenantEmbdID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", err)
-		}
-	} else if kbRecords[0].EmbdID != "" {
-		parts := strings.Split(kbRecords[0].EmbdID, "@")
-		if len(parts) == 2 && parts[1] != "" {
-			tenantLLM, embdID, err = dao.LookupTenantLLMByFactory(dao.NewTenantLLMDAO(), tenantIDs[0], parts[1], parts[0], entity.ModelTypeEmbedding)
-		} else {
-			tenantLLM, embdID, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], kbRecords[0].EmbdID, entity.ModelTypeEmbedding)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
-		}
-	} else {
-		tenantLLM, err = dao.NewTenantLLMDAO().GetByTenantAndType(tenantIDs[0], entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", err)
-		}
-		if tenantLLM == nil || tenantLLM.LLMName == nil || *tenantLLM.LLMName == "" {
-			return nil, fmt.Errorf("no default embedding model found for tenant %s", tenantIDs[0])
-		}
-		embdID = fmt.Sprintf("%s@%s", *tenantLLM.LLMName, tenantLLM.LLMFactory)
-	}
-
-	// Get embedding model for the tenant
-	modelProviderSvc := NewModelProviderService()
-	embeddingModel, err := modelProviderSvc.GetEmbeddingModel(tenantIDs[0], embdID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-	common.Info("Fetched embedding model for retrieval",
-		zap.String("tenantID", tenantIDs[0]),
-		zap.String("embdID", embdID))
-
-	// Get rerank model if RerankID is specified
-	var rerankModel *models.RerankModel
-	var rerankCompositeName string
-	if req.TenantRerankID != nil && *req.TenantRerankID != "" {
-		tenantRerankIDInt, parseErr := strconv.ParseInt(*req.TenantRerankID, 10, 64)
-		if parseErr != nil {
-			return nil, fmt.Errorf("invalid tenant_rerank_id: %w", parseErr)
-		}
-		_, rerankCompositeName, err = dao.LookupTenantLLMByID(dao.NewTenantLLMDAO(), tenantRerankIDInt)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", err)
-		}
-	} else if req.RerankID != nil && *req.RerankID != "" {
-		_, rerankCompositeName, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantIDs[0], *req.RerankID, entity.ModelTypeRerank)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
-		}
-	}
-	if rerankCompositeName != "" {
-		driver, mdlName, apiConfig, _, getErr := modelProviderSvc.GetModelConfigFromProviderInstance(tenantIDs[0], entity.ModelTypeRerank, rerankCompositeName)
-		if getErr != nil {
-			return nil, fmt.Errorf("failed to get rerank model: %w", getErr)
-		}
-		rerankModel = models.NewRerankModel(driver, &mdlName, apiConfig)
-	}
-
-	if rerankModel != nil {
-		common.Info("Fetched rerank model",
-			zap.String("tenantID", tenantIDs[0]),
-			zap.String("rerankCompositeName", rerankCompositeName))
-	}
-
-	retrievalReq := &nlp.RetrievalRequest{
-		TenantIDs:              tenantIDs,
-		Question:               modifiedQuestion,
-		KbIDs:                  []string(req.Datasets),
-		DocIDs:                 docIDs,
-		Page:                   getPageNum(req.Page, 1),
-		PageSize:               getPageSize(req.Size, 30),
-		Top:                    req.TopK,
-		SimilarityThreshold:    req.SimilarityThreshold,
-		VectorSimilarityWeight: req.VectorSimilarityWeight,
-		RerankModel:            rerankModel,
-		RankFeature:            &labels,
-		EmbeddingModel:         embeddingModel,
-	}
-
-	// Call RetrievalService to perform retrieval
-	retrievalResult, err := nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
-	if err != nil {
-		return nil, fmt.Errorf("retrieval search failed: %w", err)
-	}
-
-	filteredChunks := retrievalResult.Chunks
-
-	// Handle knowledge graph retrieval
-	// TODO: KG retrieval requires GraphRAG infrastructure which is not yet implemented in Go
-	if req.UseKG != nil && *req.UseKG {
-		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
-	}
-
-	// Apply retrieval_by_children - aggregate child chunks into parent chunks
-	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, s.docEngine, ctx)
-
-	// Hydrate: ES returns zero vectors; replace with real vectors from FetchChunkVectors.
-	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
-	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
-
-	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
-
-	return &RetrievalTestResponse{
-		Chunks:  filteredChunks,
-		DocAggs: retrievalResult.DocAggs,
-		Labels:  &labels,
-		Total:   int64(len(filteredChunks)),
-	}, nil
-}
-
-// hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
-// vectors fetched from the engine.  Infinity and OceanBase already ship real
-// vectors with chunks, so this is a no-op for those engines; for ES it queries
-// the engine by chunk ID list.  No if/else on engine type — just replaces
-// whatever is missing or zero.
-func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []map[string]interface{}, kbIDs []string, tenantIDs []string) {
-	if len(chunks) == 0 {
-		return
-	}
-
-	// Collect chunk IDs whose vectors are missing or all-zero.
-	var missingIDs []string
-	missingIdx := make(map[string]int)
-	for i, ck := range chunks {
-		id, _ := ck["id"].(string)
-		if id == "" {
-			continue
-		}
-		v, _ := ck["vector"].([]float64)
-		if len(v) == 0 || isZeroVector(v) {
-			missingIDs = append(missingIDs, id)
-			missingIdx[id] = i
-		}
-	}
-	if len(missingIDs) == 0 {
-		return
-	}
-
-	dim := 0
-	for _, ck := range chunks {
-		if v, _ := ck["vector"].([]float64); len(v) > 0 {
-			dim = len(v)
-			break
-		}
-	}
-	if dim == 0 {
-		return
-	}
-
-	vectors := FetchChunkVectors(ctx, engine, missingIDs, tenantIDs, kbIDs, dim)
-	for id, v := range vectors {
-		if idx, ok := missingIdx[id]; ok && !isZeroVector(v) {
-			chunks[idx]["vector"] = v
-		}
-	}
-}
-
-func isZeroVector(v []float64) bool {
-	for _, x := range v {
-		if x != 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // GetChunkRequest request for getting a chunk by ID
@@ -1014,4 +600,123 @@ func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (in
 	}
 
 	return deletedCount, nil
+}
+
+// SourcedChunk is a typed, normalized view over a retrieval result chunk.
+// It decouples the ask pipeline (KbPrompt, ChunksFormat) from the raw
+// map[string]interface{} that flows through the retrieval engine.
+type SourcedChunk struct {
+	ID               string                 // chunk_id or id
+	Content          string                 // content_with_weight or content
+	DocID            string                 // doc_id or document_id
+	DocName          string                 // docnm_kwd or document_name
+	DatasetID        string                 // kb_id or dataset_id
+	ImageID          string                 // image_id or img_id
+	Positions        string                 // positions or position_int
+	URL              string                 // url
+	Similarity       float64                // similarity score
+	VectorSimilarity float64                // vector_similarity score
+	TermSimilarity   float64                // term_similarity score
+	DocType          string                 // doc_type_kwd or doc_type
+	DocumentMetadata map[string]interface{} // document_metadata
+}
+
+// NewSourcedChunks normalizes raw retrieval chunks into typed SourcedChunk values.
+// It handles the key aliases used by different engine backends (ES, Infinity).
+func NewSourcedChunks(raw []map[string]interface{}) []SourcedChunk {
+	out := make([]SourcedChunk, 0, len(raw))
+	for _, ck := range raw {
+		if ck == nil {
+			continue
+		}
+		out = append(out, SourcedChunk{
+			ID:               getStr(ck, "chunk_id", "id"),
+			Content:          getStr(ck, "content_with_weight", "content"),
+			DocID:            getStr(ck, "doc_id", "document_id"),
+			DocName:          getStr(ck, "docnm_kwd", "document_name"),
+			DatasetID:        getStr(ck, "kb_id", "dataset_id"),
+			ImageID:          getStr(ck, "image_id", "img_id"),
+			Positions:        getStr(ck, "positions", "position_int"),
+			URL:              getStr(ck, "url"),
+			Similarity:       getFloat(ck, "similarity"),
+			VectorSimilarity: getFloat(ck, "vector_similarity"),
+			TermSimilarity:   getFloat(ck, "term_similarity"),
+			DocType:          getStr(ck, "doc_type_kwd", "doc_type"),
+			DocumentMetadata: getMap(ck, "document_metadata"),
+		})
+	}
+	return out
+}
+
+// getStr tries each key in order and returns the first non-empty string value.
+// The first key is the primary name; subsequent keys are fallback aliases
+// used by different engine backends (e.g. "content_with_weight" vs "content").
+func getStr(m map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// getFloat extracts a float64 value from the map, handling the various
+// numeric types that different JSON decoders and engine drivers may produce
+// (float64, float32, json.Number, int, int64).
+func getFloat(m map[string]interface{}, key string) float64 {
+	if v, ok := m[key]; ok {
+		switch f := v.(type) {
+		case float64:
+			return f
+		case float32:
+			return float64(f)
+		case json.Number:
+			if n, err := f.Float64(); err == nil {
+				return n
+			}
+		case int:
+			return float64(f)
+		case int64:
+			return float64(f)
+		}
+	}
+	return 0
+}
+
+func getMap(m map[string]interface{}, key string) map[string]interface{} {
+	if v, ok := m[key]; ok {
+		if mm, ok := v.(map[string]interface{}); ok {
+			// Return a shallow copy so callers cannot mutate the original chunk data.
+			out := make(map[string]interface{}, len(mm))
+			for k, val := range mm {
+				out[k] = val
+			}
+			return out
+		}
+	}
+	return nil
+}
+func isZeroVector(v []float64) bool {
+	for _, x := range v {
+		if x != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func getPageNum(page *int, defaultVal int) int {
+	if page != nil && *page > 0 {
+		return *page
+	}
+	return defaultVal
+}
+
+func getPageSize(size *int, defaultVal int) int {
+	if size != nil && *size > 0 {
+		return *size
+	}
+	return defaultVal
 }
