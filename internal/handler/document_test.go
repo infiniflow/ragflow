@@ -367,7 +367,7 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	// Insert knowledgebase
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
-		CreatedBy: "user-1", Permission: string(entity.TenantPermissionMe),
+		CreatedBy: "user-1", Permission: string(entity.TenantPermissionTeam),
 		Status:    sptr(string(entity.StatusValid)),
 	})
 
