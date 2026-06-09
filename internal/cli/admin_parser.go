@@ -23,8 +23,8 @@ func (p *Parser) parseAdminLoginUser() (*Command, error) {
 	cmd := NewCommand("login_user")
 
 	p.nextToken() // consume LOGIN
-	if p.curToken.Type != TokenUser {
-		return nil, fmt.Errorf("expected USER after LOGIN")
+	if p.curToken.Type != TokenAdmin {
+		return nil, fmt.Errorf("expected ADMIN after LOGIN")
 	}
 
 	p.nextToken()
@@ -196,6 +196,8 @@ func (p *Parser) parseAdminListCommand() (*Command, error) {
 		return p.parseAdminListIngestors()
 	case TokenIngestion:
 		return p.parseAdminListIngestionTasks()
+	case TokenAPI:
+		return p.parseListApiCommand()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
@@ -418,15 +420,12 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return NewCommand("show_token"), nil
 	case TokenCurrent:
 		p.nextToken()
-		if p.curToken.Type != TokenUser {
-			return nil, fmt.Errorf("expected USER after CURRENT")
-		}
-		p.nextToken()
+
 		// Semicolon is optional for SHOW TOKEN
 		if p.curToken.Type == TokenSemicolon {
 			p.nextToken()
 		}
-		return NewCommand("show_current_user"), nil
+		return NewCommand("show_current"), nil
 	case TokenUser:
 		return p.parseShowUser()
 	case TokenRole:
@@ -439,6 +438,10 @@ func (p *Parser) parseAdminShowCommand() (*Command, error) {
 		return p.parseShowProvider()
 	case TokenModel:
 		return p.parseShowModel()
+	case TokenAdmin:
+		return p.parseUserShowAdmin()
+	case TokenAPI:
+		return p.parseUserShowAPI()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1377,7 +1380,7 @@ func (p *Parser) parseAdminImportCommand() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminSearchCommand() (*Command, error) {
+func (p *Parser) parseAdminRetrieveCommand() (*Command, error) {
 	p.nextToken() // consume SEARCH
 	question, err := p.parseQuotedString()
 	if err != nil {
@@ -1533,8 +1536,8 @@ func (p *Parser) parseAdminUserStatement() (*Command, error) {
 		return p.parseParseCommand()
 	case TokenImport:
 		return p.parseImportCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	default:
 		return nil, fmt.Errorf("invalid user statement: %s", p.curToken.Value)
 	}
@@ -1635,6 +1638,40 @@ func (p *Parser) parseAdminRestartCommand() (*Command, error) {
 		p.nextToken()
 	}
 	return cmd, nil
+}
+
+func (p *Parser) parseAdminAddCommand() (*Command, error) {
+	p.nextToken() // consume ADD
+	switch p.curToken.Type {
+	case TokenAPI:
+		return p.parseAddAPIServer()
+	case TokenAdmin:
+		return p.parseAddAdminServer()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminDeleteCommand() (*Command, error) {
+	p.nextToken() // consume DELETE
+	switch p.curToken.Type {
+	case TokenAPI:
+		return p.parseDeleteAPIServer()
+	case TokenAdmin:
+		return p.parseDeleteAdminServer()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
+}
+
+func (p *Parser) parseAdminSaveCommand() (*Command, error) {
+	p.nextToken() // consume SAVE
+	switch p.curToken.Type {
+	case TokenConfig:
+		return p.parseSaveConfig()
+	default:
+		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
+	}
 }
 
 func (p *Parser) parseStartIngestion() (*Command, error) {
