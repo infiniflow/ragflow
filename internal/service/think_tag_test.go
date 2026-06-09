@@ -213,6 +213,29 @@ func TestStreamThinkTagDelta(t *testing.T) {
 	}
 }
 
+func TestStreamThinkTagDelta_IncrementalFlush(t *testing.T) {
+	// Verify that visible text is streamed incrementally, not all at the end.
+	// minTokens=1 → flushSize=4 bytes.  Each chunk triggers a flush.
+	chunks := []string{"1234", "5678", "90ab"}
+	ch := make(chan string, len(chunks))
+	for _, c := range chunks {
+		ch <- c
+	}
+	close(ch)
+
+	var texts []string
+	for d := range StreamThinkTagDelta(context.Background(), ch, 1) {
+		if d.Kind == ThinkDeltaText {
+			texts = append(texts, d.Value)
+		}
+	}
+	// With minTokens=1 (flushSize=4), each chunk triggers a flush.
+	// We should get incremental text deltas, not just one final burst.
+	if len(texts) < 2 {
+		t.Errorf("expected >=2 incremental text deltas, got %d: %q", len(texts), texts)
+	}
+}
+
 func TestStreamThinkTagDelta_NoThinkTags(t *testing.T) {
 	chunks := []string{"just", " plain", " text"}
 	ch := make(chan string, len(chunks))

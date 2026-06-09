@@ -104,6 +104,9 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
+	if len(req.Datasets) == 0 {
+		return nil, fmt.Errorf("dataset_ids is required")
+	}
 
 	ctx := context.Background()
 
@@ -399,7 +402,7 @@ func (s *ChunkService) RetrievalTest(req *service.RetrievalTestRequest, userID s
 		Chunks:  filteredChunks,
 		DocAggs: retrievalResult.DocAggs,
 		Labels:  &labels,
-		Total:   int64(len(filteredChunks)),
+		Total:   retrievalResult.Total,
 	}, nil
 }
 

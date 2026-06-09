@@ -216,7 +216,6 @@ func startServer(config *server.Config) {
 	providerHandler := handler.NewProviderHandler(userService, modelProviderService)
 	agentHandler := handler.NewAgentHandler(service.NewAgentService(), fileService)
 	searchBotLLM := &handler.SearchBotRealLLM{Svc: modelProviderService}
-	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
@@ -225,9 +224,8 @@ func startServer(config *server.Config) {
 	)
 	searchBotHandler.SetStreamLLM(searchBotLLM)
 	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
-	searchBotHandler.SetStreamLLM(searchBotLLM)
-	searchBotHandler.SetAskService(service.NewAskService(chunkService, nil, 0, 0))
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
+	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 
 	// Dify retrieval handler
 	docDAO := dao.NewDocumentDAO()
@@ -242,7 +240,7 @@ func startServer(config *server.Config) {
 	)
 
 	// Initialize router
-	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler)
+	r := router.NewRouter(authHandler, userHandler, tenantHandler, documentHandler, datasetsHandler, systemHandler, knowledgebaseHandler, chunkHandler, llmHandler, chatHandler, chatSessionHandler, connectorHandler, searchHandler, fileHandler, memoryHandler, mcpHandler, skillSearchHandler, providerHandler, agentHandler, searchBotHandler, difyRetrievalHandler, pluginHandler, modelHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

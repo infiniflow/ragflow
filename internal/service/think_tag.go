@@ -147,8 +147,6 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 	go func() {
 		defer close(out)
 		state := &ThinkStreamState{}
-		var pendingText []ThinkDelta
-		pendingSize := 0
 		flushSize := minTokens * 4 // approximate: ~4 bytes per token
 		for {
 			select {
@@ -158,9 +156,6 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 				return
 			case chunk, ok := <-chunks:
 				if !ok {
-					for _, pt := range pendingText {
-						out <- pt
-					}
 					for _, d := range FlushThinkBuffer(state) {
 						out <- d
 					}
@@ -176,23 +171,21 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 							}
 							return
 						}
-					} else {
-						pendingText = append(pendingText, d)
-						pendingSize += len(d.Value)
 					}
 				}
-				if pendingSize >= flushSize {
-					for _, pt := range pendingText {
+				// Flush buffered visible text when it reaches the token threshold,
+				// matching Python _stream_with_think_delta which yields ("text", ...)
+				// per chunk.  Markers are emitted immediately above.
+				if len(state.buffer) >= flushSize {
+					for _, d := range FlushThinkBuffer(state) {
 						select {
-						case out <- pt:
+						case out <- d:
 						case <-ctx.Done():
 							for range chunks {
 							}
 							return
 						}
 					}
-					pendingText = nil
-					pendingSize = 0
 				}
 			}
 		}
