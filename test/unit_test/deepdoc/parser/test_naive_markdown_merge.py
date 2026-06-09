@@ -85,12 +85,13 @@ class TestIsShortHeader:
 
     def test_custom_max_tokens(self, is_short_header):
         """Should respect custom max_tokens parameter."""
+        # "# Short" = 2 tokens in cl100k_base encoding
         text = "# Short"
         result = is_short_header(text, max_tokens=5)
-        assert result is False
+        assert result is True  # 2 < 5 → short
 
-        result = is_short_header(text, max_tokens=10)
-        assert result is True
+        result = is_short_header(text, max_tokens=2)
+        assert result is False  # 2 < 2 → not short
 
     def test_header_with_special_chars(self, is_short_header):
         """Header with special characters should still be recognized."""
