@@ -1057,7 +1057,7 @@ class Parser(ProcessBase):
 
         self.callback(random.randint(1, 5) / 100.0, "Start to work on an image.")
         conf = self._param.setups["image"]
-        self.set_output("output_format", conf["output_format"])
+        self.set_output("output_format", "json")
 
         img = Image.open(io.BytesIO(blob)).convert("RGB")
 

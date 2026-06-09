@@ -280,6 +280,9 @@ class MockChatModel:
     def __exit__(self, *args):
         pass
 
+    async def async_chat(self, system_prompt, messages, **kwargs):
+        return '{"key": "value"}'
+
 
 @pytest.fixture
 def mock_embedding_model():
