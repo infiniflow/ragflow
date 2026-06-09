@@ -679,14 +679,18 @@ class Discord(SyncBase):
             channels_raw = self.conf.get("channel_names", None)
 
         server_id_strs = self._coerce_str_list(server_ids_raw)
-        # DiscordConnector expects list[int] for guild ids; drop anything
-        # that isn't an integer so a malformed entry doesn't tank the sync.
-        server_ids: list[int] = []
+        # DiscordConnector.__init__ takes server_ids as list[str] and converts
+        # to list[int] internally (common/data_source/discord_connector.py:247).
+        # Validate up-front so a malformed entry warns + drops here rather than
+        # crashing the connector's int() cast — but keep the strings.
+        server_ids: list[str] = []
         for sid in server_id_strs:
             try:
-                server_ids.append(int(sid))
+                int(sid)
             except ValueError:
                 logging.warning("Discord connector: ignoring non-integer server_id %r", sid)
+                continue
+            server_ids.append(sid)
         channel_names = self._coerce_str_list(channels_raw)
 
         self.connector = DiscordConnector(
