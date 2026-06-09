@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	//"os/signal"
 	"path/filepath"
@@ -742,58 +743,28 @@ func (c *CLI) executeNew(input string) error {
 	return err
 }
 
-func (c *CLI) execute(input string) error {
-	// Determine execution mode based on input and args
-	input = strings.TrimSpace(input)
+// executeFilesystem executes a Filesystem command and returns a ResponseIf.
+func (c *CLI) executeFilesystem(cmd *Command) (ResponseIf, error) {
+	rawInput, _ := cmd.Params["command"].(string)
 
-	// Handle meta commands (start with \)
-	if strings.HasPrefix(input, "\\") {
-		p := NewParser(input)
-		cmd, err := p.Parse(c.Config.CLIMode)
-		if err != nil {
-			return err
-		}
-		if cmd != nil && cmd.Type == "meta" {
-			return c.handleMetaCommand(cmd)
-		}
-	}
+	// Capture stdout output by redirecting to a pipe
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
 
-	// Check if we should use SQL mode or Filesystem mode
-	isSQLMode := false
-	if c.args != nil && len(c.args.CommandArgs) > 0 {
-		// Non-interactive mode: use pre-determined mode from args
-		isSQLMode = c.args.IsSQLMode
-	} else {
-		// Interactive mode: determine based on input
-		isSQLMode = looksLikeSQL(input)
-	}
+	err := c.executeFilesystemInner(rawInput)
 
-	if isSQLMode {
-		// SQL mode: use parser
-		p := NewParser(input)
-		cmd, err := p.Parse(c.Config.CLIMode)
-		if err != nil {
-			return err
-		}
-		if cmd == nil {
-			return nil
-		}
-		// Execute SQL command using the client
-		var result ResponseIf
-		result, err = c.ExecuteCommand(cmd)
-		if result != nil {
-			result.SetOutputFormat(c.outputFormat)
-			result.PrintOut()
-		}
-		return err
-	}
+	w.Close()
+	os.Stdout = old
 
-	// Filesystem mode: execute filesystem command
-	return c.executeFilesystem(input)
+	var buf strings.Builder
+	io.Copy(&buf, r)
+	return &FileSystemResponse{Output: buf.String()}, err
 }
 
-// executeFilesystem executes a Filesystem command
-func (c *CLI) executeFilesystem(input string) error {
+// executeFilesystemInner executes a Filesystem command and writes output to stdout.
+// It is called by executeFilesystem which captures the stdout output.
+func (c *CLI) executeFilesystemInner(input string) error {
 	// Parse input into arguments
 	var args []string
 	if c.args != nil && len(c.args.CommandArgs) > 0 {
@@ -947,36 +918,6 @@ func (c *CLI) executeFilesystem(input string) error {
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
-	case "add-skill":
-		fmt.Println("⚠ Warning: 'add-skill' is deprecated. Use 'install-skill' instead.")
-		// Forward to install-skill
-		fileProvider, ok := c.ContextEngine.GetProvider("files").(*filesystem.FileProvider)
-		if !ok {
-			return fmt.Errorf("file provider not available")
-		}
-		skillProvider := c.ContextEngine.GetProvider("skills")
-		if skillProvider == nil {
-			return fmt.Errorf("skill provider not available")
-		}
-		httpAdapter := &httpClientAdapter{client: httpClient}
-		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
-		return cmd.Execute(cmdArgs)
-	case "delete-skill":
-		fmt.Println("⚠ Warning: 'delete-skill' is deprecated. Use 'uninstall-skill' instead.")
-		// Forward to uninstall-skill
-		skillProvider := c.ContextEngine.GetProvider("skills")
-		if skillProvider == nil {
-			return fmt.Errorf("skill provider not available")
-		}
-		fileProvider := c.ContextEngine.GetProvider("files")
-		if fileProvider == nil {
-			return fmt.Errorf("file provider not available")
-		}
-		httpAdapter := &httpClientAdapter{client: httpClient}
-		fileProv, _ := fileProvider.(*filesystem.FileProvider)
-		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
-		return cmd.Execute(cmdArgs)
-
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}
