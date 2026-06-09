@@ -734,8 +734,14 @@ class TestDocRoutesUnit:
     def test_legacy_chunks_stop_skips_delete_when_index_missing(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         deleted = []
+        dataset_owner_tenant = "owner-tenant"
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _id: (True, SimpleNamespace(tenant_id=dataset_owner_tenant)),
+        )
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
         monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
         monkeypatch.setattr(
@@ -766,13 +772,19 @@ class TestDocRoutesUnit:
         )
         res = _run(module.stop_parsing.__wrapped__("tenant-1", "ds-1"))
         assert res["code"] == 0
-        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name("tenant-1"), "kb-1")]
+        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name(dataset_owner_tenant), "kb-1")]
 
     def test_legacy_chunks_parse_skips_delete_when_index_missing(self, monkeypatch):
         module = _load_doc_module(monkeypatch)
         deleted = []
+        dataset_owner_tenant = "owner-tenant"
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
+        monkeypatch.setattr(
+            module.KnowledgebaseService,
+            "get_by_id",
+            lambda _id: (True, SimpleNamespace(tenant_id=dataset_owner_tenant)),
+        )
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
         monkeypatch.setattr(module, "check_duplicate_ids", lambda ids, _kind: (ids, []))
         monkeypatch.setattr(
@@ -796,6 +808,17 @@ class TestDocRoutesUnit:
 
         assert res["code"] == 0
         assert deleted == []
+
+        deleted.clear()
+        _patch_docstore(
+            monkeypatch,
+            module,
+            index_exist=lambda *_args, **_kwargs: True,
+            delete=lambda condition, index, kb_id: deleted.append((condition, index, kb_id)),
+        )
+        res = _run(module.parse.__wrapped__("tenant-1", "ds-1"))
+        assert res["code"] == 0
+        assert deleted == [({"doc_id": "doc-1"}, module.search.index_name(dataset_owner_tenant), "kb-1")]
 
     def test_list_chunks_branches(self, monkeypatch):
         module = _load_restful_chunk_module(monkeypatch)
