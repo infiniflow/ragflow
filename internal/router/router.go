@@ -392,6 +392,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				agents.GET("/:agent_id/sessions", r.agentHandler.ListAgentSessions)
 				agents.GET("/:agent_id/sessions/:session_id", r.agentHandler.GetAgentSession)
 				agents.DELETE("/:agent_id/sessions/:session_id", r.agentHandler.DeleteAgentSessionItem)
+				agents.DELETE("/:agent_id", r.agentHandler.DeleteAgent)
 			}
 
 			// Plugin routes

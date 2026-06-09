@@ -35,6 +35,13 @@ const (
 	agentTagMaxLen    = 64
 )
 
+// errAgentNotOwner is the not-owner sentinel returned by DeleteAgent. The
+// wire message must match the Python decorator byte-for-byte because
+// conformance tests (test/testcases/restful_api/test_agents.py,
+// test/testcases/test_http_api/test_session_management/test_agent_sessions.py)
+// substring-match on this exact text.
+var errAgentNotOwner = errors.New("Only the owner of the agent is authorized for this operation.") //nolint:staticcheck // ST1005: matches Python wire contract
+
 // AgentService agent service
 type AgentService struct {
 	canvasDAO            *dao.UserCanvasDAO
@@ -610,4 +617,22 @@ func (s *AgentService) GetVersion(canvasID, versionID string) (*entity.UserCanva
 		return nil, fmt.Errorf("version not found")
 	}
 	return version, nil
+}
+
+// DeleteAgent removes the agent canvas identified by agentID, but only if it
+// is owned by tenantID. Mirrors the Python `_require_canvas_owner_sync`
+// decorator + `UserCanvasService.delete_by_id` flow.
+//
+// Returns CodeOperatingError with no DB error when the caller does not own
+// the agent (or the agent does not exist) — same response shape and code
+// Python returns from the decorator.
+func (s *AgentService) DeleteAgent(agentID, tenantID string) (common.ErrorCode, error) {
+	rows, err := s.canvasDAO.DeleteByIDOwnedBy(agentID, tenantID)
+	if err != nil {
+		return common.CodeServerError, fmt.Errorf("failed to delete agent: %w", err)
+	}
+	if rows == 0 {
+		return common.CodeOperatingError, errAgentNotOwner
+	}
+	return common.CodeSuccess, nil
 }

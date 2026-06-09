@@ -390,6 +390,42 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 	})
 }
 
+// DeleteAgent removes the canvas owned by the calling user.
+// @Summary Delete Agent
+// @Tags agents
+// @Produce json
+// @Security ApiKeyAuth
+// @Param agent_id path string true "Agent canvas ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{agent_id} [delete]
+func (h *AgentHandler) DeleteAgent(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		jsonError(c, common.CodeArgumentError, "agent_id is required")
+		return
+	}
+
+	code, err := h.agentService.DeleteAgent(agentID, user.ID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    true,
+		"message": "success",
+	})
+}
+
 // UploadAgentFile uploads one or more files associated with an agent.
 // @Summary Upload Agent File
 // @Description Upload one or more files for an agent canvas.

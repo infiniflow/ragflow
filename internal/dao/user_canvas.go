@@ -53,6 +53,17 @@ func (dao *UserCanvasDAO) Delete(id string) error {
 	return DB.Delete(&entity.UserCanvas{}, id).Error
 }
 
+// DeleteByIDOwnedBy deletes the canvas in a single SQL statement that gates
+// on user_id, so a non-owner can never delete someone else's row. Returns the
+// number of rows affected (0 = no matching owned canvas) and any DB error.
+//
+// Mirrors the Python `_require_canvas_owner_sync` decorator + delete_by_id
+// flow, but collapses the check and the delete into one atomic statement.
+func (dao *UserCanvasDAO) DeleteByIDOwnedBy(canvasID, userID string) (int64, error) {
+	result := DB.Where("id = ? AND user_id = ?", canvasID, userID).Delete(&entity.UserCanvas{})
+	return result.RowsAffected, result.Error
+}
+
 // GetList get canvases list with pagination and filtering
 // Similar to Python UserCanvasService.get_list
 func (dao *UserCanvasDAO) GetList(tenantID string, pageNumber, itemsPerPage int, orderby string, desc bool, id, title string, canvasCategory string) ([]*entity.UserCanvas, error) {
