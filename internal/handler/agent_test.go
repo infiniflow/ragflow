@@ -769,3 +769,38 @@ func TestListAgentTemplates_RequiresAuth(t *testing.T) {
 		t.Errorf("expected non-success without auth, got body=%v", body)
 	}
 }
+
+func TestGetPrompts_Success(t *testing.T) {
+	c, w, _ := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/prompts")
+	
+	// Create handler with fake or real service.
+	h := NewAgentHandler(service.NewAgentService(), nil)
+	h.GetPrompts(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	code, _ := resp["code"].(float64)
+	if code != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v: %v", code, resp["message"])
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data map, got %T", resp["data"])
+	}
+
+	// Check if keys exist
+	expectedKeys := []string{"task_analysis", "plan_generation", "reflection", "citation_guidelines"}
+	for _, key := range expectedKeys {
+		if _, ok := data[key]; !ok {
+			t.Errorf("expected key %s in data", key)
+		}
+	}
+}

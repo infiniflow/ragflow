@@ -566,3 +566,55 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		"message": "success",
 	})
 }
+
+// GetPrompts returns the default prompts used by the agent.
+// @Summary Get Agent Prompts
+// @Description Returns the default prompts used by the agent, such as task analysis, plan generation, reflection, and citation guidelines.
+// @Tags agents
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/prompts [get]
+func (h *AgentHandler) GetPrompts(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	taskAnalysisSys, err := service.LoadPrompt("analyze_task_system")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	taskAnalysisUser, err := service.LoadPrompt("analyze_task_user")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	planGeneration, err := service.LoadPrompt("next_step")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	reflection, err := service.LoadPrompt("reflect")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	citationGuidelines, err := service.LoadPrompt("citation_prompt")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": map[string]string{
+			"task_analysis":       fmt.Sprintf("%s\n\n%s", taskAnalysisSys, taskAnalysisUser),
+			"plan_generation":     planGeneration,
+			"reflection":          reflection,
+			"citation_guidelines": citationGuidelines,
+		},
+		"message": "success",
+	})
+}

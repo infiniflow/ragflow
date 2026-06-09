@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+from datetime import datetime
 from typing import List
 
 from common import settings
@@ -349,8 +350,9 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
             "doc_id": _memory_id,
             "task_type": "memory",
             "progress": 0.0,
+            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "digest": str(_source_id)
-        }
+    }
 
     not_found_memory = []
     failed_memory = []
@@ -387,6 +389,7 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
             "task_id": task["id"],
             "task_type": task["task_type"],
             "memory_id": memory_id,
+            "tenant_id": memory.tenant_id,
             "source_id": raw_message_id,
             "message_dict": message_dict
         }
