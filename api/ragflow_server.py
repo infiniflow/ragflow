@@ -33,6 +33,7 @@ import uuid
 import faulthandler
 
 from api.apps import app
+from api.channels.bootstrap import reconcile_channels
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
@@ -132,6 +133,11 @@ if __name__ == '__main__':
     RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
 
     GlobalPluginManager.load_plugins()
+
+    @app.before_serving
+    async def init_channels():
+        import asyncio
+        asyncio.create_task(reconcile_channels())
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
