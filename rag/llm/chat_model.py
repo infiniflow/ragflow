@@ -1900,9 +1900,7 @@ class LiteLLMBase(ABC):
                     "tool_choice": "auto",
                 }
             )
-        if self.base_url:
-            completion_args.update({"api_base": self.base_url})
-        elif self.provider == SupportedLiteLLMProvider.Bedrock:
+        if self.provider == SupportedLiteLLMProvider.Bedrock:
             import boto3
 
             completion_args.pop("api_key", None)
@@ -1965,6 +1963,12 @@ class LiteLLMBase(ABC):
                     "api_key": self.api_key,
                     "api_base": self.base_url,
                     "api_version": self.api_version,
+                }
+            )
+        elif self.base_url:
+            completion_args.update(
+                {
+                    "api_base": self.base_url,
                 }
             )
 
