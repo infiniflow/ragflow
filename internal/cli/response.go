@@ -529,69 +529,16 @@ func (r *TaskResponse) PrintOut() {
 	}
 }
 
-// ==================== ContextEngine Commands ====================
-
-// ContextListResponse represents the response for ls command
-type ContextListResponse struct {
-	Code         int                      `json:"code"`
-	Data         []map[string]interface{} `json:"data"`
-	Message      string                   `json:"message"`
+// FileSystemResponse wraps the raw text output from executeFilesystem().
+type FileSystemResponse struct {
+	Output       string
 	Duration     float64
 	OutputFormat OutputFormat
 }
 
-func (r *ContextListResponse) Type() string                        { return "ce_ls" }
-func (r *ContextListResponse) TimeCost() float64                   { return r.Duration }
-func (r *ContextListResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
-func (r *ContextListResponse) PrintOut() {
-	if r.Code == 0 {
-		PrintTableSimpleByFormat(r.Data, r.OutputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-// ContextSearchResponse represents the response for search command
-type ContextSearchResponse struct {
-	Code         int                      `json:"code"`
-	Data         []map[string]interface{} `json:"data"`
-	Total        int                      `json:"total"`
-	Message      string                   `json:"message"`
-	Duration     float64
-	OutputFormat OutputFormat
-}
-
-func (r *ContextSearchResponse) Type() string                        { return "ce_search" }
-func (r *ContextSearchResponse) TimeCost() float64                   { return r.Duration }
-func (r *ContextSearchResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
-func (r *ContextSearchResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Printf("Found %d results:\n", r.Total)
-		PrintTableSimpleByFormat(r.Data, r.OutputFormat)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
-}
-
-// ContextCatResponse represents the response for cat command
-type ContextCatResponse struct {
-	Code         int    `json:"code"`
-	Content      string `json:"content"`
-	Message      string `json:"message"`
-	Duration     float64
-	OutputFormat OutputFormat
-}
-
-func (r *ContextCatResponse) Type() string                        { return "ce_cat" }
-func (r *ContextCatResponse) TimeCost() float64                   { return r.Duration }
-func (r *ContextCatResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
-func (r *ContextCatResponse) PrintOut() {
-	if r.Code == 0 {
-		fmt.Println(r.Content)
-	} else {
-		fmt.Println("ERROR")
-		fmt.Printf("%d, %s\n", r.Code, r.Message)
-	}
+func (r *FileSystemResponse) Type() string                        { return "filesystem" }
+func (r *FileSystemResponse) TimeCost() float64                   { return r.Duration }
+func (r *FileSystemResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *FileSystemResponse) PrintOut() {
+	fmt.Print(r.Output)
 }
