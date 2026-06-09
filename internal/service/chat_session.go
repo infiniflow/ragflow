@@ -610,17 +610,14 @@ func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if err = validateKnowledgebaseEmbeddingModels(kbs); err != nil {
+	embeddingTenantID, embeddingModelName, err := validateKnowledgebaseEmbeddingModels(kbs, dialog.TenantID, resolveEmbeddingModelName)
+	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	embeddingTenantID := kbs[0].TenantID
-	if embeddingTenantID == "" {
-		embeddingTenantID = dialog.TenantID
-	}
-	embeddingModel, err := s.embeddingModelForKnowledgebase(embeddingTenantID, kbs[0])
+	embeddingModel, err := s.modelProviderSvc.GetEmbeddingModel(embeddingTenantID, embeddingModelName)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 	rerankModel, err := s.rerankModelForDialog(dialog)
 	if err != nil {
@@ -682,29 +679,43 @@ func (s *ChatSessionService) messagesWithRetrievedKnowledge(ctx context.Context,
 	return injectKnowledge(messages, knowledge), dialog, nil, nil
 }
 
-func (s *ChatSessionService) embeddingModelForKnowledgebase(tenantID string, kb *entity.Knowledgebase) (*modelModule.EmbeddingModel, error) {
-	compositeName, err := resolveEmbeddingModelName(tenantID, kb)
-	if err != nil {
-		return nil, err
-	}
-	embeddingModel, err := s.modelProviderSvc.GetEmbeddingModel(tenantID, compositeName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-	return embeddingModel, nil
-}
+type embeddingModelNameResolver func(tenantID string, kb *entity.Knowledgebase) (string, error)
 
-func validateKnowledgebaseEmbeddingModels(kbs []*entity.Knowledgebase) error {
+func validateKnowledgebaseEmbeddingModels(kbs []*entity.Knowledgebase, fallbackTenantID string, resolve embeddingModelNameResolver) (string, string, error) {
 	if len(kbs) == 0 {
-		return nil
+		return fallbackTenantID, "", nil
 	}
-	expected := strings.TrimSpace(kbs[0].EmbdID)
-	for _, kb := range kbs[1:] {
-		if strings.TrimSpace(kb.EmbdID) != expected {
-			return fmt.Errorf("knowledge bases must use the same embedding model: %s uses %q, expected %q", kb.ID, kb.EmbdID, expected)
+
+	expected := ""
+	expectedKBID := ""
+	expectedTenantID := fallbackTenantID
+	for _, kb := range kbs {
+		if kb == nil {
+			return "", "", errors.New("knowledge base is nil")
+		}
+		tenantID := kb.TenantID
+		if tenantID == "" {
+			tenantID = fallbackTenantID
+		}
+		modelName, err := resolve(tenantID, kb)
+		if err != nil {
+			return "", "", err
+		}
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			return "", "", fmt.Errorf("knowledge base %s has no embedding model", kb.ID)
+		}
+		if expected == "" {
+			expected = modelName
+			expectedKBID = kb.ID
+			expectedTenantID = tenantID
+			continue
+		}
+		if modelName != expected {
+			return "", "", fmt.Errorf("knowledge bases must use the same embedding model: %s resolves to %q, expected %q from %s", kb.ID, modelName, expected, expectedKBID)
 		}
 	}
-	return nil
+	return expectedTenantID, expected, nil
 }
 
 func (s *ChatSessionService) rerankModelForDialog(dialog *entity.Chat) (*modelModule.RerankModel, error) {

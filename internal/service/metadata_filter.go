@@ -593,9 +593,6 @@ func ApplyMetaDataFilter(
 		return baseDocIDs, false
 	}
 
-	docIDs := make([]string, len(baseDocIDs))
-	copy(docIDs, baseDocIDs)
-
 	method, _ := metaDataFilter["method"].(string)
 
 	// Helper to run metadata filter with push-down fallback
@@ -638,13 +635,14 @@ func ApplyMetaDataFilter(
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
-			return docIDs, false
+			return baseDocIDs, false
 		}
 		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
-		docIDs = append(docIDs, filteredIDs...)
+		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
 			return nil, true // Return nil to indicate auto filter returned empty
 		}
+		return docIDs, false
 
 	case "semi_auto":
 		selectedKeys := []string{}
@@ -679,13 +677,14 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
-					return docIDs, false
+					return baseDocIDs, false
 				}
 				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
-				docIDs = append(docIDs, filteredIDs...)
+				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 				if len(docIDs) == 0 {
 					return nil, true
 				}
+				return docIDs, false
 			}
 		}
 
@@ -694,6 +693,9 @@ func ApplyMetaDataFilter(
 		logic := "and"
 		if logicVal, ok := metaDataFilter["logic"].(string); ok {
 			logic = logicVal
+		}
+		if len(manualFilters) == 0 {
+			return baseDocIDs, false
 		}
 
 		// Apply manual_value_resolver callback if provided
@@ -726,13 +728,42 @@ func ApplyMetaDataFilter(
 		}
 
 		filteredIDs := runMetadataFilter(conditions, logic)
-		docIDs = append(docIDs, filteredIDs...)
+		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
 			return []string{NoMatchDocIDSentinel}, false
 		}
+		return docIDs, false
 	}
 
-	return docIDs, false
+	return baseDocIDs, false
+}
+
+func constrainDocIDs(baseDocIDs, filteredDocIDs []string) []string {
+	filteredDocIDs = common.Deduplicate(filteredDocIDs)
+	if len(baseDocIDs) == 0 {
+		return filteredDocIDs
+	}
+	if len(filteredDocIDs) == 0 {
+		return []string{}
+	}
+
+	filteredSet := make(map[string]struct{}, len(filteredDocIDs))
+	for _, docID := range filteredDocIDs {
+		filteredSet[docID] = struct{}{}
+	}
+	result := make([]string, 0, min(len(baseDocIDs), len(filteredSet)))
+	seen := make(map[string]struct{}, len(baseDocIDs))
+	for _, docID := range baseDocIDs {
+		if _, allowed := filteredSet[docID]; !allowed {
+			continue
+		}
+		if _, exists := seen[docID]; exists {
+			continue
+		}
+		seen[docID] = struct{}{}
+		result = append(result, docID)
+	}
+	return result
 }
 
 // repairJSON attempts to fix common JSON formatting issues in LLM output.

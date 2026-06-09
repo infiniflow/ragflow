@@ -543,6 +543,80 @@ func TestMessagesWithRetrievedKnowledgeAppliesMetadataFilter(t *testing.T) {
 	}
 }
 
+func TestMessagesWithRetrievedKnowledgeIntersectsDocIDsWithMetadataFilter(t *testing.T) {
+	retrieval := &fakeChatRetrievalService{result: &nlp.RetrievalResult{}}
+	svc := &ChatSessionService{
+		kbDAO: fakeChatKBStore{kbs: []*entity.Knowledgebase{
+			{ID: "kb-1", TenantID: "tenant-1", Name: "Manual", EmbdID: "embed@factory"},
+		}},
+		modelProviderSvc: fakeChatModelProvider{driver: &fakeChatModelDriver{}},
+		metadataSvc:      fakeChatMetadataService{},
+		retrievalSvc:     retrieval,
+	}
+	filter := entity.JSONMap{
+		"method": "manual",
+		"manual": []interface{}{
+			map[string]interface{}{"key": "category", "op": "=", "value": "policy"},
+		},
+		"logic": "and",
+	}
+
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+		ID:             "dialog-1",
+		TenantID:       "tenant-1",
+		PromptConfig:   entity.JSONMap{},
+		MetaDataFilter: &filter,
+		KBIDs:          entity.JSONSlice{"kb-1"},
+		TopN:           3,
+		TopK:           32,
+	}, []map[string]interface{}{
+		{"role": "user", "content": "question", "doc_ids": []interface{}{"doc-explicit", "doc-policy"}},
+	}, []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}})
+	if err != nil {
+		t.Fatalf("messagesWithRetrievedKnowledge returned error: %v", err)
+	}
+	if len(retrieval.req.DocIDs) != 1 || retrieval.req.DocIDs[0] != "doc-policy" {
+		t.Fatalf("expected metadata and message doc_ids intersection, got %#v", retrieval.req.DocIDs)
+	}
+}
+
+func TestMessagesWithRetrievedKnowledgeNoMetadataIntersectionUsesSentinel(t *testing.T) {
+	retrieval := &fakeChatRetrievalService{result: &nlp.RetrievalResult{}}
+	svc := &ChatSessionService{
+		kbDAO: fakeChatKBStore{kbs: []*entity.Knowledgebase{
+			{ID: "kb-1", TenantID: "tenant-1", Name: "Manual", EmbdID: "embed@factory"},
+		}},
+		modelProviderSvc: fakeChatModelProvider{driver: &fakeChatModelDriver{}},
+		metadataSvc:      fakeChatMetadataService{},
+		retrievalSvc:     retrieval,
+	}
+	filter := entity.JSONMap{
+		"method": "manual",
+		"manual": []interface{}{
+			map[string]interface{}{"key": "category", "op": "=", "value": "policy"},
+		},
+		"logic": "and",
+	}
+
+	_, _, _, err := svc.messagesWithRetrievedKnowledge(context.Background(), "user-1", &entity.Chat{
+		ID:             "dialog-1",
+		TenantID:       "tenant-1",
+		PromptConfig:   entity.JSONMap{},
+		MetaDataFilter: &filter,
+		KBIDs:          entity.JSONSlice{"kb-1"},
+		TopN:           3,
+		TopK:           32,
+	}, []map[string]interface{}{
+		{"role": "user", "content": "question", "doc_ids": []interface{}{"doc-explicit"}},
+	}, []interface{}{map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}}})
+	if err != nil {
+		t.Fatalf("messagesWithRetrievedKnowledge returned error: %v", err)
+	}
+	if len(retrieval.req.DocIDs) != 1 || retrieval.req.DocIDs[0] != NoMatchDocIDSentinel {
+		t.Fatalf("expected empty metadata/doc_ids intersection sentinel, got %#v", retrieval.req.DocIDs)
+	}
+}
+
 func TestMessagesWithRetrievedKnowledgePreservesEmptyMetadataFilterMatches(t *testing.T) {
 	retrieval := &fakeChatRetrievalService{result: &nlp.RetrievalResult{}}
 	svc := &ChatSessionService{
@@ -756,6 +830,26 @@ func TestMessagesWithRetrievedKnowledgeRejectsMixedEmbeddingModels(t *testing.T)
 	}
 	if retrieval.req != nil {
 		t.Fatal("retrieval should not run when knowledge bases use different embedding models")
+	}
+}
+
+func TestValidateKnowledgebaseEmbeddingModelsComparesResolvedNames(t *testing.T) {
+	firstTenantEmbdID := int64(1)
+	secondTenantEmbdID := int64(2)
+	kbs := []*entity.Knowledgebase{
+		{ID: "kb-1", TenantID: "tenant-1", Name: "Manual", EmbdID: "same-legacy-name", TenantEmbdID: &firstTenantEmbdID},
+		{ID: "kb-2", TenantID: "tenant-1", Name: "FAQ", EmbdID: "same-legacy-name", TenantEmbdID: &secondTenantEmbdID},
+	}
+	resolver := func(tenantID string, kb *entity.Knowledgebase) (string, error) {
+		if kb.TenantEmbdID != nil && *kb.TenantEmbdID == firstTenantEmbdID {
+			return "embed-a@factory", nil
+		}
+		return "embed-b@factory", nil
+	}
+
+	_, _, err := validateKnowledgebaseEmbeddingModels(kbs, "tenant-1", resolver)
+	if err == nil || !strings.Contains(err.Error(), "same embedding model") {
+		t.Fatalf("expected resolved mixed embedding model error, got %v", err)
 	}
 }
 
