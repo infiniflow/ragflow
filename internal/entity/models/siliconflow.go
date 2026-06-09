@@ -495,7 +495,7 @@ func (s *SiliconflowModel) Embed(modelName *string, texts []string, apiConfig *A
 	return embeddings, nil
 }
 
-func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -546,13 +546,13 @@ func (s *SiliconflowModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	var models []string
+	var models []ListModelResponse
 	for _, model := range modelList.Models {
 		modelName := model.ID
 		if model.OwnedBy != "" {
 			modelName = model.ID + "@" + model.OwnedBy
 		}
-		models = append(models, modelName)
+		models = append(models, ListModelResponse{Name: modelName})
 	}
 
 	return models, nil
