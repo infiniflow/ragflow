@@ -187,6 +187,8 @@ const (
 	TokenEOF
 	TokenDash
 	TokenIllegal
+	TokenLBracket // '['
+	TokenRBracket // ']'
 )
 
 // Token represents a lexical token

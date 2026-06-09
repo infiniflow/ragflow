@@ -181,6 +181,10 @@ func (c *RAGFlowClient) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
+	case "show_provider_model":
+		return c.ShowProviderModel(cmd)
+	case "list_all_models":
+		return c.ListAllModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	case "list_admin_tasks":
@@ -223,6 +227,9 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListDatasetDocumentUserCommand(cmd)
 	case "search_on_datasets":
 		return c.SearchOnDatasets(cmd)
+	case "search_help":
+		printSearchHelp()
+		return nil, nil
 	case "create_token":
 		return c.CreateToken(cmd)
 	case "list_tokens":
@@ -247,6 +254,10 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.ListSupportedModels(cmd)
 	case "list_instance_models":
 		return c.ListInstanceModels(cmd)
+	case "show_provider_model":
+		return c.ShowProviderModel(cmd)
+	case "list_all_models":
+		return c.ListAllModels(cmd)
 	case "show_model":
 		return c.ShowModel(cmd)
 	// Provider commands
@@ -335,8 +346,8 @@ func (c *RAGFlowClient) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.RmTags(cmd)
 	case "remove_chunks":
 		return c.RemoveChunks(cmd)
-	case "list_metadata":
-		return c.ListMetadata(cmd)
+	case "get_metadata":
+		return c.GetMetadata(cmd)
 	case "parse_documents_user_command":
 		return c.ParseDocumentsUserCommand(cmd)
 	// ContextEngine commands

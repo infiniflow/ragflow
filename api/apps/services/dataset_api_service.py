@@ -1066,9 +1066,8 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search KG retrieval failed: dataset=%s tenant=%s", dataset_id, tenant_id, exc_info=True)
-    total = ranks.get("total", 0)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = total
+    ranks["total"] = len(ranks["chunks"])
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
@@ -1438,9 +1437,8 @@ async def search_datasets(tenant_id: str, req: dict):
                 ranks["chunks"].insert(0, ck)
         except Exception:
             logging.warning("search_datasets KG retrieval failed: datasets=%s tenant=%s", kb_ids, tenant_id, exc_info=True)
-    total = ranks.get("total", 0)
     ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
-    ranks["total"] = total
+    ranks["total"] = len(ranks["chunks"])
 
     for c in ranks["chunks"]:
         c.pop("vector", None)
