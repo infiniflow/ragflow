@@ -2115,7 +2115,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 		}
 		seen[duplicateKey] = struct{}{}
 
-		_, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
+		_, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(provider.ID, instance.ID, modelName)
 		if err == nil {
 			return common.CodeConflict, fmt.Errorf("model already exists: %s", modelName)
 		}
@@ -2123,7 +2123,8 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 			return common.CodeServerError, err
 		}
 
-		modelID, err := utility.GenerateUUID1()
+		var modelID string
+		modelID, err = utility.GenerateUUID1()
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to get UUID")
 		}
@@ -2136,7 +2137,8 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 			extra["thinking"] = *model.Thinking
 		}
 
-		extraByte, err := json.Marshal(extra)
+		var extraByte []byte
+		extraByte, err = json.Marshal(extra)
 		if err != nil {
 			return common.CodeServerError, errors.New("fail to marshal extra")
 		}
@@ -2152,7 +2154,7 @@ func (m *ModelProviderService) AddModel(request *AddModelRequest, userID string)
 		})
 	}
 
-	if err := m.modelDAO.CreateBatch(models); err != nil {
+	if err = m.modelDAO.CreateBatch(models); err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2407,4 +2409,20 @@ func (m *ModelProviderService) getModelConfig(tenantID, compositeModelName strin
 
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 	return providerInfo.ModelDriver, modelName, apiConfig, maxTokens, nil
+}
+
+// getModelConfig returns the model driver, model name, API config, and max tokens for a model
+func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
+	models, err := dao.GetModelProviderManager().ListAllModels()
+	if err != nil {
+		return nil, err
+	}
+	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
+		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
+	}
+	return models, nil
+}
+
+func (m *ModelProviderService) ShowModel(modelName string) (*entity.Model, error) {
+	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }
