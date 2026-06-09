@@ -36,10 +36,10 @@ type chunkService interface {
 	List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
 	UpdateChunk(req *service.UpdateChunkRequest, userID string) error
 	RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error)
-	ListChunksREST(datasetID, documentID, userID string, page, pageSize int, keywords string, available *bool) (*service.ListChunksResponse, error)
+	ListChunksREST(datasetID, documentID, userID, id string, page, pageSize int, keywords string, available *bool) (*service.ListChunksResponse, error)
 	AddChunk(datasetID, documentID, userID string, req *service.AddChunkRequest) (map[string]interface{}, error)
 	UpdateChunkREST(datasetID, documentID, chunkID, userID string, req *service.UpdateChunkRESTRequest) error
-	SwitchChunks(datasetID, documentID, userID string, chunkIDs []string, available bool) error
+	SwitchChunks(datasetID, documentID, userID string, chunkIDs []string, availableInt int) error
 }
 
 // ChunkHandler chunk handler
@@ -435,6 +435,7 @@ func (h *ChunkHandler) ListChunksREST(c *gin.Context) {
 		}
 	}
 	keywords := c.Query("keywords")
+	id := c.Query("id")
 
 	var available *bool
 	if v := c.Query("available"); v != "" {
@@ -442,7 +443,7 @@ func (h *ChunkHandler) ListChunksREST(c *gin.Context) {
 		available = &b
 	}
 
-	resp, err := h.chunkService.ListChunksREST(datasetID, documentID, user.ID, page, pageSize, keywords, available)
+	resp, err := h.chunkService.ListChunksREST(datasetID, documentID, user.ID, id, page, pageSize, keywords, available)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
 		return
@@ -559,8 +560,9 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 	}
 
 	var body struct {
-		ChunkIDs  []string `json:"chunk_ids"`
-		Available *bool    `json:"available"`
+		ChunkIDs     []string `json:"chunk_ids"`
+		Available    *bool    `json:"available"`
+		AvailableInt *int     `json:"available_int"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
@@ -570,12 +572,20 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "`chunk_ids` is required."})
 		return
 	}
-	if body.Available == nil {
-		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "`available` is required."})
+	// Mirror Python switch_chunks: accept either available_int (used verbatim) or
+	// the boolean available (mapped to 1/0); at least one is required.
+	if body.AvailableInt == nil && body.Available == nil {
+		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": "`available_int` or `available` is required."})
 		return
 	}
+	availableInt := 0
+	if body.AvailableInt != nil {
+		availableInt = *body.AvailableInt
+	} else if *body.Available {
+		availableInt = 1
+	}
 
-	if err := h.chunkService.SwitchChunks(datasetID, documentID, user.ID, body.ChunkIDs, *body.Available); err != nil {
+	if err := h.chunkService.SwitchChunks(datasetID, documentID, user.ID, body.ChunkIDs, availableInt); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": common.CodeDataError, "data": false, "message": err.Error()})
 		return
 	}

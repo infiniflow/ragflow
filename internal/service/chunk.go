@@ -383,15 +383,11 @@ func (s *ChunkService) resolveEmbeddingModel(tenantID string, kbRecord *entity.K
 			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", err)
 		}
 	} else if kbRecord.EmbdID != "" {
-		parts := strings.Split(kbRecord.EmbdID, "@")
-		if len(parts) == 2 && parts[1] != "" {
-			_, embdID, err = dao.LookupTenantLLMByFactory(dao.NewTenantLLMDAO(), tenantID, parts[1], parts[0], entity.ModelTypeEmbedding)
-		} else {
-			_, embdID, err = dao.LookupTenantLLMByName(dao.NewTenantLLMDAO(), tenantID, kbRecord.EmbdID, entity.ModelTypeEmbedding)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
-		}
+		// Mirror Python retrieval_test: the raw kb.embd_id composite
+		// ("model@instance@provider") is resolved directly via the
+		// provider-instance path. Pre-splitting through the legacy tenant_llm table
+		// mangles names containing "@" and fails to match the row.
+		embdID = kbRecord.EmbdID
 	} else {
 		tenantLLM, err := dao.NewTenantLLMDAO().GetByTenantAndType(tenantID, entity.ModelTypeEmbedding)
 		if err != nil {
@@ -1006,18 +1002,13 @@ func (s *ChunkService) getEmbeddingModelForKB(kb *entity.Knowledgebase, tenantID
 	if kb.TenantEmbdID != nil && *kb.TenantEmbdID > 0 {
 		_, embdID, err = dao.LookupTenantLLMByID(tenantLLMDAO, *kb.TenantEmbdID)
 	} else if kb.EmbdID != "" {
-		// Mirror Python TenantLLMService.split_model_name_and_factory: the factory
-		// is the segment after the LAST "@", so model names that themselves contain
-		// "@" (e.g. "Qwen/Qwen3-Embedding-8B@test@SILICONFLOW") resolve correctly.
-		name, factory := kb.EmbdID, ""
-		if idx := strings.LastIndex(kb.EmbdID, "@"); idx >= 0 {
-			name, factory = kb.EmbdID[:idx], kb.EmbdID[idx+1:]
-		}
-		if factory != "" {
-			_, embdID, err = dao.LookupTenantLLMByFactory(tenantLLMDAO, tenantID, factory, name, entity.ModelTypeEmbedding)
-		} else {
-			_, embdID, err = dao.LookupTenantLLMByName(tenantLLMDAO, tenantID, name, entity.ModelTypeEmbedding)
-		}
+		// Mirror Python add_chunk: DocumentService.get_embd_id returns the raw
+		// kb.embd_id composite ("model@instance@provider"), which is resolved
+		// directly via get_model_config_from_provider_instance. Pass it straight to
+		// GetEmbeddingModel — do NOT pre-split it through the legacy tenant_llm
+		// table, which mangles names containing "@" (e.g.
+		// "Qwen/Qwen3-Embedding-8B@test@SILICONFLOW") and fails to match the row.
+		embdID = kb.EmbdID
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve embedding model: %w", err)
@@ -1112,7 +1103,7 @@ func weightedVec(a, b []float64) []float64 {
 
 // ListChunksREST mirrors Python GET /datasets/:dataset_id/documents/:document_id/chunks.
 // dataset_id and document_id are path params; validation is ownership-based.
-func (s *ChunkService) ListChunksREST(datasetID, documentID, userID string, page, pageSize int, keywords string, available *bool) (*ListChunksResponse, error) {
+func (s *ChunkService) ListChunksREST(datasetID, documentID, userID, id string, page, pageSize int, keywords string, available *bool) (*ListChunksResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -1133,6 +1124,70 @@ func (s *ChunkService) ListChunksREST(datasetID, documentID, userID string, page
 
 	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+
+	timeFormat := "2006-01-02T15:04:05"
+	// Mirror Python chunk_api._map_doc: return the full document with the SDK key
+	// renames (kb_id→dataset_id, chunk_num→chunk_count, token_num→token_count,
+	// parser_id→chunk_method) and the run-status label mapping, so the frontend
+	// receives every field it expects.
+	docInfo := map[string]interface{}{
+		"id":               doc.ID,
+		"thumbnail":        doc.Thumbnail,
+		"dataset_id":       doc.KbID,
+		"chunk_method":     doc.ParserID,
+		"pipeline_id":      doc.PipelineID,
+		"parser_config":    doc.ParserConfig,
+		"source_type":      doc.SourceType,
+		"type":             doc.Type,
+		"created_by":       doc.CreatedBy,
+		"name":             doc.Name,
+		"location":         doc.Location,
+		"size":             doc.Size,
+		"token_count":      doc.TokenNum,
+		"chunk_count":      doc.ChunkNum,
+		"progress":         utility.JSONFloat64(doc.Progress),
+		"progress_msg":     doc.ProgressMsg,
+		"process_begin_at": utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
+		"process_duration": doc.ProcessDuration,
+		"content_hash":     doc.ContentHash,
+		"meta_fields":      doc.MetaFields,
+		"suffix":           doc.Suffix,
+		"run":              mapDocRun(doc.Run),
+		"status":           doc.Status,
+		"create_time":      doc.CreateTime,
+		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
+		"update_time":      doc.UpdateTime,
+		"update_date":      utility.FormatTimeToString(doc.UpdateDate, timeFormat),
+	}
+
+	// Single-chunk lookup by id, mirroring Python list_chunks: when ?id= is given,
+	// fetch just that chunk from the doc store, confirm it belongs to this
+	// document, and return it (total=1) instead of the paginated list.
+	if id != "" {
+		raw, gerr := s.docEngine.GetChunk(ctx, indexName, id, []string{datasetID})
+		if gerr != nil || raw == nil {
+			return nil, fmt.Errorf("Chunk not found: %s/%s", datasetID, id)
+		}
+		chunk, ok := raw.(map[string]interface{})
+		if !ok || firstStr(chunk["doc_id"], chunk["document_id"]) != documentID {
+			return nil, fmt.Errorf("Chunk not found: %s/%s", datasetID, id)
+		}
+		result := map[string]interface{}{
+			"id":                 firstVal(chunk["id"], chunk["chunk_id"]),
+			"content":            chunk["content_with_weight"],
+			"document_id":        firstVal(chunk["doc_id"], chunk["document_id"]),
+			"docnm_kwd":          chunk["docnm_kwd"],
+			"important_keywords": orSlice(chunk["important_kwd"]),
+			"questions":          orSlice(chunk["question_kwd"]),
+			"dataset_id":         firstVal(chunk["kb_id"], chunk["dataset_id"]),
+			"image_id":           orStr(chunk["img_id"]),
+			"available":          intToBool(chunk["available_int"]),
+			"positions":          orSlice(chunk["position_int"]),
+			"tag_kwd":            orSlice(chunk["tag_kwd"]),
+			"tag_feas":           orMap(chunk["tag_feas"]),
+		}
+		return &ListChunksResponse{Total: 1, Chunks: []map[string]interface{}{result}, Doc: docInfo}, nil
+	}
 
 	searchReq := &types.SearchRequest{
 		IndexNames: []string{indexName},
@@ -1173,41 +1228,6 @@ func (s *ChunkService) ListChunksREST(datasetID, documentID, userID string, page
 		chunks = append(chunks, result)
 	}
 
-	timeFormat := "2006-01-02T15:04:05"
-	// Mirror Python chunk_api._map_doc: return the full document with the SDK key
-	// renames (kb_id→dataset_id, chunk_num→chunk_count, token_num→token_count,
-	// parser_id→chunk_method) and the run-status label mapping, so the frontend
-	// receives every field it expects.
-	docInfo := map[string]interface{}{
-		"id":               doc.ID,
-		"thumbnail":        doc.Thumbnail,
-		"dataset_id":       doc.KbID,
-		"chunk_method":     doc.ParserID,
-		"pipeline_id":      doc.PipelineID,
-		"parser_config":    doc.ParserConfig,
-		"source_type":      doc.SourceType,
-		"type":             doc.Type,
-		"created_by":       doc.CreatedBy,
-		"name":             doc.Name,
-		"location":         doc.Location,
-		"size":             doc.Size,
-		"token_count":      doc.TokenNum,
-		"chunk_count":      doc.ChunkNum,
-		"progress":         utility.JSONFloat64(doc.Progress),
-		"progress_msg":     doc.ProgressMsg,
-		"process_begin_at": utility.FormatTimeToString(doc.ProcessBeginAt, timeFormat),
-		"process_duration": doc.ProcessDuration,
-		"content_hash":     doc.ContentHash,
-		"meta_fields":      doc.MetaFields,
-		"suffix":           doc.Suffix,
-		"run":              mapDocRun(doc.Run),
-		"status":           doc.Status,
-		"create_time":      doc.CreateTime,
-		"create_date":      utility.FormatTimeToString(doc.CreateDate, timeFormat),
-		"update_time":      doc.UpdateTime,
-		"update_date":      utility.FormatTimeToString(doc.UpdateDate, timeFormat),
-	}
-
 	return &ListChunksResponse{
 		Total:  searchResp.Total,
 		Chunks: chunks,
@@ -1227,6 +1247,36 @@ func orStr(v interface{}) string {
 		return s
 	}
 	return ""
+}
+
+// firstVal returns the first non-nil value, mirroring Python's dict.get(a, b)
+// fallback (e.g. chunk.get("id", chunk.get("chunk_id"))).
+func firstVal(vals ...interface{}) interface{} {
+	for _, v := range vals {
+		if v != nil {
+			return v
+		}
+	}
+	return nil
+}
+
+// firstStr returns the first non-empty string value among the candidates.
+func firstStr(vals ...interface{}) string {
+	for _, v := range vals {
+		if s, ok := v.(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// orMap returns v when it is non-nil, otherwise an empty map — mirroring Python's
+// chunk.get("tag_feas", {}).
+func orMap(v interface{}) interface{} {
+	if v == nil {
+		return map[string]interface{}{}
+	}
+	return v
 }
 
 func intToBool(v interface{}) bool {
@@ -1507,7 +1557,7 @@ func (s *ChunkService) UpdateChunkREST(datasetID, documentID, chunkID, userID st
 
 // SwitchChunks mirrors Python PATCH /datasets/:dataset_id/documents/:document_id/chunks
 // (without chunk_id) — bulk toggle of available_int.
-func (s *ChunkService) SwitchChunks(datasetID, documentID, userID string, chunkIDs []string, available bool) error {
+func (s *ChunkService) SwitchChunks(datasetID, documentID, userID string, chunkIDs []string, availableInt int) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -1529,10 +1579,6 @@ func (s *ChunkService) SwitchChunks(datasetID, documentID, userID string, chunkI
 
 	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	availInt := 0
-	if available {
-		availInt = 1
-	}
 
 	// Update each chunk's available_int. Python's docStoreConn.update returns False
 	// for a non-existent chunk id, surfacing as "Index updating failure" (code 102);
@@ -1544,7 +1590,7 @@ func (s *ChunkService) SwitchChunks(datasetID, documentID, userID string, chunkI
 			return fmt.Errorf("Index updating failure")
 		}
 		condition := map[string]interface{}{"id": chunkID}
-		update := map[string]interface{}{"available_int": availInt}
+		update := map[string]interface{}{"available_int": availableInt}
 		if err := s.docEngine.UpdateChunks(ctx, condition, update, indexName, datasetID); err != nil {
 			common.Warn("SwitchChunks: failed to update chunk", zap.String("chunkID", chunkID), zap.Error(err))
 			return fmt.Errorf("Index updating failure")
