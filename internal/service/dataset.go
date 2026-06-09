@@ -205,7 +205,7 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 		"    keyword=%v\n"+
 		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
 		datasetIDs, req.Question,
-		ptrString(req.Page), ptrString(req.Size), req.DocIDs,
+		common.PtrString(req.Page), common.PtrString(req.Size), req.DocIDs,
 		useKG, topK, crossLanguages, searchID,
 		metadataFilter,
 		rerankID,
@@ -487,29 +487,6 @@ func (s *DatasetService) SearchDatasets(req *SearchDatasetsRequest, userID strin
 	}, nil
 }
 
-// Helper functions
-
-// ptrString converts a pointer to a formatted string
-func ptrString[T any](p *T) string {
-	if p == nil {
-		return "<nil>"
-	}
-	return fmt.Sprintf("%v", *p)
-}
-
-func getPageNum(page *int, defaultVal int) int {
-	if page != nil && *page > 0 {
-		return *page
-	}
-	return defaultVal
-}
-
-func getPageSize(size *int, defaultVal int) int {
-	if size != nil && *size > 0 {
-		return *size
-	}
-	return defaultVal
-}
 
 // AutoMetadataField mirrors the REST dataset auto metadata field schema.
 type AutoMetadataField struct {
