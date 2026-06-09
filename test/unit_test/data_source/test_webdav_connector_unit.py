@@ -184,6 +184,24 @@ def test_get_size_bytes_ignores_unknown_values():
     assert WebDAVConnector._get_size_bytes({"size": "1" * 21}) is None
 
 
+@pytest.mark.p2
+def test_get_size_bytes_reads_webdav4_content_length():
+    # webdav4's Client.ls(detail=True) exposes size as "content_length", not "size".
+    assert WebDAVConnector._get_size_bytes({"content_length": 128}) == 128
+    assert WebDAVConnector._get_size_bytes({"content_length": "128"}) == 128
+    assert WebDAVConnector._get_size_bytes({"content_length": 0}) == 0
+    assert WebDAVConnector._get_size_bytes({"getcontentlength": "128"}) == 128
+
+
+@pytest.mark.p2
+def test_get_size_bytes_falls_back_across_keys():
+    # When the preferred key is absent/invalid, fall back to the next valid key.
+    assert WebDAVConnector._get_size_bytes({"content_length": "256"}) == 256
+    assert WebDAVConnector._get_size_bytes({"size": None, "content_length": 256}) == 256
+    assert WebDAVConnector._get_size_bytes({"size": "bad", "content_length": 256}) == 256
+    assert WebDAVConnector._get_size_bytes({"content_length": None, "getcontentlength": "256"}) == 256
+
+
 @pytest.mark.p1
 def test_yield_webdav_documents_skips_numeric_string_sizes_over_threshold(caplog):
     connector = WebDAVConnector("https://webdav.example", batch_size=10)

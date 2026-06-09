@@ -62,8 +62,7 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         return is_accepted_file_ext(file_ext, self._build_extension_type())
 
     @staticmethod
-    def _get_size_bytes(file_info: dict[str, Any]) -> int | None:
-        size_bytes = file_info.get("size")
+    def _coerce_size_bytes(size_bytes: Any) -> int | None:
         if isinstance(size_bytes, bool):
             return None
         if isinstance(size_bytes, int):
@@ -74,6 +73,22 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 return None
             parsed_size = int(size_text)
             return parsed_size if parsed_size >= 0 else None
+        return None
+
+    @classmethod
+    def _get_size_bytes(cls, file_info: dict[str, Any]) -> int | None:
+        # webdav4's Client.ls(detail=True) reports the size under "content_length"
+        # (see webdav4.multistatus.Response.as_dict); other servers/libraries or
+        # webdav4's fsspec wrapper may instead use "size" or the raw
+        # "getcontentlength" property. Try each so the size guard isn't silently
+        # skipped — otherwise file_info.get("size") is always None and every file
+        # trips the missing-metadata warning.
+        for key in ("size", "content_length", "getcontentlength"):
+            if key not in file_info:
+                continue
+            size_bytes = cls._coerce_size_bytes(file_info[key])
+            if size_bytes is not None:
+                return size_bytes
         return None
 
     @staticmethod
