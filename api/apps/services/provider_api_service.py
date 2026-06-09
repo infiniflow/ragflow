@@ -35,6 +35,15 @@ def _to_int(v, default=500):
         return default
 
 
+def _normalize_provider_base_url(provider_name: str, base_url: str | None):
+    if provider_name != "VLLM" or not base_url:
+        return base_url
+    base_url = base_url.strip().rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+    return base_url
+
+
 def list_providers(tenant_id: str, all_available: bool = False):
     """
     List providers for a tenant.
@@ -198,7 +207,7 @@ async def list_provider_models(provider_name: str, api_key: str = None, base_url
             )
         } for llm in factory_info[0]["llm"]]
 
-    model_base_url = base_url or factory_info[0].get("url", "")
+    model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
     remote_models = []
     if provider_name in ModelMeta:
         remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
@@ -271,6 +280,8 @@ async def create_provider_instance(tenant_id: str, provider_name: str, instance_
     """
     if not provider_name:
         return False, "Provider name is required"
+
+    base_url = _normalize_provider_base_url(provider_name, base_url)
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
@@ -367,6 +378,8 @@ async def verify_api_key(provider_name: str, api_key: str|dict, base_url: str=No
     """
     if not provider_name:
         return False, "Provider name is required"
+
+    base_url = _normalize_provider_base_url(provider_name, base_url)
 
     if region and region == "intl" and provider_name.lower() == "siliconflow":
         target_factory_name = "siliconflow_intl"
