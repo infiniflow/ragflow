@@ -88,7 +88,7 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 		Name:     "test-kb",
 		EmbdID:   "embd-1",
 		CreatedBy: "user-1",
-		Permission: string(entity.TenantPermissionMe),
+		Permission: string(entity.TenantPermissionTeam),
 		DocNum:   docNum,
 		TokenNum: tokenNum,
 		ChunkNum: chunkNum,
@@ -853,5 +853,69 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 	mappings, _ = dao.NewFile2DocumentDAO().GetByDocumentID("doc-2")
 	if len(mappings) != 1 {
 		t.Fatalf("expected 1 f2d for doc-2, got %d", len(mappings))
+	}
+}
+
+func TestArtifactHelpers(t *testing.T) {
+	// Test sanitizeArtifactFilename
+	safe := sanitizeArtifactFilename("test@#file.txt")
+	if safe != "test__file.txt" {
+		t.Errorf("expected test__file.txt, got %s", safe)
+	}
+
+	// Test shouldForceArtifactAttachment
+	if !shouldForceArtifactAttachment(".html", "text/html") {
+		t.Error("expected true for .html")
+	}
+	if shouldForceArtifactAttachment(".txt", "text/plain") {
+		t.Error("expected false for .txt")
+	}
+}
+
+func TestGetDocumentArtifact_InvalidFilename(t *testing.T) {
+	svc := testDocumentService(t)
+	_, err := svc.GetDocumentArtifact("../test.txt")
+	if err != ErrArtifactInvalidFilename {
+		t.Errorf("expected ErrArtifactInvalidFilename, got %v", err)
+	}
+}
+
+func TestGetDocumentArtifact_InvalidFileType(t *testing.T) {
+	svc := testDocumentService(t)
+	_, err := svc.GetDocumentArtifact("test.exe")
+	if err != ErrArtifactInvalidFileType {
+		t.Errorf("expected ErrArtifactInvalidFileType, got %v", err)
+	}
+}
+
+func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	svc := testDocumentService(t)
+
+	_, err := svc.GetDocumentPreview("nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent document")
+	}
+}
+
+func TestDownloadDocument_MissingDocID(t *testing.T) {
+	svc := testDocumentService(t)
+	_, err := svc.DownloadDocument("ds-1", "")
+	if err == nil {
+		t.Error("expected error for missing docID")
+	}
+}
+
+func TestDownloadDocument_WrongDataset(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 5, 2)
+	insertTestDoc(t, "doc-1", "kb-1", 5, 2)
+	svc := testDocumentService(t)
+
+	_, err := svc.DownloadDocument("wrong-ds", "doc-1")
+	if err == nil {
+		t.Error("expected error for wrong dataset")
 	}
 }

@@ -28,12 +28,13 @@ type Parser struct {
 	lexer     *Lexer
 	curToken  Token
 	peekToken Token
+	original  string
 }
 
 // NewParser creates a new parser
 func NewParser(input string) *Parser {
 	l := NewLexer(input)
-	p := &Parser{lexer: l}
+	p := &Parser{lexer: l, original: input}
 	// Read two tokens to initialize curToken and peekToken
 	p.nextToken()
 	p.nextToken()
@@ -46,7 +47,7 @@ func (p *Parser) nextToken() {
 }
 
 // Parse parses the input and returns a Command
-func (p *Parser) Parse(adminCommand bool) (*Command, error) {
+func (p *Parser) Parse(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type == TokenEOF {
 		return nil, nil
 	}
@@ -56,13 +57,7 @@ func (p *Parser) Parse(adminCommand bool) (*Command, error) {
 		return p.parseMetaCommand()
 	}
 
-	// Check for ContextEngine commands (ls, cat, search)
-	// Note: These are now handled in parseUserCommand to support both SQL-style and CE-style syntax
-	// if p.curToken.Type == TokenIdentifier && isCECommand(p.curToken.Value) {
-	// 	return p.parseCECommand()
-	// }
-
-	return p.parseCommand(adminCommand)
+	return p.parseCommand(cliMode)
 }
 
 func (p *Parser) parseMetaCommand() (*Command, error) {
@@ -115,8 +110,8 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminGenerateCommand()
 	case TokenImport:
 		return p.parseAdminImportCommand()
-	case TokenSearch:
-		return p.parseAdminSearchCommand()
+	case TokenRetrieve:
+		return p.parseAdminRetrieveCommand()
 	case TokenParse:
 		return p.parseAdminParseCommand()
 	case TokenBenchmark:
@@ -133,6 +128,12 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseStartIngestion()
 	case TokenStop:
 		return p.parseStopIngestion()
+	case TokenAdd:
+		return p.parseAdminAddCommand()
+	case TokenDelete:
+		return p.parseAdminDeleteCommand()
+	case TokenSave:
+		return p.parseAdminSaveCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
@@ -177,8 +178,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseImportCommand()
 	case TokenInsert:
 		return p.parseInsertCommand()
-	case TokenSearch:
-		return p.parseSearchCommand()
+	case TokenRetrieve:
+		return p.parseRetrieveCommand()
 	case TokenParse:
 		return p.parseParseCommand()
 	case TokenBenchmark:
@@ -213,10 +214,8 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseOCRCommand()
 	case TokenCheck:
 		return p.parseCheckCommand()
-	case TokenLS:
-		return p.parseCEListCommand()
-	case TokenCat:
-		return p.parseCECatCommand()
+	case TokenSave:
+		return p.parseUserSaveCommand()
 	case TokenUse:
 		return p.parseUseCommand()
 	case TokenUpdate:
@@ -226,21 +225,27 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 	case TokenGet:
 		return p.parseGetCommand()
 
+	case TokenLS, TokenCat, TokenSearch:
+		// For context engine
+		return p.parseContextEngineCommand()
 	default:
 		return nil, fmt.Errorf("unknown command: %s", p.curToken.Value)
 	}
 }
 
-func (p *Parser) parseCommand(adminCommand bool) (*Command, error) {
+func (p *Parser) parseCommand(cliMode CommandLineMode) (*Command, error) {
 	if p.curToken.Type != TokenIdentifier && !isKeyword(p.curToken.Type) {
 		return nil, fmt.Errorf("expected command, got %s", p.curToken.Value)
 	}
 
-	if adminCommand {
+	switch cliMode {
+	case AdminMode:
 		return p.parseAdminCommand()
+	case APIMode:
+		return p.parseUserCommand()
+	default:
+		return nil, fmt.Errorf("unknown mode: %s", cliMode)
 	}
-
-	return p.parseUserCommand()
 }
 
 func (p *Parser) expectPeek(tokenType int) error {
@@ -308,7 +313,10 @@ func (p *Parser) parseNumber() (int, error) {
 }
 
 func (p *Parser) parseFloat() (float64, error) {
-	if p.curToken.Type != TokenInteger {
+	// Accept either TokenInteger or TokenFloat so that literals like
+	// `0.3` (which the lexer tags as TokenFloat) and `10` (TokenInteger)
+	// both parse cleanly.
+	if p.curToken.Type != TokenInteger && p.curToken.Type != TokenFloat {
 		return math.NaN(), fmt.Errorf("expected number, got %s", p.curToken.Value)
 	}
 	result, err := strconv.ParseFloat(p.curToken.Value, 64)
@@ -319,25 +327,76 @@ func (p *Parser) parseFloat() (float64, error) {
 	return result, nil
 }
 
+// parseQuotedStringList consumes a bracket-delimited list of quoted strings:
+//   [ 'a', 'b', 'c' ]
+// Empty list [] is allowed. The cursor must be positioned on '[' when called;
+// on return, the cursor is positioned just past the closing ']'.
+func (p *Parser) parseQuotedStringList() ([]string, error) {
+	if p.curToken.Type != TokenLBracket {
+		return nil, fmt.Errorf("expected '[', got %s", p.curToken.Value)
+	}
+	p.nextToken() // skip '['
+
+	// Always return a non-nil slice so callers (and json.Marshal) see []
+	// instead of null for the empty-list case.
+	list := make([]string, 0)
+	// Allow empty list []
+	if p.curToken.Type == TokenRBracket {
+		p.nextToken() // skip ']'
+		return list, nil
+	}
+
+	for {
+		s, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected quoted string in list: %w", err)
+		}
+		list = append(list, s)
+		p.nextToken() // step past the closing quote
+
+		if p.curToken.Type == TokenComma {
+			p.nextToken() // step past ','
+			continue
+		}
+		if p.curToken.Type == TokenRBracket {
+			p.nextToken() // step past ']'
+			return list, nil
+		}
+		return nil, fmt.Errorf("expected ',' or ']' in list, got %s", p.curToken.Value)
+	}
+}
+
 func tokenTypeToString(t int) string {
-	// Simplified for error messages
+	switch t {
+	case TokenEOF:
+		return "end of input"
+	case TokenIdentifier:
+		return "identifier"
+	case TokenInteger:
+		return "integer"
+	case TokenFloat:
+		return "float"
+	case TokenQuotedString:
+		return "quoted string"
+	case TokenLBracket:
+		return "'['"
+	case TokenRBracket:
+		return "']'"
+	case TokenComma:
+		return "','"
+	case TokenSemicolon:
+		return "';'"
+	}
 	return fmt.Sprintf("token(%d)", t)
 }
 
-// parseCECommand parses ContextEngine commands (ls, search)
-func (p *Parser) parseCECommand() (*Command, error) {
-	cmdName := strings.ToUpper(p.curToken.Value)
+func (p *Parser) parseContextEngineCommand() (*Command, error) {
+	p.nextToken() // consume COMMAND
 
-	switch cmdName {
-	case "LS", "LIST":
-		return p.parseCEListCommand()
-	case "CAT":
-		return p.parseCECatCommand()
-	case "SEARCH":
-		return p.parseCESearchCommand()
-	default:
-		return nil, fmt.Errorf("unknown ContextEngine command: %s", cmdName)
-	}
+	cmd := NewCommand("context_engine_command")
+	cmd.Params["command"] = p.original
+
+	return cmd, nil
 }
 
 // parseCEListCommand parses the ls command

@@ -16,6 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
+from common import list_all_sessions
 from configs import SESSION_WITH_CHAT_NAME_LIMIT
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Session
@@ -30,15 +31,6 @@ class _DummyStreamResponse:
         for line in self._lines:
             yield line
 
-
-@pytest.fixture(scope="session")
-def auth():
-    return "unit-auth"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info():
-    return None
 
 
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
@@ -84,7 +76,7 @@ class TestSessionWithChatAssistantCreate:
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
 
-        updated_sessions = chat_assistant.list_sessions(page_size=count * 2)
+        updated_sessions = list_all_sessions(chat_assistant, limit=count + 1)
         assert len(updated_sessions) == count
 
     @pytest.mark.p3

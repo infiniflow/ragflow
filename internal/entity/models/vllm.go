@@ -38,8 +38,9 @@ type VllmModel struct {
 func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	return &VllmModel{
 		baseModel: BaseModel{
-			BaseURL:   baseURL,
-			URLSuffix: urlSuffix,
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
 			httpClient: &http.Client{
 				Transport: &http.Transport{
 					MaxIdleConns:        100,
@@ -147,7 +148,9 @@ func (v *VllmModel) ChatWithMessages(modelName string, messages []Message, apiCo
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -295,7 +298,9 @@ func (v *VllmModel) ChatStreamlyWithSender(modelName string, messages []Message,
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -436,7 +441,9 @@ func (v *VllmModel) Embed(modelName *string, texts []string, apiConfig *APIConfi
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -504,7 +511,9 @@ func (v *VllmModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -629,7 +638,9 @@ func (v *VllmModel) Rerank(modelName *string, query string, documents []string, 
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := v.baseModel.httpClient.Do(req)
 	if err != nil {

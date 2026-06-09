@@ -24,13 +24,43 @@ import json
 import logging
 import re
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from api.db.db_models import DB, Document
 from common import settings
 from common.metadata_utils import dedupe_list
 from api.db.db_models import Knowledgebase
 from common.doc_store.doc_store_base import OrderByExpr
+
+
+def _es_response_total(response: Any) -> Optional[int]:
+    """Extract the exact total hit count from an ES search response.
+
+    Returns ``None`` when the field is missing or in an unexpected shape
+    — callers should treat that as "cannot verify" rather than "no
+    overflow".
+    """
+    if not isinstance(response, dict):
+        try:
+            response = dict(response)
+        except Exception:
+            return None
+    hits = response.get("hits")
+    if not isinstance(hits, dict):
+        return None
+    total = hits.get("total")
+    if isinstance(total, dict):
+        value = total.get("value")
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+    elif isinstance(total, int):
+        # Legacy shape: some clients return the count directly.
+        return total
+    return None
 
 
 class DocMetadataService:
@@ -876,6 +906,10 @@ class DocMetadataService:
             **query_body,
             "size": limit,
             "_source": ["id"],
+            # Make hits.total.value exact. ES otherwise caps the tracked
+            # total at 10,000 with relation="gte", which would let
+            # overflow slip through undetected.
+            "track_total_hits": True,
         }
 
         try:
@@ -897,6 +931,22 @@ class DocMetadataService:
             logging.warning(
                 f"ES metadata filter hit limit {limit} for KBs {kb_ids}"
             )
+
+        # Detect silent truncation: the push-down is a fast path, not
+        # the system of record. When the query matched more than
+        # ``limit`` docs, the slice we built here is necessarily a
+        # strict subset of the truth, and the caller treats any
+        # non-None result as definitive. Bail out and let the caller
+        # fall back to the in-memory ``meta_filter`` (correct, just
+        # slower for very large result sets) instead of silently
+        # dropping docs.
+        total = _es_response_total(response)
+        if total is not None and total > limit:
+            logging.warning(
+                f"ES metadata filter result exceeds push-down cap, falling back to in-memory: "
+                f"total={total}, cap={limit}, kb_ids={kb_ids}"
+            )
+            return None
 
         logging.debug(f"ES metadata filter returned {len(unique)} matches for KBs {kb_ids}")
         return unique
