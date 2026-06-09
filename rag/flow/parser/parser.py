@@ -336,10 +336,10 @@ class Parser(ProcessBase):
         if isinstance(raw_parse_method, str):
             lowered = raw_parse_method.lower()
             if lowered.endswith("@mineru"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parser_model_name = raw_parse_method
                 parse_method = "MinerU"
             elif lowered.endswith("@paddleocr"):
-                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parser_model_name = raw_parse_method
                 parse_method = "PaddleOCR"
 
         # DeepDOC returns structured page boxes directly.
