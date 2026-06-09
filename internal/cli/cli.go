@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	//"os/signal"
 	"path/filepath"
@@ -177,7 +178,22 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
 
-			// If we've found the command, collect remaining args as subcommand args
+			// Handle known global flags (already parsed in first pass).
+			// Intercept here regardless of position so they are never
+			// mistaken for command args or unknown flags downstream.
+			switch arg {
+			case "-o", "--output":
+				if i+1 < len(args) {
+					i++
+				}
+				continue
+			case "-v", "--verbose", "--help", "-help":
+				continue
+			case "--admin", "-admin":
+				return nil, fmt.Errorf("unexpected parameter: --admin")
+			}
+
+			// If we've found the command, collect remaining args
 			if foundCommand {
 				commandArgs = append(commandArgs, arg)
 				continue
@@ -222,17 +238,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					}
 					i++
 				}
-			case "-o", "--output":
-				// Already handled above
-				if i+1 < len(args) {
-					i++
-				}
-				continue
-			case "-v", "--verbose", "--help", "-help":
-				// Already handled above
-				continue
-			case "--admin", "-admin":
-				return nil, fmt.Errorf("unexpected parameter: --admin")
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -311,7 +316,22 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 		for i := 0; i < len(args); i++ {
 			arg := args[i]
 
-			// If we've found the command, collect remaining args as subcommand args
+			// Handle known global flags regardless of position
+			switch arg {
+			case "-o", "--output":
+				if i+1 < len(args) {
+					i++
+				}
+				continue
+			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
+				continue
+			case "-t", "--token":
+				return nil, fmt.Errorf("token is invalid in admin mode")
+			case "-f", "--config":
+				return nil, fmt.Errorf("config is invalid in admin mode")
+			}
+
+			// If we've found the command, collect remaining args
 			if foundCommand {
 				commandArgs = append(commandArgs, arg)
 				continue
@@ -329,8 +349,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminPort = port
 					i++
 				}
-			case "-t", "--token":
-				return nil, fmt.Errorf("token is invalid in admin mode")
 			case "-u", "--user":
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 					AdminConfig.AdminName = &args[i+1]
@@ -341,17 +359,6 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 					AdminConfig.AdminPassword = &args[i+1]
 					i++
 				}
-			case "-f", "--config":
-				return nil, fmt.Errorf("config is invalid in admin mode")
-			case "-o", "--output":
-				// Already handled above
-				if i+1 < len(args) {
-					i++
-				}
-				continue
-			case "-v", "--verbose", "--admin", "-admin", "--help", "-help":
-				// Already handled above
-				continue
 			default:
 				// Non-flag argument (command)
 				if !strings.HasPrefix(arg, "-") {
@@ -534,8 +541,9 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	line := liner.NewLiner()
 
 	cli := &CLI{
-		line:   line,
-		Config: commandLineConfig,
+		line:         line,
+		Config:       commandLineConfig,
+		outputFormat: commandLineConfig.OutputFormat,
 	}
 
 	if commandLineConfig.CLIMode == APIMode {
@@ -789,11 +797,50 @@ func (c *CLI) execute(input string) error {
 	}
 
 	// Filesystem mode: execute filesystem command
-	return c.executeFilesystem(input)
+	cmd := NewCommand("file_system_command")
+	cmd.Params["command"] = input
+	resp, ceErr := c.executeFilesystem(cmd)
+	if resp != nil {
+		resp.PrintOut()
+	}
+	return ceErr
 }
 
-// executeFilesystem executes a Filesystem command
-func (c *CLI) executeFilesystem(input string) error {
+// executeFilesystem executes a Filesystem command and returns a ResponseIf.
+func (c *CLI) executeFilesystem(cmd *Command) (ResponseIf, error) {
+	rawInput, _ := cmd.Params["command"].(string)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("create stdout pipe: %w", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	defer func() {
+		os.Stdout = old
+		_ = w.Close()
+		_ = r.Close()
+	}()
+
+	var buf strings.Builder
+	copyErrCh := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(&buf, r)
+		copyErrCh <- copyErr
+	}()
+
+	execErr := c.executeFilesystemInner(rawInput)
+	_ = w.Close() // signal EOF to reader goroutine
+	copyErr := <-copyErrCh
+	if copyErr != nil {
+		return nil, fmt.Errorf("capture filesystem output: %w", copyErr)
+	}
+	return &FileSystemResponse{Output: buf.String()}, execErr
+}
+
+// executeFilesystemInner executes a Filesystem command and writes output to stdout.
+// It is called by executeFilesystem which captures the stdout output.
+func (c *CLI) executeFilesystemInner(input string) error {
 	// Parse input into arguments
 	var args []string
 	if c.args != nil && len(c.args.CommandArgs) > 0 {
@@ -947,36 +994,6 @@ func (c *CLI) executeFilesystem(input string) error {
 		fileProv, _ := fileProvider.(*filesystem.FileProvider)
 		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
 		return cmd.Execute(cmdArgs)
-	case "add-skill":
-		fmt.Println("⚠ Warning: 'add-skill' is deprecated. Use 'install-skill' instead.")
-		// Forward to install-skill
-		fileProvider, ok := c.ContextEngine.GetProvider("files").(*filesystem.FileProvider)
-		if !ok {
-			return fmt.Errorf("file provider not available")
-		}
-		skillProvider := c.ContextEngine.GetProvider("skills")
-		if skillProvider == nil {
-			return fmt.Errorf("skill provider not available")
-		}
-		httpAdapter := &httpClientAdapter{client: httpClient}
-		cmd := filesystem.NewInstallSkillCommand(httpAdapter, fileProvider, skillProvider)
-		return cmd.Execute(cmdArgs)
-	case "delete-skill":
-		fmt.Println("⚠ Warning: 'delete-skill' is deprecated. Use 'uninstall-skill' instead.")
-		// Forward to uninstall-skill
-		skillProvider := c.ContextEngine.GetProvider("skills")
-		if skillProvider == nil {
-			return fmt.Errorf("skill provider not available")
-		}
-		fileProvider := c.ContextEngine.GetProvider("files")
-		if fileProvider == nil {
-			return fmt.Errorf("file provider not available")
-		}
-		httpAdapter := &httpClientAdapter{client: httpClient}
-		fileProv, _ := fileProvider.(*filesystem.FileProvider)
-		cmd := filesystem.NewUninstallSkillCommand(httpAdapter, skillProvider, fileProv)
-		return cmd.Execute(cmdArgs)
-
 	default:
 		return fmt.Errorf("unknown filesystem command: %s", cmdType)
 	}
