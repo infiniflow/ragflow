@@ -87,6 +87,63 @@ func TestVecNorm(t *testing.T) {
 	}
 }
 
+func TestSplitAnswer_Chinese(t *testing.T) {
+	sentences, idx := splitAnswer("你好世界。这是一个测试。")
+	if len(sentences) < 2 {
+		t.Errorf("expected >=2 sentences for Chinese, got %d: %q", len(sentences), sentences)
+	}
+	if len(idx) != len(sentences) {
+		t.Errorf("idx len mismatch: %d vs %d", len(idx), len(sentences))
+	}
+	for i, s := range sentences {
+		if len(s) < minSentenceLen {
+			t.Errorf("sentence %d too short: %q", i, s)
+		}
+		// Each sentence must be valid UTF-8 and end with 。or contain meaningful text.
+		if !strings.ContainsAny(s, "。世界测试") && len(s) < 10 {
+			t.Errorf("unexpected short sentence without context: %q", s)
+		}
+	}
+}
+
+func TestSplitAnswer_Arabic(t *testing.T) {
+	// Arabic: "Hello world. This is a test." in Arabic script
+	sentences, _ := splitAnswer("مرحبا بالعالم. هذا اختبار.")
+	if len(sentences) == 0 {
+		t.Fatal("expected at least 1 sentence for Arabic")
+	}
+	for _, s := range sentences {
+		// Must be valid UTF-8 — no replacement characters or garbled bytes
+		if strings.ContainsRune(s, '�') {
+			t.Errorf("garbled UTF-8 in Arabic sentence: %q", s)
+		}
+	}
+}
+
+func TestSplitAnswer_Japanese(t *testing.T) {
+	sentences, _ := splitAnswer("こんにちは世界。これはテストです。")
+	if len(sentences) < 2 {
+		t.Errorf("expected >=2 sentences for Japanese, got %d: %q", len(sentences), sentences)
+	}
+	for _, s := range sentences {
+		if strings.ContainsRune(s, '�') {
+			t.Errorf("garbled UTF-8 in Japanese sentence: %q", s)
+		}
+	}
+}
+
+func TestSplitAnswer_Korean(t *testing.T) {
+	sentences, _ := splitAnswer("안녕하세요 세계. 이것은 테스트입니다.")
+	if len(sentences) < 2 {
+		t.Errorf("expected >=2 sentences for Korean, got %d: %q", len(sentences), sentences)
+	}
+	for _, s := range sentences {
+		if strings.ContainsRune(s, '�') {
+			t.Errorf("garbled UTF-8 in Korean sentence: %q", s)
+		}
+	}
+}
+
 func TestDot(t *testing.T) {
 	if dot([]float64{1, 2}, []float64{3, 4}) != 11 {
 		t.Error("1*3+2*4 = 11")

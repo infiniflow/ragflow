@@ -480,7 +480,7 @@ type ginSSEWriter struct{}
 func (w *ginSSEWriter) Write(c *gin.Context, data string) {
 	c.Stream(func(w io.Writer) bool {
 		fmt.Fprint(w, data)
-		return true
+		return false
 	})
 }
 

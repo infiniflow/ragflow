@@ -98,8 +98,9 @@ func splitAnswer(answer string) ([]string, []int) {
 	// Rejoin the trailing punctuation that the regex captured as a separate piece.
 	for i := 1; i < len(rawPieces); i++ {
 		if sentenceSplitRE.MatchString(rawPieces[i]) {
-			rawPieces[i-1] += string(rawPieces[i][0])
-			rawPieces[i] = rawPieces[i][1:]
+			r := []rune(rawPieces[i])
+			rawPieces[i-1] += string(r[0])
+			rawPieces[i] = string(r[1:])
 		}
 	}
 	// Filter out short pieces.
@@ -145,8 +146,9 @@ func applyCitations(answer string, sentences []string, sentenceIdx []int, cites 
 	}
 	for i := 1; i < len(rawPieces); i++ {
 		if sentenceSplitRE.MatchString(rawPieces[i]) {
-			rawPieces[i-1] += string(rawPieces[i][0])
-			rawPieces[i] = rawPieces[i][1:]
+			r := []rune(rawPieces[i])
+			rawPieces[i-1] += string(r[0])
+			rawPieces[i] = string(r[1:])
 		}
 	}
 
