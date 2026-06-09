@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Azure blue gradient background circle -->
+  <defs>
+    <linearGradient id="azureGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078D4"/>
+      <stop offset="100%" style="stop-color:#0050A0"/>
+    </linearGradient>
+  </defs>
+  <!-- Storage blob icon: stacked cylinders representing blob tiers -->
+  <ellipse cx="24" cy="14" rx="14" ry="5" fill="url(#azureGrad)"/>
+  <rect x="10" y="14" width="28" height="8" fill="#0078D4"/>
+  <ellipse cx="24" cy="22" rx="14" ry="5" fill="#50A0E0"/>
+  <rect x="10" y="22" width="28" height="8" fill="#4090D0"/>
+  <ellipse cx="24" cy="30" rx="14" ry="5" fill="#6AB0E8"/>
+  <rect x="10" y="30" width="28" height="5" fill="#5090C8"/>
+  <ellipse cx="24" cy="35" rx="14" ry="5" fill="#80C0F0"/>
+</svg>

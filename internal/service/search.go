@@ -118,7 +118,7 @@ func (s *SearchService) toSearchAppResponse(search *entity.Search) map[string]in
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": map[string]interface{}(search.SearchConfig),
 	}
 
 	if search.Avatar != nil {
@@ -348,7 +348,7 @@ func (s *SearchService) GetDetail(searchID string) (map[string]interface{}, erro
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": map[string]interface{}(search.SearchConfig),
 	}
 
 	if search.Avatar != nil {

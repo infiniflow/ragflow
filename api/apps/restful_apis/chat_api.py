@@ -26,6 +26,7 @@ from types import SimpleNamespace
 from quart import Response, request
 
 from api.apps import current_user, login_required
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
 from api.db.joint_services.tenant_model_service import (
     get_tenant_default_model_by_type, get_model_config_from_provider_instance, get_api_key, split_model_name
 )
@@ -458,32 +459,21 @@ async def list_chats():
         page_number = int(request.args.get("page", 0))
         items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
 
-        tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-        authorized_owner_ids = {member["tenant_id"] for member in tenants}
-        authorized_owner_ids.add(current_user.id)
-
         if owner_ids:
-            requested_owner_ids = set(owner_ids)
-            unauthorized_owner_ids = requested_owner_ids - authorized_owner_ids
-            if unauthorized_owner_ids:
-                logging.warning(
-                    "Rejected list_chats request: user=%s attempted unauthorized owner_ids=%s",
-                    current_user.id,
-                    sorted(unauthorized_owner_ids),
-                )
-                return get_json_result(
-                    data=False,
-                    message="Only authorized owner_ids can be queried.",
-                    code=RetCode.OPERATING_ERROR,
-                )
-            effective_owner_ids = list(requested_owner_ids)
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                owner_ids, current_user.id, 0, 0, orderby, desc, keywords, **exact_filters,
+            )
+            chats = [chat for chat in chats if chat["tenant_id"] in owner_ids]
+            total = len(chats)
+            if page_number and items_per_page:
+                start = (page_number - 1) * items_per_page
+                chats = chats[start : start + items_per_page]
         else:
-            effective_owner_ids = list(authorized_owner_ids)
-
-        chats, total = await thread_pool_exec(
-            DialogService.get_by_tenant_ids,
-            effective_owner_ids, current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
-        )
+            chats, total = await thread_pool_exec(
+                DialogService.get_by_tenant_ids,
+                [], current_user.id, page_number, items_per_page, orderby, desc, keywords, **exact_filters,
+            )
 
         return get_json_result(
             data={"chats": [_build_chat_response(chat) for chat in chats], "total": total}
@@ -1173,11 +1163,7 @@ async def session_completion(chat_id_in_arg=""):
     session_id = req.pop("session_id", "") or req.pop("conversation_id", "") or ""
     chat_model_id = req.pop("llm_id", "")
 
-    chat_model_config = {}
-    for model_config in ["temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens"]:
-        config = req.get(model_config)
-        if config:
-            chat_model_config[model_config] = config
+    chat_model_config = pop_generation_config(req)
 
     try:
         conv = None
@@ -1220,7 +1206,6 @@ async def session_completion(chat_id_in_arg=""):
                     msg.append(m)
         else:
             dia = _build_default_completion_dialog()
-            dia.llm_setting = chat_model_config
 
         req.pop("messages", None)
         req.pop("question", None)
@@ -1242,6 +1227,7 @@ async def session_completion(chat_id_in_arg=""):
             if not tenant_info or not tenant_info.llm_id:
                 raise LookupError("No default chat model for tenant.")
             dia.llm_id = tenant_info.llm_id
+            merge_generation_config(dia, chat_model_config)
 
         stream_mode = req.pop("stream", True)
 

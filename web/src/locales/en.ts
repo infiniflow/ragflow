@@ -1433,6 +1433,36 @@ Example: Virtual Hosted Style`,
         'Mail folder to sync (e.g. inbox, sentitems, archive). Defaults to inbox.',
       outlookUserIdsTip:
         'Comma-separated UPNs or object IDs of mailboxes to sync. Leave blank to sync every mailbox in the tenant (requires User.Read.All).',
+      salesforceDescription:
+        'Connect a Salesforce org and index CRM records (Accounts, Contacts, Opportunities, Cases, Knowledge articles) via SOQL with incremental sync.',
+      salesforceInstanceUrlTip:
+        'Salesforce org URL, e.g. https://your-domain.my.salesforce.com (no trailing slash).',
+      salesforceClientIdTip:
+        'Consumer Key of a Connected App with Client Credentials Flow enabled and the api scope.',
+      salesforceClientSecretTip:
+        'Consumer Secret of the Connected App used for client-credentials authentication.',
+      salesforceObjectsTip:
+        'Comma-separated SObject API names to index. Defaults to Account, Contact, Opportunity, Case, Knowledge__kav.',
+      salesforceApiVersionTip:
+        'Salesforce REST API version (e.g. v59.0). Use the version your org supports.',
+      azure_blobDescription:
+        'Index blobs from an Azure Blob Storage container into a knowledge base. Supports account-key, connection-string, and SAS-token auth. Unchanged blobs are skipped via ETag fingerprinting.',
+      azureBlobAuthModeTip:
+        'Choose the authentication method. Account Key and Connection String require container_name; SAS Token requires container_url + sas_token.',
+      azureBlobAccountNameTip:
+        'Azure storage account name (e.g. mystorageaccount). Required for account-key auth.',
+      azureBlobAccountKeyTip:
+        'Storage account access key (Base64-encoded). Required for account-key auth.',
+      azureBlobConnectionStringTip:
+        'Full Azure Storage connection string (DefaultEndpointsProtocol=https;AccountName=...;...). Required for connection-string auth.',
+      azureBlobContainerUrlTip:
+        'Full HTTPS URL of the container (e.g. https://account.blob.core.windows.net/container). Required for SAS-token auth.',
+      azureBlobSasTokenTip:
+        'SAS query string (without the leading "?"). Required for SAS-token auth.',
+      azureBlobContainerNameTip:
+        'Name of the container to index. Required for account-key and connection-string auth.',
+      azureBlobPrefixTip:
+        'Optional blob name prefix to limit indexing to a virtual folder (e.g. documents/reports/). Leave blank to index the entire container.',
       restApiQueryParamsTip:
         'Key=value pairs (one per line) sent as URL query parameters. Use this instead of embedding params in the URL.',
       restApiHeadersTip:
@@ -1539,6 +1569,39 @@ Example: Virtual Hosted Style`,
         'International users only: use https://api.minimax.io/v1',
       minimaxBaseUrlPlaceholder:
         '(International users only, fill in https://api.minimax.io/v1)',
+      openaiBaseUrlPlaceholder: 'https://api.openai.com/v1',
+      anthropicBaseUrlPlaceholder: 'https://api.anthropic.com/v1',
+      siliconflowBaseUrlPlaceholder: 'https://api.siliconflow.cn/v1',
+      groupId: 'Group ID',
+      providerOrder: 'Provider order',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlMessage: 'Please input the PaddleOCR API URL!',
+      paddleocrApiUrlPlaceholder:
+        'e.g. https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio Access Token',
+      paddleocrAccessTokenMessage: 'Access token for PaddleOCR API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR Algorithm',
+      paddleocrAlgorithmMessage: 'Please select a PaddleOCR algorithm',
+      mineruApiserver: 'MinerU API Server',
+      mineruApiserverMessage: 'Please input the MinerU API Server URL!',
+      mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruOutputDir: 'MinerU Output Directory',
+      mineruOutputDirMessage: 'Please input the MinerU output directory!',
+      mineruOutputDirPlaceholder: '/tmp/mineru',
+      mineruBackend: 'MinerU Backend',
+      mineruBackendMessage: 'Please select a MinerU backend!',
+      mineruSelectBackend: 'Select processing backend',
+      mineruServerUrl: 'MinerU Server URL',
+      mineruServerUrlMessage: 'Please input the MinerU Server URL!',
+      mineruServerUrlPlaceholder: 'e.g. http://your-vllm-server:30000',
+      mineruDeleteOutput: 'Delete Output Files',
+      mineruDeleteOutputMessage: 'Invalid value for delete output',
+      opendataloaderApiserver: 'OpenDataLoader API Server',
+      opendataloaderApiserverMessage:
+        'Please input the OpenDataLoader API Server!',
+      opendataloaderApiserverPlaceholder:
+        'http://your-opendataloader-service:9383',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
       chatModel: 'LLM',
@@ -1732,6 +1795,22 @@ Example: Virtual Hosted Style`,
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
+      listModels: 'List models',
+      allModels: 'All models',
+      listModelsSearchPlaceholder: 'Search models…',
+      listModelsEmpty: 'No models available',
+      listModelsLoading: 'Loading models…',
+      addCustomModel: 'Add custom model',
+      addCustomModelTitle: 'Add custom model',
+      modelMaxTokens: 'Max tokens',
+      modelFeatures: 'Model features',
+      modelFeatureToolCall: 'Tool call',
+      modelFeatureFunctionCall: 'Function call',
+      modelNameRequired: 'Model name is required',
+      modelNameDuplicate: 'Model name already exists',
+      modelTypeRequired: 'Please select at least one model type',
+      modelMaxTokensMessage: 'Max tokens must be a number',
+      modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     message: {
       registered: 'Registered!',
