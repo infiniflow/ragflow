@@ -569,6 +569,12 @@ class TenantModelInstanceStage(MigrationStage):
             logger.info("No records to migrate")
             return 0, []
 
+        # Deduplicate records where api_keys differ only by is_tools encoding.
+        # When _encode_api_key_config wraps a plain api_key into {"api_key": "...", "is_tools": true/false},
+        # multiple tenant_llm rows for the same provider can have logically identical api_keys that
+        # only differ in the is_tools field. We merge these by stripping is_tools for comparison.
+        records = self._dedup_api_key_records(records)
+
         logger.info(f"Migrating {len(records)} tenant_model_instance records...")
 
         if self.dry_run:
@@ -604,6 +610,95 @@ class TenantModelInstanceStage(MigrationStage):
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
 
         return rows_inserted, self.target_tables
+
+    @staticmethod
+    def _strip_is_tools_from_api_key(api_key: str, llm_factory: str) -> str:
+        """Strip is_tools from api_key for dedup comparison.
+
+        Handles three api_key formats:
+        1. Plain string (e.g. "sk-xxx" or "x") — returned as-is.
+        2. JSON with only {"api_key": "...", "is_tools": true/false} — extract the inner api_key value.
+        3. JSON with factory-specific fields + optional "is_tools" — remove only the "is_tools" key.
+
+        For format 3, the factory-specific JSON structures are:
+          VolcEngine:          {"ark_api_key": ..., "endpoint_id": ...}
+          Tencent Cloud:       {"tencent_cloud_sid": ..., "tencent_cloud_sk": ...}
+          Bedrock:             {"auth_mode": ..., "bedrock_ak": ..., "bedrock_sk": ..., "bedrock_region": ..., "aws_role_arn": ...}
+          XunFei Spark (tts):  {"spark_app_id": ..., "spark_api_secret": ..., "spark_api_key": ...}
+          BaiduYiyan:          {"yiyan_ak": ..., "yiyan_sk": ...}
+          Fish Audio:          {"fish_audio_ak": ..., "fish_audio_refid": ...}
+          Google Cloud:        {"google_project_id": ..., "google_region": ..., "google_service_account_key": ...}
+          Azure-OpenAI:        {"api_key": ..., "api_version": ...}
+          OpenRouter:          {"api_key": ..., "provider_order": ...}
+          MinerU:              {"api_key": ..., "provider_order": ...}
+          PaddleOCR:           {"api_key": ..., "provider_order": ...}
+          OpenDataLoader:      {"api_key": ..., "provider_order": ...}
+        """
+        if not api_key:
+            return api_key
+
+        try:
+            parsed = json.loads(api_key)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return api_key
+
+        if not isinstance(parsed, dict):
+            return api_key
+
+        # Case 2: {"api_key": "...", "is_tools": true/false} — extract inner api_key
+        if set(parsed.keys()) <= {"api_key", "is_tools"}:
+            return parsed.get("api_key", "")
+
+        # Case 3: factory-specific JSON with is_tools appended — remove is_tools key
+        if "is_tools" in parsed:
+            payload = {k: v for k, v in parsed.items() if k != "is_tools"}
+            return json.dumps(payload, sort_keys=True)
+
+        # Already a JSON dict without is_tools — return as-is
+        return json.dumps(parsed, sort_keys=True)
+
+    def _dedup_api_key_records(self, records: list) -> list:
+        """Deduplicate records whose api_keys are logically identical after stripping is_tools.
+
+        Groups by (tenant_id, llm_factory, provider_id). Within each group, if multiple
+        records share the same canonical api_key (with is_tools removed), only one is kept.
+        The kept record uses the original api_key value from the first occurrence; is_tools
+        information is not needed in tenant_model_instance (it is stored in tenant_model instead).
+        """
+        from collections import defaultdict
+
+        groups = defaultdict(list)
+        for rec in records:
+            tenant_id, llm_factory, api_key, status, provider_id = rec
+            groups[(tenant_id, llm_factory, provider_id)].append(rec)
+
+        deduped = []
+        dup_count = 0
+        for (tenant_id, llm_factory, provider_id), group in groups.items():
+            if len(group) <= 1:
+                deduped.extend(group)
+                continue
+
+            # Multiple records in group — dedup by canonical api_key
+            seen = {}  # canonical_key -> first record
+            for rec in group:
+                _, _, api_key, _, _ = rec
+                canonical = self._strip_is_tools_from_api_key(api_key, llm_factory)
+                if canonical not in seen:
+                    seen[canonical] = rec
+                else:
+                    dup_count += 1
+                    logger.debug(
+                        f"Dedup api_key for tenant={tenant_id}, factory={llm_factory}, "
+                        f"provider={provider_id}: keeping '{api_key[:20]}...', "
+                        f"dropping '{seen[canonical][2][:20]}...'"
+                    )
+            deduped.extend(seen.values())
+
+        if dup_count > 0:
+            logger.info(f"Deduplicated {dup_count} api_key records (is_tools-only differences)")
+
+        return deduped
 
     def create_target_table(self):
         """Create tenant_model_instance table"""
@@ -764,7 +859,7 @@ class TenantModelStage(MigrationStage):
         # Migrate status='0' records, plus status='1' for empty-llm factories
         cursor = self.db.execute_sql(
             f"SELECT tl.id, tl.llm_name, tmp.id as provider_id, tmi.id as instance_id, "
-            f"       tl.model_type, tl.status "
+            f"       tl.model_type, tl.status, tl.api_key "
             f"FROM tenant_llm tl "
             f"INNER JOIN tenant_model_provider tmp ON tmp.tenant_id = tl.tenant_id AND tmp.provider_name = tl.llm_factory "
             f"INNER JOIN tenant_model_instance tmi ON tmi.provider_id = tmp.id AND tmi.api_key = tl.api_key "
@@ -785,7 +880,7 @@ class TenantModelStage(MigrationStage):
 
         if self.dry_run:
             logger.info(f"[DRY RUN] Would insert {len(records)} records")
-            for source_id, llm_name, provider_id, instance_id, model_type, status in records[:5]:
+            for source_id, llm_name, provider_id, instance_id, model_type, status, api_key in records[:5]:
                 logger.info(f"  model_name={llm_name}, provider_id={provider_id}, "
                            f"instance_id={instance_id}, model_type={model_type}")
             if len(records) > 5:
@@ -797,19 +892,23 @@ class TenantModelStage(MigrationStage):
         for i in range(0, len(records), batch_size):
             batch = records[i:i + batch_size]
             values = []
-            for source_id, llm_name, provider_id, instance_id, model_type, status in batch:
+            for source_id, llm_name, provider_id, instance_id, model_type, status, api_key in batch:
                 record_id = self.generate_uuid()
                 model_name_escaped = llm_name.replace("'", "''") if llm_name else ""
                 model_type_escaped = model_type.replace("'", "''") if model_type else ""
                 status_val = "active" if status in ["1", "active", "enable"] else "inactive"
+                # Extract is_tools from api_key JSON and put it in extra
+                extra = self._extract_extra_from_api_key(api_key)
+                extra_escaped = extra.replace("'", "''") if extra else "{}"
                 values.append(f"('{record_id}', '{model_name_escaped}', '{provider_id}', "
                             f"'{instance_id}', '{model_type_escaped}', '{status_val}', "
+                            f"'{extra_escaped}', "
                             f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}), "
                             f"{current_ts * 1000}, FROM_UNIXTIME({current_ts}))")
 
             insert_sql = f"""
                 INSERT INTO tenant_model 
-                (id, model_name, provider_id, instance_id, model_type, status, 
+                (id, model_name, provider_id, instance_id, model_type, status, extra,
                  create_time, create_date, update_time, update_date)
                 VALUES {', '.join(values)}
             """
@@ -818,6 +917,29 @@ class TenantModelStage(MigrationStage):
             logger.info(f"Inserted batch {i // batch_size + 1}: {len(batch)} records")
 
         return rows_inserted, self.target_tables
+
+    @staticmethod
+    def _extract_extra_from_api_key(api_key: str) -> str:
+        """Extract is_tools from api_key JSON and return an extra JSON string for tenant_model.
+
+        If api_key is a JSON dict containing "is_tools": true, return '{"is_tools": true}'.
+        Otherwise return '{}' (empty dict).
+        """
+        if not api_key:
+            return "{}"
+
+        try:
+            parsed = json.loads(api_key)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return "{}"
+
+        if not isinstance(parsed, dict):
+            return "{}"
+
+        if parsed.get("is_tools") is True:
+            return json.dumps({"is_tools": True})
+
+        return "{}"
 
     def create_target_table(self):
         """Create tenant_model table"""
@@ -834,7 +956,7 @@ class TenantModelStage(MigrationStage):
             create_date DATETIME,
             update_time BIGINT,
             update_date DATETIME,
-            INDEX idx_instance_id (instance_id),
+            INDEX idx_instance_id (instance_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """
         self.db.execute_sql(create_sql)

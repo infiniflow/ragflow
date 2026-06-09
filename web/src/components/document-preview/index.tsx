@@ -1,5 +1,6 @@
 import { memo } from 'react';
 
+import { Images } from '@/constants/common';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
@@ -44,9 +45,7 @@ const DocumentPreview = function ({
           <TxtPreviewer className={className} url={url} />
         </section>
       )}
-      {['jpg', 'png', 'gif', 'jpeg', 'svg', 'bmp', 'ico', 'tif'].indexOf(
-        fileType,
-      ) > -1 && (
+      {Images.indexOf(fileType) > -1 && (
         <section>
           <ImagePreviewer className={className} url={url} />
         </section>
