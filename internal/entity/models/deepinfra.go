@@ -840,7 +840,7 @@ func (d *DeepInfraModel) ParseFile(modelName *string, content []byte, url *strin
 	return nil, fmt.Errorf("%s no such method", d.Name())
 }
 
-func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -888,10 +888,12 @@ func (d *DeepInfraModel) ListModels(apiConfig *APIConfig) ([]string, error) {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	models := make([]string, 0)
+	models := make([]ListModelResponse, 0)
 	for _, model := range result {
 		if model.ModelName != "" {
-			models = append(models, model.ModelName)
+			models = append(models, ListModelResponse{
+				Name: model.ModelName,
+			})
 		}
 	}
 
