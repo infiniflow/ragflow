@@ -268,7 +268,7 @@ func (f *fakeChatModelDriver) ParseFile(modelName *string, content []byte, url *
 	return nil, nil
 }
 
-func (f *fakeChatModelDriver) ListModels(apiConfig *modelModule.APIConfig) ([]string, error) {
+func (f *fakeChatModelDriver) ListModels(apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
 	return nil, nil
 }
 
