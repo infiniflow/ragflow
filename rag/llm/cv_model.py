@@ -25,6 +25,7 @@ from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urljoin
+from json.decoder import JSONDecodeError
 
 import requests
 from openai import OpenAI, AsyncOpenAI
@@ -558,13 +559,20 @@ class VolcEngineCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
         if not base_url:
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
-        ark_api_key = json.loads(key).get("ark_api_key", "")
-        self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
-        self.async_client = AsyncOpenAI(api_key=ark_api_key, base_url=base_url)
-        self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        try:
+            api_key = json.loads(key).get("ark_api_key", "")
+            llm_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        except JSONDecodeError:
+            api_key = key
+            llm_name = model_name
+
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model_name = llm_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
@@ -627,13 +635,17 @@ class OpenRouterCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        api_key = json.loads(key).get("api_key", "")
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            provider_order = json.loads(key).get("provider_order", "")
+        except JSONDecodeError:
+            api_key = key
+            provider_order = ""
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
-        provider_order = json.loads(key).get("provider_order", "")
         self.extra_body = {}
         if provider_order:
 

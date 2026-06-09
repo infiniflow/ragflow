@@ -190,7 +190,7 @@ func (p *PaddleOCRLocalModel) ParseFile(modelName *string, content []byte, url *
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 
-func (p *PaddleOCRLocalModel) ListModels(apiConfig *APIConfig) ([]string, error) {
+func (p *PaddleOCRLocalModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
 

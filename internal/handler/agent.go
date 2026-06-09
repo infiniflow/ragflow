@@ -29,6 +29,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
 
@@ -130,6 +131,182 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	})
 }
 
+// ListAgentSessions List all sessions
+func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeArgumentError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	page := parsePositiveIntQuery(c, "page", 1)
+	pageSize := parsePositiveIntQuery(c, "page_size", 30)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	req := service.ListAgentSessionsRequest{
+		SessionID:  c.Query("id"),
+		UserID:     c.Query("user_id"),
+		Page:       page,
+		PageSize:   pageSize,
+		Keywords:   c.Query("keywords"),
+		FromDate:   c.Query("from_date"),
+		ToDate:     c.Query("to_date"),
+		OrderBy:    defaultQueryString(c.Query("orderby"), "update_time"),
+		ExpUserID:  c.Query("exp_user_id"),
+		Desc:       c.Query("desc") != "False" && c.Query("desc") != "false",
+		IncludeDSL: c.Query("dsl") != "False" && c.Query("dsl") != "false",
+	}
+
+	tenantID := user.ID
+	result, code, err := h.agentService.ListAgentSessions(user.ID, tenantID, agentID, req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    result.Data,
+		"message": "success",
+		"total":   result.Total,
+	})
+}
+
+func parsePositiveIntQuery(c *gin.Context, key string, defaultValue int) int {
+	raw := c.Query(key)
+	if raw == "" {
+		return defaultValue
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return defaultValue
+	}
+
+	return value
+}
+
+func defaultQueryString(value, defaultValue string) string {
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+func (h *AgentHandler) GetAgentSession(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "session_id is required",
+		})
+		return
+	}
+
+	userID := user.ID
+	userID = strings.TrimSpace(userID)
+	sessionID = strings.TrimSpace(sessionID)
+	agentID = strings.TrimSpace(agentID)
+
+	data, code, err := h.agentService.GetAgentSession(userID, agentID, sessionID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    nil,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+func (h *AgentHandler) DeleteAgentSessionItem(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	agentID := c.Param("agent_id")
+	if agentID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeOperatingError,
+			"data":    nil,
+			"message": "agent_id is required",
+		})
+		return
+	}
+
+	sessionID := c.Param("session_id")
+	if sessionID == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeDataError,
+			"data":    nil,
+			"message": "session_id is required",
+		})
+		return
+	}
+
+	userID := user.ID
+	userID = strings.TrimSpace(userID)
+	sessionID = strings.TrimSpace(sessionID)
+	agentID = strings.TrimSpace(agentID)
+
+	ok, code, err := h.agentService.DeleteAgentSessionItem(userID, agentID, sessionID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    code,
+		"data":    ok,
+		"message": "success",
+	})
+}
+
 // ListAgentVersions returns versions for a specific agent.
 // @Summary List Agent Versions
 // @Description Returns all versions for a specific agent, ordered by update_time DESC.
@@ -179,6 +356,37 @@ func (h *AgentHandler) ListAgentVersions(c *gin.Context) {
 		"code":    common.CodeSuccess,
 		"data":    versions,
 		"message": "",
+	})
+}
+
+// ListTemplates lists every canvas template available to authenticated users.
+// @Summary List Agent Templates
+// @Description List the catalogue of canvas templates that authenticated users can clone.
+// @Tags agents
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/templates [get]
+func (h *AgentHandler) ListTemplates(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	templates, err := h.agentService.ListTemplates()
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	if templates == nil {
+		// Ensure the JSON payload is always a list, never null.
+		templates = []*entity.CanvasTemplate{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    templates,
+		"message": "success",
 	})
 }
 
@@ -309,7 +517,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	uploaded, err := h.fileService.UploadFile(user.ID, "", files)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"code":    common.CodeOperatingError,
+			"code": common.CodeOperatingError,
 
 			"data":    nil,
 			"message": err.Error(),
@@ -318,9 +526,99 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeSuccess,
-		"data":    uploaded,
+		"code": common.CodeSuccess,
+		"data": uploaded,
 
 		"message": "",
+	})
+}
+
+type updateAgentTagsRequest struct {
+	Tags interface{} `json:"tags"`
+}
+
+func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	var req updateAgentTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    common.CodeBadRequest,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	data, code, err := h.agentService.UpdateAgentTags(user.ID, c.Param("agent_id"), req.Tags)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    code,
+			"data":    false,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    common.CodeSuccess,
+		"data":    data,
+		"message": "success",
+	})
+}
+
+// GetPrompts returns the default prompts used by the agent.
+// @Summary Get Agent Prompts
+// @Description Returns the default prompts used by the agent, such as task analysis, plan generation, reflection, and citation guidelines.
+// @Tags agents
+// @Produce json
+// @Security ApiKeyAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/prompts [get]
+func (h *AgentHandler) GetPrompts(c *gin.Context) {
+	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
+		jsonError(c, errorCode, errorMessage)
+		return
+	}
+
+	taskAnalysisSys, err := service.LoadPrompt("analyze_task_system")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	taskAnalysisUser, err := service.LoadPrompt("analyze_task_user")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	planGeneration, err := service.LoadPrompt("next_step")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	reflection, err := service.LoadPrompt("reflect")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+	citationGuidelines, err := service.LoadPrompt("citation_prompt")
+	if err != nil {
+		jsonError(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": common.CodeSuccess,
+		"data": map[string]string{
+			"task_analysis":       fmt.Sprintf("%s\n\n%s", taskAnalysisSys, taskAnalysisUser),
+			"plan_generation":     planGeneration,
+			"reflection":          reflection,
+			"citation_guidelines": citationGuidelines,
+		},
+		"message": "success",
 	})
 }

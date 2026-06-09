@@ -522,11 +522,26 @@ func (s *ChatSessionService) asyncChatSolo(dialog *entity.Chat, session *entity.
 	// Process messages - handle attachments and image files
 	processedMessages := s.processMessages(messages, dialog)
 
-	chatModel, err := s.modelProviderSvc.GetChatModel(dialog.TenantID, dialog.LLMID)
+	var (
+		driver    modelModule.ModelDriver
+		modelName string
+		apiConfig *modelModule.APIConfig
+		err       error
+	)
+	if dialog.LLMID != "" {
+		driver, modelName, apiConfig, _, err = s.modelProviderSvc.GetModelConfigFromProviderInstance(
+			dialog.TenantID, entity.ModelTypeChat, dialog.LLMID,
+		)
+	} else {
+		driver, modelName, apiConfig, _, err = s.modelProviderSvc.GetTenantDefaultModelByType(
+			dialog.TenantID, entity.ModelTypeChat,
+		)
+	}
 	if err != nil {
 		common.Error("asyncChatSolo failed to get chat model", err)
 		return nil, err
 	}
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 
 	// Convert messages to Message format
 	var msgs []modelModule.Message
@@ -583,12 +598,27 @@ func (s *ChatSessionService) asyncChatSoloStream(dialog *entity.Chat, session *e
 	// Process messages
 	processedMessages := s.processMessages(messages, dialog)
 
-	chatModel, err := s.modelProviderSvc.GetChatModel(dialog.TenantID, dialog.LLMID)
+	var (
+		driver    modelModule.ModelDriver
+		modelName string
+		apiConfig *modelModule.APIConfig
+		err       error
+	)
+	if dialog.LLMID != "" {
+		driver, modelName, apiConfig, _, err = s.modelProviderSvc.GetModelConfigFromProviderInstance(
+			dialog.TenantID, entity.ModelTypeChat, dialog.LLMID,
+		)
+	} else {
+		driver, modelName, apiConfig, _, err = s.modelProviderSvc.GetTenantDefaultModelByType(
+			dialog.TenantID, entity.ModelTypeChat,
+		)
+	}
 	if err != nil {
 		common.Error("asyncChatSoloStream failed to get chat model", err)
 		resultChan <- s.structureAnswer(session, "**ERROR**: "+err.Error(), messageID, session.ID, reference)
 		return
 	}
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 
 	// Convert messages to []modelModule.Message for ChatStreamlyWithSender
 	var chatMessages []modelModule.Message
