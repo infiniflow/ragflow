@@ -423,6 +423,9 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "positions": chunk.get("position_int", []),
             "tag_kwd": chunk.get("tag_kwd", []),
             "tag_feas": chunk.get("tag_feas", {}),
+            "start_time": chunk.get("start_time_flt"),
+            "end_time": chunk.get("end_time_flt"),
+            "doc_type": chunk.get("doc_type_kwd", ""),
         }
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
@@ -452,6 +455,9 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "image_id": sres.field[chunk_id].get("img_id", ""),
                 "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
                 "positions": sres.field[chunk_id].get("position_int", []),
+                "start_time": sres.field[chunk_id].get("start_time_flt"),
+                "end_time": sres.field[chunk_id].get("end_time_flt"),
+                "doc_type": sres.field[chunk_id].get("doc_type_kwd", ""),
             }
             res["chunks"].append(d)
             _ = Chunk(**d)

@@ -223,6 +223,12 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
+    def transcription_with_timestamps(self, audio):
+        segments = self.mdl.transcription_with_timestamps(audio)
+        used_tokens = sum(num_tokens_from_string(s["text"]) for s in segments)
+        logging.info("LLMBundle.transcription_with_timestamps used_tokens: {}, llm_name: {}".format(used_tokens, self.model_config["llm_name"]))
+        return segments
+
     def stream_transcription(self, audio):
         mdl = self.mdl
         supports_stream = hasattr(mdl, "stream_transcription") and callable(getattr(mdl, "stream_transcription"))
