@@ -119,7 +119,7 @@ def mark_document_dirty(kb_id: str, doc_id: str) -> bool:
         try:
             REDIS_CONN.REDIS.expire(key, _DIRTY_TTL_SECONDS)
         except Exception:
-            pass
+            logging.warning("mark_document_dirty: failed to refresh TTL for %s", key, exc_info=True)
         return bool(ok)
     except Exception:
         logging.exception("mark_document_dirty(%s, %s) failed", kb_id, doc_id)
@@ -152,8 +152,15 @@ def clear_dirty_documents(kb_id: str, doc_ids: list[str] | None = None) -> bool:
         if doc_ids is None:
             REDIS_CONN.delete(key)
             return True
-        for doc_id in doc_ids:
-            REDIS_CONN.srem(key, doc_id)
+        if doc_ids:
+            REDIS_CONN.REDIS.srem(key, *doc_ids)
+        # Refresh TTL if the set still has members so future incremental runs
+        # don't lose track of remaining dirty docs after a partial clear.
+        try:
+            if REDIS_CONN.REDIS.exists(key):
+                REDIS_CONN.REDIS.expire(key, _DIRTY_TTL_SECONDS)
+        except Exception:
+            logging.warning("clear_dirty_documents: failed to refresh TTL for %s", key, exc_info=True)
         return True
     except Exception:
         logging.exception("clear_dirty_documents(%s) failed", kb_id)
