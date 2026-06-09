@@ -462,18 +462,8 @@ func isZeroVector(v []float64) bool {
 	return true
 }
 
-// GetChunkRequest request for getting a chunk by ID
-type GetChunkRequest struct {
-	ChunkID string `json:"chunk_id"`
-}
-
-// GetChunkResponse response for getting a chunk
-type GetChunkResponse struct {
-	Chunk map[string]interface{} `json:"chunk"`
-}
-
 // Get retrieves a chunk by ID
-func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkResponse, error) {
+func (s *ChunkService) Get(req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -551,7 +541,7 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 						result[k] = v
 					}
 				}
-				return &GetChunkResponse{Chunk: result}, nil
+				return &service.GetChunkResponse{Chunk: result}, nil
 			}
 		}
 	}
@@ -560,27 +550,11 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 		return nil, fmt.Errorf("chunk not found")
 	}
 
-	return &GetChunkResponse{Chunk: chunk}, nil
-}
-
-// ListChunksRequest request for listing chunks
-type ListChunksRequest struct {
-	DocID        string `json:"doc_id" binding:"required"`
-	Page         *int   `json:"page,omitempty"`
-	Size         *int   `json:"size,omitempty"`
-	Keywords     string `json:"keywords,omitempty"`
-	AvailableInt *int   `json:"available_int,omitempty"`
-}
-
-// ListChunksResponse response for listing chunks
-type ListChunksResponse struct {
-	Chunks []map[string]interface{} `json:"chunks"`
-	Doc    map[string]interface{}   `json:"doc"`
-	Total  int64                    `json:"total"`
+	return &service.GetChunkResponse{Chunk: chunk}, nil
 }
 
 // List retrieves chunks for a document
-func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksResponse, error) {
+func (s *ChunkService) List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -753,29 +727,13 @@ func (s *ChunkService) List(req *ListChunksRequest, userID string) (*ListChunksR
 		"update_date":      utility.FormatTimeToString(doc.UpdateDate, timeFormat),
 	}
 
-	return &ListChunksResponse{
+	return &service.ListChunksResponse{
 		Total:  searchResp.Total,
 		Chunks: chunks,
 		Doc:    docInfo,
 	}, nil
 }
-
-// UpdateChunkRequest request for updating a chunk
-type UpdateChunkRequest struct {
-	DatasetID    string        `json:"dataset_id"`
-	DocumentID   string        `json:"document_id"`
-	ChunkID      string        `json:"chunk_id"`
-	Content      *string       `json:"content,omitempty"`
-	ImportantKwd []string      `json:"important_keywords,omitempty"`
-	Questions    []string      `json:"questions,omitempty"`
-	Available    *bool         `json:"available,omitempty"`
-	Positions    []interface{} `json:"positions,omitempty"`
-	TagKwd       []string      `json:"tag_kwd,omitempty"`
-	TagFeas      interface{}   `json:"tag_feas,omitempty"`
-}
-
-// UpdateChunk updates a chunk fields
-func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error {
+func (s *ChunkService) UpdateChunk(req *service.UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -912,18 +870,7 @@ func (s *ChunkService) UpdateChunk(req *UpdateChunkRequest, userID string) error
 
 	return nil
 }
-
-// RemoveChunksRequest request for removing chunks
-type RemoveChunksRequest struct {
-	DocID     string   `json:"doc_id"`
-	ChunkIDs  []string `json:"chunk_ids,omitempty"`
-	DeleteAll bool     `json:"delete_all,omitempty"`
-}
-
-// RemoveChunks removes chunks from the dataset table.
-// If ChunkIDs is empty and DeleteAll is true, removes all chunks for the document.
-// Otherwise removes only the specified chunks.
-func (s *ChunkService) RemoveChunks(req *RemoveChunksRequest, userID string) (int64, error) {
+func (s *ChunkService) RemoveChunks(req *service.RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
